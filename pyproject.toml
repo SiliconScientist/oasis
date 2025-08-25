@@ -1,0 +1,17 @@
+[project]
+name = "oasis_SiliconScientist"
+version = "0.0.1"
+authors = [{ name = "Avery Hill", email = "ahill15@tulane.edu" }]
+description = "Refining ML interatomic potentials with sparse ab initio data in low-data regimes."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/SiliconScientist/oasis"
+Issues = "https://github.com/SiliconScientist/oasis/issues"

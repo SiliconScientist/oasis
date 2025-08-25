@@ -1,0 +1,3 @@
+pydantic
+fairchem-core
+-e .
