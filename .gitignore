@@ -211,3 +211,6 @@ config.toml
 
 # VS Code
 .vscode/
+
+# Data folder
+data/
