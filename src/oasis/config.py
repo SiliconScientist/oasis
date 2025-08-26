@@ -3,7 +3,8 @@ from pydantic import BaseModel
 
 
 class DataConfig(BaseModel):
-    raw: str
+    systems: str
+    surfaces: str
 
 
 class DataLoaderConfig(BaseModel):
@@ -11,10 +12,20 @@ class DataLoaderConfig(BaseModel):
     num_workers: int
 
 
+class ModelConfig(BaseModel):
+    checkpoint: str
+
+
+class TrainerConfig(BaseModel):
+    device: str
+
+
 class Config(BaseModel):
     seed: int
     data: DataConfig
     dataloader: DataLoaderConfig
+    model: ModelConfig
+    trainer: TrainerConfig
 
 
 def get_config():
