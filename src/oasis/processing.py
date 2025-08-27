@@ -72,8 +72,8 @@ def batch_relax(
 
 
 def get_loaders(cfg):
-    slab_list = read(cfg.data.raw.slabs, index=":1")
-    ads_slab_list = read(cfg.data.raw.ads_slabs, index=":1")
+    slab_list = read(cfg.data.raw.slabs, index=":")
+    ads_slab_list = read(cfg.data.raw.ads_slabs, index=":")
     y_labels = [ads_slab.get_potential_energy() for ads_slab in ads_slab_list]
     if not (
         os.path.exists(cfg.data.raw_relaxed.slabs)
@@ -101,7 +101,7 @@ def get_loaders(cfg):
         relaxed_slabs = read(filename=cfg.data.raw_relaxed.slabs, index=":")
         relaxed_ads_slabs = read(filename=cfg.data.raw_relaxed.ads_slabs, index=":")
 
-    if not os.path.exists(cfg.data.processed):
+    if not (os.path.exists(cfg.data.holdout) and os.path.exists(cfg.data.test)):
         atomic_data_list = []
         process_fn = partial(
             AtomicData.from_ase, task_name="oc20", r_edges=True, max_neigh=45
@@ -116,12 +116,14 @@ def get_loaders(cfg):
                 ]
             )
             atomic_data_list.append([slab_data, ads_slab_data, y, atomic_reference])
-        torch.save(atomic_data_list, cfg.data.processed)
+        holdout, test = train_test_split(
+            atomic_data_list, train_size=10, random_state=cfg.seed
+        )
+        torch.save(holdout, cfg.data.holdout)
+        torch.save(test, cfg.data.test)
     else:
-        atomic_data_list = torch.load(cfg.data.processed)
-    holdout, test = train_test_split(
-        atomic_data_list, train_size=10, random_state=cfg.seed
-    )
+        holdout = torch.load(cfg.data.holdout)
+        test = torch.load(cfg.data.test)
     dataloader = partial(
         DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_atomic_pairs
     )

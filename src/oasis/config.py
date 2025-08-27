@@ -1,16 +1,18 @@
 from tomllib import load
 from pydantic import BaseModel
+from pathlib import Path
 
 
 class DatasetConfig(BaseModel):
-    slabs: str
-    ads_slabs: str
+    slabs: Path
+    ads_slabs: Path
 
 
 class DataConfig(BaseModel):
     raw: DatasetConfig
     raw_relaxed: DatasetConfig
-    processed: str
+    holdout: Path
+    test: Path
 
 
 class ProcessingConfig(BaseModel):
@@ -23,7 +25,7 @@ class DataLoaderConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    checkpoint: str
+    checkpoint: Path
 
 
 class TrainerConfig(BaseModel):
