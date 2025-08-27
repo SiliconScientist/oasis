@@ -214,3 +214,6 @@ config.toml
 
 # Data folder
 data/
+
+# SLURM files
+*.sh
