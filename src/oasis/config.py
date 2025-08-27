@@ -2,9 +2,19 @@ from tomllib import load
 from pydantic import BaseModel
 
 
+class DatasetConfig(BaseModel):
+    slabs: str
+    ads_slabs: str
+
+
 class DataConfig(BaseModel):
-    systems: str
-    surfaces: str
+    raw: DatasetConfig
+    raw_relaxed: DatasetConfig
+    processed: str
+
+
+class ProcessingConfig(BaseModel):
+    constrained_tags: list[int]
 
 
 class DataLoaderConfig(BaseModel):
