@@ -17,6 +17,7 @@ class DataConfig(BaseModel):
 
 class ProcessingConfig(BaseModel):
     constrained_tags: list[int]
+    adsorbate_tag: int
 
 
 class DataLoaderConfig(BaseModel):
@@ -34,6 +35,7 @@ class TrainerConfig(BaseModel):
 
 class Config(BaseModel):
     seed: int
+    processing: ProcessingConfig
     data: DataConfig
     dataloader: DataLoaderConfig
     model: ModelConfig
