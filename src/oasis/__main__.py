@@ -1,10 +1,4 @@
 import torch
-from ase.io import read
-from ase.optimize import BFGS
-from ase.visualize import view
-from ase.constraints import FixAtoms
-from fairchem.core.units.mlip_unit import load_predict_unit
-from fairchem.core import FAIRChemCalculator
 
 from oasis.config import get_config
 from oasis.processing import get_loaders
