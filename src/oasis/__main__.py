@@ -62,11 +62,13 @@ def main():
     loss = 0.0
     for batch in loaders.test:
         x, y, atomic_reference = batch
+        x = {k: v.to(cfg.trainer.device) for k, v in x.items()}
+        y = y.to(cfg.trainer.device)
+        atomic_reference = atomic_reference.to(cfg.trainer.device)
         slab_pred = model(x["slab"])
         ads_slab_pred = model(x["ads_slab"])
         ads_energy = ads_slab_pred - (slab_pred + atomic_reference)
         loss += torch.mean(torch.abs(ads_energy - y))
-        print("Pause")
     print(loss / len(loaders.test))
 
 
