@@ -2,4 +2,5 @@ pydantic
 scikit-learn
 fairchem-core
 pymatgen
+polars
 -e .
