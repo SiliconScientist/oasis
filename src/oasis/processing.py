@@ -124,8 +124,8 @@ def get_loaders(cfg):
         torch.save(holdout, cfg.data.holdout)
         torch.save(test, cfg.data.test)
     else:
-        holdout = torch.load(cfg.data.holdout)
-        test = torch.load(cfg.data.test)
+        holdout = torch.load(cfg.data.holdout, weights_only=False)
+        test = torch.load(cfg.data.test, weights_only=False)
     dataloader = partial(
         DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_atomic_pairs
     )

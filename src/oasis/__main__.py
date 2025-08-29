@@ -58,36 +58,16 @@ def main():
     # mae = torch.abs(torch.tensor(ads_energy) - torch.tensor(y_label))
     # print(mae)
     loaders = get_loaders(cfg)
-    # systems = read(filename=cfg.data.systems, index=":")
-    # surfaces = read(filename=cfg.data.surfaces, index=":")
-    # predict_unit = load_predict_unit(
-    #     path=cfg.model.checkpoint,
-    #     device=cfg.trainer.device,
-    # )
-    # calc = FAIRChemCalculator(
-    #     predict_unit=predict_unit,
-    #     task_name="oc20",
-    # )
-    # for system, surface in zip(systems, surfaces):
-    #     y = system.get_potential_energy()
-    #     system.calc = calc
-    #     surface.calc = calc
-    #     sys_energy = system.get_potential_energy()
-    #     surf_energy = surface.get_potential_energy()
-    #     ads_energy = sys_energy - (surf_energy - 10.681)
-    #     mae = torch.mean(torch.abs(torch.tensor(ads_energy) - torch.tensor(y)))
-    #     print(f"MAE: {mae:.4f} eV")
-    # model = get_model(cfg)
-    # loss = 0.0
-    # for batch in loaders.test:
-    #     x, y, atomic_reference = batch
-    #     sys_pred = model(x["system"])
-    #     surf_pred = model(x["surface"])
-    #     ads_energy = sys_pred - (
-    #         surf_pred + atomic_reference
-    #     )
-    #     loss += torch.mean(torch.abs(ads_energy - y))
-    # print(loss / len(loaders.test))
+    model = get_model(cfg)
+    loss = 0.0
+    for batch in loaders.test:
+        x, y, atomic_reference = batch
+        slab_pred = model(x["slab"])
+        ads_slab_pred = model(x["ads_slab"])
+        ads_energy = ads_slab_pred - (slab_pred + atomic_reference)
+        loss += torch.mean(torch.abs(ads_energy - y))
+        print("Pause")
+    print(loss / len(loaders.test))
 
 
 if __name__ == "__main__":
