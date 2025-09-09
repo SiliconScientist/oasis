@@ -3,7 +3,6 @@ from typing import Callable
 import torch
 from ase.io import read, write
 from ase.atoms import Atoms
-from ase.visualize import view
 from ase.constraints import FixAtoms
 from ase.calculators.calculator import Calculator
 from fairchem.core.units.mlip_unit import load_predict_unit

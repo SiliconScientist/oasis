@@ -30,8 +30,8 @@ def main():
         predictions.extend(preds)
     print(total_loss / len(loaders.test))
     df = pl.DataFrame(predictions)
-    df.write_parquet("results/predictions.parquet")
-    df = pl.read_parquet(source="results/predictions.parquet")
+    df.write_parquet("data/results/predictions.parquet")
+    df = pl.read_parquet(source="data/results/predictions.parquet")
     plot_predictions(df=df)
 
 

@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 
-def plot_predictions(df, output_path="results/parity.png"):
+def plot_predictions(df, output_path="data/results/parity.png"):
     plt.figure(figsize=(10, 6))
     plt.scatter(df["y_true"], df["y_pred"], alpha=0.5)
     plt.plot(
