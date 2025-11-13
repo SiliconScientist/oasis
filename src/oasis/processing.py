@@ -5,6 +5,7 @@ from ase.io import read, write
 from ase.atoms import Atoms
 from ase.constraints import FixAtoms
 from ase.calculators.calculator import Calculator
+from ase.calculators.singlepoint import SinglePointCalculator
 from fairchem.core.units.mlip_unit import load_predict_unit
 from fairchem.core import FAIRChemCalculator
 from ase.optimize import BFGS
@@ -12,8 +13,7 @@ from functools import partial
 from dataclasses import dataclass
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
-from fairchem.core.datasets.atomic_data import AtomicData
-from fairchem.core.datasets.atomic_data import atomicdata_list_to_batch
+from fairchem.core.datasets.atomic_data import AtomicData, atomicdata_list_to_batch
 
 
 ATOMIC_REFERENCE_ENERGIES = {
@@ -24,12 +24,12 @@ ATOMIC_REFERENCE_ENERGIES = {
 }
 
 
-def collate_atomic_pairs(batch):
+def collate_atomic_pairs(batch, collate_fn: Callable = None):
     # batch: list of (system_atomic, surface_atomic, y_ads)
     slab_list, ads_slab_list, y_ads, atomic_references = zip(*batch)
     x = {
-        "slab": atomicdata_list_to_batch(list(slab_list)),
-        "ads_slab": atomicdata_list_to_batch(list(ads_slab_list)),
+        "slab": collate_fn(list(slab_list)),
+        "ads_slab": collate_fn(list(ads_slab_list)),
     }
     y = torch.as_tensor(y_ads, dtype=torch.float32)  # shape [B]
     atomic_reference = torch.as_tensor(
@@ -44,7 +44,7 @@ class DataLoaderSplits:
     test: DataLoader
 
 
-def indice_from_tags(atoms: Atoms, tags: list[int]):
+def indices_from_tags(atoms: Atoms, tags: list[int]):
     return [i for i, atom in enumerate(atoms) if atom.tag in tags]
 
 
@@ -63,9 +63,11 @@ def batch_relax(
 ) -> list[Atoms]:
     relaxed_atoms_list = []
     for atoms in atoms_list:
+        energy = atoms.get_potential_energy()
         atoms.calc = calc
         opt = BFGS(atoms, logfile=None)
         opt.run(fmax=fmax, steps=steps)
+        atoms.calc = SinglePointCalculator(energy=energy)
         relaxed_atoms_list.append(atoms)
     return relaxed_atoms_list
 
@@ -78,7 +80,7 @@ def get_loaders(cfg):
         os.path.exists(cfg.data.raw_relaxed.slabs)
         and os.path.exists(cfg.data.raw_relaxed.ads_slabs)
     ):
-        index_fn = partial(indice_from_tags, tags=cfg.processing.constrained_tags)
+        index_fn = partial(indices_from_tags, tags=cfg.processing.constrained_tags)
         slab_list = constrain_atoms(atoms_list=slab_list, index_fn=index_fn)
         ads_slab_list = constrain_atoms(atoms_list=ads_slab_list, index_fn=index_fn)
         predict_unit = load_predict_unit(
@@ -102,12 +104,13 @@ def get_loaders(cfg):
 
     if not (os.path.exists(cfg.data.holdout) and os.path.exists(cfg.data.test)):
         atomic_data_list = []
+        # process_fn = partial(GraphConvertor.convert, GraphConvertor())
         process_fn = partial(
             AtomicData.from_ase, task_name="oc20", r_edges=True, max_neigh=45
         )
         for slab, ads_slab, y in zip(relaxed_slabs, relaxed_ads_slabs, y_labels):
-            slab_data = process_fn(input_atoms=slab)
-            ads_slab_data = process_fn(input_atoms=ads_slab)
+            slab_data = process_fn(slab)
+            ads_slab_data = process_fn(ads_slab)
             atomic_reference = sum(
                 [
                     ATOMIC_REFERENCE_ENERGIES[x]
@@ -125,8 +128,10 @@ def get_loaders(cfg):
     else:
         holdout = torch.load(cfg.data.holdout, weights_only=False)
         test = torch.load(cfg.data.test, weights_only=False)
+    collate_fn = partial(collate_atomic_pairs, collate_fn=atomicdata_list_to_batch)
+    # collate_fn = partial(collate_atomic_pairs, collate_fn=Batch.from_data_list)
     dataloader = partial(
-        DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_atomic_pairs
+        DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
     )
     loaders = DataLoaderSplits(
         holdout=dataloader(holdout, shuffle=True),
