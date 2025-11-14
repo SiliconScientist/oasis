@@ -1,13 +1,13 @@
 import os
 from typing import Callable
 import torch
+from ase.visualize import view
 from ase.io import read, write
 from ase.atoms import Atoms
 from ase.constraints import FixAtoms
 from ase.calculators.calculator import Calculator
 from ase.calculators.singlepoint import SinglePointCalculator
-from fairchem.core.units.mlip_unit import load_predict_unit
-from fairchem.core import FAIRChemCalculator
+from mace.calculators import mace_mp
 from ase.optimize import BFGS
 from functools import partial
 from dataclasses import dataclass
@@ -63,78 +63,63 @@ def batch_relax(
 ) -> list[Atoms]:
     relaxed_atoms_list = []
     for atoms in atoms_list:
-        energy = atoms.get_potential_energy()
         atoms.calc = calc
         opt = BFGS(atoms, logfile=None)
         opt.run(fmax=fmax, steps=steps)
-        atoms.calc = SinglePointCalculator(energy=energy)
         relaxed_atoms_list.append(atoms)
     return relaxed_atoms_list
 
 
-def get_loaders(cfg):
-    slab_list = read(cfg.data.raw.slabs, index=":")
-    ads_slab_list = read(cfg.data.raw.ads_slabs, index=":")
-    y_labels = [ads_slab.get_potential_energy() for ads_slab in ads_slab_list]
+def compute_adsorbate_reference_energy(slab, tag):
+    mask = slab.get_tags() == tag
+    symbols = slab[mask].get_chemical_symbols()
+    return sum(ATOMIC_REFERENCE_ENERGIES[s] for s in symbols)
+
+
+def trim_tagged_atoms(atoms_list: list[Atoms], tag: int):
+    trimmed_atoms_list = []
+    for atoms in atoms_list:
+        atoms = atoms.copy()
+        del atoms[atoms.get_tags() == tag]
+        trimmed_atoms_list.append(atoms)
+    return trimmed_atoms_list
+
+
+def get_data(cfg):
+    ads_slab_list = read(cfg.data.ideal_systems, index=":1")
+    slab_list = trim_tagged_atoms(
+        atoms_list=ads_slab_list, tag=cfg.processing.adsorbate_tag
+    )
+    y_labels = [slab.get_potential_energy() for slab in ads_slab_list]
+
+    for slab in ads_slab_list:
+        slab.info["adsorbate_reference_energy"] = compute_adsorbate_reference_energy(
+            slab, cfg.processing.adsorbate_tag
+        )
     if not (
-        os.path.exists(cfg.data.raw_relaxed.slabs)
-        and os.path.exists(cfg.data.raw_relaxed.ads_slabs)
+        os.path.exists(cfg.data.relaxed_systems)
+        and os.path.exists(cfg.data.relaxed_slabs)
     ):
         index_fn = partial(indices_from_tags, tags=cfg.processing.constrained_tags)
         slab_list = constrain_atoms(atoms_list=slab_list, index_fn=index_fn)
         ads_slab_list = constrain_atoms(atoms_list=ads_slab_list, index_fn=index_fn)
-        predict_unit = load_predict_unit(
-            path=cfg.model.checkpoint,
-            device=cfg.trainer.device,
+        calc = mace_mp(
+            model=cfg.model.checkpoint,
+            default_dtype="float64",
+            device="cpu",
+            head="omat_pbe",
         )
-        calc = FAIRChemCalculator(predict_unit, task_name="oc20")
         relaxed_slabs = batch_relax(slab_list, calc)
         relaxed_ads_slabs = batch_relax(ads_slab_list, calc)
         write(
-            filename=cfg.data.raw_relaxed.slabs,
-            images=relaxed_slabs,
-        )
-        write(
-            filename=cfg.data.raw_relaxed.ads_slabs,
+            filename=cfg.data.relaxed_systems,
             images=relaxed_ads_slabs,
         )
-    else:
-        relaxed_slabs = read(filename=cfg.data.raw_relaxed.slabs, index=":")
-        relaxed_ads_slabs = read(filename=cfg.data.raw_relaxed.ads_slabs, index=":")
-
-    if not (os.path.exists(cfg.data.holdout) and os.path.exists(cfg.data.test)):
-        atomic_data_list = []
-        # process_fn = partial(GraphConvertor.convert, GraphConvertor())
-        process_fn = partial(
-            AtomicData.from_ase, task_name="oc20", r_edges=True, max_neigh=45
+        write(
+            filename=cfg.data.relaxed_slabs,
+            images=relaxed_slabs,
         )
-        for slab, ads_slab, y in zip(relaxed_slabs, relaxed_ads_slabs, y_labels):
-            slab_data = process_fn(slab)
-            ads_slab_data = process_fn(ads_slab)
-            atomic_reference = sum(
-                [
-                    ATOMIC_REFERENCE_ENERGIES[x]
-                    for x in ads_slab[
-                        ads_slab.get_tags() == cfg.processing.adsorbate_tag
-                    ].get_chemical_symbols()
-                ]
-            )
-            atomic_data_list.append([slab_data, ads_slab_data, y, atomic_reference])
-        holdout, test = train_test_split(
-            atomic_data_list, train_size=10, random_state=cfg.seed
-        )
-        torch.save(holdout, cfg.data.holdout)
-        torch.save(test, cfg.data.test)
     else:
-        holdout = torch.load(cfg.data.holdout, weights_only=False)
-        test = torch.load(cfg.data.test, weights_only=False)
-    collate_fn = partial(collate_atomic_pairs, collate_fn=atomicdata_list_to_batch)
-    # collate_fn = partial(collate_atomic_pairs, collate_fn=Batch.from_data_list)
-    dataloader = partial(
-        DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
-    )
-    loaders = DataLoaderSplits(
-        holdout=dataloader(holdout, shuffle=True),
-        test=dataloader(test, shuffle=False),
-    )
-    return loaders
+        relaxed_slabs = read(filename=cfg.data.relaxed_systems, index=":")
+        relaxed_ads_slabs = read(filename=cfg.data.relaxed_systems, index=":")
+    return relaxed_slabs, relaxed_ads_slabs, y_labels

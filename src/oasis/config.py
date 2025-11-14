@@ -3,16 +3,10 @@ from pydantic import BaseModel
 from pathlib import Path
 
 
-class DatasetConfig(BaseModel):
-    slabs: Path
-    ads_slabs: Path
-
-
 class DataConfig(BaseModel):
-    raw: DatasetConfig
-    raw_relaxed: DatasetConfig
-    holdout: Path
-    test: Path
+    ideal_systems: Path
+    relaxed_systems: Path
+    relaxed_slabs: Path
 
 
 class ProcessingConfig(BaseModel):
