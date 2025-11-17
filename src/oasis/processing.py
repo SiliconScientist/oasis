@@ -17,6 +17,8 @@ from orb_models.forcefield import pretrained
 from orb_models.forcefield.calculator import ORBCalculator
 from mattersim.forcefield import MatterSimCalculator
 from fairchem.core import FAIRChemCalculator
+from chgnet.model.model import CHGNet
+from chgnet.model.dynamics import CHGNetCalculator
 from fairchem.core.units.mlip_unit import load_predict_unit
 
 from oasis.config import Config
@@ -115,7 +117,7 @@ def get_relaxed_systems(cfg: Config):
         os.path.exists(cfg.data.relaxed_slabs)
         and os.path.exists(cfg.data.relaxed_systems)
     ):
-        ads_slab_list = read(cfg.data.ideal_systems, index=":1")
+        ads_slab_list = read(cfg.data.ideal_systems, index=":5")
         slab_list = trim_tagged_atoms(
             atoms_list=ads_slab_list, tag=cfg.processing.adsorbate_tag
         )
@@ -183,11 +185,16 @@ def build_calculators(cfg):
     predictor = load_predict_unit(uma_cfg.checkpoint, device=device)
     uma_calc = FAIRChemCalculator(predictor, task_name=uma_cfg.task)
 
+    # --- CHGNet ---
+    chgnet = CHGNet.load()
+    chgnet_calc = CHGNetCalculator(chgnet, use_device=device)
+
     calc_dict = {
         "mace": mace_calc,
         "orb": orb_calc,
         "mattersim": mattersim_calc,
         "uma": uma_calc,
+        "chgnet": chgnet_calc,
     }
 
     return calc_dict
