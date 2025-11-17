@@ -1,5 +1,6 @@
 import os
 import polars as pl
+from tqdm import tqdm
 from typing import Callable
 import torch
 from ase.visualize import view
@@ -70,7 +71,7 @@ def batch_relax(
     atoms_list: list[Atoms], calc: Calculator, fmax: float = 0.05, steps: int = 100
 ) -> list[Atoms]:
     relaxed_atoms_list = []
-    for atoms in atoms_list:
+    for atoms in tqdm(atoms_list, desc="Relaxing structures"):
         atoms.calc = calc
         opt = BFGS(atoms, logfile=None)
         opt.run(fmax=fmax, steps=steps)
