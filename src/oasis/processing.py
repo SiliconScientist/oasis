@@ -128,10 +128,10 @@ def get_relaxed_systems(cfg: Config):
         slab_list = constrain_atoms(atoms_list=slab_list, index_fn=index_fn)
         ads_slab_list = constrain_atoms(atoms_list=ads_slab_list, index_fn=index_fn)
         calc = mace_mp(
-            model=cfg.model.checkpoint,
-            default_dtype="float64",
-            device="cpu",
-            head="omat_pbe",
+            model=cfg.models.mace.checkpoint,
+            default_dtype=cfg.models.dtype,
+            device=cfg.models.device,
+            head=cfg.models.mace.head,
         )
         relaxed_slabs = batch_relax(slab_list, calc)
         relaxed_ads_slabs = batch_relax(ads_slab_list, calc)
@@ -150,25 +150,39 @@ def get_relaxed_systems(cfg: Config):
         return relaxed_slabs, relaxed_ads_slabs
 
 
-def get_data(cfg):
-    relaxed_slabs, relaxed_ads_slabs = get_relaxed_systems(cfg)
-    y_labels = [ads_slab.info["y_ads"] for ads_slab in relaxed_ads_slabs]
+def build_calculators(cfg):
+    device = cfg.models.device
+    dtype = cfg.models.dtype
+
+    # --- MACE ---
+    mace_cfg = cfg.models.mace
     mace_calc = mace_mp(
-        model="data/checkpoints/mace-mh-1.model",
-        default_dtype="float32",
-        device="cpu",
-        head="omat_pbe",
+        model=mace_cfg.checkpoint,
+        default_dtype=dtype,
+        device=device,
+        head=mace_cfg.head,
     )
+
+    # --- Orb ---
+    orb_cfg = cfg.models.orb
     orbff = pretrained.orb_v3_conservative_inf_omat(
-        device="cpu",
-        precision="float32-high",  # or "float32-highest" / "float64
+        device=device,
+        precision=orb_cfg.precision,
     )
-    orb_calc = ORBCalculator(orbff, device="cpu")
+    orb_calc = ORBCalculator(orbff, device=device)
+
+    # --- MatterSim ---
+    ms_cfg = cfg.models.mattersim
     mattersim_calc = MatterSimCalculator(
-        load_path="data/checkpoints/MatterSim-v1.0.0-5M.pth", device="cpu"
+        load_path=str(ms_cfg.checkpoint),
+        device=device,
     )
-    predictor = load_predict_unit("data/checkpoints/uma-s-1p1.pt", device="cpu")
-    uma_calc = FAIRChemCalculator(predictor, task_name="omat")
+
+    # --- UMA / FairChem ---
+    uma_cfg = cfg.models.uma
+    predictor = load_predict_unit(uma_cfg.checkpoint, device=device)
+    uma_calc = FAIRChemCalculator(predictor, task_name=uma_cfg.task)
+
     calc_dict = {
         "mace": mace_calc,
         "orb": orb_calc,
@@ -176,6 +190,13 @@ def get_data(cfg):
         "uma": uma_calc,
     }
 
+    return calc_dict
+
+
+def get_data(cfg):
+    relaxed_slabs, relaxed_ads_slabs = get_relaxed_systems(cfg)
+    y_labels = [ads_slab.info["y_ads"] for ads_slab in relaxed_ads_slabs]
+    calc_dict = build_calculators(cfg)
     pred_df = get_adsorption_predictions(relaxed_ads_slabs, relaxed_slabs, calc_dict)
     df = pl.DataFrame({"y_true": y_labels}).with_columns(pred_df)
     return df

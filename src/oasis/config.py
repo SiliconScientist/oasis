@@ -19,8 +19,31 @@ class DataLoaderConfig(BaseModel):
     num_workers: int
 
 
-class ModelConfig(BaseModel):
+class MaceConfig(BaseModel):
     checkpoint: Path
+    head: str
+
+
+class OrbConfig(BaseModel):
+    precision: str  # e.g. "float32-high"
+
+
+class MatterSimConfig(BaseModel):
+    checkpoint: Path
+
+
+class UmaConfig(BaseModel):
+    checkpoint: Path
+    task: str
+
+
+class ModelsConfig(BaseModel):
+    device: str
+    dtype: str
+    mace: MaceConfig
+    orb: OrbConfig
+    mattersim: MatterSimConfig
+    uma: UmaConfig
 
 
 class TrainerConfig(BaseModel):
@@ -32,7 +55,7 @@ class Config(BaseModel):
     processing: ProcessingConfig
     data: DataConfig
     dataloader: DataLoaderConfig
-    model: ModelConfig
+    models: ModelsConfig
     trainer: TrainerConfig
 
 
