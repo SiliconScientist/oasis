@@ -43,6 +43,7 @@ class ModelsConfig(BaseModel):
 
 class Config(BaseModel):
     seed: int
+    dev_run: bool
     processing: ProcessingConfig
     data: DataConfig
     models: ModelsConfig

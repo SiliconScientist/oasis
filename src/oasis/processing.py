@@ -117,7 +117,10 @@ def get_relaxed_systems(cfg: Config):
         os.path.exists(cfg.data.relaxed_slabs)
         and os.path.exists(cfg.data.relaxed_systems)
     ):
-        ads_slab_list = read(cfg.data.ideal_systems, index=":5")
+        if cfg.dev_run:
+            ads_slab_list = read(cfg.data.ideal_systems, index=":5")
+        else:
+            ads_slab_list = read(cfg.data.ideal_systems, index=":")
         slab_list = trim_tagged_atoms(
             atoms_list=ads_slab_list, tag=cfg.processing.adsorbate_tag
         )
