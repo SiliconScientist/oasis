@@ -1,4 +1,5 @@
 import os
+import polars as pl
 from typing import Callable
 import torch
 from ase.visualize import view
@@ -12,8 +13,10 @@ from ase.optimize import BFGS
 from functools import partial
 from dataclasses import dataclass
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
-from fairchem.core.datasets.atomic_data import AtomicData, atomicdata_list_to_batch
+from orb_models.forcefield import pretrained
+from orb_models.forcefield.calculator import ORBCalculator
+
+from oasis.config import Config
 
 
 ATOMIC_REFERENCE_ENERGIES = {
@@ -85,21 +88,39 @@ def trim_tagged_atoms(atoms_list: list[Atoms], tag: int):
     return trimmed_atoms_list
 
 
-def get_data(cfg):
-    ads_slab_list = read(cfg.data.ideal_systems, index=":1")
-    slab_list = trim_tagged_atoms(
-        atoms_list=ads_slab_list, tag=cfg.processing.adsorbate_tag
-    )
-    y_labels = [slab.get_potential_energy() for slab in ads_slab_list]
+def get_adsorption_predictions(
+    ads_slab_list: list[Atoms], slab_list: list[Atoms], calc_dict: dict[str, Calculator]
+):
+    mlip_predictions = {}
+    for name, calc in calc_dict.items():
+        predictions = []
+        for ads_slab, slab in zip(ads_slab_list, slab_list):
+            ads_slab.calc = calc
+            slab.calc = calc
+            slab_energy = slab.get_potential_energy()
+            ads_slab_energy = ads_slab.get_potential_energy()
+            adsorbate_reference_energy = ads_slab.info["adsorbate_reference_energy"]
+            prediction = ads_slab_energy - slab_energy - adsorbate_reference_energy
+            predictions.append(prediction)
+        mlip_predictions[name] = predictions
+    df = pl.DataFrame(mlip_predictions)
+    return df
 
-    for slab in ads_slab_list:
-        slab.info["adsorbate_reference_energy"] = compute_adsorbate_reference_energy(
-            slab, cfg.processing.adsorbate_tag
-        )
+
+def get_relaxed_systems(cfg: Config):
     if not (
-        os.path.exists(cfg.data.relaxed_systems)
-        and os.path.exists(cfg.data.relaxed_slabs)
+        os.path.exists(cfg.data.relaxed_slabs)
+        and os.path.exists(cfg.data.relaxed_systems)
     ):
+        ads_slab_list = read(cfg.data.ideal_systems, index=":1")
+        slab_list = trim_tagged_atoms(
+            atoms_list=ads_slab_list, tag=cfg.processing.adsorbate_tag
+        )
+        for slab in ads_slab_list:
+            slab.info["y_ads"] = slab.get_potential_energy()
+            slab.info["adsorbate_reference_energy"] = (
+                compute_adsorbate_reference_energy(slab, cfg.processing.adsorbate_tag)
+            )
         index_fn = partial(indices_from_tags, tags=cfg.processing.constrained_tags)
         slab_list = constrain_atoms(atoms_list=slab_list, index_fn=index_fn)
         ads_slab_list = constrain_atoms(atoms_list=ads_slab_list, index_fn=index_fn)
@@ -112,14 +133,36 @@ def get_data(cfg):
         relaxed_slabs = batch_relax(slab_list, calc)
         relaxed_ads_slabs = batch_relax(ads_slab_list, calc)
         write(
-            filename=cfg.data.relaxed_systems,
-            images=relaxed_ads_slabs,
-        )
-        write(
             filename=cfg.data.relaxed_slabs,
             images=relaxed_slabs,
         )
+        write(
+            filename=cfg.data.relaxed_systems,
+            images=relaxed_ads_slabs,
+        )
+        return relaxed_slabs, relaxed_ads_slabs
     else:
-        relaxed_slabs = read(filename=cfg.data.relaxed_systems, index=":")
+        relaxed_slabs = read(filename=cfg.data.relaxed_slabs, index=":")
         relaxed_ads_slabs = read(filename=cfg.data.relaxed_systems, index=":")
-    return relaxed_slabs, relaxed_ads_slabs, y_labels
+        return relaxed_slabs, relaxed_ads_slabs
+
+
+def get_data(cfg):
+    relaxed_slabs, relaxed_ads_slabs = get_relaxed_systems(cfg)
+    y_labels = [ads_slab.info["y_ads"] for ads_slab in relaxed_ads_slabs]
+    mace_calc = mace_mp(
+        model="data/checkpoints/mace-mh-1.model",
+        default_dtype="float32",
+        device="cpu",
+        head="omat_pbe",
+    )
+    orbff = pretrained.orb_v3_conservative_inf_omat(
+        device="cpu",
+        precision="float32-high",  # or "float32-highest" / "float64
+    )
+    orb_calc = ORBCalculator(orbff, device="cpu")
+    calc_dict = {"mace": mace_calc, "orb": orb_calc}
+
+    pred_df = get_adsorption_predictions(relaxed_ads_slabs, relaxed_slabs, calc_dict)
+    df = pl.DataFrame({"y_true": y_labels}).with_columns(pred_df)
+    return df

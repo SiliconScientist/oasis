@@ -4,7 +4,8 @@ from oasis.processing import get_data
 
 def main():
     cfg = get_config()
-    relaxed_slabs, relaxed_ads_slabs, y_labels = get_data(cfg)
+    df = get_data(cfg)
+    print(df)
 
 
 if __name__ == "__main__":
