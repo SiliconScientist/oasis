@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from torch.utils.data import DataLoader
 from orb_models.forcefield import pretrained
 from orb_models.forcefield.calculator import ORBCalculator
+from mattersim.forcefield import MatterSimCalculator
+from fairchem.core import FAIRChemCalculator
+from fairchem.core.units.mlip_unit import load_predict_unit
 
 from oasis.config import Config
 
@@ -161,7 +164,17 @@ def get_data(cfg):
         precision="float32-high",  # or "float32-highest" / "float64
     )
     orb_calc = ORBCalculator(orbff, device="cpu")
-    calc_dict = {"mace": mace_calc, "orb": orb_calc}
+    mattersim_calc = MatterSimCalculator(
+        load_path="data/checkpoints/MatterSim-v1.0.0-5M.pth", device="cpu"
+    )
+    predictor = load_predict_unit("data/checkpoints/uma-s-1p1.pt", device="cpu")
+    uma_calc = FAIRChemCalculator(predictor, task_name="omat")
+    calc_dict = {
+        "mace": mace_calc,
+        "orb": orb_calc,
+        "mattersim": mattersim_calc,
+        "uma": uma_calc,
+    }
 
     pred_df = get_adsorption_predictions(relaxed_ads_slabs, relaxed_slabs, calc_dict)
     df = pl.DataFrame({"y_true": y_labels}).with_columns(pred_df)
