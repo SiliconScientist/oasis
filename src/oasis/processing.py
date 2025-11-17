@@ -150,9 +150,14 @@ def get_relaxed_systems(cfg: Config):
         )
         return relaxed_slabs, relaxed_ads_slabs
     else:
-        relaxed_slabs = read(filename=cfg.data.relaxed_slabs, index=":")
-        relaxed_ads_slabs = read(filename=cfg.data.relaxed_systems, index=":")
-        return relaxed_slabs, relaxed_ads_slabs
+        if cfg.dev_run:
+            relaxed_slabs = read(filename=cfg.data.relaxed_slabs, index=":5")
+            relaxed_ads_slabs = read(filename=cfg.data.relaxed_systems, index=":5")
+            return relaxed_slabs, relaxed_ads_slabs
+        else:
+            relaxed_slabs = read(filename=cfg.data.relaxed_slabs, index=":")
+            relaxed_ads_slabs = read(filename=cfg.data.relaxed_systems, index=":")
+            return relaxed_slabs, relaxed_ads_slabs
 
 
 def build_calculators(cfg):
