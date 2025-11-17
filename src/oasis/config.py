@@ -14,11 +14,6 @@ class ProcessingConfig(BaseModel):
     adsorbate_tag: int
 
 
-class DataLoaderConfig(BaseModel):
-    batch_size: int
-    num_workers: int
-
-
 class MaceConfig(BaseModel):
     checkpoint: Path
     head: str
@@ -46,17 +41,11 @@ class ModelsConfig(BaseModel):
     uma: UmaConfig
 
 
-class TrainerConfig(BaseModel):
-    device: str
-
-
 class Config(BaseModel):
     seed: int
     processing: ProcessingConfig
     data: DataConfig
-    dataloader: DataLoaderConfig
     models: ModelsConfig
-    trainer: TrainerConfig
 
 
 def get_config():
