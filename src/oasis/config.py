@@ -3,50 +3,19 @@ from pydantic import BaseModel
 from pathlib import Path
 
 
-class DataConfig(BaseModel):
-    ideal_systems: Path
-    relaxed_systems: Path
-    relaxed_slabs: Path
-
-
 class ProcessingConfig(BaseModel):
-    constrained_tags: list[int]
-    adsorbate_tag: int
+    root: Path
 
 
-class MaceConfig(BaseModel):
-    checkpoint: Path
-    head: str
-
-
-class OrbConfig(BaseModel):
-    precision: str  # e.g. "float32-high"
-
-
-class MatterSimConfig(BaseModel):
-    checkpoint: Path
-
-
-class UmaConfig(BaseModel):
-    checkpoint: Path
-    task: str
-
-
-class ModelsConfig(BaseModel):
-    device: str
-    dtype: str
-    mace: MaceConfig
-    orb: OrbConfig
-    mattersim: MatterSimConfig
-    uma: UmaConfig
+class PlotConfig(BaseModel):
+    output_dir: Path
 
 
 class Config(BaseModel):
     seed: int
     dev_run: bool
     processing: ProcessingConfig
-    data: DataConfig
-    models: ModelsConfig
+    plot: PlotConfig
 
 
 def get_config():
