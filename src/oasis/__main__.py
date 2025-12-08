@@ -9,7 +9,6 @@ def main():
     plot_dir = cfg.plot.output_dir
     plot_path = parity_plot(df, output_path=plot_dir / "parity_plot.png")
     ensemble_path = ensemble_rmse_plot(df, output_path=plot_dir / "ensemble_rmse.png")
-    print(df)
     print(f"Saved parity plot to {plot_path}")
     print(f"Saved ensemble RMSE plot to {ensemble_path}")
 

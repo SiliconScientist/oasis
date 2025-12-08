@@ -21,7 +21,9 @@ def parity_plot(df: pd.DataFrame, output_path: str | Path) -> Path:
     """
     mlip_cols = _mlip_columns(df)
     if not mlip_cols:
-        raise ValueError("No MLIP prediction columns found (expected *_mlip_ads_eng_median).")
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
+        )
     if df.empty:
         raise ValueError("No data available to plot.")
 
@@ -60,7 +62,29 @@ def parity_plot(df: pd.DataFrame, output_path: str | Path) -> Path:
     return output_path
 
 
-def _sweep_model(model_factory, X: np.ndarray, y: np.ndarray, min_train: int, max_train: int, n_repeats: int, rng: np.random.Generator) -> pd.DataFrame:
+def _trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
+    """
+    Compute per-sample mean after dropping MLIP predictions outside 1 std from row mean.
+    """
+    row_means = X_corrected.mean(axis=1)
+    row_stds = X_corrected.std(axis=1)
+    # Broadcast masks; keep all if std is zero or mask would be empty.
+    mask = np.abs(X_corrected - row_means[:, None]) <= row_stds[:, None]
+    empty_mask = mask.sum(axis=1) == 0
+    if empty_mask.any():
+        mask[empty_mask] = True
+    return (X_corrected * mask).sum(axis=1) / mask.sum(axis=1)
+
+
+def _sweep_model(
+    model_factory,
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
     results = []
     max_train = min(max_train, len(X) - 1)
     for n_train in range(min_train, max_train + 1):
@@ -73,15 +97,24 @@ def _sweep_model(model_factory, X: np.ndarray, y: np.ndarray, min_train: int, ma
             model.fit(X[train_idx], y[train_idx])
             preds = model.predict(X[test_idx])
             rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
-        results.append({
-            "n_train": n_train,
-            "rmse_mean": float(np.mean(rmses)),
-            "rmse_std": float(np.std(rmses)),
-        })
+        results.append(
+            {
+                "n_train": n_train,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
     return pd.DataFrame(results)
 
 
-def _residual_sweep(X: np.ndarray, y: np.ndarray, min_hold: int, max_hold: int, n_repeats: int, rng: np.random.Generator) -> pd.DataFrame:
+def _residual_sweep(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_hold: int,
+    max_hold: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
     results = []
     max_hold = min(max_hold, len(X) - 1)
     for n_hold in range(min_hold, max_hold + 1):
@@ -102,15 +135,65 @@ def _residual_sweep(X: np.ndarray, y: np.ndarray, min_hold: int, max_hold: int, 
 
             rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
 
-        results.append({
-            "n_holdout": n_hold,
-            "rmse_mean": float(np.mean(rmses)),
-            "rmse_std": float(np.std(rmses)),
-        })
+        results.append(
+            {
+                "n_holdout": n_hold,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
     return pd.DataFrame(results)
 
 
-def _linearization_sweep(X: np.ndarray, y: np.ndarray, min_hold: int, max_hold: int, n_repeats: int, rng: np.random.Generator) -> pd.DataFrame:
+def _residual_sweep_trimmed(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_hold: int,
+    max_hold: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    """
+    Residual correction with per-sample outlier MLIP removal before averaging.
+    """
+    results = []
+    max_hold = min(max_hold, len(X) - 1)
+    for n_hold in range(min_hold, max_hold + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            hold_idx = rng.choice(idx, size=n_hold, replace=False)
+            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+
+            X_hold = X[hold_idx]
+            y_hold = y[hold_idx]
+
+            residuals = y_hold[:, None] - X_hold
+            mean_residuals = residuals.mean(axis=0)
+
+            X_corrected = X[keep_idx] + mean_residuals
+            preds = _trimmed_mean_predictions(X_corrected)
+
+            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+
+        results.append(
+            {
+                "n_holdout": n_hold,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
+def _linearization_sweep(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_hold: int,
+    max_hold: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
     results = []
     max_hold = min(max_hold, len(X) - 1)
     for n_hold in range(min_hold, max_hold + 1):
@@ -140,19 +223,21 @@ def _linearization_sweep(X: np.ndarray, y: np.ndarray, min_hold: int, max_hold: 
 
             rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
 
-        results.append({
-            "n_holdout": n_hold,
-            "rmse_mean": float(np.mean(rmses)),
-            "rmse_std": float(np.std(rmses)),
-        })
+        results.append(
+            {
+                "n_holdout": n_hold,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
     return pd.DataFrame(results)
 
 
 def ensemble_rmse_plot(
     df: pd.DataFrame,
     output_path: str | Path,
-    min_train: int = 10,
-    max_train: int = 20,
+    min_train: int = 1,
+    max_train: int = 5,
     n_repeats: int = 50,
 ) -> Path:
     """
@@ -162,7 +247,9 @@ def ensemble_rmse_plot(
     target_col = "reference_ads_eng"
 
     if not feature_cols:
-        raise ValueError("No MLIP prediction columns found (expected *_mlip_ads_eng_median).")
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
+        )
     if len(df) <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
 
@@ -174,15 +261,43 @@ def ensemble_rmse_plot(
     rng_elastic = np.random.default_rng(321)
     rng_resid = np.random.default_rng(999)
     rng_linear = np.random.default_rng(2024)
+    rng_resid_trimmed = np.random.default_rng(77)
 
-    ridge_df = _sweep_model(lambda: Ridge(alpha=1.0), X, y, min_train, max_train, n_repeats, rng_ridge)
-    lasso_df = _sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, min_train, max_train, n_repeats, rng_lasso)
-    elastic_df = _sweep_model(lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000), X, y, min_train, max_train, n_repeats, rng_elastic)
+    ridge_df = _sweep_model(
+        lambda: Ridge(alpha=1.0), X, y, min_train, max_train, n_repeats, rng_ridge
+    )
+    lasso_df = _sweep_model(
+        lambda: Lasso(alpha=0.1, max_iter=10000),
+        X,
+        y,
+        min_train,
+        max_train,
+        n_repeats,
+        rng_lasso,
+    )
+    elastic_df = _sweep_model(
+        lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+        X,
+        y,
+        min_train,
+        max_train,
+        n_repeats,
+        rng_elastic,
+    )
     resid_df = _residual_sweep(X, y, min_train, max_train, n_repeats, rng_resid)
+    resid_trimmed_df = _residual_sweep_trimmed(
+        X, y, min_train, max_train, n_repeats, rng_resid_trimmed
+    )
     linear_df = _linearization_sweep(X, y, min_train, max_train, n_repeats, rng_linear)
 
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(ridge_df["n_train"], ridge_df["rmse_mean"], marker="o", color="tab:blue", label="Ridge mean")
+    ax.plot(
+        ridge_df["n_train"],
+        ridge_df["rmse_mean"],
+        marker="o",
+        color="tab:blue",
+        label="Ridge mean",
+    )
     ax.fill_between(
         ridge_df["n_train"],
         ridge_df["rmse_mean"] - ridge_df["rmse_std"],
@@ -191,7 +306,13 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Ridge +/- 1sd",
     )
-    ax.plot(lasso_df["n_train"], lasso_df["rmse_mean"], marker="s", color="tab:orange", label="Lasso mean")
+    ax.plot(
+        lasso_df["n_train"],
+        lasso_df["rmse_mean"],
+        marker="s",
+        color="tab:orange",
+        label="Lasso mean",
+    )
     ax.fill_between(
         lasso_df["n_train"],
         lasso_df["rmse_mean"] - lasso_df["rmse_std"],
@@ -200,7 +321,13 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Lasso +/- 1sd",
     )
-    ax.plot(elastic_df["n_train"], elastic_df["rmse_mean"], marker="D", color="tab:purple", label="Elastic Net mean")
+    ax.plot(
+        elastic_df["n_train"],
+        elastic_df["rmse_mean"],
+        marker="D",
+        color="tab:purple",
+        label="Elastic Net mean",
+    )
     ax.fill_between(
         elastic_df["n_train"],
         elastic_df["rmse_mean"] - elastic_df["rmse_std"],
@@ -209,7 +336,13 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Elastic Net +/- 1sd",
     )
-    ax.plot(resid_df["n_holdout"], resid_df["rmse_mean"], marker="^", color="tab:green", label="Residual mean")
+    ax.plot(
+        resid_df["n_holdout"],
+        resid_df["rmse_mean"],
+        marker="^",
+        color="tab:green",
+        label="Residual mean",
+    )
     ax.fill_between(
         resid_df["n_holdout"],
         resid_df["rmse_mean"] - resid_df["rmse_std"],
@@ -218,7 +351,28 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Residual +/- 1sd",
     )
-    ax.plot(linear_df["n_holdout"], linear_df["rmse_mean"], marker="v", color="tab:red", label="Linearization mean")
+    ax.plot(
+        resid_trimmed_df["n_holdout"],
+        resid_trimmed_df["rmse_mean"],
+        marker="P",
+        color="tab:brown",
+        label="Residual (trimmed) mean",
+    )
+    ax.fill_between(
+        resid_trimmed_df["n_holdout"],
+        resid_trimmed_df["rmse_mean"] - resid_trimmed_df["rmse_std"],
+        resid_trimmed_df["rmse_mean"] + resid_trimmed_df["rmse_std"],
+        color="tab:brown",
+        alpha=0.2,
+        label="Residual (trimmed) +/- 1sd",
+    )
+    ax.plot(
+        linear_df["n_holdout"],
+        linear_df["rmse_mean"],
+        marker="v",
+        color="tab:red",
+        label="Linearization mean",
+    )
     ax.fill_between(
         linear_df["n_holdout"],
         linear_df["rmse_mean"] - linear_df["rmse_std"],
