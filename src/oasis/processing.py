@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+import pandas as pd
 import polars as pl
+import torch
 
 from oasis.config import Config
+from oasis import gnn
 
 
 def _collect_parquet_files(root: Path) -> list[Path]:
@@ -122,3 +125,31 @@ def get_data(cfg: Config) -> pl.DataFrame:
     wide_df = _build_wide(reference_df, wide_parts, mlip_names)
     wide_df.write_parquet(file=cfg.processing.root / "combined_mlips.parquet")
     return wide_df
+
+
+def gnn_split_metrics(cfg: Config, train_fracs: Sequence[float]) -> pd.DataFrame:
+    """
+    Train/evaluate the GNN for requested train/test splits using default hyperparameters.
+    """
+    xyz_path = cfg.processing.root / "last_frames.xyz"
+    parquet_path = cfg.processing.root / "combined_mlips.parquet"
+
+    if not xyz_path.exists():
+        raise FileNotFoundError(f"GNN XYZ file not found at {xyz_path}")
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"GNN labels parquet not found at {parquet_path}")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    epochs = 30 if cfg.dev_run else 150
+    log_interval = 2 if cfg.dev_run else None
+
+    return gnn.evaluate_splits_from_files(
+        xyz_path=str(xyz_path),
+        parquet_path=str(parquet_path),
+        train_fracs=train_fracs,
+        device=device,
+        seed=cfg.seed,
+        epochs=epochs,
+        log_interval=log_interval,
+    )

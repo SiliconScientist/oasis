@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +10,7 @@ import polars as pl
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.metrics import mean_squared_error
+from oasis.config import Config
 
 
 def _mlip_columns(df: pl.DataFrame) -> list[str]:
@@ -241,13 +243,19 @@ def _linearization_sweep(
 def ensemble_rmse_plot(
     df: pl.DataFrame,
     output_path: str | Path,
-    min_train: int = 5,
-    max_train: int = 10,
+    min_train: int = 560,
+    max_train: int = 665,
     n_repeats: int = 50,
     fontsize: int = 8,
+    cfg: Config | None = None,
+    gnn_train_fracs: Sequence[float] | None = None,
 ) -> Path:
     """
     Reproduce the ensemble RMSE sweeps from the notebook's final cell and plot the overlay.
+
+    If ``gnn_train_fracs`` are provided, the GNN is trained/evaluated on those train
+    fractions and the resulting test RMSE values are plotted at the corresponding
+    train-set sizes on the same x-axis.
     """
     feature_cols = _mlip_columns(df)
     target_col = "reference_ads_eng"
@@ -311,6 +319,13 @@ def ensemble_rmse_plot(
         X, y, min_train, max_train, n_repeats, rng_resid_trimmed
     )
     linear_df = _linearization_sweep(X, y, min_train, max_train, n_repeats, rng_linear)
+    gnn_results = None
+    if gnn_train_fracs:
+        if cfg is None:
+            raise ValueError("Config is required to run GNN evaluations.")
+        from oasis.processing import gnn_split_metrics
+
+        gnn_results = gnn_split_metrics(cfg, gnn_train_fracs)
 
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(
@@ -418,6 +433,27 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Linearization +/- 1sd",
     )
+    if gnn_results is not None:
+        gnn_pd = (
+            gnn_results.to_pandas()
+            if isinstance(gnn_results, pl.DataFrame)
+            else pd.DataFrame(gnn_results)
+        )
+        if not gnn_pd.empty:
+            missing_cols = {"n_train", "test_rmse"} - set(gnn_pd.columns)
+            if missing_cols:
+                raise ValueError(
+                    f"GNN results are missing required columns: {', '.join(sorted(missing_cols))}"
+                )
+            ax.scatter(
+                gnn_pd["n_train"],
+                gnn_pd["test_rmse"],
+                marker="*",
+                color="black",
+                s=120,
+                label="GNN (test RMSE)",
+                zorder=5,
+            )
     ax.set_xlabel("Training / holdout size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Ensemble RMSE vs sample size", fontsize=fontsize)
