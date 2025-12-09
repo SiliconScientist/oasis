@@ -5,15 +5,17 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import polars as pl
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
+from sklearn.kernel_ridge import KernelRidge
 from sklearn.metrics import mean_squared_error
 
 
-def _mlip_columns(df: pd.DataFrame) -> list[str]:
+def _mlip_columns(df: pl.DataFrame) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
 
-def parity_plot(df: pd.DataFrame, output_path: str | Path) -> Path:
+def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
 
@@ -24,16 +26,18 @@ def parity_plot(df: pd.DataFrame, output_path: str | Path) -> Path:
         raise ValueError(
             "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
         )
-    if df.empty:
+    if df.height == 0:
         raise ValueError("No data available to plot.")
+
+    ref = df["reference_ads_eng"].to_numpy()
 
     fig, ax = plt.subplots(figsize=(7, 7))
     cmap = plt.cm.get_cmap("tab10", len(mlip_cols))
 
     for idx, col in enumerate(mlip_cols):
         ax.scatter(
-            df["reference_ads_eng"],
-            df[col],
+            ref,
+            df[col].to_numpy(),
             s=35,
             alpha=0.85,
             label=col.removesuffix("_mlip_ads_eng_median"),
@@ -42,8 +46,9 @@ def parity_plot(df: pd.DataFrame, output_path: str | Path) -> Path:
             linewidth=0.5,
         )
 
-    min_val = min(df["reference_ads_eng"].min(), df[mlip_cols].min().min())
-    max_val = max(df["reference_ads_eng"].max(), df[mlip_cols].max().max())
+    mlip_vals = np.concatenate([df[c].to_numpy() for c in mlip_cols])
+    min_val = min(ref.min(), mlip_vals.min())
+    max_val = max(ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
 
     ax.set_xlabel("Reference adsorption energy (eV)")
@@ -234,11 +239,12 @@ def _linearization_sweep(
 
 
 def ensemble_rmse_plot(
-    df: pd.DataFrame,
+    df: pl.DataFrame,
     output_path: str | Path,
-    min_train: int = 1,
-    max_train: int = 5,
+    min_train: int = 5,
+    max_train: int = 10,
     n_repeats: int = 50,
+    fontsize: int = 8,
 ) -> Path:
     """
     Reproduce the ensemble RMSE sweeps from the notebook's final cell and plot the overlay.
@@ -250,21 +256,37 @@ def ensemble_rmse_plot(
         raise ValueError(
             "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
         )
-    if len(df) <= 5:
+    if df.height <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
 
-    X = df[feature_cols].to_numpy()
+    X = df.select(feature_cols).to_numpy()
     y = df[target_col].to_numpy()
 
-    rng_ridge = np.random.default_rng(42)
+    rng_ridge = np.random.default_rng(41)
     rng_lasso = np.random.default_rng(123)
     rng_elastic = np.random.default_rng(321)
+    rng_kernel_ridge = np.random.default_rng(2718)
     rng_resid = np.random.default_rng(999)
     rng_linear = np.random.default_rng(2024)
     rng_resid_trimmed = np.random.default_rng(77)
 
     ridge_df = _sweep_model(
-        lambda: Ridge(alpha=1.0), X, y, min_train, max_train, n_repeats, rng_ridge
+        lambda: Ridge(alpha=0.1),
+        X,
+        y,
+        min_train,
+        max_train,
+        n_repeats,
+        rng_ridge,
+    )
+    kernel_ridge_df = _sweep_model(
+        lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+        X,
+        y,
+        min_train,
+        max_train,
+        n_repeats,
+        rng_kernel_ridge,
     )
     lasso_df = _sweep_model(
         lambda: Lasso(alpha=0.1, max_iter=10000),
@@ -296,7 +318,7 @@ def ensemble_rmse_plot(
         ridge_df["rmse_mean"],
         marker="o",
         color="tab:blue",
-        label="Ridge mean",
+        label="Ridge (alpha=0.1) mean",
     )
     ax.fill_between(
         ridge_df["n_train"],
@@ -304,7 +326,22 @@ def ensemble_rmse_plot(
         ridge_df["rmse_mean"] + ridge_df["rmse_std"],
         color="tab:blue",
         alpha=0.2,
-        label="Ridge +/- 1sd",
+        label="Ridge (alpha=0.1) +/- 1sd",
+    )
+    ax.plot(
+        kernel_ridge_df["n_train"],
+        kernel_ridge_df["rmse_mean"],
+        marker="X",
+        color="tab:cyan",
+        label="Kernel Ridge mean",
+    )
+    ax.fill_between(
+        kernel_ridge_df["n_train"],
+        kernel_ridge_df["rmse_mean"] - kernel_ridge_df["rmse_std"],
+        kernel_ridge_df["rmse_mean"] + kernel_ridge_df["rmse_std"],
+        color="tab:cyan",
+        alpha=0.2,
+        label="Kernel Ridge +/- 1sd",
     )
     ax.plot(
         lasso_df["n_train"],
@@ -381,11 +418,12 @@ def ensemble_rmse_plot(
         alpha=0.2,
         label="Linearization +/- 1sd",
     )
-    ax.set_xlabel("Training / holdout size")
-    ax.set_ylabel("RMSE (eV)")
-    ax.set_title("Ensemble RMSE vs sample size")
+    ax.set_xlabel("Training / holdout size", fontsize=fontsize)
+    ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
+    ax.set_title("Ensemble RMSE vs sample size", fontsize=fontsize)
+    ax.tick_params(axis="both", labelsize=fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend()
+    ax.legend(fontsize=fontsize)
     plt.tight_layout()
 
     output_path = Path(output_path)
