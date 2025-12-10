@@ -9,6 +9,8 @@ class ProcessingConfig(BaseModel):
 
 class PlotConfig(BaseModel):
     output_dir: Path
+    min_train: int = 5
+    max_train: int = 10
     use_ridge: bool = True
     use_ridge_trimmed: bool = True
     use_kernel_ridge: bool = True

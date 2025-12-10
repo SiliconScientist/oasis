@@ -295,8 +295,8 @@ def _linearization_sweep(
 def learning_curve_plot(
     df: pl.DataFrame,
     output_path: str | Path,
-    min_train: int = 560,
-    max_train: int = 665,
+    min_train: int | None = None,
+    max_train: int | None = None,
     n_repeats: int = 50,
     fontsize: int = 8,
     cfg: Config | None = None,
@@ -321,6 +321,10 @@ def learning_curve_plot(
     use_residual_trimmed = cfg.plot.use_residual_trimmed if cfg else True
     use_linearization = cfg.plot.use_linearization if cfg else True
     use_gnn = cfg.plot.use_gnn if cfg else True
+    cfg_min_train = cfg.plot.min_train if cfg else 5
+    cfg_max_train = cfg.plot.max_train if cfg else 10
+    min_train_val = min_train if min_train is not None else cfg_min_train
+    max_train_val = max_train if max_train is not None else cfg_max_train
 
     if not feature_cols:
         raise ValueError(
@@ -346,8 +350,8 @@ def learning_curve_plot(
             lambda: Ridge(alpha=0.1),
             X,
             y,
-            min_train,
-            max_train,
+            min_train_val,
+            max_train_val,
             n_repeats,
             rng_ridge,
         )
@@ -359,8 +363,8 @@ def learning_curve_plot(
             lambda: KernelRidge(alpha=1.0, kernel="rbf"),
             X,
             y,
-            min_train,
-            max_train,
+            min_train_val,
+            max_train_val,
             n_repeats,
             rng_kernel_ridge,
         )
@@ -372,8 +376,8 @@ def learning_curve_plot(
             lambda: Ridge(alpha=0.1),
             X,
             y,
-            min_train,
-            max_train,
+            min_train_val,
+            max_train_val,
             n_repeats,
             rng_ridge_trimmed,
             z_thresh=1.0,
@@ -386,8 +390,8 @@ def learning_curve_plot(
             lambda: Lasso(alpha=0.1, max_iter=10000),
             X,
             y,
-            min_train,
-            max_train,
+            min_train_val,
+            max_train_val,
             n_repeats,
             rng_lasso,
         )
@@ -399,8 +403,8 @@ def learning_curve_plot(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
-            min_train,
-            max_train,
+            min_train_val,
+            max_train_val,
             n_repeats,
             rng_elastic,
         )
@@ -408,19 +412,19 @@ def learning_curve_plot(
         else None
     )
     resid_df = (
-        _residual_sweep(X, y, min_train, max_train, n_repeats, rng_resid)
+        _residual_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_resid)
         if use_residual
         else None
     )
     resid_trimmed_df = (
         _residual_sweep_trimmed(
-            X, y, min_train, max_train, n_repeats, rng_resid_trimmed
+            X, y, min_train_val, max_train_val, n_repeats, rng_resid_trimmed
         )
         if use_residual_trimmed
         else None
     )
     linear_df = (
-        _linearization_sweep(X, y, min_train, max_train, n_repeats, rng_linear)
+        _linearization_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_linear)
         if use_linearization
         else None
     )
