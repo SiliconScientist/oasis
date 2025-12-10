@@ -240,7 +240,7 @@ def _linearization_sweep(
     return pd.DataFrame(results)
 
 
-def ensemble_rmse_plot(
+def learning_curve_plot(
     df: pl.DataFrame,
     output_path: str | Path,
     min_train: int = 560,
@@ -456,7 +456,7 @@ def ensemble_rmse_plot(
             )
     ax.set_xlabel("Training / holdout size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
-    ax.set_title("Ensemble RMSE vs sample size", fontsize=fontsize)
+    ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
     ax.legend(fontsize=fontsize)
