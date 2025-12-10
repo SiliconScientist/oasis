@@ -10,6 +10,7 @@ class ProcessingConfig(BaseModel):
 class PlotConfig(BaseModel):
     output_dir: Path
     use_ridge: bool = True
+    use_ridge_trimmed: bool = True
     use_kernel_ridge: bool = True
     use_lasso: bool = True
     use_elastic_net: bool = True

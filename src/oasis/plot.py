@@ -102,8 +102,60 @@ def _sweep_model(
             test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
             model = model_factory()
             model.fit(X[train_idx], y[train_idx])
-            preds = model.predict(X[test_idx])
+            X_test = X[test_idx]
+            preds = model.predict(X_test)
             rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+        results.append(
+            {
+                "n_train": n_train,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
+def _sweep_model_trimmed(
+    model_factory,
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    """
+    Fit the model, drop test samples with large contribution z-scores, and refit.
+    """
+    results = []
+    max_train = min(max_train, len(X) - 1)
+    for n_train in range(min_train, max_train + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            train_idx = rng.choice(idx, size=n_train, replace=False)
+            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
+            model = model_factory()
+            model.fit(X[train_idx], y[train_idx])
+
+            X_test = X[test_idx]
+            preds = model.predict(X_test)
+
+            # Compute contribution z-scores per sample
+            w = model.coef_
+            contrib = X_test * w
+            mu = contrib.mean()
+            sigma = contrib.std() if contrib.std() > 0 else 1.0
+            z = (contrib - mu) / sigma
+            keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+            if keep_mask.sum() == 0:
+                keep_mask = np.ones(len(X_test), dtype=bool)
+
+            preds_eval = preds[keep_mask]
+            y_eval = y[test_idx][keep_mask]
+            rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
+
         results.append(
             {
                 "n_train": n_train,
@@ -261,6 +313,7 @@ def learning_curve_plot(
     target_col = "reference_ads_eng"
 
     use_ridge = cfg.plot.use_ridge if cfg else True
+    use_ridge_trimmed = cfg.plot.use_ridge_trimmed if cfg else True
     use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
     use_lasso = cfg.plot.use_lasso if cfg else True
     use_elastic = cfg.plot.use_elastic_net if cfg else True
@@ -280,6 +333,7 @@ def learning_curve_plot(
     y = df[target_col].to_numpy()
 
     rng_ridge = np.random.default_rng(41)
+    rng_ridge_trimmed = np.random.default_rng(42)
     rng_lasso = np.random.default_rng(123)
     rng_elastic = np.random.default_rng(321)
     rng_kernel_ridge = np.random.default_rng(2718)
@@ -311,6 +365,20 @@ def learning_curve_plot(
             rng_kernel_ridge,
         )
         if use_kernel_ridge
+        else None
+    )
+    ridge_trimmed_df = (
+        _sweep_model_trimmed(
+            lambda: Ridge(alpha=0.1),
+            X,
+            y,
+            min_train,
+            max_train,
+            n_repeats,
+            rng_ridge_trimmed,
+            z_thresh=1.0,
+        )
+        if use_ridge_trimmed
         else None
     )
     lasso_df = (
@@ -345,7 +413,9 @@ def learning_curve_plot(
         else None
     )
     resid_trimmed_df = (
-        _residual_sweep_trimmed(X, y, min_train, max_train, n_repeats, rng_resid_trimmed)
+        _residual_sweep_trimmed(
+            X, y, min_train, max_train, n_repeats, rng_resid_trimmed
+        )
         if use_residual_trimmed
         else None
     )
@@ -474,6 +544,22 @@ def learning_curve_plot(
             color="tab:red",
             alpha=0.2,
             label="Linearization +/- 1sd",
+        )
+    if ridge_trimmed_df is not None:
+        ax.plot(
+            ridge_trimmed_df["n_train"],
+            ridge_trimmed_df["rmse_mean"],
+            marker="h",
+            color="tab:olive",
+            label="Ridge (trim z-score) mean",
+        )
+        ax.fill_between(
+            ridge_trimmed_df["n_train"],
+            ridge_trimmed_df["rmse_mean"] - ridge_trimmed_df["rmse_std"],
+            ridge_trimmed_df["rmse_mean"] + ridge_trimmed_df["rmse_std"],
+            color="tab:olive",
+            alpha=0.2,
+            label="Ridge (trim z-score) +/- 1sd",
         )
     if gnn_results is not None:
         gnn_pd = (
