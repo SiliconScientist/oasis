@@ -315,7 +315,9 @@ def learning_curve_plot(
     use_ridge = cfg.plot.use_ridge if cfg else True
     use_ridge_trimmed = cfg.plot.use_ridge_trimmed if cfg else True
     use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
+    use_lasso_trimmed = cfg.plot.use_lasso_trimmed if cfg else False
     use_lasso = cfg.plot.use_lasso if cfg else True
+    use_elastic_trimmed = cfg.plot.use_elastic_net_trimmed if cfg else False
     use_elastic = cfg.plot.use_elastic_net if cfg else True
     use_residual = cfg.plot.use_residual if cfg else True
     use_residual_trimmed = cfg.plot.use_residual_trimmed if cfg else True
@@ -339,7 +341,9 @@ def learning_curve_plot(
     rng_ridge = np.random.default_rng(41)
     rng_ridge_trimmed = np.random.default_rng(42)
     rng_lasso = np.random.default_rng(123)
+    rng_lasso_trimmed = np.random.default_rng(124)
     rng_elastic = np.random.default_rng(321)
+    rng_elastic_trimmed = np.random.default_rng(322)
     rng_kernel_ridge = np.random.default_rng(2718)
     rng_resid = np.random.default_rng(999)
     rng_linear = np.random.default_rng(2024)
@@ -398,6 +402,20 @@ def learning_curve_plot(
         if use_lasso
         else None
     )
+    lasso_trimmed_df = (
+        _sweep_model_trimmed(
+            lambda: Lasso(alpha=0.1, max_iter=10000),
+            X,
+            y,
+            min_train_val,
+            max_train_val,
+            n_repeats,
+            rng_lasso_trimmed,
+            z_thresh=1.0,
+        )
+        if use_lasso_trimmed
+        else None
+    )
     elastic_df = (
         _sweep_model(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
@@ -409,6 +427,20 @@ def learning_curve_plot(
             rng_elastic,
         )
         if use_elastic
+        else None
+    )
+    elastic_trimmed_df = (
+        _sweep_model_trimmed(
+            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+            X,
+            y,
+            min_train_val,
+            max_train_val,
+            n_repeats,
+            rng_elastic_trimmed,
+            z_thresh=1.0,
+        )
+        if use_elastic_trimmed
         else None
     )
     resid_df = (
@@ -485,6 +517,22 @@ def learning_curve_plot(
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
+    if lasso_trimmed_df is not None:
+        ax.plot(
+            lasso_trimmed_df["n_train"],
+            lasso_trimmed_df["rmse_mean"],
+            marker="+",
+            color="tab:orange",
+            label="Lasso (trim residual) mean",
+        )
+        ax.fill_between(
+            lasso_trimmed_df["n_train"],
+            lasso_trimmed_df["rmse_mean"] - lasso_trimmed_df["rmse_std"],
+            lasso_trimmed_df["rmse_mean"] + lasso_trimmed_df["rmse_std"],
+            color="tab:orange",
+            alpha=0.2,
+            label="Lasso (trim residual) +/- 1sd",
+        )
     if elastic_df is not None:
         ax.plot(
             elastic_df["n_train"],
@@ -500,6 +548,22 @@ def learning_curve_plot(
             color="tab:purple",
             alpha=0.2,
             label="Elastic Net +/- 1sd",
+        )
+    if elastic_trimmed_df is not None:
+        ax.plot(
+            elastic_trimmed_df["n_train"],
+            elastic_trimmed_df["rmse_mean"],
+            marker="x",
+            color="tab:purple",
+            label="Elastic Net (trim residual) mean",
+        )
+        ax.fill_between(
+            elastic_trimmed_df["n_train"],
+            elastic_trimmed_df["rmse_mean"] - elastic_trimmed_df["rmse_std"],
+            elastic_trimmed_df["rmse_mean"] + elastic_trimmed_df["rmse_std"],
+            color="tab:purple",
+            alpha=0.2,
+            label="Elastic Net (trim residual) +/- 1sd",
         )
     if resid_df is not None:
         ax.plot(
