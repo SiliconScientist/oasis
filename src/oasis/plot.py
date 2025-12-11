@@ -362,17 +362,13 @@ def learning_curve_plot(
     feature_cols = _mlip_columns(df)
     target_col = "reference_ads_eng"
 
+    use_trim = cfg.plot.trim if cfg else True
     use_ridge = cfg.plot.use_ridge if cfg else True
-    use_ridge_trimmed = cfg.plot.use_ridge_trimmed if cfg else True
     use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
-    use_lasso_trimmed = cfg.plot.use_lasso_trimmed if cfg else False
     use_lasso = cfg.plot.use_lasso if cfg else True
-    use_elastic_trimmed = cfg.plot.use_elastic_net_trimmed if cfg else False
     use_elastic = cfg.plot.use_elastic_net if cfg else True
     use_residual = cfg.plot.use_residual if cfg else True
-    use_residual_trimmed = cfg.plot.use_residual_trimmed if cfg else True
     use_linearization = cfg.plot.use_linearization if cfg else True
-    use_linearization_trimmed = cfg.plot.use_linearization_trimmed if cfg else True
     use_gnn = cfg.plot.use_gnn if cfg else True
     cfg_min_train = cfg.plot.min_train if cfg else 5
     cfg_max_train = cfg.plot.max_train if cfg else 10
@@ -438,7 +434,7 @@ def learning_curve_plot(
             rng_ridge_trimmed,
             z_thresh=1.0,
         )
-        if use_ridge_trimmed
+        if use_trim and use_ridge
         else None
     )
     lasso_df = (
@@ -465,7 +461,7 @@ def learning_curve_plot(
             rng_lasso_trimmed,
             z_thresh=1.0,
         )
-        if use_lasso_trimmed
+        if use_trim and use_lasso
         else None
     )
     elastic_df = (
@@ -492,7 +488,7 @@ def learning_curve_plot(
             rng_elastic_trimmed,
             z_thresh=1.0,
         )
-        if use_elastic_trimmed
+        if use_trim and use_elastic
         else None
     )
     resid_df = (
@@ -504,7 +500,7 @@ def learning_curve_plot(
         _residual_sweep_trimmed(
             X, y, min_train_val, max_train_val, n_repeats, rng_resid_trimmed
         )
-        if use_residual_trimmed
+        if use_trim and use_residual
         else None
     )
     linear_df = (
@@ -516,7 +512,7 @@ def learning_curve_plot(
         _linearization_sweep_trimmed(
             X, y, min_train_val, max_train_val, n_repeats, rng_linear_trimmed
         )
-        if use_linearization_trimmed
+        if use_trim and use_linearization
         else None
     )
     gnn_results = None
