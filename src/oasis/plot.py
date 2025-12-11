@@ -292,6 +292,56 @@ def _linearization_sweep(
     return pd.DataFrame(results)
 
 
+def _linearization_sweep_trimmed(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_hold: int,
+    max_hold: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    """
+    Linearize against trimmed holdout means, then trim ensemble averaging.
+    """
+    results = []
+    max_hold = min(max_hold, len(X) - 1)
+    for n_hold in range(min_hold, max_hold + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            hold_idx = rng.choice(idx, size=n_hold, replace=False)
+            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+
+            X_hold = X[hold_idx]
+            y_hold = y[hold_idx]
+
+            Xh = np.asarray(X_hold)
+            yh = np.asarray(y_hold).reshape(-1, 1)
+
+            if Xh.ndim == 1:
+                mu_h = Xh.reshape(-1, 1)
+            else:
+                mu_h = _trimmed_mean_predictions(Xh).reshape(-1, 1)
+
+            lr = LinearRegression().fit(mu_h, yh)
+            a = float(lr.coef_.ravel()[0])
+            b = float(lr.intercept_.ravel()[0])
+
+            X_linearized = a * X + b
+            preds = _trimmed_mean_predictions(X_linearized[keep_idx])
+
+            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+
+        results.append(
+            {
+                "n_holdout": n_hold,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
 def learning_curve_plot(
     df: pl.DataFrame,
     output_path: str | Path,
@@ -322,6 +372,7 @@ def learning_curve_plot(
     use_residual = cfg.plot.use_residual if cfg else True
     use_residual_trimmed = cfg.plot.use_residual_trimmed if cfg else True
     use_linearization = cfg.plot.use_linearization if cfg else True
+    use_linearization_trimmed = cfg.plot.use_linearization_trimmed if cfg else True
     use_gnn = cfg.plot.use_gnn if cfg else True
     cfg_min_train = cfg.plot.min_train if cfg else 5
     cfg_max_train = cfg.plot.max_train if cfg else 10
@@ -348,6 +399,7 @@ def learning_curve_plot(
     rng_resid = np.random.default_rng(999)
     rng_linear = np.random.default_rng(2024)
     rng_resid_trimmed = np.random.default_rng(77)
+    rng_linear_trimmed = np.random.default_rng(2025)
 
     ridge_df = (
         _sweep_model(
@@ -458,6 +510,13 @@ def learning_curve_plot(
     linear_df = (
         _linearization_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_linear)
         if use_linearization
+        else None
+    )
+    linear_trimmed_df = (
+        _linearization_sweep_trimmed(
+            X, y, min_train_val, max_train_val, n_repeats, rng_linear_trimmed
+        )
+        if use_linearization_trimmed
         else None
     )
     gnn_results = None
@@ -612,6 +671,22 @@ def learning_curve_plot(
             color="tab:red",
             alpha=0.2,
             label="Linearization +/- 1sd",
+        )
+    if linear_trimmed_df is not None:
+        ax.plot(
+            linear_trimmed_df["n_holdout"],
+            linear_trimmed_df["rmse_mean"],
+            marker="<",
+            color="tab:pink",
+            label="Linearization (trimmed) mean",
+        )
+        ax.fill_between(
+            linear_trimmed_df["n_holdout"],
+            linear_trimmed_df["rmse_mean"] - linear_trimmed_df["rmse_std"],
+            linear_trimmed_df["rmse_mean"] + linear_trimmed_df["rmse_std"],
+            color="tab:pink",
+            alpha=0.2,
+            label="Linearization (trimmed) +/- 1sd",
         )
     if ridge_trimmed_df is not None:
         ax.plot(

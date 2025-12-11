@@ -21,6 +21,7 @@ class PlotConfig(BaseModel):
     use_residual: bool = True
     use_residual_trimmed: bool = True
     use_linearization: bool = True
+    use_linearization_trimmed: bool = True
     use_gnn: bool = True
 
 
