@@ -6,6 +6,7 @@ scikit-learn==1.7.2
 torch==2.6.0
 torchaudio==2.6.0
 torchvision==0.21.0
+optuna==4.1.0
 torch-geometric==2.7.0
 ase==3.26.0
 matscipy==1.1.0

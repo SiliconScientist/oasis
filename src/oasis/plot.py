@@ -5,12 +5,15 @@ from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
 import polars as pl
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import KFold
 from oasis.config import Config
+from oasis.tune import _allocate_tuning_counts
 
 
 def _mlip_columns(df: pl.DataFrame) -> list[str]:
@@ -159,6 +162,171 @@ def _sweep_model_trimmed(
         results.append(
             {
                 "n_train": n_train,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
+def _tune_ridge_alpha(
+    X_tune: np.ndarray, y_tune: np.ndarray, cfg: Config, sampler_seed: int
+) -> float:
+    if len(X_tune) <= 1:
+        return 1.0
+
+    def objective(trial: optuna.Trial) -> float:
+        alpha = trial.suggest_float("alpha", 1e-4, 10.0, log=True)
+        if len(X_tune) < 4:
+            model = Ridge(alpha=alpha)
+            model.fit(X_tune, y_tune)
+            preds = model.predict(X_tune)
+            return float(np.sqrt(mean_squared_error(y_tune, preds)))
+        n_splits = min(5, len(X_tune))
+        rmses = []
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=cfg.seed)
+        for train_split, val_split in kf.split(X_tune):
+            model = Ridge(alpha=alpha)
+            model.fit(X_tune[train_split], y_tune[train_split])
+            preds = model.predict(X_tune[val_split])
+            rmses.append(np.sqrt(mean_squared_error(y_tune[val_split], preds)))
+        return float(np.mean(rmses))
+
+    n_trials = max(
+        1, cfg.tuning.n_trials if not cfg.dev_run else min(5, cfg.tuning.n_trials)
+    )
+    study = optuna.create_study(
+        direction="minimize",
+        sampler=optuna.samplers.TPESampler(seed=sampler_seed),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    return float(study.best_params["alpha"])
+
+
+def _sweep_ridge_tuned(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    cfg: Config,
+) -> pd.DataFrame:
+    results = []
+    max_train = min(max_train, len(X) - 1)
+    for n_work in range(min_train, max_train + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            work_idx = rng.choice(idx, size=n_work, replace=False)
+            n_tune, _ = _allocate_tuning_counts(
+                n_work, cfg.tuning.p_max, cfg.tuning.N0, cfg.tuning.n_max
+            )
+            if n_tune > len(work_idx):
+                n_tune = len(work_idx)
+            tune_idx = (
+                rng.choice(work_idx, size=n_tune, replace=False)
+                if n_tune > 0
+                else np.array([], dtype=int)
+            )
+            train_idx = np.setdiff1d(work_idx, tune_idx, assume_unique=False)
+            test_idx = np.setdiff1d(idx, work_idx, assume_unique=False)
+
+            if len(train_idx) == 0:
+                train_idx = work_idx
+                tune_idx = np.array([], dtype=int)
+
+            if len(tune_idx) > 1:
+                alpha = _tune_ridge_alpha(
+                    X[tune_idx],
+                    y[tune_idx],
+                    cfg,
+                    sampler_seed=int(rng.integers(0, 1_000_000)),
+                )
+            else:
+                alpha = 1.0
+
+            model = Ridge(alpha=alpha)
+            model.fit(X[train_idx], y[train_idx])
+            preds = model.predict(X[test_idx])
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+
+        results.append(
+            {
+                "n_train": n_work,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
+def _sweep_ridge_trimmed_tuned(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    cfg: Config,
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    results = []
+    max_train = min(max_train, len(X) - 1)
+    for n_work in range(min_train, max_train + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            work_idx = rng.choice(idx, size=n_work, replace=False)
+            n_tune, _ = _allocate_tuning_counts(
+                n_work, cfg.tuning.p_max, cfg.tuning.N0, cfg.tuning.n_max
+            )
+            if n_tune > len(work_idx):
+                n_tune = len(work_idx)
+            tune_idx = (
+                rng.choice(work_idx, size=n_tune, replace=False)
+                if n_tune > 0
+                else np.array([], dtype=int)
+            )
+            train_idx = np.setdiff1d(work_idx, tune_idx, assume_unique=False)
+            test_idx = np.setdiff1d(idx, work_idx, assume_unique=False)
+
+            if len(train_idx) == 0:
+                train_idx = work_idx
+                tune_idx = np.array([], dtype=int)
+
+            if len(tune_idx) > 1:
+                alpha = _tune_ridge_alpha(
+                    X[tune_idx],
+                    y[tune_idx],
+                    cfg,
+                    sampler_seed=int(rng.integers(0, 1_000_000)),
+                )
+            else:
+                alpha = 1.0
+
+            model = Ridge(alpha=alpha)
+            model.fit(X[train_idx], y[train_idx])
+
+            X_test = X[test_idx]
+            preds = model.predict(X_test)
+
+            w = model.coef_
+            contrib = X_test * w
+            mu = contrib.mean()
+            sigma = contrib.std() if contrib.std() > 0 else 1.0
+            z = (contrib - mu) / sigma
+            keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+            if keep_mask.sum() == 0:
+                keep_mask = np.ones(len(X_test), dtype=bool)
+
+            preds_eval = preds[keep_mask]
+            y_eval = y[test_idx][keep_mask]
+            rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
+
+        results.append(
+            {
+                "n_train": n_work,
                 "rmse_mean": float(np.mean(rmses)),
                 "rmse_std": float(np.std(rmses)),
             }
@@ -347,7 +515,7 @@ def learning_curve_plot(
     output_path: str | Path,
     min_train: int | None = None,
     max_train: int | None = None,
-    n_repeats: int = 50,
+    n_repeats: int | None = None,
     fontsize: int = 8,
     cfg: Config | None = None,
     gnn_train_fracs: Sequence[float] | None = None,
@@ -362,7 +530,8 @@ def learning_curve_plot(
     feature_cols = _mlip_columns(df)
     target_col = "reference_ads_eng"
 
-    use_trim = cfg.plot.trim if cfg else True
+    use_tuning = cfg.tuning.enabled if cfg else False
+    use_trim = cfg.plot.trim if cfg else False
     use_ridge = cfg.plot.use_ridge if cfg else True
     use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
     use_lasso = cfg.plot.use_lasso if cfg else True
@@ -372,8 +541,10 @@ def learning_curve_plot(
     use_gnn = cfg.plot.use_gnn if cfg else True
     cfg_min_train = cfg.plot.min_train if cfg else 5
     cfg_max_train = cfg.plot.max_train if cfg else 10
+    cfg_repeats = cfg.plot.n_repeats if cfg else 50
     min_train_val = min_train if min_train is not None else cfg_min_train
     max_train_val = max_train if max_train is not None else cfg_max_train
+    n_repeats_val = n_repeats if n_repeats is not None else cfg_repeats
 
     if not feature_cols:
         raise ValueError(
@@ -397,19 +568,23 @@ def learning_curve_plot(
     rng_resid_trimmed = np.random.default_rng(77)
     rng_linear_trimmed = np.random.default_rng(2025)
 
-    ridge_df = (
-        _sweep_model(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge,
+    ridge_df = None
+    if use_ridge:
+        ridge_df = (
+            _sweep_ridge_tuned(
+                X, y, min_train_val, max_train_val, n_repeats_val, rng_ridge, cfg
+            )
+            if use_tuning and cfg is not None
+            else _sweep_model(
+                lambda: Ridge(alpha=1.0),
+                X,
+                y,
+                min_train_val,
+                max_train_val,
+                n_repeats_val,
+                rng_ridge,
+            )
         )
-        if use_ridge
-        else None
-    )
     kernel_ridge_df = (
         _sweep_model(
             lambda: KernelRidge(alpha=1.0, kernel="rbf"),
@@ -423,28 +598,38 @@ def learning_curve_plot(
         if use_kernel_ridge
         else None
     )
-    ridge_trimmed_df = (
-        _sweep_model_trimmed(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge_trimmed,
-            z_thresh=1.0,
-        )
-        if use_trim and use_ridge
-        else None
-    )
+    ridge_trimmed_df = None
+    if use_trim and use_ridge:
+        if use_tuning and cfg is not None:
+            ridge_trimmed_df = _sweep_ridge_trimmed_tuned(
+                X,
+                y,
+                min_train_val,
+                max_train_val,
+                n_repeats_val,
+                rng_ridge_trimmed,
+                cfg,
+                z_thresh=1.0,
+            )
+        else:
+            ridge_trimmed_df = _sweep_model_trimmed(
+                lambda: Ridge(alpha=1.0),
+                X,
+                y,
+                min_train_val,
+                max_train_val,
+                n_repeats_val,
+                rng_ridge_trimmed,
+                z_thresh=1.0,
+            )
     lasso_df = (
         _sweep_model(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
+            lambda: Lasso(alpha=1.0, max_iter=10000),
             X,
             y,
             min_train_val,
             max_train_val,
-            n_repeats,
+            n_repeats_val,
             rng_lasso,
         )
         if use_lasso
@@ -452,12 +637,12 @@ def learning_curve_plot(
     )
     lasso_trimmed_df = (
         _sweep_model_trimmed(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
+            lambda: Lasso(alpha=1.0, max_iter=10000),
             X,
             y,
             min_train_val,
             max_train_val,
-            n_repeats,
+            n_repeats_val,
             rng_lasso_trimmed,
             z_thresh=1.0,
         )
@@ -466,12 +651,12 @@ def learning_curve_plot(
     )
     elastic_df = (
         _sweep_model(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+            lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
             y,
             min_train_val,
             max_train_val,
-            n_repeats,
+            n_repeats_val,
             rng_elastic,
         )
         if use_elastic
@@ -479,12 +664,12 @@ def learning_curve_plot(
     )
     elastic_trimmed_df = (
         _sweep_model_trimmed(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+            lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
             y,
             min_train_val,
             max_train_val,
-            n_repeats,
+            n_repeats_val,
             rng_elastic_trimmed,
             z_thresh=1.0,
         )
@@ -492,25 +677,29 @@ def learning_curve_plot(
         else None
     )
     resid_df = (
-        _residual_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_resid)
+        _residual_sweep(
+            X, y, min_train_val, max_train_val, n_repeats_val, rng_resid
+        )
         if use_residual
         else None
     )
     resid_trimmed_df = (
         _residual_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_resid_trimmed
+            X, y, min_train_val, max_train_val, n_repeats_val, rng_resid_trimmed
         )
         if use_trim and use_residual
         else None
     )
     linear_df = (
-        _linearization_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_linear)
+        _linearization_sweep(
+            X, y, min_train_val, max_train_val, n_repeats_val, rng_linear
+        )
         if use_linearization
         else None
     )
     linear_trimmed_df = (
         _linearization_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_linear_trimmed
+            X, y, min_train_val, max_train_val, n_repeats_val, rng_linear_trimmed
         )
         if use_trim and use_linearization
         else None
@@ -525,12 +714,17 @@ def learning_curve_plot(
 
     fig, ax = plt.subplots(figsize=(7, 4))
     if ridge_df is not None:
+        ridge_alpha_note = (
+            "(tuned alpha)"
+            if cfg and getattr(cfg, "tuning", None) and cfg.tuning.enabled
+            else "(alpha=1.0)"
+        )
         ax.plot(
             ridge_df["n_train"],
             ridge_df["rmse_mean"],
             marker="o",
             color="tab:blue",
-            label="Ridge (alpha=0.1) mean",
+            label=f"Ridge {ridge_alpha_note} mean",
         )
         ax.fill_between(
             ridge_df["n_train"],
@@ -538,7 +732,7 @@ def learning_curve_plot(
             ridge_df["rmse_mean"] + ridge_df["rmse_std"],
             color="tab:blue",
             alpha=0.2,
-            label="Ridge (alpha=0.1) +/- 1sd",
+            label=f"Ridge {ridge_alpha_note} +/- 1sd",
         )
     if kernel_ridge_df is not None:
         ax.plot(
@@ -578,7 +772,7 @@ def learning_curve_plot(
             lasso_trimmed_df["rmse_mean"],
             marker="+",
             color="tab:orange",
-            label="Lasso (trim residual) mean",
+            label="Lasso (trimmed) mean",
         )
         ax.fill_between(
             lasso_trimmed_df["n_train"],
@@ -586,7 +780,7 @@ def learning_curve_plot(
             lasso_trimmed_df["rmse_mean"] + lasso_trimmed_df["rmse_std"],
             color="tab:orange",
             alpha=0.2,
-            label="Lasso (trim residual) +/- 1sd",
+            label="Lasso (trimmed) +/- 1sd",
         )
     if elastic_df is not None:
         ax.plot(
@@ -610,7 +804,7 @@ def learning_curve_plot(
             elastic_trimmed_df["rmse_mean"],
             marker="x",
             color="tab:purple",
-            label="Elastic Net (trim residual) mean",
+            label="Elastic Net (trimmed) mean",
         )
         ax.fill_between(
             elastic_trimmed_df["n_train"],
@@ -618,7 +812,7 @@ def learning_curve_plot(
             elastic_trimmed_df["rmse_mean"] + elastic_trimmed_df["rmse_std"],
             color="tab:purple",
             alpha=0.2,
-            label="Elastic Net (trim residual) +/- 1sd",
+            label="Elastic Net (trimmed) +/- 1sd",
         )
     if resid_df is not None:
         ax.plot(
@@ -690,7 +884,7 @@ def learning_curve_plot(
             ridge_trimmed_df["rmse_mean"],
             marker="h",
             color="tab:olive",
-            label="Ridge (trim z-score) mean",
+            label=f"Ridge (trimmed) {ridge_alpha_note} mean",
         )
         ax.fill_between(
             ridge_trimmed_df["n_train"],
@@ -698,7 +892,7 @@ def learning_curve_plot(
             ridge_trimmed_df["rmse_mean"] + ridge_trimmed_df["rmse_std"],
             color="tab:olive",
             alpha=0.2,
-            label="Ridge (trim z-score) +/- 1sd",
+            label=f"Ridge (trimmed) {ridge_alpha_note} +/- 1sd",
         )
     if gnn_results is not None:
         gnn_pd = (
@@ -734,4 +928,41 @@ def learning_curve_plot(
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
+    return output_path
+
+
+def tuning_fraction_plot(
+    cfg: Config,
+    output_path: str | Path,
+    n_work_max: int | None = None,
+) -> Path:
+    """
+    Plot the fraction of samples allocated to tuning vs total available samples.
+    """
+    p_max = cfg.tuning.p_max
+    N0 = cfg.tuning.N0
+    n_max = cfg.tuning.n_max
+
+    default_max = max(300, int(n_max * 3))
+    N_work_upper = n_work_max if n_work_max is not None else default_max
+    N_work = np.arange(1, N_work_upper + 1)
+
+    n_tune_counts = np.array(
+        [_allocate_tuning_counts(int(N), p_max, N0, n_max)[0] for N in N_work],
+        dtype=float,
+    )
+    tune_fraction = n_tune_counts / N_work
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(N_work, tune_fraction, color="tab:blue")
+    ax.set_xlabel("N_work (samples)")
+    ax.set_ylabel("Tuning Fraction (n_tune / N_work)")
+    ax.set_title(f"Tuning Fraction vs N_work (n_max = {n_max})")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
     return output_path

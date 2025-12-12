@@ -1,6 +1,6 @@
 from oasis.config import get_config
 from oasis.processing import get_data
-from oasis.plot import learning_curve_plot, parity_plot
+from oasis.plot import learning_curve_plot, parity_plot, tuning_fraction_plot
 
 
 def main():
@@ -17,6 +17,12 @@ def main():
     )
     print(f"Saved parity plot to {plot_path}")
     print(f"Saved learning curve plot to {ensemble_path}")
+    if cfg.tuning.enabled:
+        n_work_max = max(len(df), int(cfg.tuning.n_max * 3))
+        tune_plot_path = tuning_fraction_plot(
+            cfg, output_path=plot_dir / "tuning_fraction.png", n_work_max=n_work_max
+        )
+        print(f"Saved tuning fraction plot to {tune_plot_path}")
 
 
 if __name__ == "__main__":
