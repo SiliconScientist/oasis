@@ -18,7 +18,7 @@ class PlotConfig(BaseModel):
     use_elastic_net: bool = True
     use_residual: bool = True
     use_linearization: bool = True
-    use_gnn: bool = True
+    use_moe: bool = True
 
 
 class Config(BaseModel):

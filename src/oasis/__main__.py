@@ -7,13 +7,13 @@ def main():
     cfg = get_config()
     df = get_data(cfg)
     plot_dir = cfg.plot.output_dir
-    gnn_fracs = [0.95, 0.9, 0.85, 0.8] if cfg.plot.use_gnn else []
+    moe_fracs = [0.65, 0.7, 0.75, 0.8] if cfg.plot.use_moe else []
     plot_path = parity_plot(df, output_path=plot_dir / "parity_plot.png")
     ensemble_path = learning_curve_plot(
         df,
         output_path=plot_dir / "learning_curve.png",
         cfg=cfg,
-        gnn_train_fracs=gnn_fracs,
+        moe_train_fracs=moe_fracs,
     )
     print(f"Saved parity plot to {plot_path}")
     print(f"Saved learning curve plot to {ensemble_path}")

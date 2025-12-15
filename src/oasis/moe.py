@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,7 @@ class GraphSample:
     pos: np.ndarray  # (num_nodes, 3)
     edge_index: np.ndarray  # (num_edges, 2)
     edge_attr: np.ndarray  # (num_edges, 4) -> [dist, dx, dy, dz]
+    mlip_preds: np.ndarray  # (num_mlips,)
     y: float
     reaction: str
 
@@ -51,27 +52,35 @@ def build_edges(atoms, cutoff_mult: float = 1.2) -> Tuple[np.ndarray, np.ndarray
 
 def load_dataset(
     xyz_path: str, parquet_path: str, cutoff_mult: float
-) -> Tuple[List[GraphSample], float, float]:
-    """Load atoms/labels and build graph samples."""
+) -> Tuple[List[GraphSample], float, float, List[str]]:
+    """Load atoms/labels and build graph samples with MLIP predictions."""
     frames = io.read(xyz_path, ":")
     labels_df = pd.read_parquet(parquet_path, engine="pyarrow")
-    label_map: Dict[str, float] = labels_df.set_index("reaction")[
-        "reference_ads_eng"
-    ].to_dict()
+    if "reaction" not in labels_df.columns:
+        raise ValueError("Parquet file must contain a 'reaction' column.")
+    mlip_cols = [c for c in labels_df.columns if c.endswith("_mlip_ads_eng_median")]
+    if not mlip_cols:
+        raise ValueError("No MLIP prediction columns found in parquet data.")
+
+    labels_df = labels_df.set_index("reaction")
+    ref_series = labels_df["reference_ads_eng"]
 
     samples: List[GraphSample] = []
     ys: List[float] = []
     for atoms in frames:
         reaction = atoms.info.get("reaction")
-        if reaction is None or reaction not in label_map:
+        if reaction is None or reaction not in labels_df.index:
             continue
         edge_index, edge_attr = build_edges(atoms, cutoff_mult=cutoff_mult)
-        y_val = float(label_map[reaction])
+        row = labels_df.loc[reaction]
+        y_val = float(row["reference_ads_eng"])
+        mlip_vals = row[mlip_cols].to_numpy(dtype=np.float32)
         sample = GraphSample(
             z=atoms.get_atomic_numbers().astype(np.int64),
             pos=atoms.get_positions().astype(np.float32),
             edge_index=edge_index,
             edge_attr=edge_attr,
+            mlip_preds=mlip_vals,
             y=y_val,
             reaction=reaction,
         )
@@ -80,7 +89,8 @@ def load_dataset(
 
     y_mean = float(np.mean(ys))
     y_std = float(np.std(ys) + 1e-8)
-    return samples, y_mean, y_std
+    mlip_names = [col.replace("_mlip_ads_eng_median", "") for col in mlip_cols]
+    return samples, y_mean, y_std, mlip_names
 
 
 class AdsorptionDataset(Dataset):
@@ -101,6 +111,7 @@ def collate_batch(batch: Sequence[GraphSample]):
     edge_indices: List[torch.Tensor] = []
     edge_attrs: List[torch.Tensor] = []
     batch_vec: List[torch.Tensor] = []
+    mlip_preds_list: List[torch.Tensor] = []
     y_list: List[torch.Tensor] = []
     reactions: List[str] = []
 
@@ -111,6 +122,7 @@ def collate_batch(batch: Sequence[GraphSample]):
         edge_indices.append(torch.from_numpy(sample.edge_index + node_offset))
         edge_attrs.append(torch.from_numpy(sample.edge_attr))
         batch_vec.append(torch.full((num_nodes,), graph_idx, dtype=torch.long))
+        mlip_preds_list.append(torch.from_numpy(sample.mlip_preds))
         y_list.append(torch.tensor([sample.y], dtype=torch.float32))
         reactions.append(sample.reaction)
         node_offset += num_nodes
@@ -121,6 +133,7 @@ def collate_batch(batch: Sequence[GraphSample]):
     edge_attr = torch.cat(edge_attrs, dim=0)
     batch_tensor = torch.cat(batch_vec, dim=0)
     y = torch.cat(y_list, dim=0)
+    mlip_preds = torch.stack(mlip_preds_list, dim=0)
 
     return {
         "z": z,
@@ -129,6 +142,7 @@ def collate_batch(batch: Sequence[GraphSample]):
         "edge_attr": edge_attr,
         "batch": batch_tensor,
         "y": y,
+        "mlip_preds": mlip_preds,
         "reactions": reactions,
     }
 
@@ -174,17 +188,23 @@ class MessagePassingLayer(nn.Module):
         return self.node_mlp(node_in)
 
 
-class AdsorptionGNN(nn.Module):
-    def __init__(self, max_z: int, hidden_dim: int, layers: int, edge_dim: int = 4):
+class AdsorptionMoE(nn.Module):
+    """
+    Graph-based mixture-of-experts gating network that mixes MLIP predictions via softmax weights.
+    """
+
+    def __init__(
+        self, max_z: int, hidden_dim: int, layers: int, mlip_count: int, edge_dim: int = 4
+    ):
         super().__init__()
         self.embedding = nn.Embedding(max_z + 1, hidden_dim)
         self.layers = nn.ModuleList(
             [MessagePassingLayer(hidden_dim, edge_dim) for _ in range(layers)]
         )
-        self.readout = nn.Sequential(
+        self.gating = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, 1),
+            nn.Linear(hidden_dim, mlip_count),
         )
 
     def forward(self, batch):
@@ -192,7 +212,14 @@ class AdsorptionGNN(nn.Module):
         for layer in self.layers:
             x = layer(x, batch["edge_index"], batch["edge_attr"])
         graph_repr = segment_mean(x, batch["batch"])
-        pred = self.readout(graph_repr).squeeze(-1)
+        logits = self.gating(graph_repr)
+        weights = torch.softmax(logits, dim=-1)
+        mlip_preds = batch["mlip_preds"]
+        if mlip_preds.shape[-1] != weights.shape[-1]:
+            raise ValueError(
+                f"MLIP prediction dimension mismatch: got {mlip_preds.shape[-1]}, expected {weights.shape[-1]}"
+            )
+        pred = (weights * mlip_preds).sum(dim=-1)
         return pred
 
 
@@ -265,6 +292,14 @@ def train(
     if seed is not None:
         set_seed(seed)
 
+    if not samples:
+        raise ValueError("No samples provided for training.")
+
+    mlip_count = int(samples[0].mlip_preds.shape[0])
+    for sample in samples:
+        if sample.mlip_preds.shape[0] != mlip_count:
+            raise ValueError("All samples must have the same number of MLIP predictions.")
+
     # Normalize targets for stability without mutating caller samples
     norm_samples = [
         GraphSample(
@@ -272,6 +307,7 @@ def train(
             pos=s.pos,
             edge_index=s.edge_index,
             edge_attr=s.edge_attr,
+            mlip_preds=((s.mlip_preds - y_mean) / y_std).astype(np.float32),
             y=(s.y - y_mean) / y_std,
             reaction=s.reaction,
         )
@@ -302,7 +338,9 @@ def train(
         test_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_batch
     )
 
-    model = AdsorptionGNN(max_z=max_z, hidden_dim=hidden_dim, layers=layers).to(device)
+    model = AdsorptionMoE(
+        max_z=max_z, hidden_dim=hidden_dim, layers=layers, mlip_count=mlip_count
+    ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.L1Loss()
 
@@ -361,7 +399,7 @@ def train(
     )
 
 
-def evaluate_train_test_splits(
+def evaluate_moe_train_test_splits(
     samples: Sequence[GraphSample],
     y_mean: float,
     y_std: float,
@@ -376,7 +414,7 @@ def evaluate_train_test_splits(
     seed: int = 0,
     log_interval: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Train and evaluate the GNN across multiple train/test splits."""
+    """Train and evaluate the MoE gating model across multiple train/test splits."""
     results = []
     total = len(samples)
     for run_idx, train_frac in enumerate(train_fracs):
@@ -417,7 +455,7 @@ def evaluate_train_test_splits(
     return pd.DataFrame(results)
 
 
-def evaluate_splits_from_files(
+def evaluate_moe_splits_from_files(
     xyz_path: str,
     parquet_path: str,
     train_fracs: Sequence[float],
@@ -435,10 +473,10 @@ def evaluate_splits_from_files(
     """
     Load data from disk and run train/test split evaluations using default hyperparameters.
     """
-    samples, y_mean, y_std = load_dataset(
+    samples, y_mean, y_std, _ = load_dataset(
         xyz_path, parquet_path, cutoff_mult=cutoff_mult
     )
-    return evaluate_train_test_splits(
+    return evaluate_moe_train_test_splits(
         samples=samples,
         y_mean=y_mean,
         y_std=y_std,
