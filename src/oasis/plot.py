@@ -118,6 +118,137 @@ def _sweep_model(
     return pd.DataFrame(results)
 
 
+def _sweep_elastic_tuned(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    cfg: Config,
+) -> pd.DataFrame:
+    results = []
+    max_train = min(max_train, len(X) - 1)
+    for n_work in range(min_train, max_train + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            work_idx = rng.choice(idx, size=n_work, replace=False)
+            n_tune, _ = _allocate_tuning_counts(
+                n_work, cfg.tuning.p_max, cfg.tuning.N0, cfg.tuning.n_max
+            )
+            if n_tune > len(work_idx):
+                n_tune = len(work_idx)
+            tune_idx = (
+                rng.choice(work_idx, size=n_tune, replace=False)
+                if n_tune > 0
+                else np.array([], dtype=int)
+            )
+            train_idx = np.setdiff1d(work_idx, tune_idx, assume_unique=False)
+            test_idx = np.setdiff1d(idx, work_idx, assume_unique=False)
+
+            if len(train_idx) == 0:
+                train_idx = work_idx
+                tune_idx = np.array([], dtype=int)
+
+            if len(tune_idx) > 1:
+                alpha, l1_ratio = _tune_elastic_params(
+                    X[tune_idx],
+                    y[tune_idx],
+                    cfg,
+                    sampler_seed=int(rng.integers(0, 1_000_000)),
+                )
+            else:
+                alpha, l1_ratio = 1.0, 0.5
+
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=20000)
+            model.fit(X[train_idx], y[train_idx])
+            preds = model.predict(X[test_idx])
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+
+        results.append(
+            {
+                "n_train": n_work,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
+def _sweep_elastic_trimmed_tuned(
+    X: np.ndarray,
+    y: np.ndarray,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    cfg: Config,
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    results = []
+    max_train = min(max_train, len(X) - 1)
+    for n_work in range(min_train, max_train + 1):
+        rmses = []
+        for _ in range(n_repeats):
+            idx = np.arange(len(X))
+            work_idx = rng.choice(idx, size=n_work, replace=False)
+            n_tune, _ = _allocate_tuning_counts(
+                n_work, cfg.tuning.p_max, cfg.tuning.N0, cfg.tuning.n_max
+            )
+            if n_tune > len(work_idx):
+                n_tune = len(work_idx)
+            tune_idx = (
+                rng.choice(work_idx, size=n_tune, replace=False)
+                if n_tune > 0
+                else np.array([], dtype=int)
+            )
+            train_idx = np.setdiff1d(work_idx, tune_idx, assume_unique=False)
+            test_idx = np.setdiff1d(idx, work_idx, assume_unique=False)
+
+            if len(train_idx) == 0:
+                train_idx = work_idx
+                tune_idx = np.array([], dtype=int)
+
+            if len(tune_idx) > 1:
+                alpha, l1_ratio = _tune_elastic_params(
+                    X[tune_idx],
+                    y[tune_idx],
+                    cfg,
+                    sampler_seed=int(rng.integers(0, 1_000_000)),
+                )
+            else:
+                alpha, l1_ratio = 1.0, 0.5
+
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=20000)
+            model.fit(X[train_idx], y[train_idx])
+
+            X_test = X[test_idx]
+            preds = model.predict(X_test)
+
+            w = model.coef_
+            contrib = X_test * w
+            mu = contrib.mean()
+            sigma = contrib.std() if contrib.std() > 0 else 1.0
+            z = (contrib - mu) / sigma
+            keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+            if keep_mask.sum() == 0:
+                keep_mask = np.ones(len(X_test), dtype=bool)
+
+            preds_eval = preds[keep_mask]
+            y_eval = y[test_idx][keep_mask]
+            rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
+
+        results.append(
+            {
+                "n_train": n_work,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+            }
+        )
+    return pd.DataFrame(results)
+
+
 def _sweep_model_trimmed(
     model_factory,
     X: np.ndarray,
@@ -201,6 +332,42 @@ def _tune_ridge_alpha(
     )
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     return float(study.best_params["alpha"])
+
+
+def _tune_elastic_params(
+    X_tune: np.ndarray, y_tune: np.ndarray, cfg: Config, sampler_seed: int
+) -> tuple[float, float]:
+    if len(X_tune) <= 1:
+        return 1.0, 0.5
+
+    def objective(trial: optuna.Trial) -> float:
+        alpha = trial.suggest_float("alpha", 1e-4, 10.0, log=True)
+        l1_ratio = trial.suggest_float("l1_ratio", 0.0, 1.0)
+        if len(X_tune) < 4:
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=20000)
+            model.fit(X_tune, y_tune)
+            preds = model.predict(X_tune)
+            return float(np.sqrt(mean_squared_error(y_tune, preds)))
+        n_splits = min(5, len(X_tune))
+        rmses = []
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=cfg.seed)
+        for train_split, val_split in kf.split(X_tune):
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=20000)
+            model.fit(X_tune[train_split], y_tune[train_split])
+            preds = model.predict(X_tune[val_split])
+            rmses.append(np.sqrt(mean_squared_error(y_tune[val_split], preds)))
+        return float(np.mean(rmses))
+
+    n_trials = max(
+        1, cfg.tuning.n_trials if not cfg.dev_run else min(5, cfg.tuning.n_trials)
+    )
+    study = optuna.create_study(
+        direction="minimize",
+        sampler=optuna.samplers.TPESampler(seed=sampler_seed),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    params = study.best_params
+    return float(params["alpha"]), float(params["l1_ratio"])
 
 
 def _sweep_ridge_tuned(
@@ -650,7 +817,11 @@ def learning_curve_plot(
         else None
     )
     elastic_df = (
-        _sweep_model(
+        _sweep_elastic_tuned(
+            X, y, min_train_val, max_train_val, n_repeats_val, rng_elastic, cfg
+        )
+        if use_tuning and cfg is not None
+        else _sweep_model(
             lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
             y,
@@ -663,7 +834,18 @@ def learning_curve_plot(
         else None
     )
     elastic_trimmed_df = (
-        _sweep_model_trimmed(
+        _sweep_elastic_trimmed_tuned(
+            X,
+            y,
+            min_train_val,
+            max_train_val,
+            n_repeats_val,
+            rng_elastic_trimmed,
+            cfg,
+            z_thresh=1.0,
+        )
+        if use_tuning and cfg is not None
+        else _sweep_model_trimmed(
             lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
             y,
@@ -766,7 +948,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
-    if lasso_trimmed_df is not None:
+    if use_trim and lasso_trimmed_df is not None:
         ax.plot(
             lasso_trimmed_df["n_train"],
             lasso_trimmed_df["rmse_mean"],
@@ -783,12 +965,15 @@ def learning_curve_plot(
             label="Lasso (trimmed) +/- 1sd",
         )
     if elastic_df is not None:
+        elastic_note = (
+            "(tuned)" if cfg and getattr(cfg, "tuning", None) and cfg.tuning.enabled else ""
+        )
         ax.plot(
             elastic_df["n_train"],
             elastic_df["rmse_mean"],
             marker="D",
             color="tab:purple",
-            label="Elastic Net mean",
+            label=f"Elastic Net {elastic_note} mean".strip(),
         )
         ax.fill_between(
             elastic_df["n_train"],
@@ -796,15 +981,15 @@ def learning_curve_plot(
             elastic_df["rmse_mean"] + elastic_df["rmse_std"],
             color="tab:purple",
             alpha=0.2,
-            label="Elastic Net +/- 1sd",
+            label=f"Elastic Net {elastic_note} +/- 1sd".strip(),
         )
-    if elastic_trimmed_df is not None:
+    if use_trim and elastic_trimmed_df is not None:
         ax.plot(
             elastic_trimmed_df["n_train"],
             elastic_trimmed_df["rmse_mean"],
             marker="x",
             color="tab:purple",
-            label="Elastic Net (trimmed) mean",
+            label=f"Elastic Net (trimmed) {elastic_note} mean".strip(),
         )
         ax.fill_between(
             elastic_trimmed_df["n_train"],
@@ -812,7 +997,7 @@ def learning_curve_plot(
             elastic_trimmed_df["rmse_mean"] + elastic_trimmed_df["rmse_std"],
             color="tab:purple",
             alpha=0.2,
-            label="Elastic Net (trimmed) +/- 1sd",
+            label=f"Elastic Net (trimmed) {elastic_note} +/- 1sd".strip(),
         )
     if resid_df is not None:
         ax.plot(
@@ -830,7 +1015,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="Residual +/- 1sd",
         )
-    if resid_trimmed_df is not None:
+    if use_trim and resid_trimmed_df is not None:
         ax.plot(
             resid_trimmed_df["n_holdout"],
             resid_trimmed_df["rmse_mean"],
@@ -862,7 +1047,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="Linearization +/- 1sd",
         )
-    if linear_trimmed_df is not None:
+    if use_trim and linear_trimmed_df is not None:
         ax.plot(
             linear_trimmed_df["n_holdout"],
             linear_trimmed_df["rmse_mean"],
@@ -878,7 +1063,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="Linearization (trimmed) +/- 1sd",
         )
-    if ridge_trimmed_df is not None:
+    if use_trim and ridge_trimmed_df is not None:
         ax.plot(
             ridge_trimmed_df["n_train"],
             ridge_trimmed_df["rmse_mean"],
