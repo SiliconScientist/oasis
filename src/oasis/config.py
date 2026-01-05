@@ -10,25 +10,25 @@ class ProcessingConfig(BaseModel):
 
 class PlotConfig(BaseModel):
     output_dir: Path
-    min_train: int = 5
-    max_train: int = 10
-    n_repeats: int = 50
-    trim: bool = True
-    use_ridge: bool = True
-    use_kernel_ridge: bool = True
-    use_lasso: bool = True
-    use_elastic_net: bool = True
-    use_residual: bool = True
-    use_linearization: bool = True
-    use_gnn: bool = True
+    min_train: int
+    max_train: int
+    n_repeats: int
+    trim: bool
+    use_ridge: bool
+    use_kernel_ridge: bool
+    use_lasso: bool
+    use_elastic_net: bool
+    use_residual: bool
+    use_linearization: bool
+    use_gnn: bool
 
 
 class TuningConfig(BaseModel):
-    enabled: bool = False
-    p_max: float = 0.25
-    N0: float = 50.0
-    n_max: int = 200
-    n_trials: int = 30
+    enabled: bool
+    p_max: float
+    N0: float
+    n_max: int
+    n_trials: int
 
 
 class Config(BaseModel):
@@ -37,7 +37,7 @@ class Config(BaseModel):
     dev_run: bool
     processing: ProcessingConfig
     plot: PlotConfig
-    tuning: TuningConfig = TuningConfig()
+    tuning: TuningConfig
 
 
 def get_config():

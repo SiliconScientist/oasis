@@ -820,7 +820,7 @@ def learning_curve_plot(
         _sweep_elastic_tuned(
             X, y, min_train_val, max_train_val, n_repeats_val, rng_elastic, cfg
         )
-        if use_tuning and cfg is not None
+        if use_elastic and use_tuning and cfg is not None
         else _sweep_model(
             lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
@@ -844,7 +844,7 @@ def learning_curve_plot(
             cfg,
             z_thresh=1.0,
         )
-        if use_tuning and cfg is not None
+        if use_trim and use_elastic and use_tuning and cfg is not None
         else _sweep_model_trimmed(
             lambda: ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=20000),
             X,
