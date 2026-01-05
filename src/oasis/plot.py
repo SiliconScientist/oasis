@@ -40,12 +40,22 @@ def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
     cmap = plt.cm.get_cmap("tab10", len(mlip_cols))
 
     for idx, col in enumerate(mlip_cols):
+        pred = df[col].to_numpy()
+        valid = np.isfinite(ref) & np.isfinite(pred)
+        if valid.any():
+            rmse = np.sqrt(mean_squared_error(ref[valid], pred[valid]))
+            rmse_label = f"{rmse:.3f} eV"
+        else:
+            rmse_label = "NA"
         ax.scatter(
             ref,
-            df[col].to_numpy(),
+            pred,
             s=35,
             alpha=0.85,
-            label=col.removesuffix("_mlip_ads_eng_median"),
+            label=(
+                f"{col.removesuffix('_mlip_ads_eng_median')} "
+                f"(RMSE={rmse_label})"
+            ),
             color=cmap(idx),
             edgecolor="black",
             linewidth=0.5,
