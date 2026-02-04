@@ -7,6 +7,14 @@ class ProcessingConfig(BaseModel):
     root: Path
 
 
+class MLIPInterpretersConfig(BaseModel):
+    mace: Path
+    mattersim: Path
+    orb_v3: Path
+    sevennet: Path
+    uma_s1p1: Path
+
+
 class PlotConfig(BaseModel):
     output_dir: Path
     min_train: int = 5
@@ -25,6 +33,7 @@ class Config(BaseModel):
     seed: int
     dev_run: bool
     processing: ProcessingConfig
+    mlip: MLIPInterpretersConfig
     plot: PlotConfig
 
 
