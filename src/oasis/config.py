@@ -1,5 +1,6 @@
 from tomllib import load
 from pydantic import BaseModel
+from typing import List, Optional
 from pathlib import Path
 
 
@@ -13,6 +14,16 @@ class MLIPInterpretersConfig(BaseModel):
     orb_v3: Path
     sevennet: Path
     uma_s1p1: Path
+
+
+class MLIPModelsConfig(BaseModel):
+    enabled: List[str]
+
+
+class MLIPConfig(BaseModel):
+    run_tag: Optional[str] = None
+    interpreters: MLIPInterpretersConfig
+    models: MLIPModelsConfig
 
 
 class PlotConfig(BaseModel):
@@ -33,7 +44,7 @@ class Config(BaseModel):
     seed: int
     dev_run: bool
     processing: ProcessingConfig
-    mlip: MLIPInterpretersConfig
+    mlip: MLIPConfig
     plot: PlotConfig
 
 
