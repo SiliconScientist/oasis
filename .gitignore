@@ -217,5 +217,4 @@ config.toml
 data/
 
 # SLURM files
-*.sh
 slurm_output/
