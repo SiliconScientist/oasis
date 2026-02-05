@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -41,21 +42,53 @@ def output_path(run_tag: str, dataset_name: str, model: str) -> Path:
     return Path("data/results/mlips") / run_tag / dataset_name / f"{model}.json"
 
 
+def maybe_make_dev_dataset(dpath: Path, cfg: dict) -> Path:
+    mlip = cfg.get("mlip", {})
+    dev_run = bool(mlip.get("dev_run", False))
+    dev_n = int(mlip.get("dev_n", 2))
+
+    if not dev_run:
+        return dpath
+
+    dev_dir = Path("data/datasets/_dev")
+    dev_dir.mkdir(parents=True, exist_ok=True)
+
+    out = dev_dir / f"{dpath.stem}__dev{dev_n}{dpath.suffix}"
+
+    # Only regenerate if missing (keeps sbatch deterministic)
+    if out.exists():
+        return out
+
+    with dpath.open("r", encoding="utf-8") as f:
+        obj = json.load(f)
+
+    if not isinstance(obj, list):
+        raise TypeError(f"Dev slicing expects {dpath} to contain a JSON list.")
+
+    sliced = obj[:dev_n]
+    with out.open("w", encoding="utf-8") as f:
+        json.dump(sliced, f, indent=2)
+        f.write("\n")
+
+    return out
+
+
 def make_task_lines(
     *,
     config_path: str | Path,
     run_tag: str,
     datasets: list[str] | None = None,
 ) -> list[str]:
+    cfg = load_config(config_path)
     specs = get_model_specs(config_path)
     dataset_paths = resolve_datasets(datasets)
-
     lines: list[str] = []
     for dpath in dataset_paths:
+        dpath_for_run = maybe_make_dev_dataset(dpath, cfg)
         dname = dataset_name_from_path(dpath)
-        for model in specs.keys():
+        for model in specs:
             out = output_path(run_tag, dname, model)
-            lines.append(f"{model} {dpath.as_posix()} {out.as_posix()}")
+            lines.append(f"{model} {dpath_for_run.as_posix()} {out.as_posix()}")
     return lines
 
 
