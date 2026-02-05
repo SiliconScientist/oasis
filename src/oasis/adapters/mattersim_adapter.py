@@ -10,29 +10,32 @@ from pathlib import Path
 from catbench.adsorption import AdsorptionCalculation
 from mattersim.forcefield.potential import Potential, MatterSimCalculator
 
+MLIP_NAME = "mattersim-v1-5m"
+
+
+def infer_benchmark(input_path: str) -> str:
+    name = Path(input_path).stem  # MamunHighT2019_adsorption
+    if not name.endswith("_adsorption"):
+        raise ValueError(
+            f"Expected dataset name to end with '_adsorption.json', got {name}"
+        )
+    return name.replace("_adsorption", "")
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run MatterSim adsorption predictions")
+    parser = argparse.ArgumentParser(description="Run MACE adsorption predictions")
     parser.add_argument("--input", required=True, help="Input dataset JSON")
     parser.add_argument("--output", required=True, help="Output result JSON")
     parser.add_argument("--device", default="cuda")
-    parser.add_argument(
-        "--checkpoint-path",
-        default="mattersim-v1.0.0-5M.pth",
-        help="MatterSim checkpoint file",
-    )
-    parser.add_argument(
-        "--n-calcs",
-        type=int,
-        default=3,
-        help="Number of independent MatterSim calculators",
-    )
+    parser.add_argument("--config", default="config.toml")
+    parser.add_argument("--model-path", default=None)
+    parser.add_argument("--n-calcs", type=int, default=3)
     args = parser.parse_args()
     t0 = time.time()
     calculators = []
     for _ in range(args.n_calcs):
         potential = Potential.from_checkpoint(
-            load_path=args.checkpoint_path,
+            load_path=args.model_path,
             device=args.device,
         )
         calculators.append(MatterSimCalculator(potential=potential))
@@ -40,8 +43,8 @@ def main() -> None:
     # --- Run CatBench adsorption workflow ---
     adsorption_calc = AdsorptionCalculation(
         calculators,
-        mlip_name="mattersim-v1-5m",
-        dataset_path=args.input,
+        mlip_name=MLIP_NAME,
+        benchmark=infer_benchmark(args.input),
     )
     results = adsorption_calc.run()
 
@@ -49,7 +52,7 @@ def main() -> None:
     out = {
         "model": "mattersim",
         "model_version": "v1-5m",
-        "checkpoint": Path(args.checkpoint_path).name,
+        "checkpoint": Path(args.model_path).name,
         "n_calculators": args.n_calcs,
         "device": args.device,
         "input_dataset": Path(args.input).name,
