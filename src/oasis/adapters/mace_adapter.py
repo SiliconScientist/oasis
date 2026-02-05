@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Input dataset JSON")
     parser.add_argument("--output", required=True, help="Output result JSON")
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--model-path", default="mace-mh-1.model")
+    parser.add_argument("--model-path", required=True)
     parser.add_argument("--n-calcs", type=int, default=3)
     args = parser.parse_args()
 

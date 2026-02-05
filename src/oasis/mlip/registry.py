@@ -82,3 +82,11 @@ def get_model_adapter_module(model: str, config_path: str | Path) -> str:
     if model not in specs:
         raise KeyError(f"Unknown model '{model}'. Known: {', '.join(sorted(specs))}")
     return specs[model].adapter_module
+
+
+def get_model_path(model: str, config_path: str | Path) -> str:
+    cfg = load_config(config_path)
+    paths = cfg.get("mlip", {}).get("model_paths", {})
+    if model not in paths:
+        raise KeyError(f"No model_path specified for model '{model}'")
+    return paths[model]

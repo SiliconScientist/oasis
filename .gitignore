@@ -215,6 +215,8 @@ config.toml
 
 # Data folder
 data/
+models/*
 
 # SLURM files
 slurm_output/
+dev_run.sh

@@ -1,12 +1,17 @@
 #!/bin/bash
-#SBATCH -J oasis-mlip
-#SBATCH -p gpu
+#SBATCH --job-name="oasis-mlip"
+#SBATCH --gpus=1
 #SBATCH --gres=gpu:1
-#SBATCH -c 4
-#SBATCH --mem=16G
-#SBATCH -t 02:00:00
+#SBATCH --partition=gpuA40x4
+#SBATCH --account=bchg-delta-gpu
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=10G
+#SBATCH -t 24:00:00
 #SBATCH -o slurm_output/%x_%A_%a.out
 #SBATCH -e slurm_output/%x_%A_%a.err
+#SBATCH --mail-user=ahill15@tulane.edu
+#SBATCH --mail-type=END
+
 
 set -euo pipefail
 

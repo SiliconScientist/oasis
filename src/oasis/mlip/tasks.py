@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Any
 
 from oasis.mlip.registry import get_model_specs, load_config
 
@@ -42,34 +42,39 @@ def output_path(run_tag: str, dataset_name: str, model: str) -> Path:
     return Path("data/results/mlips") / run_tag / dataset_name / f"{model}.json"
 
 
+def _slice_json_obj(obj: Any, n: int) -> Any:
+    # Case 1: list at top-level
+    if isinstance(obj, list):
+        return obj[:n]
+
+    # Case 2: dict at top-level (your case)
+    if isinstance(obj, dict):
+        # If dict values look like records, take first n items.
+        # JSON load preserves order in modern Python.
+        items = list(obj.items())[:n]
+        return dict(items)
+
+    raise TypeError(f"Dev slicing expects a JSON list or dict; got {type(obj)}")
+
+
 def maybe_make_dev_dataset(dpath: Path, cfg: dict) -> Path:
     mlip = cfg.get("mlip", {})
     dev_run = bool(mlip.get("dev_run", False))
     dev_n = int(mlip.get("dev_n", 2))
-
     if not dev_run:
         return dpath
-
     dev_dir = Path("data/datasets/_dev")
     dev_dir.mkdir(parents=True, exist_ok=True)
-
     out = dev_dir / f"{dpath.stem}__dev{dev_n}{dpath.suffix}"
-
-    # Only regenerate if missing (keeps sbatch deterministic)
+    # Reuse existing dev dataset if present (keeps sbatch deterministic)
     if out.exists():
         return out
-
     with dpath.open("r", encoding="utf-8") as f:
         obj = json.load(f)
-
-    if not isinstance(obj, list):
-        raise TypeError(f"Dev slicing expects {dpath} to contain a JSON list.")
-
-    sliced = obj[:dev_n]
+    sliced = _slice_json_obj(obj, dev_n)
     with out.open("w", encoding="utf-8") as f:
         json.dump(sliced, f, indent=2)
         f.write("\n")
-
     return out
 
 
