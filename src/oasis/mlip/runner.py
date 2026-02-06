@@ -21,7 +21,7 @@ def run_one_task(line: str, config_path: str):
         )
 
     python_exe = get_model_python(model, config_path)
-    model_path = get_model_path(model, config_path)
+    model_path = get_model_path(model, config_path)  # may be None
 
     cmd = [
         python_exe,
@@ -33,11 +33,11 @@ def run_one_task(line: str, config_path: str):
         output_path,
         "--dataset-name",
         dataset_name,
-        "--model-path",
-        model_path,
         "--config",
-        config_path,
+        str(config_path),
     ]
 
+    if model_path is not None:
+        cmd += ["--model-path", str(model_path)]
     print("Running:", " ".join(cmd))
     subprocess.run(cmd, check=True)

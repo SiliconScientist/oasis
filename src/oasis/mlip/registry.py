@@ -84,9 +84,7 @@ def get_model_adapter_module(model: str, config_path: str | Path) -> str:
     return specs[model].adapter_module
 
 
-def get_model_path(model: str, config_path: str | Path) -> str:
+def get_model_path(model: str, config_path: str | Path) -> str | None:
     cfg = load_config(config_path)
     paths = cfg.get("mlip", {}).get("model_paths", {})
-    if model not in paths:
-        raise KeyError(f"No model_path specified for model '{model}'")
-    return paths[model]
+    return paths.get(model)  # returns None if absent
