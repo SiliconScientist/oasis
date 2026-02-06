@@ -16,24 +16,35 @@ def default_run_tag(cfg: dict) -> str:
     return str(tag) if tag else "run"
 
 
-def resolve_datasets(datasets: list[str] | None) -> list[Path]:
+def resolve_datasets(datasets: list[str] | None, cfg: dict) -> list[Path]:
     if datasets and len(datasets) > 0:
         return [Path(d) for d in datasets]
 
-    # default: all json in data/datasets/
-    base = Path("data/datasets")
-    if not base.exists():
-        raise FileNotFoundError(
-            "No datasets provided and default folder data/datasets/ does not exist."
-        )
-
-    found = sorted(base.glob("*.json"))
-    if not found:
-        raise FileNotFoundError(f"No datasets found in {base}/ (expected *.json)")
-    return found
+    mlip = cfg.get("mlip", {})
+    cfg_datasets = mlip.get("datasets", None)
+    if cfg_datasets is None:
+        cfg_datasets = mlip.get("dataset", None)
+    if cfg_datasets:
+        if isinstance(cfg_datasets, (str, Path)):
+            cfg_list = [cfg_datasets]
+        elif isinstance(cfg_datasets, list):
+            cfg_list = cfg_datasets
+        else:
+            raise TypeError("mlip.dataset(s) must be a string or list of strings")
+        paths = [Path(p) for p in cfg_list]
+        missing = [p for p in paths if not p.exists()]
+        if missing:
+            missing_str = ", ".join(p.as_posix() for p in missing)
+            raise FileNotFoundError(
+                f"Config-specified dataset(s) not found: {missing_str}"
+            )
+        return paths
 
 
 def dataset_name_from_path(p: Path) -> str:
+    # remove the "_adsorption" suffix before the json extension
+    if p.name.endswith("_adsorption.json"):
+        return p.stem[: -len("_adsorption")]
     return p.stem
 
 
@@ -63,7 +74,7 @@ def maybe_make_dev_dataset(dpath: Path, cfg: dict) -> Path:
     dev_n = int(mlip.get("dev_n", 2))
     if not dev_run:
         return dpath
-    dev_dir = Path("data/datasets/_dev")
+    dev_dir = dpath.parent / "_dev"
     dev_dir.mkdir(parents=True, exist_ok=True)
     out = dev_dir / f"{dpath.stem}__dev{dev_n}{dpath.suffix}"
     # Reuse existing dev dataset if present (keeps sbatch deterministic)
@@ -86,14 +97,14 @@ def make_task_lines(
 ) -> list[str]:
     cfg = load_config(config_path)
     specs = get_model_specs(config_path)
-    dataset_paths = resolve_datasets(datasets)
+    dataset_paths = resolve_datasets(datasets, cfg)
     lines: list[str] = []
     for dpath in dataset_paths:
         dpath_for_run = maybe_make_dev_dataset(dpath, cfg)
         dname = dataset_name_from_path(dpath)
         for model in specs:
             out = output_path(run_tag, dname, model)
-            lines.append(f"{model} {dpath_for_run.as_posix()} {out.as_posix()}")
+            lines.append(f"{model} {dname} {dpath_for_run.as_posix()} {out.as_posix()}")
     return lines
 
 

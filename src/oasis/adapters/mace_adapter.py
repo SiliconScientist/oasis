@@ -13,19 +13,15 @@ from mace.calculators import mace_mp
 MLIP_NAME = "mace-mh-1"
 
 
-def infer_benchmark(input_path: str) -> str:
-    name = Path(input_path).stem  # MamunHighT2019_adsorption
-    if not name.endswith("_adsorption"):
-        raise ValueError(
-            f"Expected dataset name to end with '_adsorption.json', got {name}"
-        )
-    return name.replace("_adsorption", "")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run MACE adsorption predictions")
     parser.add_argument("--input", required=True, help="Input dataset JSON")
     parser.add_argument("--output", required=True, help="Output result JSON")
+    parser.add_argument(
+        "--dataset-name",
+        required=True,
+        help="Dataset name (passed from task runner)",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--config", default="config.toml")
     parser.add_argument("--model-path", default=None)
@@ -49,7 +45,7 @@ def main() -> None:
     adsorption_calc = AdsorptionCalculation(
         calculators,
         mlip_name=MLIP_NAME,
-        benchmark=infer_benchmark(args.input),
+        benchmark=args.dataset_name,
     )
 
     results = adsorption_calc.run()
@@ -60,6 +56,7 @@ def main() -> None:
         "model_version": "mace-mh-1",
         "n_calculators": args.n_calcs,
         "device": args.device,
+        "dataset_name": args.dataset_name,
         "input_dataset": Path(args.input).name,
         "wall_time_s": time.time() - t0,
         "results": results,
