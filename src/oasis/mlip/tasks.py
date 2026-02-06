@@ -42,7 +42,9 @@ def resolve_datasets(datasets: list[str] | None, cfg: dict) -> list[Path]:
 
 
 def dataset_name_from_path(p: Path) -> str:
-    # remove the "_adsorption" suffix before the json extension
+    # remove the "_dev_adsorption" or "_adsorption" suffix before the json extension
+    if p.name.endswith("_dev_adsorption.json"):
+        return p.stem[: -len("_dev_adsorption")]
     if p.name.endswith("_adsorption.json"):
         return p.stem[: -len("_adsorption")]
     return p.stem
@@ -74,9 +76,15 @@ def maybe_make_dev_dataset(dpath: Path, cfg: dict) -> Path:
     dev_n = int(mlip.get("dev_n", 2))
     if not dev_run:
         return dpath
-    dev_dir = dpath.parent / "_dev"
-    dev_dir.mkdir(parents=True, exist_ok=True)
-    out = dev_dir / f"{dpath.stem}__dev{dev_n}{dpath.suffix}"
+    # If already a dev dataset, use it as-is.
+    if dpath.name.endswith("_dev_adsorption.json"):
+        return dpath
+    # Prefer "<base>_dev_adsorption.json" when the input is "<base>_adsorption.json".
+    if dpath.name.endswith("_adsorption.json"):
+        base = dpath.stem[: -len("_adsorption")]
+        out = dpath.with_name(f"{base}_dev_adsorption{dpath.suffix}")
+    else:
+        out = dpath.with_name(f"{dpath.stem}_dev{dpath.suffix}")
     # Reuse existing dev dataset if present (keeps sbatch deterministic)
     if out.exists():
         return out
@@ -96,15 +104,22 @@ def make_task_lines(
     datasets: list[str] | None = None,
 ) -> list[str]:
     cfg = load_config(config_path)
+    mlip_cfg = cfg.get("mlip", {})
+    dev_run = bool(mlip_cfg.get("dev_run", False))
     specs = get_model_specs(config_path)
     dataset_paths = resolve_datasets(datasets, cfg)
     lines: list[str] = []
     for dpath in dataset_paths:
         dpath_for_run = maybe_make_dev_dataset(dpath, cfg)
-        dname = dataset_name_from_path(dpath)
+        dname_base = dataset_name_from_path(dpath)
+        dname_task = dname_base
+        if dev_run and not dname_task.endswith("_dev"):
+            dname_task = f"{dname_task}_dev"
         for model in specs:
-            out = output_path(run_tag, dname, model)
-            lines.append(f"{model} {dname} {dpath_for_run.as_posix()} {out.as_posix()}")
+            out = output_path(run_tag, dname_base, model)
+            lines.append(
+                f"{model} {dname_task} {dpath_for_run.as_posix()} {out.as_posix()}"
+            )
     return lines
 
 
