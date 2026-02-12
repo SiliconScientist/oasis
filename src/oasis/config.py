@@ -4,6 +4,10 @@ from typing import List
 from pathlib import Path
 
 
+class IngestConfig(BaseModel):
+    source: Path
+
+
 class MLIPInterpretersConfig(BaseModel):
     mace: Path
     mattersim: Path
@@ -27,6 +31,7 @@ class MLIPConfig(BaseModel):
 
 
 class Config(BaseModel):
+    ingest: IngestConfig
     mlip: MLIPConfig
 
 
