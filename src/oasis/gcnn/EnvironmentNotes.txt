@@ -1,0 +1,25 @@
+conda create -n gcnn_safe_cpu -c conda-forge python=3.10 pip -y
+conda activate gcnn_safe_cpu
+
+conda install -y pytorch cpuonly -c pytorch
+
+conda install -y -c conda-forge numpy
+
+conda install -y -c conda-forge ipykernel
+
+python -m ipykernel install --user --name gcnn_safe_cpu --display-name "Python (gcnn_safe_cpu)"
+
+conda install -y -c conda-forge ase
+
+conda install -y -c conda-forge pandas
+
+conda install -c conda-forge pymatgen
+
+
+## Eventually could try to get mps working. Sounds like I'd have to reinstall conda to be an osx-arm64 version rather than osx-64
+
+## ChatGPT recommends: install Miniforge arm64 for all new scientific/ML environments
+
+## Then could do something like one of these:
+device = torch.device("mps")
+device = torch.device('mps' if torch.mps.is_available() else 'cpu')
