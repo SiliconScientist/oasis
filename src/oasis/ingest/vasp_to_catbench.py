@@ -1,5 +1,6 @@
 import re
 import shutil
+from typing import Dict
 import yaml
 from collections import defaultdict
 from pathlib import Path
@@ -104,17 +105,24 @@ def formula_to_composition(formula: str) -> dict[str, int]:
     return dict(stack[0])
 
 
-def build_coeff_setting(cfg, tag_map: Path) -> dict[str, list[float]]:
+def build_coeff_setting(cfg, tag_map: Path) -> Dict[str, dict]:
     """
     Returns:
-      coeff_setting[tag] = [c_CO2, c_H2O, c_H2]  # aligned with cfg.ingest.stoich.basis_species
+      coeff_setting[formula] = {
+          "slab": -1,
+          "adslab": 1,
+          "CO2gas": c_CO2,
+          "H2Ogas": c_H2O,
+          "H2gas": c_H2,
+      }
     """
 
-    coeff_setting: dict[str, list[float]] = {}
+    coeff_setting: Dict[str, dict] = {}
+
     for tag, formula in tag_map.items():
         comp = formula_to_composition(formula)
 
-        # OPTIONAL: restrict to elements you care about, if you want
+        # OPTIONAL: restrict to allowed elements
         allowed = set(cfg.ingest.stoich.elements)
         extra = set(comp) - allowed
         if extra:
@@ -123,9 +131,22 @@ def build_coeff_setting(cfg, tag_map: Path) -> dict[str, list[float]]:
                 f"not in cfg.ingest.stoich.elements={cfg.ingest.stoich.elements}"
             )
 
-        coeffs = solve_stoichiometry(cfg, comp)
-        coeff_setting[tag] = list(coeffs)
+        # Solve for [CO2, H2O, H2]
+        c_CO2, c_H2O, c_H2 = solve_stoichiometry(cfg, comp)
 
+        gas_terms = {
+            "CO2gas": c_CO2,
+            "H2Ogas": c_H2O,
+            "H2gas": c_H2,
+        }
+
+        gas_terms = {k: v for k, v in gas_terms.items() if v != 0}
+
+        coeff_setting[formula] = {
+            "slab": -1,
+            "adslab": 1,
+            **gas_terms,
+        }
     return coeff_setting
 
 
@@ -214,6 +235,7 @@ def main():
                 copy_selected_files(src_path, dst_path)
 
     coeff_setting = build_coeff_setting(cfg, tag_map)
+    print(coeff_setting)
 
 
 if __name__ == "__main__":
