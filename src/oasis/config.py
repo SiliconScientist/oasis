@@ -1,12 +1,19 @@
 from tomllib import load
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
+
+
+class StoichConfig(BaseModel):
+    elements: list[str]
+    basis_species: list[str]
+    basis_composition: Dict[str, Dict[str, int]]
 
 
 class IngestConfig(BaseModel):
     source: Path
     catbench_folder: Optional[Path] = None
+    stoich: StoichConfig
 
 
 class MLIPInterpretersConfig(BaseModel):
