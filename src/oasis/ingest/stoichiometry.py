@@ -1,6 +1,6 @@
 import sympy as sp
 
-from oasis.config import get_config
+from oasis.config import Config
 
 
 def build_basis_matrix(cfg) -> sp.Matrix:
@@ -35,12 +35,17 @@ def build_b_vector(
     return sp.Matrix([int(target_composition.get(el, 0)) for el in elements])
 
 
-cfg = get_config()
+def solve_stoichiometry(cfg: Config, target_composition: dict[str, int]) -> sp.Matrix:
+    """
+    Solve A x = b for a target molecular composition.
 
-A = build_basis_matrix(cfg)
+    Args:
+        target_composition: Element-count mapping, e.g. {"C": 1, "H": 4, "O": 1}.
 
-# CH3OH = C1 H4 O1
-elements = list(cfg.ingest.stoich.elements)
-b = build_b_vector(elements, {"C": 1, "H": 4, "O": 1})
-
-x = A.LUsolve(b)
+    Returns:
+        Sympy column vector x (basis-species coefficients).
+    """
+    A = build_basis_matrix(cfg)
+    elements = list(cfg.ingest.stoich.elements)
+    b = build_b_vector(elements, target_composition)
+    return A.LUsolve(b)
