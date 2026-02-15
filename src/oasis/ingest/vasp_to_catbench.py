@@ -4,6 +4,7 @@ from typing import Dict
 import yaml
 from collections import defaultdict
 from pathlib import Path
+from catbench.adsorption import vasp_preprocessing
 
 from oasis.config import get_config
 from oasis.ingest.stoichiometry import solve_stoichiometry
@@ -235,7 +236,9 @@ def main():
                 copy_selected_files(src_path, dst_path)
 
     coeff_setting = build_coeff_setting(cfg, tag_map)
-    print(coeff_setting)
+    vasp_preprocessing(
+        dataset_name=cfg.ingest.dataset_name, coeff_setting=coeff_setting
+    )
 
 
 if __name__ == "__main__":
