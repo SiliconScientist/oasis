@@ -1,21 +1,23 @@
 import sys
+from oasis.ingest.vasp_to_catbench import main as ingest_main
 from oasis.mlip.cli import main as mlip_main
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python -m oasis <command> [args...]")
-        print("Available commands: mlip")
-        sys.exit(1)
+    ingest_main()
+    # if len(sys.argv) < 2:
+    #     print("Usage: python -m oasis <command> [args...]")
+    #     print("Available commands: mlip")
+    #     sys.exit(1)
 
-    command = sys.argv[1]
+    # command = sys.argv[1]
 
-    if command == "mlip":
-        # Forward remaining args to mlip CLI
-        mlip_main(sys.argv[2:])
-    else:
-        print(f"Unknown command: {command}")
-        sys.exit(1)
+    # if command == "mlip":
+    #     # Forward remaining args to mlip CLI
+    #     mlip_main(sys.argv[2:])
+    # else:
+    #     print(f"Unknown command: {command}")
+    #     sys.exit(1)
 
 
 if __name__ == "__main__":

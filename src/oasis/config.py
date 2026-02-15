@@ -12,6 +12,7 @@ class StoichConfig(BaseModel):
 
 class IngestConfig(BaseModel):
     source: Path
+    dataset_name: str
     catbench_folder: Optional[Path] = None
     stoich: StoichConfig
 

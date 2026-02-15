@@ -35,17 +35,9 @@ def build_b_vector(
     return sp.Matrix([int(target_composition.get(el, 0)) for el in elements])
 
 
-def solve_stoichiometry(cfg: Config, target_composition: dict[str, int]) -> sp.Matrix:
-    """
-    Solve A x = b for a target molecular composition.
-
-    Args:
-        target_composition: Element-count mapping, e.g. {"C": 1, "H": 4, "O": 1}.
-
-    Returns:
-        Sympy column vector x (basis-species coefficients).
-    """
+def solve_stoichiometry(cfg: Config, target_composition: dict[str, int]) -> list[int]:
     A = build_basis_matrix(cfg)
     elements = list(cfg.ingest.stoich.elements)
     b = build_b_vector(elements, target_composition)
-    return A.LUsolve(b)
+    x = A.LUsolve(b)
+    return [int(v) for v in list(x)]

@@ -1,3 +1,4 @@
+catbench
 pydantic
 PyYAML
 sympy
