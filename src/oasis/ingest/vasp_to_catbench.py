@@ -4,7 +4,7 @@ from typing import Dict
 import yaml
 from collections import defaultdict
 from pathlib import Path
-from catbench.adsorption import vasp_preprocessing
+from catbench.adsorption.data import vasp as catbench_vasp
 
 from oasis.config import get_config
 from oasis.ingest.stoichiometry import solve_stoichiometry
@@ -21,6 +21,40 @@ def copy_selected_files(src_dir: Path, dst_dir: Path, filenames=("CONTCAR", "OSZ
         src_file = src_dir / name
         if src_file.is_file():
             shutil.copy2(src_file, dst_dir / name)
+
+
+def read_E0_from_OSZICAR(file_path):
+    """
+    Read final energy (E0) from VASP OSZICAR file.
+
+    Args:
+        file_path: Path to OSZICAR file
+
+    Returns:
+        float: Final energy in eV
+    """
+    try:
+        with open(file_path, "r") as file:
+            lines = file.readlines()
+            last_line = lines[-1]
+
+        energy = None
+        for word in last_line.split():
+            if word == "E0=":
+                energy_index = last_line.split().index(word) + 1
+                energy = last_line.split()[energy_index]
+                energy = float(energy)
+                break
+
+        if energy is None:
+            raise ValueError(f"Energy value not found in file: {file_path}")
+
+        return energy
+
+    except Exception as e:
+        raise RuntimeError(
+            f"An error occurred while reading the file '{file_path}': {str(e)}"
+        )
 
 
 _TOKEN = re.compile(
@@ -206,6 +240,13 @@ def main():
         if not folder.is_dir():
             continue
 
+        oszicar_path = folder / "OSZICAR"
+        try:
+            # Filter out directories with missing/corrupt OSZICAR before conversion.
+            read_E0_from_OSZICAR(oszicar_path)
+        except RuntimeError:
+            continue
+
         parts = folder.name.split("-")
         if len(parts) < 3:
             continue
@@ -236,8 +277,21 @@ def main():
                 copy_selected_files(src_path, dst_path)
 
     coeff_setting = build_coeff_setting(cfg, tag_map)
-    vasp_preprocessing(
-        dataset_name=cfg.ingest.dataset_name, coeff_setting=coeff_setting
+
+    # CatBench's VASP preprocessor uses one parameter for both:
+    # 1) input dataset directory traversal, and 2) output JSON filename stem.
+    # Patch its path helpers so we can read from the real dataset path while
+    # writing to a stable project-root output file.
+    project_root = Path.cwd()
+    output_dir = project_root / "data" / "raw_data"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{cfg.ingest.dataset_name}_adsorption.json"
+
+    catbench_vasp.get_raw_data_directory = lambda: str(output_dir)
+    catbench_vasp.get_raw_data_path = lambda _benchmark_name: str(output_path)
+    catbench_vasp.vasp_preprocessing(
+        dataset_name=str(dest),
+        coeff_setting=coeff_setting,
     )
 
 
