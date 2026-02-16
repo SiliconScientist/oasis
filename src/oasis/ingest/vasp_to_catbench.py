@@ -146,7 +146,7 @@ def build_coeff_setting(cfg, tag_map: Path) -> Dict[str, dict]:
       coeff_setting[formula] = {
           "slab": -1,
           "adslab": 1,
-          "CO2gas": c_CO2,
+          "CH4gas": c_CH4,
           "H2Ogas": c_H2O,
           "H2gas": c_H2,
       }
@@ -166,13 +166,13 @@ def build_coeff_setting(cfg, tag_map: Path) -> Dict[str, dict]:
                 f"not in cfg.ingest.stoich.elements={cfg.ingest.stoich.elements}"
             )
 
-        # Solve for [CO2, H2O, H2]
-        c_CO2, c_H2O, c_H2 = solve_stoichiometry(cfg, comp)
+        # Solve for [CH4, H2O, H2]
+        c_CH4, c_H2O, c_H2 = solve_stoichiometry(cfg, comp)
 
         gas_terms = {
-            "CO2gas": c_CO2,
-            "H2Ogas": c_H2O,
-            "H2gas": c_H2,
+            "CH4gas": -c_CH4,
+            "H2Ogas": -c_H2O,
+            "H2gas": -c_H2,
         }
 
         gas_terms = {k: v for k, v in gas_terms.items() if v != 0}

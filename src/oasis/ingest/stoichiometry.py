@@ -40,4 +40,4 @@ def solve_stoichiometry(cfg: Config, target_composition: dict[str, int]) -> list
     elements = list(cfg.ingest.stoich.elements)
     b = build_b_vector(elements, target_composition)
     x = A.LUsolve(b)
-    return [int(v) for v in list(x)]
+    return [float(v) for v in list(x)]
