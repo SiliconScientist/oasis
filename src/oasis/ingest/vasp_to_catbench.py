@@ -140,6 +140,27 @@ def formula_to_composition(formula: str) -> dict[str, int]:
     return dict(stack[0])
 
 
+def clean_coeff(x, *, eps: float = 1e-12):
+    """
+    Canonicalize coefficients for serialization:
+      - clamp tiny values to +0.0
+      - remove negative zero
+      - optionally return int if essentially integer
+    """
+    xf = float(x)
+
+    # clamp tiny values to 0
+    if abs(xf) < eps:
+        return 0  # gives "0" in JSON (nice)
+
+    # snap near-integers (optional, but usually nice for stoich)
+    xr = round(xf)
+    if abs(xf - xr) < eps:
+        return int(xr)
+
+    return xf
+
+
 def build_coeff_setting(cfg, tag_map: Path) -> Dict[str, dict]:
     """
     Returns:
@@ -166,16 +187,14 @@ def build_coeff_setting(cfg, tag_map: Path) -> Dict[str, dict]:
                 f"not in cfg.ingest.stoich.elements={cfg.ingest.stoich.elements}"
             )
 
-        # Solve for [CH4, O2, H2]
-        c_CH4, c_O2, c_H2 = solve_stoichiometry(cfg, comp)
-
-        gas_terms = {
-            "CH4gas": -c_CH4,
-            "O2gas": -c_O2,
-            "H2gas": -c_H2,
-        }
-
-        gas_terms = {k: v for k, v in gas_terms.items() if v != 0}
+        # coeffs is aligned with cfg.ingest.stoich.basis_species
+        coeffs = solve_stoichiometry(cfg, comp)  # e.g. [c1, c2, c3, ...]
+        basis = list(cfg.ingest.stoich.basis_species)  # e.g. ["CH4", "O2", "H2"]
+        gas_terms = {}
+        for spc, c in zip(basis, coeffs):
+            v = clean_coeff(-c)
+            if v != 0:
+                gas_terms[f"{spc}gas"] = v
 
         coeff_setting[formula] = {
             "slab": -1,

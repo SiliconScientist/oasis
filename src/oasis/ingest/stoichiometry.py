@@ -1,26 +1,39 @@
+import re
 import sympy as sp
+from collections import Counter
 
 from oasis.config import Config
 
 
+def parse_formula(formula: str) -> dict[str, int]:
+    """
+    Convert chemical formula string -> {element: count}
+    Works for simple formulas like CO2, H2O, CH3OH, O, etc.
+    """
+    tokens = re.findall(r"([A-Z][a-z]*)(\d*)", formula)
+    comp = Counter()
+    for el, num in tokens:
+        comp[el] += int(num) if num else 1
+    return dict(comp)
+
+
 def build_basis_matrix(cfg) -> sp.Matrix:
     """
-    Build A (elements x basis_species) from:
-      cfg.stoich.elements         e.g. ["C","H","O"]
-      cfg.stoich.basis_species    e.g. ["CO2","H2O","H2"]
-      cfg.stoich.basis_composition (dict) mapping species -> {element: count}
+    Build A (elements x basis_species) for arbitrary basis.
+
+    Uses:
+      cfg.ingest.stoich.elements       e.g. ["C","H","O","N"]
+      cfg.ingest.stoich.basis_species  e.g. ["CO2","H2O","H2","NH3"]
     """
     elements = list(cfg.ingest.stoich.elements)
     species = list(cfg.ingest.stoich.basis_species)
-    comp = cfg.ingest.stoich.basis_composition  # dict-like
 
-    # A[i,j] = count of element i in species j
     rows = []
     for el in elements:
         row = []
         for spc in species:
-            # tolerate missing keys (e.g., H2 has no O entry)
-            row.append(int(comp.get(spc, {}).get(el, 0)))
+            comp = parse_formula(spc)
+            row.append(comp.get(el, 0))
         rows.append(row)
 
     return sp.Matrix(rows)
