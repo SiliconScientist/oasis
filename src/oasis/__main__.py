@@ -1,10 +1,12 @@
 import sys
+from catbench.adsorption import AdsorptionAnalysis
+
 from oasis.ingest.vasp_to_catbench import main as ingest_main
 from oasis.mlip.cli import main as mlip_main
 
 
 def main():
-    ingest_main()
+    # ingest_main()
     # if len(sys.argv) < 2:
     #     print("Usage: python -m oasis <command> [args...]")
     #     print("Available commands: mlip")
@@ -18,6 +20,23 @@ def main():
     # else:
     #     print(f"Unknown command: {command}")
     #     sys.exit(1)
+
+    # Configure and run analysis
+    config = {
+        "mlip_list": [
+            "7net-omni",
+            "mace-mh-1",
+            "mattersim-v1-5m",
+            "orb-v3-conservative-inf-omat",
+            "uma-s-1p1",
+        ],
+        "calculating_path": "/Users/averyhill/github/oasis/data/mlips",
+        # "exclude_adsorbates": [],
+        # "target_adsorbates": # "CCHOH", "OH", "O"
+    }
+
+    analysis = AdsorptionAnalysis(**config)
+    analysis.analysis()
 
 
 if __name__ == "__main__":
