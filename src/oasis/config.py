@@ -1,7 +1,12 @@
-from tomllib import load
-from pydantic import BaseModel
-from typing import Dict, List, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
 
 
 class StoichConfig(BaseModel):
@@ -20,11 +25,16 @@ class IngestConfig(BaseModel):
 class MLIPInterpretersConfig(BaseModel):
     mace: Path
     mattersim: Path
+    orb_v3: Optional[Path] = None
+    sevennet: Optional[Path] = None
+    uma_s1p1: Optional[Path] = None
 
 
 class MLIPModelPathConfig(BaseModel):
     mace: Path
     mattersim: Path
+    orb_v3: Optional[Path] = None
+    uma: Optional[Path] = None
 
 
 class MLIPModelsConfig(BaseModel):
@@ -34,14 +44,26 @@ class MLIPModelsConfig(BaseModel):
 class MLIPConfig(BaseModel):
     dev_n: int
     dev_run: bool
+    dataset: Optional[str] = None
     interpreters: MLIPInterpretersConfig
     model_paths: MLIPModelPathConfig
     models: MLIPModelsConfig
 
 
+class AnalysisConfig(BaseModel):
+    base_dir: Path
+    out_dir: Path
+    prefixes: List[str]
+
+
 class Config(BaseModel):
+    seed: Optional[int] = None
+    dev_run: Optional[bool] = None
+    train: Optional[bool] = None
+    evaluate: Optional[bool] = None
     ingest: IngestConfig
     mlip: MLIPConfig
+    analysis: Optional[AnalysisConfig] = None
 
     def init_paths(self):
         catbench_folder = (
@@ -52,7 +74,7 @@ class Config(BaseModel):
 
 def get_config():
     with open("config.toml", "rb") as f:
-        cfg_data = load(f)
+        cfg_data = tomllib.load(f)
         cfg = Config(**cfg_data)
         cfg.init_paths()
     return cfg
