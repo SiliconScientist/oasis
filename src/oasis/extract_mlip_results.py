@@ -388,12 +388,39 @@ def detect_anomalies_from_result_json(
 
 
 def main():
-    mlip_json_path = "data/mlips/7net-omni/7net-omni_result.json"
-    output_path = Path("data/mlips/7net-omni/7net-omni_processed_result.json")
-    per_rxn = detect_anomalies_from_result_json(mlip_json_path)
-    rows = with_metadata(per_rxn)
-    output_path.write_text(json.dumps(rows, indent=2))
-    print(f"Wrote {len(rows)} labeled reactions -> {output_path}")
+    mlip_results_dir = Path("data/mlips")
+    processed_count = 0
+
+    for model_dir in mlip_results_dir.iterdir():
+        if not model_dir.is_dir():
+            continue
+
+        model_name = model_dir.name
+        result_path = model_dir / f"{model_name}_result.json"
+
+        # Fallback if result file naming differs from directory name.
+        if not result_path.exists():
+            result_candidates = sorted(
+                p
+                for p in model_dir.glob("*_result.json")
+                if not p.name.endswith("_processed_result.json")
+            )
+            if not result_candidates:
+                print(f"Skipping {model_name}: no result json found")
+                continue
+            result_path = result_candidates[0]
+
+        output_path = result_path.with_name(
+            result_path.name.replace("_result.json", "_processed_result.json")
+        )
+
+        per_rxn = detect_anomalies_from_result_json(result_path)
+        rows = with_metadata(per_rxn)
+        output_path.write_text(json.dumps(rows, indent=2))
+        print(f"Wrote {len(rows)} labeled reactions -> {output_path}")
+        processed_count += 1
+
+    print(f"Processed {processed_count} MLIP result directories in {mlip_results_dir}")
 
 
 if __name__ == "__main__":
