@@ -217,7 +217,7 @@ config.toml
 data/
 raw_data/
 models/*
-result/
+result*/
 
 # SLURM files
 slurm_output/
