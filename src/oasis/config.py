@@ -56,6 +56,22 @@ class AnalysisConfig(BaseModel):
     prefixes: List[str]
 
 
+class PlotConfig(BaseModel):
+    output_dir: Path
+    min_train: int
+    max_train: int
+    n_repeats: int
+    trim: bool
+    use_ridge: bool
+    use_kernel_ridge: bool
+    use_lasso: bool
+    use_elastic_net: bool
+    use_residual: bool
+    use_linearization: bool
+    use_gnn: bool
+    adsorbate: Optional[str] = None
+
+
 class Config(BaseModel):
     seed: Optional[int] = None
     dev_run: Optional[bool] = None
@@ -64,6 +80,7 @@ class Config(BaseModel):
     ingest: IngestConfig
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
+    plot: Optional[PlotConfig] = None
 
     def init_paths(self):
         catbench_folder = (

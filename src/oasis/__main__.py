@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from oasis.config import get_config
 from oasis.plot import parity_plot
 
 
@@ -31,7 +32,10 @@ def _find_processed_result_files() -> list[Path]:
     )
 
 
-def _load_wide_predictions(processed_files: list[Path]) -> pd.DataFrame:
+def _load_wide_predictions(
+    processed_files: list[Path],
+    adsorbate_filter: str | None = None,
+) -> pd.DataFrame:
     """
     Build a wide table with:
       reaction, reference_ads_eng, <mlip>_mlip_ads_eng_median, ...
@@ -46,6 +50,18 @@ def _load_wide_predictions(processed_files: list[Path]) -> pd.DataFrame:
         with path.open("r") as f:
             rows = json.load(f)
         df = pd.DataFrame(rows)
+
+        if adsorbate_filter is not None:
+            if "adsorbate" not in df.columns:
+                raise ValueError(
+                    f"Configured plot.adsorbate='{adsorbate_filter}', but no "
+                    f"'adsorbate' column exists in {path}"
+                )
+            df = df[df["adsorbate"] == adsorbate_filter]
+            if df.empty:
+                raise ValueError(
+                    f"No rows left in {path} after adsorbate filter '{adsorbate_filter}'"
+                )
 
         reaction_col = "id" if "id" in df.columns else "reaction"
         required = {reaction_col, "dft_ads_eng", "mlip_ads_eng_median"}
@@ -102,12 +118,21 @@ def _load_wide_predictions(processed_files: list[Path]) -> pd.DataFrame:
 
 
 def main() -> None:
+    cfg = get_config()
     processed_files = _find_processed_result_files()
-    wide_df = _load_wide_predictions(processed_files)
+    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
+    wide_df = _load_wide_predictions(processed_files, adsorbate_filter=adsorbate_filter)
 
-    output_path = Path("data/results/plots/mlips_vs_dft_parity.png")
+    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    suffix = f"_adsorbate_{adsorbate_filter}" if adsorbate_filter else ""
+    output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
-    print(f"Processed {len(processed_files)} MLIP files -> parity plot: {saved_path}")
+    print(
+        f"Processed {len(processed_files)} MLIP files"
+        f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
+        f" -> parity plot: {saved_path}"
+    )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
 
 

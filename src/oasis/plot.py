@@ -72,7 +72,7 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
 
     ax.set_xlabel("Reference adsorption energy (eV)")
     ax.set_ylabel("MLIP adsorption energy (eV)")
-    ax.set_title("Normal predictions parity plot (all MLIPs)")
+    ax.set_title("Parity plot (all MLIPs)")
     ax.set_aspect("equal", adjustable="box")
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.3)
