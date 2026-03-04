@@ -1,23 +1,39 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import polars as pl
-from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.metrics import mean_squared_error
 from oasis.config import Config
 
+try:
+    import polars as pl
+except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
+    pl = None
 
-def _mlip_columns(df: pl.DataFrame) -> list[str]:
+try:
+    from sklearn.kernel_ridge import KernelRidge
+    from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
+    from sklearn.metrics import mean_squared_error
+except ModuleNotFoundError:  # optional for parity-only workflows
+    KernelRidge = ElasticNet = Lasso = LinearRegression = Ridge = None
+    mean_squared_error = None
+
+
+def _mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
 
-def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
+def _column_to_numpy(df: Any, col: str) -> np.ndarray:
+    series = df[col]
+    if hasattr(series, "to_numpy"):
+        return series.to_numpy()
+    return np.asarray(series)
+
+
+def parity_plot(df: Any, output_path: str | Path) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
 
@@ -28,10 +44,11 @@ def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
         raise ValueError(
             "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
         )
-    if df.height == 0:
+    n_rows = len(df)
+    if n_rows == 0:
         raise ValueError("No data available to plot.")
 
-    ref = df["reference_ads_eng"].to_numpy()
+    ref = _column_to_numpy(df, "reference_ads_eng")
 
     fig, ax = plt.subplots(figsize=(7, 7))
     cmap = plt.cm.get_cmap("tab10", len(mlip_cols))
@@ -39,7 +56,7 @@ def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
     for idx, col in enumerate(mlip_cols):
         ax.scatter(
             ref,
-            df[col].to_numpy(),
+            _column_to_numpy(df, col),
             s=35,
             alpha=0.85,
             label=col.removesuffix("_mlip_ads_eng_median"),
@@ -48,7 +65,7 @@ def parity_plot(df: pl.DataFrame, output_path: str | Path) -> Path:
             linewidth=0.5,
         )
 
-    mlip_vals = np.concatenate([df[c].to_numpy() for c in mlip_cols])
+    mlip_vals = np.concatenate([_column_to_numpy(df, c) for c in mlip_cols])
     min_val = min(ref.min(), mlip_vals.min())
     max_val = max(ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
