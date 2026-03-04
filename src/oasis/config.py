@@ -70,6 +70,7 @@ class PlotConfig(BaseModel):
     use_linearization: bool
     use_gnn: bool
     adsorbate: Optional[str] = None
+    anomaly_label: Optional[str] = None
 
 
 class Config(BaseModel):

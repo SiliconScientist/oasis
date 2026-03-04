@@ -35,6 +35,7 @@ def _find_processed_result_files() -> list[Path]:
 def _load_wide_predictions(
     processed_files: list[Path],
     adsorbate_filter: str | None = None,
+    anomaly_filter: str | None = None,
 ) -> pd.DataFrame:
     """
     Build a wide table with:
@@ -61,6 +62,18 @@ def _load_wide_predictions(
             if df.empty:
                 raise ValueError(
                     f"No rows left in {path} after adsorbate filter '{adsorbate_filter}'"
+                )
+
+        if anomaly_filter is not None:
+            if "label" not in df.columns:
+                raise ValueError(
+                    f"Configured plot.anomaly_label='{anomaly_filter}', but no "
+                    f"'label' column exists in {path}"
+                )
+            df = df[df["label"] == anomaly_filter]
+            if df.empty:
+                raise ValueError(
+                    f"No rows left in {path} after anomaly_label filter '{anomaly_filter}'"
                 )
 
         reaction_col = "id" if "id" in df.columns else "reaction"
@@ -121,16 +134,27 @@ def main() -> None:
     cfg = get_config()
     processed_files = _find_processed_result_files()
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
-    wide_df = _load_wide_predictions(processed_files, adsorbate_filter=adsorbate_filter)
+    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
+    wide_df = _load_wide_predictions(
+        processed_files,
+        adsorbate_filter=adsorbate_filter,
+        anomaly_filter=anomaly_filter,
+    )
 
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
-    suffix = f"_adsorbate_{adsorbate_filter}" if adsorbate_filter else ""
+    suffix_parts: list[str] = []
+    if adsorbate_filter:
+        suffix_parts.append(f"adsorbate_{adsorbate_filter}")
+    if anomaly_filter:
+        suffix_parts.append(f"anomaly_{anomaly_filter}")
+    suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
     print(
         f"Processed {len(processed_files)} MLIP files"
         f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
+        f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
