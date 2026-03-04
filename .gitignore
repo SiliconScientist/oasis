@@ -144,6 +144,7 @@ ENV/
 env.bak/
 venv.bak/
 envs/*/.venv/
+envs/*/.venv/
 
 # Spyder project settings
 .spyderproject
@@ -218,6 +219,7 @@ data/
 raw_data/
 models/*
 result*/
+result/*
 
 # SLURM files
 slurm_output/
