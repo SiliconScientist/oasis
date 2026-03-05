@@ -6,6 +6,7 @@ import numpy as np
 from ase import Atoms
 from ase.constraints import dict2constraint
 from ase.io.jsonio import object_hook
+from ase.geometry import find_mic
 
 from oasis.config import Config, get_config
 
@@ -146,14 +147,16 @@ def pick_binding_atom_index(
     Define binding atom as:
       1) adsorbate atom with minimum z
       2) if tie within z_tolerance, pick atom with minimum distance to nearest slab atom
-      3) hydrogen atoms are excluded from candidacy
-    Returns the atom index in the adslab, or None for hydrogen-only adsorbates.
+      3) hydrogen atoms are excluded from candidacy unless adsorbate is single-atom H
+    Returns the atom index in the adslab, or None when no binding atom can be defined.
     """
     if not adsorbate_indices:
         raise ValueError("adsorbate_indices is empty")
 
     candidate_indices = [i for i in adsorbate_indices if adslab[i].symbol != "H"]
     if not candidate_indices:
+        if len(adsorbate_indices) == 1 and adslab[adsorbate_indices[0]].symbol == "H":
+            return adsorbate_indices[0]
         return None
 
     adsorbate_index_set = set(adsorbate_indices)
@@ -189,7 +192,7 @@ def extract_binding_atoms(
 ) -> dict[str, Optional[int]]:
     """
     Get binding atom index (in adslab indexing) for each reaction.
-    Returns None when adsorbate is hydrogen-only.
+    Returns None when no binding atom can be defined under selection rules.
     """
     binding_atoms: dict[str, Optional[int]] = {}
 
@@ -203,6 +206,112 @@ def extract_binding_atoms(
     return binding_atoms
 
 
+def strip_adsorbate_from_adslab(adslab: Atoms, adsorbate_indices: list[int]) -> Atoms:
+    """
+    Return slab-only ASE Atoms by removing atoms listed in adsorbate_indices.
+    """
+    adsorbate_index_set = set(adsorbate_indices)
+    slab_indices = [i for i in range(len(adslab)) if i not in adsorbate_index_set]
+    if not slab_indices:
+        raise ValueError("No slab atoms found (all atoms are marked as adsorbate)")
+    return adslab[slab_indices]
+
+
+def find_adsorption_sites_on_slab(slab: Atoms) -> np.ndarray:
+    """
+    Find adsorption sites on an ASE slab using pymatgen's AdsorbateSiteFinder.
+    Returns Cartesian site coordinates with shape (n_sites, 3).
+    Symmetry/near-site reductions are disabled to keep all sites.
+    """
+    try:
+        from pymatgen.analysis.adsorption import AdsorbateSiteFinder
+        from pymatgen.io.ase import AseAtomsAdaptor
+    except ImportError as exc:
+        raise ImportError(
+            "pymatgen is required for adsorption site finding. Install pymatgen."
+        ) from exc
+
+    slab_pm = AseAtomsAdaptor.get_structure(slab)
+    asf = AdsorbateSiteFinder(slab_pm)
+    sites = asf.find_adsorption_sites(symm_reduce=0.0, near_reduce=0.0).get("all", [])
+    if not sites:
+        raise ValueError("AdsorbateSiteFinder returned no adsorption sites")
+    return np.array(sites, dtype=float)
+
+
+def pick_closest_adsorption_site(
+    adslab: Atoms, binding_atom_index: int, adsorption_sites: np.ndarray
+) -> np.ndarray:
+    """
+    Pick the adsorption site nearest to the current adsorbate binding atom.
+    Distances are evaluated in-plane (x,y only) with MIC under adslab PBC/cell.
+    """
+    binding_position = adslab.positions[binding_atom_index]
+    displacement = np.array(adsorption_sites - binding_position, dtype=float)
+    displacement[:, 2] = 0.0
+
+    pbc_xy = np.array(adslab.pbc, dtype=bool)
+    pbc_xy[2] = False
+    mic_vectors_xy, mic_lengths_xy = find_mic(displacement, adslab.cell, pbc=pbc_xy)
+    closest_idx = int(np.argmin(mic_lengths_xy))
+
+    closest_site = np.array(adsorption_sites[closest_idx], dtype=float)
+    closest_site[:2] = binding_position[:2] + mic_vectors_xy[closest_idx, :2]
+    return closest_site
+
+
+def shift_adsorbate_to_site(
+    adslab: Atoms, adsorbate_indices: list[int], target_site: np.ndarray, binding_atom_index: int
+) -> Atoms:
+    """
+    Translate all adsorbate atoms so the binding atom lands on target_site.
+    """
+    shifted = adslab.copy()
+    translation = np.asarray(target_site, dtype=float) - shifted.positions[binding_atom_index]
+    shifted.positions[adsorbate_indices] += translation
+    return shifted
+
+
+def snap_adsorbate_to_closest_binding_site(
+    adslab: Atoms, adsorbate_indices: list[int], z_tolerance: float = 1e-3
+) -> tuple[Atoms, np.ndarray]:
+    """
+    Snap adsorbate to the ASF adsorption site closest to the current binding atom.
+    Returns (shifted_adslab, closest_site_cartesian).
+    """
+    binding_atom_index = pick_binding_atom_index(
+        adslab, adsorbate_indices, z_tolerance=z_tolerance
+    )
+    if binding_atom_index is None:
+        raise ValueError("Cannot identify a binding atom for this adsorbate")
+
+    slab = strip_adsorbate_from_adslab(adslab, adsorbate_indices)
+    adsorption_sites = find_adsorption_sites_on_slab(slab)
+    closest_site = pick_closest_adsorption_site(adslab, binding_atom_index, adsorption_sites)
+    shifted_adslab = shift_adsorbate_to_site(
+        adslab, adsorbate_indices, closest_site, binding_atom_index
+    )
+    return shifted_adslab, closest_site
+
+
+def snap_all_adsorbates_to_closest_binding_sites(
+    adsorbed_atoms: dict[str, Atoms],
+    adsorbate_indices: dict[str, list[int]],
+    z_tolerance: float = 1e-3,
+) -> dict[str, Atoms]:
+    """
+    Batch helper that snaps all adslabs to their nearest ASF binding site.
+    """
+    shifted: dict[str, Atoms] = {}
+    for reaction, adslab in adsorbed_atoms.items():
+        if reaction not in adsorbate_indices:
+            raise KeyError(f"Missing adsorbate indices for reaction '{reaction}'")
+        shifted[reaction], _ = snap_adsorbate_to_closest_binding_site(
+            adslab, adsorbate_indices[reaction], z_tolerance=z_tolerance
+        )
+    return shifted
+
+
 def main() -> None:
     from ase.visualize import view
 
@@ -212,6 +321,9 @@ def main() -> None:
     adsorbate_indices = extract_adsorbate_indices(dataset_subset)
     adsorbate_positions = extract_adsorbate_positions(adsorbed_atoms, adsorbate_indices)
     binding_atoms = extract_binding_atoms(adsorbed_atoms, adsorbate_indices)
+    shifted_adslabs = snap_all_adsorbates_to_closest_binding_sites(
+        adsorbed_atoms, adsorbate_indices
+    )
     print(
         f"Loaded {len(dataset_subset)} entries and extracted "
         f"{len(adsorbed_atoms)} adsorbed ASE Atoms objects from {cfg.mlip.dataset}"
@@ -219,6 +331,7 @@ def main() -> None:
     print(f"Extracted adsorbate indices for {len(adsorbate_indices)} entries")
     print(f"Extracted adsorbate positions for {len(adsorbate_positions)} entries")
     print(f"Computed binding atoms for {len(binding_atoms)} entries")
+    print(f"Shifted adsorbates to closest ASF sites for {len(shifted_adslabs)} entries")
 
 
 if __name__ == "__main__":
