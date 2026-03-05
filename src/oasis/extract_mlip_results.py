@@ -3,183 +3,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 # Reuse CatBench helpers (so you don't have to copy their internals)
 from catbench.utils.analysis_utils import get_calculator_keys, get_median_calculator_key
-
-# Minimal periodic table symbols list (1-118).
-# This is stable and doesn't need the web.
-ELEMENT_SYMBOLS = {
-    "H",
-    "He",
-    "Li",
-    "Be",
-    "B",
-    "C",
-    "N",
-    "O",
-    "F",
-    "Ne",
-    "Na",
-    "Mg",
-    "Al",
-    "Si",
-    "P",
-    "S",
-    "Cl",
-    "Ar",
-    "K",
-    "Ca",
-    "Sc",
-    "Ti",
-    "V",
-    "Cr",
-    "Mn",
-    "Fe",
-    "Co",
-    "Ni",
-    "Cu",
-    "Zn",
-    "Ga",
-    "Ge",
-    "As",
-    "Se",
-    "Br",
-    "Kr",
-    "Rb",
-    "Sr",
-    "Y",
-    "Zr",
-    "Nb",
-    "Mo",
-    "Tc",
-    "Ru",
-    "Rh",
-    "Pd",
-    "Ag",
-    "Cd",
-    "In",
-    "Sn",
-    "Sb",
-    "Te",
-    "I",
-    "Xe",
-    "Cs",
-    "Ba",
-    "La",
-    "Ce",
-    "Pr",
-    "Nd",
-    "Pm",
-    "Sm",
-    "Eu",
-    "Gd",
-    "Tb",
-    "Dy",
-    "Ho",
-    "Er",
-    "Tm",
-    "Yb",
-    "Lu",
-    "Hf",
-    "Ta",
-    "W",
-    "Re",
-    "Os",
-    "Ir",
-    "Pt",
-    "Au",
-    "Hg",
-    "Tl",
-    "Pb",
-    "Bi",
-    "Po",
-    "At",
-    "Rn",
-    "Fr",
-    "Ra",
-    "Ac",
-    "Th",
-    "Pa",
-    "U",
-    "Np",
-    "Pu",
-    "Am",
-    "Cm",
-    "Bk",
-    "Cf",
-    "Es",
-    "Fm",
-    "Md",
-    "No",
-    "Lr",
-    "Rf",
-    "Db",
-    "Sg",
-    "Bh",
-    "Hs",
-    "Mt",
-    "Ds",
-    "Rg",
-    "Cn",
-    "Nh",
-    "Fl",
-    "Mc",
-    "Lv",
-    "Ts",
-    "Og",
-}
-
-
-def _split_alloy_token(token: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Split an alloy token like 'ptni' or 'ircd' or 'runi' into ('Pt','Ni') etc.
-    Strategy: try all splits and validate both sides as element symbols.
-    """
-    t = token.strip()
-    if not t:
-        return None, None
-
-    # Try every split point
-    for i in range(1, len(t)):
-        a_raw, b_raw = t[:i], t[i:]
-        a = a_raw[0].upper() + a_raw[1:].lower()
-        b = b_raw[0].upper() + b_raw[1:].lower()
-        if a in ELEMENT_SYMBOLS and b in ELEMENT_SYMBOLS:
-            return a, b
-
-    return None, None
-
-
-def parse_reaction_id(rxn_id: str) -> dict:
-    """
-    Parse CatBench-style keys like:
-      'ol-runi_O'
-      'sa-ircd_O'
-    into metadata fields.
-    """
-    left, _, ads = rxn_id.partition("_")
-    nsa, _, alloy = left.partition("-")
-
-    host, dopant = _split_alloy_token(alloy) if alloy else (None, None)
-
-    return {
-        "id": rxn_id,
-        "nsa_type": nsa or None,  # e.g. 'ol', 'ss', 'sa'
-        "alloy": alloy or None,  # e.g. 'runi'
-        "host": host,  # e.g. 'Ru'
-        "dopant": dopant,  # e.g. 'Ni'
-        "adsorbate": ads or None,  # e.g. 'O'
-    }
-
-
-def with_metadata(per_rxn: dict[str, dict]) -> list[dict]:
-    rows = []
-    for rxn_id, payload in per_rxn.items():
-        meta = parse_reaction_id(rxn_id)
-        rows.append({**meta, **payload})
-    return rows
 
 
 def detect_anomalies_from_result_dict(
@@ -388,7 +215,7 @@ def detect_anomalies_from_result_json(
 
 
 def main():
-    mlip_results_dir = Path("data/mlips")
+    mlip_results_dir = Path("data/mlips/khlohc")
     processed_count = 0
 
     for model_dir in mlip_results_dir.iterdir():
@@ -415,7 +242,9 @@ def main():
         )
 
         per_rxn = detect_anomalies_from_result_json(result_path)
-        rows = with_metadata(per_rxn)
+        rows = [
+            {"reaction": reaction, **payload} for reaction, payload in per_rxn.items()
+        ]
         output_path.write_text(json.dumps(rows, indent=2))
         print(f"Wrote {len(rows)} labeled reactions -> {output_path}")
         processed_count += 1
