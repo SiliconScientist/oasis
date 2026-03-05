@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import pandas as pd
 
 from oasis.config import get_config
 from oasis.plot import parity_plot
+from oasis.mlip.cli import main as mlip_main
 
 
 def _find_processed_result_files(base_dir: Path) -> list[Path]:
@@ -159,44 +161,57 @@ def _load_wide_predictions(
 
 
 def main() -> None:
-    cfg = get_config()
-    base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
-    processed_files = _find_processed_result_files(base_dir)
-    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
-    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
-    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
-    if reaction_contains_filter is not None:
-        reaction_contains_filter = [s for s in reaction_contains_filter if s]
-        if not reaction_contains_filter:
-            reaction_contains_filter = None
-    wide_df = _load_wide_predictions(
-        processed_files,
-        adsorbate_filter=adsorbate_filter,
-        anomaly_filter=anomaly_filter,
-        reaction_contains_filter=reaction_contains_filter,
-    )
+    if len(sys.argv) < 2:
+        print("Usage: python -m oasis <command> [args...]")
+        print("Available commands: mlip")
+        sys.exit(1)
 
-    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    suffix_parts: list[str] = []
-    if adsorbate_filter:
-        suffix_parts.append(f"adsorbate_{adsorbate_filter}")
-    if anomaly_filter:
-        suffix_parts.append(f"anomaly_{anomaly_filter}")
-    if reaction_contains_filter:
-        joined = "-".join(reaction_contains_filter)
-        suffix_parts.append(f"reaction_contains_{joined}")
-    suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
-    output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
-    saved_path = parity_plot(wide_df, output_path=output_path)
-    print(
-        f"Processed {len(processed_files)} MLIP files"
-        f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
-        f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
-        f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
-        f" -> parity plot: {saved_path}"
-    )
-    print(f"Rows in combined parity dataset: {len(wide_df)}")
+    command = sys.argv[1]
+
+    if command == "mlip":
+        # Forward remaining args to mlip CLI
+        mlip_main(sys.argv[2:])
+    else:
+        print(f"Unknown command: {command}")
+        sys.exit(1)
+    # cfg = get_config()
+    # base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
+    # processed_files = _find_processed_result_files(base_dir)
+    # adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
+    # anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
+    # reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
+    # if reaction_contains_filter is not None:
+    #     reaction_contains_filter = [s for s in reaction_contains_filter if s]
+    #     if not reaction_contains_filter:
+    #         reaction_contains_filter = None
+    # wide_df = _load_wide_predictions(
+    #     processed_files,
+    #     adsorbate_filter=adsorbate_filter,
+    #     anomaly_filter=anomaly_filter,
+    #     reaction_contains_filter=reaction_contains_filter,
+    # )
+
+    # output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    # output_dir.mkdir(parents=True, exist_ok=True)
+    # suffix_parts: list[str] = []
+    # if adsorbate_filter:
+    #     suffix_parts.append(f"adsorbate_{adsorbate_filter}")
+    # if anomaly_filter:
+    #     suffix_parts.append(f"anomaly_{anomaly_filter}")
+    # if reaction_contains_filter:
+    #     joined = "-".join(reaction_contains_filter)
+    #     suffix_parts.append(f"reaction_contains_{joined}")
+    # suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
+    # output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
+    # saved_path = parity_plot(wide_df, output_path=output_path)
+    # print(
+    #     f"Processed {len(processed_files)} MLIP files"
+    #     f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
+    #     f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
+    #     f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
+    #     f" -> parity plot: {saved_path}"
+    # )
+    # print(f"Rows in combined parity dataset: {len(wide_df)}")
 
 
 if __name__ == "__main__":
