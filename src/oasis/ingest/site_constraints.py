@@ -1,10 +1,11 @@
+from functools import partial
 import json
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 from ase import Atoms
-from ase.constraints import dict2constraint
+from ase.constraints import dict2constraint, FixAtoms, FixCartesian
 from ase.io.jsonio import object_hook
 from ase.geometry import find_mic
 
@@ -261,13 +262,18 @@ def pick_closest_adsorption_site(
 
 
 def shift_adsorbate_to_site(
-    adslab: Atoms, adsorbate_indices: list[int], target_site: np.ndarray, binding_atom_index: int
+    adslab: Atoms,
+    adsorbate_indices: list[int],
+    target_site: np.ndarray,
+    binding_atom_index: int,
 ) -> Atoms:
     """
     Translate all adsorbate atoms so the binding atom lands on target_site.
     """
     shifted = adslab.copy()
-    translation = np.asarray(target_site, dtype=float) - shifted.positions[binding_atom_index]
+    translation = (
+        np.asarray(target_site, dtype=float) - shifted.positions[binding_atom_index]
+    )
     shifted.positions[adsorbate_indices] += translation
     return shifted
 
@@ -287,7 +293,9 @@ def snap_adsorbate_to_closest_binding_site(
 
     slab = strip_adsorbate_from_adslab(adslab, adsorbate_indices)
     adsorption_sites = find_adsorption_sites_on_slab(slab)
-    closest_site = pick_closest_adsorption_site(adslab, binding_atom_index, adsorption_sites)
+    closest_site = pick_closest_adsorption_site(
+        adslab, binding_atom_index, adsorption_sites
+    )
     shifted_adslab = shift_adsorbate_to_site(
         adslab, adsorbate_indices, closest_site, binding_atom_index
     )
@@ -312,10 +320,67 @@ def snap_all_adsorbates_to_closest_binding_sites(
     return shifted
 
 
+def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int]:
+    """
+    Return atom indices for atoms below a specified height cutoff.
+    """
+    z_values = atoms.get_positions()[:, 2]
+    if below:
+        return list(np.where(z_values < cutoff)[0])
+    else:
+        return list(np.where(z_values >= cutoff)[0])
+
+
+def fix_atoms(atoms_list: list[Atoms], index_fn: callable) -> list[Atoms]:
+    """
+    Return new list of ASE Atoms with FixAtoms constraints applied to indices from index_fn.
+    """
+    fixed_atoms = []
+    for atoms in atoms_list:
+        indices_to_fix = index_fn(atoms)
+        constraint = FixAtoms(indices=indices_to_fix)
+        fixed = atoms.copy()
+        fixed.set_constraint(constraint)
+        fixed_atoms.append(fixed)
+    return fixed_atoms
+
+
+def fix_binding_atoms_xy(
+    atoms_by_reaction: dict[str, Atoms], binding_atoms: dict[str, Optional[int]]
+) -> dict[str, Atoms]:
+    """
+    Return structures with binding atoms fixed in x and y only (z remains free).
+    Existing constraints are preserved and augmented.
+    """
+    constrained: dict[str, Atoms] = {}
+    for reaction, atoms in atoms_by_reaction.items():
+        binding_idx = binding_atoms.get(reaction)
+        updated = atoms.copy()
+
+        if binding_idx is None:
+            constrained[reaction] = updated
+            continue
+
+        existing = updated.constraints
+        if existing is None:
+            constraints = []
+        elif isinstance(existing, (list, tuple)):
+            constraints = list(existing)
+        else:
+            constraints = [existing]
+
+        constraints.append(FixCartesian([binding_idx], mask=(True, True, False)))
+        updated.set_constraint(constraints)
+        constrained[reaction] = updated
+
+    return constrained
+
+
 def main() -> None:
     from ase.visualize import view
 
     cfg = get_config()
+    index_fn = partial(index_by_height, cutoff=13.5, below=True)
     dataset_subset = load_mlip_dataset_subset(cfg, limit=10)
     adsorbed_atoms = extract_adsorbed_atoms(dataset_subset)
     adsorbate_indices = extract_adsorbate_indices(dataset_subset)
@@ -323,6 +388,16 @@ def main() -> None:
     binding_atoms = extract_binding_atoms(adsorbed_atoms, adsorbate_indices)
     shifted_adslabs = snap_all_adsorbates_to_closest_binding_sites(
         adsorbed_atoms, adsorbate_indices
+    )
+    shifted_reactions = list(shifted_adslabs.keys())
+    shifted_adslabs_constrained_list = fix_atoms(
+        [shifted_adslabs[r] for r in shifted_reactions], index_fn=index_fn
+    )
+    shifted_adslabs_constrained = dict(
+        zip(shifted_reactions, shifted_adslabs_constrained_list, strict=True)
+    )
+    shifted_adslabs_constrained = fix_binding_atoms_xy(
+        shifted_adslabs_constrained, binding_atoms
     )
     print(
         f"Loaded {len(dataset_subset)} entries and extracted "
@@ -332,6 +407,13 @@ def main() -> None:
     print(f"Extracted adsorbate positions for {len(adsorbate_positions)} entries")
     print(f"Computed binding atoms for {len(binding_atoms)} entries")
     print(f"Shifted adsorbates to closest ASF sites for {len(shifted_adslabs)} entries")
+    print(
+        "Applied index_fn constraints to shifted adslabs for "
+        f"{len(shifted_adslabs_constrained)} entries"
+    )
+    print(
+        "Applied x/y FixCartesian constraints to binding atoms for shifted adslabs"
+    )
 
 
 if __name__ == "__main__":
