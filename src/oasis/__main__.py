@@ -9,26 +9,23 @@ from oasis.config import get_config
 from oasis.plot import parity_plot
 
 
-def _find_processed_result_files() -> list[Path]:
+def _find_processed_result_files(base_dir: Path) -> list[Path]:
     """
-    Find processed MLIP result JSON files under common project layouts.
+    Find processed MLIP result JSON files under a directory containing
+    per-model subdirectories.
     """
-    candidates = sorted(Path("data/mlips").glob("*/*_processed_result.json"))
+    candidates = sorted(base_dir.glob("*/*_processed_result.json"))
     if candidates:
         return candidates
 
-    # Fallbacks for user-typed variants.
-    candidates = sorted(Path("data/mlip").glob("*/*processed_results.json"))
-    if candidates:
-        return candidates
-
-    candidates = sorted(Path("data/mlip").glob("*/*_processed_result.json"))
+    # Fallback for filename variant.
+    candidates = sorted(base_dir.glob("*/*processed_results.json"))
     if candidates:
         return candidates
 
     raise FileNotFoundError(
-        "No processed result files found under data/mlips/*/*_processed_result.json "
-        "or data/mlip/*/*processed_results.json"
+        f"No processed result files found under {base_dir} "
+        "(expected patterns: */*_processed_result.json or */*processed_results.json)"
     )
 
 
@@ -36,6 +33,7 @@ def _load_wide_predictions(
     processed_files: list[Path],
     adsorbate_filter: str | None = None,
     anomaly_filter: str | None = None,
+    reaction_contains_filter: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Build a wide table with:
@@ -77,6 +75,28 @@ def _load_wide_predictions(
                 )
 
         reaction_col = "id" if "id" in df.columns else "reaction"
+        if reaction_contains_filter is not None:
+            if reaction_col not in df.columns:
+                raise ValueError(
+                    f"Configured plot.reaction_contains='{reaction_contains_filter}', "
+                    f"but no '{reaction_col}' column exists in {path}"
+                )
+            mask = pd.Series(False, index=df.index)
+            for substring in reaction_contains_filter:
+                token = f"_{substring}_"
+                reaction_with_edges = "_" + df[reaction_col].astype(str) + "_"
+                mask = mask | reaction_with_edges.str.contains(
+                    token,
+                    regex=False,
+                    na=False,
+                )
+            df = df[mask]
+            if df.empty:
+                raise ValueError(
+                    f"No rows left in {path} after reaction_contains filter "
+                    f"'{reaction_contains_filter}'"
+                )
+
         required = {reaction_col, "dft_ads_eng", "mlip_ads_eng_median"}
         missing = required.difference(set(df.columns))
         if missing:
@@ -91,7 +111,11 @@ def _load_wide_predictions(
             }
         )
         part = part.dropna(
-            subset=["reaction", "reference_ads_eng", f"{model_name}_mlip_ads_eng_median"]
+            subset=[
+                "reaction",
+                "reference_ads_eng",
+                f"{model_name}_mlip_ads_eng_median",
+            ]
         )
 
         if reference_df is None:
@@ -104,9 +128,13 @@ def _load_wide_predictions(
                 how="inner",
                 suffixes=("", "_new"),
             )
-            mismatch = overlap[overlap["reference_ads_eng"] != overlap["reference_ads_eng_new"]]
+            mismatch = overlap[
+                overlap["reference_ads_eng"] != overlap["reference_ads_eng_new"]
+            ]
             if not mismatch.empty:
-                raise ValueError(f"Reference energies differ for overlapping reactions in {path}")
+                raise ValueError(
+                    f"Reference energies differ for overlapping reactions in {path}"
+                )
             reference_df = (
                 pd.concat([reference_df, ref_part], ignore_index=True)
                 .drop_duplicates(subset="reaction", keep="first")
@@ -132,13 +160,20 @@ def _load_wide_predictions(
 
 def main() -> None:
     cfg = get_config()
-    processed_files = _find_processed_result_files()
+    base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
+    processed_files = _find_processed_result_files(base_dir)
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
+    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
+    if reaction_contains_filter is not None:
+        reaction_contains_filter = [s for s in reaction_contains_filter if s]
+        if not reaction_contains_filter:
+            reaction_contains_filter = None
     wide_df = _load_wide_predictions(
         processed_files,
         adsorbate_filter=adsorbate_filter,
         anomaly_filter=anomaly_filter,
+        reaction_contains_filter=reaction_contains_filter,
     )
 
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
@@ -148,6 +183,9 @@ def main() -> None:
         suffix_parts.append(f"adsorbate_{adsorbate_filter}")
     if anomaly_filter:
         suffix_parts.append(f"anomaly_{anomaly_filter}")
+    if reaction_contains_filter:
+        joined = "-".join(reaction_contains_filter)
+        suffix_parts.append(f"reaction_contains_{joined}")
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
@@ -155,6 +193,7 @@ def main() -> None:
         f"Processed {len(processed_files)} MLIP files"
         f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
         f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
+        f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")

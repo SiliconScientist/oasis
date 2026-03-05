@@ -71,6 +71,7 @@ class PlotConfig(BaseModel):
     use_gnn: bool
     adsorbate: Optional[str] = None
     anomaly_label: Optional[str] = None
+    reaction_contains: Optional[List[str]] = None
 
 
 class Config(BaseModel):
