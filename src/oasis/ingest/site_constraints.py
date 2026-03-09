@@ -6,7 +6,7 @@ from typing import Any, Optional
 import numpy as np
 from ase import Atoms
 from ase.constraints import dict2constraint, FixAtoms, FixCartesian
-from ase.io.jsonio import object_hook
+from ase.io.jsonio import encode, object_hook
 from ase.geometry import find_mic
 
 from oasis.config import Config, get_config
@@ -33,6 +33,29 @@ def load_mlip_dataset_subset(cfg: Config, limit: int = 10) -> dict[str, Any]:
         )
 
     return dict(list(dataset.items())[:limit])
+
+
+def load_mlip_dataset(cfg: Config) -> dict[str, Any]:
+    """
+    Load cfg.mlip.dataset JSON as a dictionary.
+    """
+    dataset_path = cfg.mlip.dataset
+    if not dataset_path:
+        raise ValueError("cfg.mlip.dataset is not set in config.toml")
+
+    path = Path(dataset_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"MLIP dataset JSON not found: {path}")
+
+    with path.open("r", encoding="utf-8") as f:
+        dataset = json.load(f)
+
+    if not isinstance(dataset, dict):
+        raise TypeError(
+            f"Expected cfg.mlip.dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
+        )
+
+    return dataset
 
 
 def atoms_from_atoms_json(atoms_json: str) -> Atoms:
@@ -376,14 +399,91 @@ def fix_binding_atoms_xy(
     return constrained
 
 
-def main() -> None:
-    from ase.visualize import view
+def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) -> str:
+    """
+    Serialize ASE Atoms into the same row-wrapped atoms_json schema as template_atoms_json.
+    """
+    template = json.loads(template_atoms_json)
+    row_key = next((k for k in template if str(k).isdigit()), None)
+    if row_key is None:
+        raise ValueError("Could not find atom row key in template atoms_json payload")
 
+    template_row = template[row_key]
+    if not isinstance(template_row, dict):
+        raise TypeError("Template atoms_json row is not a dict")
+
+    encoded = json.loads(encode(atoms))
+    row = dict(template_row)
+    row["numbers"] = encoded["numbers"]
+    row["positions"] = encoded["positions"]
+    row["cell"] = encoded["cell"]
+    row["pbc"] = encoded["pbc"]
+    if "constraints" in encoded:
+        row["constraints"] = encoded["constraints"]
+    else:
+        row.pop("constraints", None)
+        row.pop("constraint", None)
+
+    template[row_key] = row
+    return json.dumps(template)
+
+
+def build_shifted_constrained_adsorption_dataset(
+    dataset: dict[str, Any], shifted_adslabs_constrained: dict[str, Atoms]
+) -> dict[str, Any]:
+    """
+    Return a new dataset where each adsorbed *star atoms_json is replaced with shifted+constrained atoms.
+    """
+    updated_dataset = json.loads(json.dumps(dataset))
+
+    for reaction, shifted_atoms in shifted_adslabs_constrained.items():
+        if reaction not in updated_dataset:
+            raise KeyError(f"Reaction '{reaction}' missing from dataset when rewriting")
+
+        entry = updated_dataset[reaction]
+        raw = entry.get("raw", {})
+        if not isinstance(raw, dict):
+            raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
+
+        adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
+        if not adsorbed_keys:
+            raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
+
+        adsorbed_key = adsorbed_keys[0]
+        adsorbed_block = raw[adsorbed_key]
+        if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
+            raise ValueError(
+                f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
+            )
+
+        adsorbed_block["atoms_json"] = atoms_to_atoms_json_like_template(
+            shifted_atoms, adsorbed_block["atoms_json"]
+        )
+
+    return updated_dataset
+
+
+def shifted_adsorption_output_path(input_dataset_path: Path) -> Path:
+    """
+    Build output path for shifted adsorption dataset.
+    """
+    if input_dataset_path.name.endswith("_adsorption.json"):
+        new_name = input_dataset_path.name.replace(
+            "_adsorption.json", "_shifted_adsorption.json"
+        )
+    elif input_dataset_path.suffix == ".json":
+        new_name = f"{input_dataset_path.stem}_shifted_adsorption.json"
+    else:
+        new_name = f"{input_dataset_path.name}_shifted_adsorption.json"
+    return input_dataset_path.with_name(new_name)
+
+
+def main() -> None:
     cfg = get_config()
     index_fn = partial(index_by_height, cutoff=13.5, below=True)
-    dataset_subset = load_mlip_dataset_subset(cfg, limit=10)
-    adsorbed_atoms = extract_adsorbed_atoms(dataset_subset)
-    adsorbate_indices = extract_adsorbate_indices(dataset_subset)
+    dataset = load_mlip_dataset(cfg)
+    adsorbed_atoms = extract_adsorbed_atoms(dataset)
+    adsorbate_indices = extract_adsorbate_indices(dataset)
     adsorbate_positions = extract_adsorbate_positions(adsorbed_atoms, adsorbate_indices)
     binding_atoms = extract_binding_atoms(adsorbed_atoms, adsorbate_indices)
     shifted_adslabs = snap_all_adsorbates_to_closest_binding_sites(
@@ -399,8 +499,17 @@ def main() -> None:
     shifted_adslabs_constrained = fix_binding_atoms_xy(
         shifted_adslabs_constrained, binding_atoms
     )
+    updated_dataset = build_shifted_constrained_adsorption_dataset(
+        dataset, shifted_adslabs_constrained
+    )
+    input_dataset_path = Path(cfg.mlip.dataset)
+    output_path = shifted_adsorption_output_path(input_dataset_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(updated_dataset, f, indent=2)
+
     print(
-        f"Loaded {len(dataset_subset)} entries and extracted "
+        f"Loaded {len(dataset)} entries and extracted "
         f"{len(adsorbed_atoms)} adsorbed ASE Atoms objects from {cfg.mlip.dataset}"
     )
     print(f"Extracted adsorbate indices for {len(adsorbate_indices)} entries")
@@ -414,6 +523,7 @@ def main() -> None:
     print(
         "Applied x/y FixCartesian constraints to binding atoms for shifted adslabs"
     )
+    print(f"Wrote shifted+constrained adsorption dataset to {output_path}")
 
 
 if __name__ == "__main__":
