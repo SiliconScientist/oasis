@@ -1,7 +1,7 @@
 from functools import partial
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 from ase import Atoms
@@ -89,7 +89,7 @@ def atoms_from_atoms_json(atoms_json: str) -> Atoms:
     return atoms
 
 
-def extract_adsorbed_atoms(dataset_subset: dict[str, Any]) -> dict[str, Atoms]:
+def extract_adsorbed_atom(entry: dict[str, Any], reaction: str) -> Atoms:
     """
     Extract adsorbed ASE Atoms objects from reaction entries.
 
@@ -97,71 +97,53 @@ def extract_adsorbed_atoms(dataset_subset: dict[str, Any]) -> dict[str, Atoms]:
       entry["raw"] contains a key like "Nstar", "OHstar", etc.
       The bare slab key "star" is ignored.
     """
-    adsorbed_atoms: dict[str, Atoms] = {}
+    raw = entry.get("raw", {})
+    if not isinstance(raw, dict):
+        raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
 
-    for reaction, entry in dataset_subset.items():
-        raw = entry.get("raw", {})
-        if not isinstance(raw, dict):
-            raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
+    adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
+    if not adsorbed_keys:
+        raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
 
-        adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
-        if not adsorbed_keys:
-            raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
+    adsorbed_key = adsorbed_keys[0]
+    adsorbed_block = raw[adsorbed_key]
+    if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
+        raise ValueError(
+            f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
+        )
 
-        adsorbed_key = adsorbed_keys[0]
-        adsorbed_block = raw[adsorbed_key]
-        if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
-            raise ValueError(
-                f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
-            )
-
-        adsorbed_atoms[reaction] = atoms_from_atoms_json(adsorbed_block["atoms_json"])
-
-    return adsorbed_atoms
+    return atoms_from_atoms_json(adsorbed_block["atoms_json"])
 
 
-def extract_adsorbate_indices(dataset_subset: dict[str, Any]) -> dict[str, list[int]]:
+def extract_adsorbate_indices(entry: dict[str, Any], reaction: str) -> list[int]:
     """
     Extract adsorbate atom indices from each reaction entry.
 
     Expected entry shape:
       entry["adsorbate_indices"] = [int, int, ...]
     """
-    adsorbate_indices_by_reaction: dict[str, list[int]] = {}
+    if "adsorbate_indices" not in entry:
+        raise ValueError(f"Entry '{reaction}' is missing 'adsorbate_indices'")
 
-    for reaction, entry in dataset_subset.items():
-        if "adsorbate_indices" not in entry:
-            raise ValueError(f"Entry '{reaction}' is missing 'adsorbate_indices'")
+    indices = entry["adsorbate_indices"]
+    if not isinstance(indices, list):
+        raise TypeError(
+            f"Entry '{reaction}' has non-list adsorbate_indices: {type(indices).__name__}"
+        )
+    if not all(isinstance(i, int) for i in indices):
+        raise TypeError(f"Entry '{reaction}' adsorbate_indices must be list[int]")
 
-        indices = entry["adsorbate_indices"]
-        if not isinstance(indices, list):
-            raise TypeError(
-                f"Entry '{reaction}' has non-list adsorbate_indices: {type(indices).__name__}"
-            )
-        if not all(isinstance(i, int) for i in indices):
-            raise TypeError(f"Entry '{reaction}' adsorbate_indices must be list[int]")
-
-        adsorbate_indices_by_reaction[reaction] = indices
-
-    return adsorbate_indices_by_reaction
+    return indices
 
 
 def extract_adsorbate_positions(
-    adsorbed_atoms: dict[str, Atoms], adsorbate_indices: dict[str, list[int]]
-) -> dict[str, np.ndarray]:
+    adsorbed_atom: Atoms, adsorbate_indices: list[int]
+) -> np.ndarray:
     """
     Get adsorbate atom positions from each adslab.
     Returns positions with shape (n_adsorbate_atoms, 3) per reaction.
     """
-    adsorbate_positions: dict[str, np.ndarray] = {}
-
-    for reaction, atoms in adsorbed_atoms.items():
-        if reaction not in adsorbate_indices:
-            raise KeyError(f"Missing adsorbate indices for reaction '{reaction}'")
-        indices = adsorbate_indices[reaction]
-        adsorbate_positions[reaction] = atoms.get_positions()[indices]
-
-    return adsorbate_positions
+    return adsorbed_atom.get_positions()[adsorbate_indices]
 
 
 def pick_binding_atom_index(
@@ -209,25 +191,16 @@ def pick_binding_atom_index(
     return min(z_tied, key=lambda idx: (nearest_dist[idx], idx))
 
 
-def extract_binding_atoms(
-    adsorbed_atoms: dict[str, Atoms],
-    adsorbate_indices: dict[str, list[int]],
-    z_tolerance: float = 1e-3,
-) -> dict[str, Optional[int]]:
+def extract_binding_atom(
+    adsorbed_atom: Atoms, adsorbate_indices: list[int], z_tolerance: float = 1e-3
+) -> Optional[int]:
     """
     Get binding atom index (in adslab indexing) for each reaction.
     Returns None when no binding atom can be defined under selection rules.
     """
-    binding_atoms: dict[str, Optional[int]] = {}
-
-    for reaction, atoms in adsorbed_atoms.items():
-        if reaction not in adsorbate_indices:
-            raise KeyError(f"Missing adsorbate indices for reaction '{reaction}'")
-        binding_atoms[reaction] = pick_binding_atom_index(
-            atoms, adsorbate_indices[reaction], z_tolerance=z_tolerance
-        )
-
-    return binding_atoms
+    return pick_binding_atom_index(
+        adsorbed_atom, adsorbate_indices, z_tolerance=z_tolerance
+    )
 
 
 def strip_adsorbate_from_adslab(adslab: Atoms, adsorbate_indices: list[int]) -> Atoms:
@@ -325,24 +298,6 @@ def snap_adsorbate_to_closest_binding_site(
     return shifted_adslab, closest_site
 
 
-def snap_all_adsorbates_to_closest_binding_sites(
-    adsorbed_atoms: dict[str, Atoms],
-    adsorbate_indices: dict[str, list[int]],
-    z_tolerance: float = 1e-3,
-) -> dict[str, Atoms]:
-    """
-    Batch helper that snaps all adslabs to their nearest ASF binding site.
-    """
-    shifted: dict[str, Atoms] = {}
-    for reaction, adslab in adsorbed_atoms.items():
-        if reaction not in adsorbate_indices:
-            raise KeyError(f"Missing adsorbate indices for reaction '{reaction}'")
-        shifted[reaction], _ = snap_adsorbate_to_closest_binding_site(
-            adslab, adsorbate_indices[reaction], z_tolerance=z_tolerance
-        )
-    return shifted
-
-
 def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int]:
     """
     Return atom indices for atoms below a specified height cutoff.
@@ -354,49 +309,38 @@ def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int
         return list(np.where(z_values >= cutoff)[0])
 
 
-def fix_atoms(atoms_list: list[Atoms], index_fn: callable) -> list[Atoms]:
+def fix_atoms(atoms: Atoms, index_fn: Callable[[Atoms], list[int]]) -> Atoms:
     """
     Return new list of ASE Atoms with FixAtoms constraints applied to indices from index_fn.
     """
-    fixed_atoms = []
-    for atoms in atoms_list:
-        indices_to_fix = index_fn(atoms)
-        constraint = FixAtoms(indices=indices_to_fix)
-        fixed = atoms.copy()
-        fixed.set_constraint(constraint)
-        fixed_atoms.append(fixed)
-    return fixed_atoms
+    indices_to_fix = index_fn(atoms)
+    constraint = FixAtoms(indices=indices_to_fix)
+    fixed = atoms.copy()
+    fixed.set_constraint(constraint)
+    return fixed
 
 
-def fix_binding_atoms_xy(
-    atoms_by_reaction: dict[str, Atoms], binding_atoms: dict[str, Optional[int]]
-) -> dict[str, Atoms]:
+def fix_binding_atoms_xy(atoms: Atoms, binding_atom: Optional[int]) -> Atoms:
     """
     Return structures with binding atoms fixed in x and y only (z remains free).
     Existing constraints are preserved and augmented.
     """
-    constrained: dict[str, Atoms] = {}
-    for reaction, atoms in atoms_by_reaction.items():
-        binding_idx = binding_atoms.get(reaction)
-        updated = atoms.copy()
+    updated = atoms.copy()
 
-        if binding_idx is None:
-            constrained[reaction] = updated
-            continue
+    if binding_atom is None:
+        return updated
 
-        existing = updated.constraints
-        if existing is None:
-            constraints = []
-        elif isinstance(existing, (list, tuple)):
-            constraints = list(existing)
-        else:
-            constraints = [existing]
+    existing = updated.constraints
+    if existing is None:
+        constraints = []
+    elif isinstance(existing, (list, tuple)):
+        constraints = list(existing)
+    else:
+        constraints = [existing]
 
-        constraints.append(FixCartesian([binding_idx], mask=(True, True, False)))
-        updated.set_constraint(constraints)
-        constrained[reaction] = updated
-
-    return constrained
+    constraints.append(FixCartesian([binding_atom], mask=(True, True, False)))
+    updated.set_constraint(constraints)
+    return updated
 
 
 def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) -> str:
@@ -428,39 +372,32 @@ def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) ->
     return json.dumps(template)
 
 
-def build_shifted_constrained_adsorption_dataset(
-    dataset: dict[str, Any], shifted_adslabs_constrained: dict[str, Atoms]
+def build_shifted_constrained_adsorption_entry(
+    entry: dict[str, Any], shifted_atoms: Atoms, reaction: str
 ) -> dict[str, Any]:
     """
     Return a new dataset where each adsorbed *star atoms_json is replaced with shifted+constrained atoms.
     """
-    updated_dataset = json.loads(json.dumps(dataset))
+    updated_entry = json.loads(json.dumps(entry))
+    raw = updated_entry.get("raw", {})
+    if not isinstance(raw, dict):
+        raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
 
-    for reaction, shifted_atoms in shifted_adslabs_constrained.items():
-        if reaction not in updated_dataset:
-            raise KeyError(f"Reaction '{reaction}' missing from dataset when rewriting")
+    adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
+    if not adsorbed_keys:
+        raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
 
-        entry = updated_dataset[reaction]
-        raw = entry.get("raw", {})
-        if not isinstance(raw, dict):
-            raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
-
-        adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
-        if not adsorbed_keys:
-            raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
-
-        adsorbed_key = adsorbed_keys[0]
-        adsorbed_block = raw[adsorbed_key]
-        if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
-            raise ValueError(
-                f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
-            )
-
-        adsorbed_block["atoms_json"] = atoms_to_atoms_json_like_template(
-            shifted_atoms, adsorbed_block["atoms_json"]
+    adsorbed_key = adsorbed_keys[0]
+    adsorbed_block = raw[adsorbed_key]
+    if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
+        raise ValueError(
+            f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
         )
 
-    return updated_dataset
+    adsorbed_block["atoms_json"] = atoms_to_atoms_json_like_template(
+        shifted_atoms, adsorbed_block["atoms_json"]
+    )
+    return updated_entry
 
 
 def shifted_adsorption_output_path(input_dataset_path: Path) -> Path:
@@ -479,51 +416,36 @@ def shifted_adsorption_output_path(input_dataset_path: Path) -> Path:
 
 
 def main() -> None:
+    from ase.visualize import view
+
     cfg = get_config()
     index_fn = partial(index_by_height, cutoff=13.5, below=True)
     dataset = load_mlip_dataset(cfg)
-    adsorbed_atoms = extract_adsorbed_atoms(dataset)
-    adsorbate_indices = extract_adsorbate_indices(dataset)
-    adsorbate_positions = extract_adsorbate_positions(adsorbed_atoms, adsorbate_indices)
-    binding_atoms = extract_binding_atoms(adsorbed_atoms, adsorbate_indices)
-    shifted_adslabs = snap_all_adsorbates_to_closest_binding_sites(
-        adsorbed_atoms, adsorbate_indices
-    )
-    shifted_reactions = list(shifted_adslabs.keys())
-    shifted_adslabs_constrained_list = fix_atoms(
-        [shifted_adslabs[r] for r in shifted_reactions], index_fn=index_fn
-    )
-    shifted_adslabs_constrained = dict(
-        zip(shifted_reactions, shifted_adslabs_constrained_list, strict=True)
-    )
-    shifted_adslabs_constrained = fix_binding_atoms_xy(
-        shifted_adslabs_constrained, binding_atoms
-    )
-    updated_dataset = build_shifted_constrained_adsorption_dataset(
-        dataset, shifted_adslabs_constrained
-    )
+    updated_dataset: dict[str, Any] = {}
+
+    for reaction, entry in dataset.items():
+        adsorbed_atom = extract_adsorbed_atom(entry, reaction)
+        indices = extract_adsorbate_indices(entry, reaction)
+        binding_atom = extract_binding_atom(adsorbed_atom, indices)
+        shifted_adslab, _ = snap_adsorbate_to_closest_binding_site(
+            adsorbed_atom, indices
+        )
+        constrained_adslab = fix_atoms(shifted_adslab, index_fn=index_fn)
+        constrained_adslab = fix_binding_atoms_xy(constrained_adslab, binding_atom)
+        if reaction == "Co12_H2S(g) - 0.5H2(g) + * -> SH*":
+            print("Stop here.")
+        updated_entry = build_shifted_constrained_adsorption_entry(
+            entry, constrained_adslab, reaction
+        )
+
+        updated_dataset[reaction] = updated_entry
     input_dataset_path = Path(cfg.mlip.dataset)
     output_path = shifted_adsorption_output_path(input_dataset_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(updated_dataset, f, indent=2)
 
-    print(
-        f"Loaded {len(dataset)} entries and extracted "
-        f"{len(adsorbed_atoms)} adsorbed ASE Atoms objects from {cfg.mlip.dataset}"
-    )
-    print(f"Extracted adsorbate indices for {len(adsorbate_indices)} entries")
-    print(f"Extracted adsorbate positions for {len(adsorbate_positions)} entries")
-    print(f"Computed binding atoms for {len(binding_atoms)} entries")
-    print(f"Shifted adsorbates to closest ASF sites for {len(shifted_adslabs)} entries")
-    print(
-        "Applied index_fn constraints to shifted adslabs for "
-        f"{len(shifted_adslabs_constrained)} entries"
-    )
-    print(
-        "Applied x/y FixCartesian constraints to binding atoms for shifted adslabs"
-    )
-    print(f"Wrote shifted+constrained adsorption dataset to {output_path}")
+    print(f"Processed {len(dataset)} entries and wrote {output_path}")
 
 
 if __name__ == "__main__":
