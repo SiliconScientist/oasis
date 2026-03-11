@@ -275,8 +275,27 @@ def shift_adsorbate_to_site(
     return shifted
 
 
+def add_binding_site_markers(
+    adslab: Atoms, adsorption_sites: np.ndarray, marker_symbol: str = "H"
+) -> Atoms:
+    """
+    Return a visualization structure by placing marker atoms at all adsorption sites.
+    """
+    markers = Atoms(
+        symbols=[marker_symbol] * len(adsorption_sites),
+        positions=adsorption_sites,
+        cell=adslab.cell,
+        pbc=adslab.pbc,
+    )
+    visual = adslab.copy()
+    visual.extend(markers)
+    return visual
+
+
 def snap_adsorbate_to_closest_binding_site(
-    adslab: Atoms, adsorbate_indices: list[int], z_tolerance: float = 1e-3
+    adslab: Atoms,
+    adsorbate_indices: list[int],
+    z_tolerance: float = 1e-3,
 ) -> tuple[Atoms, np.ndarray]:
     """
     Snap adsorbate to the ASF adsorption site closest to the current binding atom.
@@ -296,6 +315,8 @@ def snap_adsorbate_to_closest_binding_site(
     shifted_adslab = shift_adsorbate_to_site(
         adslab, adsorbate_indices, closest_site, binding_atom_index
     )
+    visual = add_binding_site_markers(adslab, adsorption_sites, "H")
+    view(visual)
     return shifted_adslab, closest_site
 
 
@@ -666,7 +687,6 @@ def get_layer_indices(atoms: Atoms, z_tolerance: float = 0.5) -> dict[int, list[
 
 def main() -> None:
     cfg = get_config()
-
     # index_fn = partial(index_by_height, cutoff=13.5, below=True)
     index_fn = partial(index_by_layers, layers=(1, 2))
     dataset = load_mlip_dataset(cfg)
@@ -681,12 +701,11 @@ def main() -> None:
         )
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
         # Debug helper: visualize best-fit plane via random H markers.
-        plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
+        # plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
         # view(plane_vis)
         constraint_indices = index_fn(bare_surface)
         constrained_adslab = fix_atoms(shifted_adslab, constraint_indices)
         constrained_adslab = fix_binding_atoms_xy(constrained_adslab, binding_atom)
-        print("Stop here.")
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
         )
