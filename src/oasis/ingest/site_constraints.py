@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 from ase import Atoms
+from ase.visualize import view
 from ase.constraints import dict2constraint, FixAtoms, FixCartesian
 from ase.io.jsonio import encode, object_hook
 from ase.geometry import find_mic
@@ -309,12 +310,23 @@ def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int
         return list(np.where(z_values >= cutoff)[0])
 
 
-def fix_atoms(atoms: Atoms, index_fn: Callable[[Atoms], list[int]]) -> Atoms:
+def index_by_layers(atoms: Atoms, layers: tuple[int, ...] = (1, 2)) -> list[int]:
+    layer_indices = get_layer_indices(atoms)
+    indices: list[int] = []
+    for layer in layers:
+        if layer not in layer_indices:
+            raise ValueError(
+                f"Requested layer {layer}, but only layers 1..{len(layer_indices)} exist"
+            )
+        indices.extend(layer_indices[layer])
+    return sorted(indices)
+
+
+def fix_atoms(atoms: Atoms, indices: list[int]) -> Atoms:
     """
     Return new list of ASE Atoms with FixAtoms constraints applied to indices from index_fn.
     """
-    indices_to_fix = index_fn(atoms)
-    constraint = FixAtoms(indices=indices_to_fix)
+    constraint = FixAtoms(indices=indices)
     fixed = atoms.copy()
     fixed.set_constraint(constraint)
     return fixed
@@ -415,11 +427,248 @@ def shifted_adsorption_output_path(input_dataset_path: Path) -> Path:
     return input_dataset_path.with_name(new_name)
 
 
-def main() -> None:
-    from ase.visualize import view
+def best_fit_plane(points: np.ndarray):
+    """
+    points: (N, 3) array of xyz coordinates
 
+    Returns
+    -------
+    centroid : (3,) array
+    normal   : (3,) unit normal vector
+    d        : scalar in plane equation ax + by + cz + d = 0
+    rms      : RMS perpendicular distance of points to plane
+    """
+    points = np.asarray(points, dtype=float)
+    centroid = points.mean(axis=0)
+
+    Q = points - centroid
+
+    # SVD: normal is the direction with smallest singular value
+    _, _, vh = np.linalg.svd(Q, full_matrices=False)
+    normal = vh[-1]
+    normal = normal / np.linalg.norm(normal)
+
+    d = -np.dot(normal, centroid)
+
+    distances = Q @ normal
+    rms = np.sqrt(np.mean(distances**2))
+
+    return centroid, normal, d, rms
+
+
+def random_hydrogen_markers_on_plane(
+    atoms: Atoms,
+    n_markers: int = 200,
+    padding: float = 1.0,
+    seed: Optional[int] = 0,
+    lowest_z_tolerance: float = 0.1,
+) -> Atoms:
+    """
+    Build H marker atoms randomly distributed on the bottom-layer-fit plane.
+
+    Marker extents are inferred from slab atom projections onto two in-plane axes,
+    then expanded by `padding` in each axis.
+    """
+    if n_markers <= 0:
+        raise ValueError("n_markers must be > 0")
+    positions = atoms.get_positions()
+    centroid, normal, _ = plane_from_lowest_atoms(
+        atoms, lowest_z_tolerance=lowest_z_tolerance
+    )
+
+    helper_axis = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(float(np.dot(helper_axis, normal))) > 0.9:
+        helper_axis = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    u_axis = np.cross(normal, helper_axis)
+    u_axis /= np.linalg.norm(u_axis)
+    v_axis = np.cross(normal, u_axis)
+    v_axis /= np.linalg.norm(v_axis)
+
+    rel = positions - centroid
+    u_coords = rel @ u_axis
+    v_coords = rel @ v_axis
+
+    u_min, u_max = float(np.min(u_coords)) - padding, float(np.max(u_coords)) + padding
+    v_min, v_max = float(np.min(v_coords)) - padding, float(np.max(v_coords)) + padding
+
+    rng = np.random.default_rng(seed)
+    sample_u = rng.uniform(u_min, u_max, size=n_markers)
+    sample_v = rng.uniform(v_min, v_max, size=n_markers)
+    marker_positions = (
+        centroid + np.outer(sample_u, u_axis) + np.outer(sample_v, v_axis)
+    )
+
+    return Atoms(
+        symbols=["H"] * n_markers,
+        positions=marker_positions,
+        cell=atoms.cell,
+        pbc=atoms.pbc,
+    )
+
+
+def oxygen_markers_along_normal(
+    atoms: Atoms,
+    n_oxygen_markers: int = 20,
+    oxygen_spacing: float = 0.8,
+    oxygen_start_offset: float = 0.0,
+    lowest_z_tolerance: float = 0.1,
+) -> Atoms:
+    """
+    Build O marker atoms in a line from plane centroid along the oriented normal.
+    """
+    if n_oxygen_markers <= 0:
+        raise ValueError("n_oxygen_markers must be > 0")
+    if oxygen_spacing <= 0:
+        raise ValueError("oxygen_spacing must be > 0")
+
+    centroid, normal, _ = plane_from_lowest_atoms(
+        atoms, lowest_z_tolerance=lowest_z_tolerance
+    )
+    offsets = oxygen_start_offset + oxygen_spacing * np.arange(
+        n_oxygen_markers, dtype=float
+    )
+    marker_positions = centroid + np.outer(offsets, normal)
+
+    return Atoms(
+        symbols=["O"] * n_oxygen_markers,
+        positions=marker_positions,
+        cell=atoms.cell,
+        pbc=atoms.pbc,
+    )
+
+
+def build_plane_visualization(
+    atoms: Atoms,
+    n_markers: int = 200,
+    padding: float = 1.0,
+    seed: Optional[int] = 0,
+    lowest_z_tolerance: float = 0.1,
+    n_oxygen_markers: int = 20,
+    oxygen_spacing: float = 0.8,
+    oxygen_start_offset: float = 0.0,
+) -> Atoms:
+    """
+    Return a copy of atoms with random H plane markers and an O normal-line overlay.
+    """
+    visualization = atoms.copy()
+    visualization += random_hydrogen_markers_on_plane(
+        atoms,
+        n_markers=n_markers,
+        padding=padding,
+        seed=seed,
+        lowest_z_tolerance=lowest_z_tolerance,
+    )
+    visualization += oxygen_markers_along_normal(
+        atoms,
+        n_oxygen_markers=n_oxygen_markers,
+        oxygen_spacing=oxygen_spacing,
+        oxygen_start_offset=oxygen_start_offset,
+        lowest_z_tolerance=lowest_z_tolerance,
+    )
+    return visualization
+
+
+def get_lowest_atom_indices(atoms: Atoms, z_tolerance: float = 0.5) -> list[int]:
+    """
+    Return indices of atoms belonging to the lowest-z group.
+
+    The lowest atom is identified from the Cartesian z coordinates, and any
+    other atom whose z coordinate lies within `z_tolerance` of that minimum
+    is included.
+
+    Parameters
+    ----------
+    atoms : Atoms
+        ASE Atoms object.
+    z_tolerance : float, default=1e-3
+        Maximum allowed difference in Cartesian z coordinate from the minimum-z
+        atom for inclusion in the lowest group.
+
+    Returns
+    -------
+    list[int]
+        Indices of atoms in the lowest-z group.
+    """
+    positions = atoms.get_positions()
+    z = positions[:, 2]
+    z_min = np.min(z)
+
+    lowest_indices = np.where(np.abs(z - z_min) <= z_tolerance)[0]
+    return lowest_indices.tolist()
+
+
+def plane_from_lowest_atoms(
+    atoms: Atoms, lowest_z_tolerance: float = 0.5
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """
+    Fit a plane using only the lowest-z atom group.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, float]
+        (centroid, normal, d) for plane ax + by + cz + d = 0
+    """
+    repeated_atoms = atoms.repeat(rep=(2, 2, 1))
+    lowest_indices = get_lowest_atom_indices(
+        repeated_atoms, z_tolerance=lowest_z_tolerance
+    )
+    if len(lowest_indices) < 3:
+        raise ValueError(
+            "At least 3 atoms are required in the lowest group to define a plane"
+        )
+    lowest_points = repeated_atoms.get_positions()[lowest_indices]
+    centroid, normal, d, _ = best_fit_plane(lowest_points)
+
+    bottom_centroid = lowest_points.mean(axis=0)
+    all_centroid = repeated_atoms.get_positions().mean(axis=0)
+    if float(np.dot(normal, all_centroid - bottom_centroid)) < 0.0:
+        normal = -normal
+        d = -d
+    return centroid, normal, d
+
+
+def get_layer_indices(atoms: Atoms, z_tolerance: float = 0.5) -> dict[int, list[int]]:
+    """
+    Identify atomic layers in a slab.
+
+    The lowest layer of host atoms is used to define a best-fit surface plane.
+    All host atoms are then assigned layers by clustering their heights above
+    this plane.
+
+    Returns
+    -------
+    dict[int, list[int]]
+        Mapping from layer index to atom indices, where layer 1 is the
+        bottom-most layer.
+    """
+    _, normal, d = plane_from_lowest_atoms(atoms, lowest_z_tolerance=0.5)
+
+    heights = atoms.get_positions() @ normal + d
+
+    sorted_indices = np.argsort(heights)
+    sorted_heights = heights[sorted_indices]
+
+    layers: list[list[int]] = []
+    current_layer = [sorted_indices[0]]
+    for i in range(1, len(atoms)):
+        if abs(sorted_heights[i] - sorted_heights[i - 1]) <= z_tolerance:
+            current_layer.append(sorted_indices[i])
+        else:
+            layers.append(current_layer)
+            current_layer = [sorted_indices[i]]
+    layers.append(current_layer)
+
+    # Use 1-based layer keys so callers can request (1, 2) for bottom layers.
+    layer_indices = {layer_idx + 1: layer for layer_idx, layer in enumerate(layers)}
+    return layer_indices
+
+
+def main() -> None:
     cfg = get_config()
-    index_fn = partial(index_by_height, cutoff=13.5, below=True)
+
+    # index_fn = partial(index_by_height, cutoff=13.5, below=True)
+    index_fn = partial(index_by_layers, layers=(1, 2))
     dataset = load_mlip_dataset(cfg)
     updated_dataset: dict[str, Any] = {}
 
@@ -430,10 +679,14 @@ def main() -> None:
         shifted_adslab, _ = snap_adsorbate_to_closest_binding_site(
             adsorbed_atom, indices
         )
-        constrained_adslab = fix_atoms(shifted_adslab, index_fn=index_fn)
+        bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
+        # Debug helper: visualize best-fit plane via random H markers.
+        plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
+        # view(plane_vis)
+        constraint_indices = index_fn(bare_surface)
+        constrained_adslab = fix_atoms(shifted_adslab, constraint_indices)
         constrained_adslab = fix_binding_atoms_xy(constrained_adslab, binding_atom)
-        if reaction == "Co12_H2S(g) - 0.5H2(g) + * -> SH*":
-            print("Stop here.")
+        print("Stop here.")
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
         )
