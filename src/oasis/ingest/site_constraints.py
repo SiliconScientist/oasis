@@ -275,6 +275,31 @@ def shift_adsorbate_to_site(
     return shifted
 
 
+def displace_adsorbate_xy_random(
+    adslab: Atoms,
+    adsorbate_indices: list[int],
+    magnitude: float = 0.10,
+    rng: Optional[np.random.Generator] = None,
+) -> Atoms:
+    """
+    Apply a random in-plane displacement to all adsorbate atoms.
+    """
+    if not adsorbate_indices or magnitude == 0.0:
+        return adslab.copy()
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    theta = float(rng.uniform(0.0, 2.0 * np.pi))
+    displacement = np.array(
+        [magnitude * np.cos(theta), magnitude * np.sin(theta), 0.0], dtype=float
+    )
+
+    jittered = adslab.copy()
+    jittered.positions[adsorbate_indices] += displacement
+    return jittered
+
+
 def add_binding_site_markers(
     adslab: Atoms, adsorption_sites: np.ndarray, marker_symbol: str = "H"
 ) -> Atoms:
@@ -357,7 +382,7 @@ def fix_atoms(atoms: Atoms, indices: list[int]) -> Atoms:
 def tether_binding_atom(
     atoms: Atoms,
     binding_atom: Optional[int],
-    binding_atom_start: Optional[np.ndarray],
+    tether_point: Optional[np.ndarray],
     k: float = 0.5,
     rt: float = 0.0,
 ) -> Atoms:
@@ -367,7 +392,7 @@ def tether_binding_atom(
     """
     updated = atoms.copy()
 
-    if binding_atom is None or binding_atom_start is None:
+    if binding_atom is None or tether_point is None:
         return updated
 
     existing = updated.constraints
@@ -378,7 +403,7 @@ def tether_binding_atom(
     else:
         constraints = [existing]
 
-    anchor = np.asarray(binding_atom_start, dtype=float)
+    anchor = np.asarray(tether_point, dtype=float)
     constraints.append(Hookean(binding_atom, anchor, rt=rt, k=k))
     updated.set_constraint(constraints)
     return updated
@@ -699,6 +724,7 @@ def main() -> None:
     index_fn = partial(index_by_layers, layers=(1, 2))
     dataset = load_mlip_dataset(cfg)
     updated_dataset: dict[str, Any] = {}
+    rng = np.random.default_rng()
 
     for reaction, entry in dataset.items():
         adsorbed_atom = extract_adsorbed_atom(entry, reaction)
@@ -707,18 +733,21 @@ def main() -> None:
         shifted_adslab, closest_site = snap_adsorbate_to_closest_binding_site(
             adsorbed_atom, indices
         )
+        jittered_adslab = displace_adsorbate_xy_random(
+            shifted_adslab, indices, magnitude=0.10, rng=rng
+        )
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
         # Debug helper: visualize best-fit plane via random H markers.
         # plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
         # view(plane_vis)
         constraint_indices = index_fn(bare_surface)
-        constrained_adslab = fix_atoms(shifted_adslab, constraint_indices)
+        constrained_adslab = fix_atoms(jittered_adslab, constraint_indices)
         constrained_adslab = tether_binding_atom(
             constrained_adslab,
             binding_atom,
-            binding_atom_start=closest_site,
+            tether_point=closest_site,
             rt=0.0,
-            k=0.5,
+            k=0.2,
         )
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
