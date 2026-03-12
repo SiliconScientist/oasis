@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 from ase import Atoms
 from ase.visualize import view
-from ase.constraints import dict2constraint, FixAtoms, FixCartesian
+from ase.constraints import dict2constraint, FixAtoms, Hookean
 from ase.io.jsonio import encode, object_hook
 from ase.geometry import find_mic
 
@@ -315,8 +315,9 @@ def snap_adsorbate_to_closest_binding_site(
     shifted_adslab = shift_adsorbate_to_site(
         adslab, adsorbate_indices, closest_site, binding_atom_index
     )
-    visual = add_binding_site_markers(adslab, adsorption_sites, "H")
-    view(visual)
+    # Debug helper: visualize binding sites enumerated by PyMatGen.
+    # visual = add_binding_site_markers(adslab, adsorption_sites, "H")
+    # view(visual)
     return shifted_adslab, closest_site
 
 
@@ -353,14 +354,20 @@ def fix_atoms(atoms: Atoms, indices: list[int]) -> Atoms:
     return fixed
 
 
-def fix_binding_atoms_xy(atoms: Atoms, binding_atom: Optional[int]) -> Atoms:
+def tether_binding_atom(
+    atoms: Atoms,
+    binding_atom: Optional[int],
+    binding_atom_start: Optional[np.ndarray],
+    k: float = 0.5,
+    rt: float = 0.0,
+) -> Atoms:
     """
-    Return structures with binding atoms fixed in x and y only (z remains free).
+    Return structures with a Hookean tether on the binding atom.
     Existing constraints are preserved and augmented.
     """
     updated = atoms.copy()
 
-    if binding_atom is None:
+    if binding_atom is None or binding_atom_start is None:
         return updated
 
     existing = updated.constraints
@@ -371,7 +378,8 @@ def fix_binding_atoms_xy(atoms: Atoms, binding_atom: Optional[int]) -> Atoms:
     else:
         constraints = [existing]
 
-    constraints.append(FixCartesian([binding_atom], mask=(True, True, False)))
+    anchor = np.asarray(binding_atom_start, dtype=float)
+    constraints.append(Hookean(binding_atom, anchor, rt=rt, k=k))
     updated.set_constraint(constraints)
     return updated
 
@@ -696,7 +704,7 @@ def main() -> None:
         adsorbed_atom = extract_adsorbed_atom(entry, reaction)
         indices = extract_adsorbate_indices(entry, reaction)
         binding_atom = extract_binding_atom(adsorbed_atom, indices)
-        shifted_adslab, _ = snap_adsorbate_to_closest_binding_site(
+        shifted_adslab, closest_site = snap_adsorbate_to_closest_binding_site(
             adsorbed_atom, indices
         )
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
@@ -705,7 +713,13 @@ def main() -> None:
         # view(plane_vis)
         constraint_indices = index_fn(bare_surface)
         constrained_adslab = fix_atoms(shifted_adslab, constraint_indices)
-        constrained_adslab = fix_binding_atoms_xy(constrained_adslab, binding_atom)
+        constrained_adslab = tether_binding_atom(
+            constrained_adslab,
+            binding_atom,
+            binding_atom_start=closest_site,
+            rt=0.0,
+            k=0.5,
+        )
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
         )
