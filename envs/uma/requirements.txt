@@ -1,3 +1,2 @@
-catbench
 fairchem-core
 setuptools<82

@@ -1,2 +1,1 @@
-catbench
 orb_models

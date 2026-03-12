@@ -1,2 +1,1 @@
-catbench
 mace-torch

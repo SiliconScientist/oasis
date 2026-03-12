@@ -88,3 +88,17 @@ def get_model_path(model: str, config_path: str | Path) -> str | None:
     cfg = load_config(config_path)
     paths = cfg.get("mlip", {}).get("model_paths", {})
     return paths.get(model)  # returns None if absent
+
+
+def get_catbench_source_path(config_path: str | Path) -> Path | None:
+    config_path = Path(config_path).resolve()
+    cfg = load_config(config_path)
+    raw_path = cfg.get("mlip", {}).get("catbench_source")
+    if raw_path is None:
+        default_path = config_path.parent / "vendor" / "catbench"
+        return default_path if default_path.exists() else None
+
+    catbench_path = Path(raw_path)
+    if not catbench_path.is_absolute():
+        catbench_path = (config_path.parent / catbench_path).resolve()
+    return catbench_path
