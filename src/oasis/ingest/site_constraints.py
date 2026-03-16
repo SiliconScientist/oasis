@@ -268,11 +268,25 @@ def shift_adsorbate_to_site(
     Translate all adsorbate atoms so the binding atom lands on target_site.
     """
     shifted = adslab.copy()
+
+    # Rigid translation placing binding atom at target site
     translation = (
         np.asarray(target_site, dtype=float) - shifted.positions[binding_atom_index]
     )
     shifted.positions[adsorbate_indices] += translation
     return shifted
+
+
+def displace_adsorbate_z(
+    adslab: Atoms, adsorbate_indices: list[int], z_offset: float
+) -> Atoms:
+    """
+    Apply a uniform z displacement to all adsorbate atoms.
+    """
+    lowered = adslab.copy()
+    if adsorbate_indices and z_offset != 0.0:
+        lowered.positions[adsorbate_indices, 2] += z_offset
+    return lowered
 
 
 def displace_adsorbate_xy_random(
@@ -725,6 +739,7 @@ def main() -> None:
     dataset = load_mlip_dataset(cfg)
     updated_dataset: dict[str, Any] = {}
     rng = np.random.default_rng()
+    z_offset = -0.15
 
     for reaction, entry in dataset.items():
         adsorbed_atom = extract_adsorbed_atom(entry, reaction)
@@ -733,8 +748,11 @@ def main() -> None:
         shifted_adslab, closest_site = snap_adsorbate_to_closest_binding_site(
             adsorbed_atom, indices
         )
+        lowered_adslab = displace_adsorbate_z(shifted_adslab, indices, z_offset)
+        tether_point = np.array(closest_site, dtype=float)
+        tether_point[2] += z_offset
         jittered_adslab = displace_adsorbate_xy_random(
-            shifted_adslab, indices, magnitude=0.10, rng=rng
+            lowered_adslab, indices, magnitude=0.10, rng=rng
         )
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
         # Debug helper: visualize best-fit plane via random H markers.
@@ -745,9 +763,9 @@ def main() -> None:
         constrained_adslab = tether_binding_atom(
             constrained_adslab,
             binding_atom,
-            tether_point=closest_site,
+            tether_point=tether_point,
             rt=0.0,
-            k=0.2,
+            k=0.5,
         )
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
