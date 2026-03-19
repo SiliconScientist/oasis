@@ -6,9 +6,9 @@ from typing import Any, Callable, Optional
 import numpy as np
 from ase import Atoms
 from ase.visualize import view
-from ase.constraints import dict2constraint, FixAtoms, Hookean
-from ase.io.jsonio import encode, object_hook
+from ase.constraints import FixAtoms, FixCartesian, dict2constraint
 from ase.geometry import find_mic
+from ase.io.jsonio import encode, object_hook
 
 from oasis.config import Config, get_config
 
@@ -277,43 +277,6 @@ def shift_adsorbate_to_site(
     return shifted
 
 
-def displace_adsorbate_z(
-    adslab: Atoms, adsorbate_indices: list[int], z_offset: float
-) -> Atoms:
-    """
-    Apply a uniform z displacement to all adsorbate atoms.
-    """
-    lowered = adslab.copy()
-    if adsorbate_indices and z_offset != 0.0:
-        lowered.positions[adsorbate_indices, 2] += z_offset
-    return lowered
-
-
-def displace_adsorbate_xy_random(
-    adslab: Atoms,
-    adsorbate_indices: list[int],
-    magnitude: float = 0.10,
-    rng: Optional[np.random.Generator] = None,
-) -> Atoms:
-    """
-    Apply a random in-plane displacement to all adsorbate atoms.
-    """
-    if not adsorbate_indices or magnitude == 0.0:
-        return adslab.copy()
-
-    if rng is None:
-        rng = np.random.default_rng()
-
-    theta = float(rng.uniform(0.0, 2.0 * np.pi))
-    displacement = np.array(
-        [magnitude * np.cos(theta), magnitude * np.sin(theta), 0.0], dtype=float
-    )
-
-    jittered = adslab.copy()
-    jittered.positions[adsorbate_indices] += displacement
-    return jittered
-
-
 def add_binding_site_markers(
     adslab: Atoms, adsorption_sites: np.ndarray, marker_symbol: str = "H"
 ) -> Atoms:
@@ -331,14 +294,13 @@ def add_binding_site_markers(
     return visual
 
 
-def snap_adsorbate_to_closest_binding_site(
+def place_adsorbate_on_closest_binding_site(
     adslab: Atoms,
     adsorbate_indices: list[int],
     z_tolerance: float = 1e-3,
-) -> tuple[Atoms, np.ndarray]:
+) -> Atoms:
     """
-    Snap adsorbate to the ASF adsorption site closest to the current binding atom.
-    Returns (shifted_adslab, closest_site_cartesian).
+    Place the adsorbate on the ASF adsorption site nearest to the current binding atom.
     """
     binding_atom_index = pick_binding_atom_index(
         adslab, adsorbate_indices, z_tolerance=z_tolerance
@@ -348,16 +310,12 @@ def snap_adsorbate_to_closest_binding_site(
 
     slab = strip_adsorbate_from_adslab(adslab, adsorbate_indices)
     adsorption_sites = find_adsorption_sites_on_slab(slab)
-    closest_site = pick_closest_adsorption_site(
+    target_site = pick_closest_adsorption_site(
         adslab, binding_atom_index, adsorption_sites
     )
-    shifted_adslab = shift_adsorbate_to_site(
-        adslab, adsorbate_indices, closest_site, binding_atom_index
+    return shift_adsorbate_to_site(
+        adslab, adsorbate_indices, target_site, binding_atom_index
     )
-    # Debug helper: visualize binding sites enumerated by PyMatGen.
-    # visual = add_binding_site_markers(adslab, adsorption_sites, "H")
-    # view(visual)
-    return shifted_adslab, closest_site
 
 
 def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int]:
@@ -385,7 +343,7 @@ def index_by_layers(atoms: Atoms, layers: tuple[int, ...] = (1, 2)) -> list[int]
 
 def fix_atoms(atoms: Atoms, indices: list[int]) -> Atoms:
     """
-    Return new list of ASE Atoms with FixAtoms constraints applied to indices from index_fn.
+    Return new ASE Atoms with FixAtoms constraints applied to the selected indices.
     """
     constraint = FixAtoms(indices=indices)
     fixed = atoms.copy()
@@ -393,20 +351,17 @@ def fix_atoms(atoms: Atoms, indices: list[int]) -> Atoms:
     return fixed
 
 
-def tether_binding_atom(
+def fix_binding_atom_xy(
     atoms: Atoms,
     binding_atom: Optional[int],
-    tether_point: Optional[np.ndarray],
-    k: float = 0.5,
-    rt: float = 0.0,
 ) -> Atoms:
     """
-    Return structures with a Hookean tether on the binding atom.
+    Return a copy with the binding atom fixed in x and y while leaving z free.
     Existing constraints are preserved and augmented.
     """
     updated = atoms.copy()
 
-    if binding_atom is None or tether_point is None:
+    if binding_atom is None:
         return updated
 
     existing = updated.constraints
@@ -417,8 +372,7 @@ def tether_binding_atom(
     else:
         constraints = [existing]
 
-    anchor = np.asarray(tether_point, dtype=float)
-    constraints.append(Hookean(binding_atom, anchor, rt=rt, k=k))
+    constraints.append(FixCartesian(binding_atom, mask=(True, True, False)))
     updated.set_constraint(constraints)
     return updated
 
@@ -738,39 +692,20 @@ def main() -> None:
     index_fn = partial(index_by_layers, layers=(1, 2))
     dataset = load_mlip_dataset(cfg)
     updated_dataset: dict[str, Any] = {}
-    rng = np.random.default_rng()
-    z_offset = -0.15
-
     for reaction, entry in dataset.items():
         adsorbed_atom = extract_adsorbed_atom(entry, reaction)
         indices = extract_adsorbate_indices(entry, reaction)
         binding_atom = extract_binding_atom(adsorbed_atom, indices)
-        shifted_adslab, closest_site = snap_adsorbate_to_closest_binding_site(
-            adsorbed_atom, indices
-        )
-        lowered_adslab = displace_adsorbate_z(shifted_adslab, indices, z_offset)
-        tether_point = np.array(closest_site, dtype=float)
-        tether_point[2] += z_offset
-        jittered_adslab = displace_adsorbate_xy_random(
-            lowered_adslab, indices, magnitude=0.10, rng=rng
-        )
+        shifted_adslab = place_adsorbate_on_closest_binding_site(adsorbed_atom, indices)
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
-        # Debug helper: visualize best-fit plane via random H markers.
-        # plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
-        # view(plane_vis)
+        # # Debug helper: visualize best-fit plane via random H markers.
+        # # plane_vis = build_plane_visualization(bare_surface, n_markers=300, seed=0)
         constraint_indices = index_fn(bare_surface)
-        constrained_adslab = fix_atoms(jittered_adslab, constraint_indices)
-        constrained_adslab = tether_binding_atom(
-            constrained_adslab,
-            binding_atom,
-            tether_point=tether_point,
-            rt=0.0,
-            k=0.5,
-        )
+        constrained_adslab = fix_atoms(shifted_adslab, constraint_indices)
+        constrained_adslab = fix_binding_atom_xy(constrained_adslab, binding_atom)
         updated_entry = build_shifted_constrained_adsorption_entry(
             entry, constrained_adslab, reaction
         )
-
         updated_dataset[reaction] = updated_entry
     input_dataset_path = Path(cfg.mlip.dataset)
     output_path = shifted_adsorption_output_path(input_dataset_path)
