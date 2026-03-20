@@ -51,6 +51,7 @@ class MLIPConfig(BaseModel):
 
 
 class AnalysisConfig(BaseModel):
+    calculating_path: Optional[Path] = None
     base_dir: Path
     out_dir: Path
     prefixes: List[str]
