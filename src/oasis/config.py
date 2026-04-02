@@ -52,6 +52,10 @@ class MLIPConfig(BaseModel):
 
 class AnalysisConfig(BaseModel):
     calculating_path: Optional[Path] = None
+    summary_workbook_path: Optional[Path] = None
+    comparison_workbook_path: Optional[Path] = None
+    comparison_plot_path: Optional[Path] = None
+    run_adsorption_analysis: bool = False
     base_dir: Path
     out_dir: Path
     prefixes: List[str]
