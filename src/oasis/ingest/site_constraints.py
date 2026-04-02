@@ -330,14 +330,24 @@ def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int
 
 
 def index_by_layers(atoms: Atoms, layers: tuple[int, ...] = (1, 2)) -> list[int]:
+    """
+    Return atom indices for the requested slab layers.
+
+    Positive layer numbers are counted from the bottom, so ``1`` is the
+    bottom-most layer. Negative layer numbers are counted from the top, so
+    ``-1`` is the top-most layer and ``-2`` is the layer below it.
+    """
     layer_indices = get_layer_indices(atoms)
+    n_layers = len(layer_indices)
     indices: list[int] = []
     for layer in layers:
-        if layer not in layer_indices:
+        resolved_layer = n_layers + layer + 1 if layer < 0 else layer
+        if resolved_layer not in layer_indices:
             raise ValueError(
-                f"Requested layer {layer}, but only layers 1..{len(layer_indices)} exist"
+                f"Requested layer {layer}, but only layers 1..{n_layers} or "
+                f"-1..{-n_layers} exist"
             )
-        indices.extend(layer_indices[layer])
+        indices.extend(layer_indices[resolved_layer])
     return sorted(indices)
 
 
