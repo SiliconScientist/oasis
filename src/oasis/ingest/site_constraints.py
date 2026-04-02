@@ -329,14 +329,20 @@ def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int
         return list(np.where(z_values >= cutoff)[0])
 
 
-def index_by_layers(atoms: Atoms, layers: tuple[int, ...] = (1, 2)) -> list[int]:
+def index_by_layers(
+    atoms: Atoms, layers: int | tuple[int, ...] = (1, 2)
+) -> list[int]:
     """
     Return atom indices for the requested slab layers.
 
     Positive layer numbers are counted from the bottom, so ``1`` is the
     bottom-most layer. Negative layer numbers are counted from the top, so
-    ``-1`` is the top-most layer and ``-2`` is the layer below it.
+    ``-1`` is the top-most layer and ``-2`` is the layer below it. ``layers``
+    may be a single integer or a tuple of layer numbers.
     """
+    if isinstance(layers, int):
+        layers = (layers,)
+
     layer_indices = get_layer_indices(atoms)
     n_layers = len(layer_indices)
     indices: list[int] = []
