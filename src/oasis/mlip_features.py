@@ -66,13 +66,22 @@ if __name__ == "__main__":
         ]
         adsorbed_top_layer_indices = [slab_indices[i] for i in top_layer_indices]
         structure = adaptor.get_structure(adsorbed_atoms)
-        saturated_surface_indices = [
-            index
-            for index in adsorbed_top_layer_indices
-            if any(
-                neighbor["site_index"] in adsorbate_index_set
-                for neighbor in jmol_nn.get_nn_info(structure, index)
+        saturated_atoms = []
+        for surface_index in adsorbed_top_layer_indices:
+            adsorbate_neighbors = [
+                int(neighbor["site_index"])
+                for neighbor in jmol_nn.get_nn_info(structure, surface_index)
+                if neighbor["site_index"] in adsorbate_index_set
+            ]
+            if not adsorbate_neighbors:
+                continue
+            adsorbate_index = int(adsorbate_neighbors[0])
+            saturated_atoms.append(
+                {
+                    "surface_index": int(surface_index),
+                    "adsorbate_index": adsorbate_index,
+                    "adsorbate_element": adsorbed_atoms[adsorbate_index].symbol,
+                }
             )
-        ]
         print(f"Reaction: {reaction}")
-        print(f"Saturated surface indices: {saturated_surface_indices}")
+        print(f"Saturated atoms: {saturated_atoms}")
