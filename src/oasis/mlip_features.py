@@ -7,6 +7,7 @@ from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.visualize import view
 from pymatgen.analysis.local_env import JmolNN
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.io.ase import AseAtomsAdaptor
 
 from oasis.config import get_config
@@ -85,11 +86,25 @@ def find_nearby_adsorption_sites(
     return np.array(matched_sites, dtype=float)
 
 
+def deduplicate_marker_structures(marker_atoms_list, adaptor, matcher):
+    """Remove duplicate marker structures using pymatgen StructureMatcher."""
+    unique_atoms = []
+    unique_structures = []
+    for atoms in marker_atoms_list:
+        structure = adaptor.get_structure(atoms)
+        if any(matcher.fit(structure, other) for other in unique_structures):
+            continue
+        unique_atoms.append(atoms)
+        unique_structures.append(structure)
+    return unique_atoms
+
+
 if __name__ == "__main__":
     cfg = get_config()
     index_fn = partial(index_by_layers, layers=-1)
     adaptor = AseAtomsAdaptor()
     jmol_nn = JmolNN()
+    structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
     for reaction, entry in dataset.items():
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
@@ -133,7 +148,10 @@ if __name__ == "__main__":
             add_binding_site_markers(bare_surface, np.array([adsorption_site]))
             for adsorption_site in nearby_adsorption_sites
         ]
+        unique_marker_structures = deduplicate_marker_structures(
+            bare_surface_with_marker_sites, adaptor, structure_matcher
+        )
         print(f"Reaction: {reaction}")
         print(f"Saturated atoms: {saturated_atoms}")
         print(f"Nearby adsorption sites: {nearby_adsorption_sites.tolist()}")
-        print(f"Marker structures: {len(bare_surface_with_marker_sites)}")
+        print(f"Marker structures: {len(unique_marker_structures)}")
