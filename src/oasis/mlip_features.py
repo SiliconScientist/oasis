@@ -56,18 +56,23 @@ if __name__ == "__main__":
     jmol_nn = JmolNN()
     dataset = load_mlip_dataset(cfg)
     for reaction, entry in dataset.items():
-        adsorbed_atom = extract_adsorbed_atom(entry, reaction)
+        adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
-        bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, adsorbate_indices)
+        bare_surface = strip_adsorbate_from_adslab(adsorbed_atoms, adsorbate_indices)
         top_layer_indices = index_fn(bare_surface)
+        adsorbate_index_set = set(adsorbate_indices)
         slab_indices = [
-            i for i in range(len(adsorbed_atom)) if i not in set(adsorbate_indices)
+            i for i in range(len(adsorbed_atoms)) if i not in adsorbate_index_set
         ]
         adsorbed_top_layer_indices = [slab_indices[i] for i in top_layer_indices]
-        structure = adaptor.get_structure(adsorbed_atom)
-        top_layer_coordination_numbers = {
-            index: jmol_nn.get_cn(structure, index)
+        structure = adaptor.get_structure(adsorbed_atoms)
+        saturated_surface_indices = [
+            index
             for index in adsorbed_top_layer_indices
-        }
+            if any(
+                neighbor["site_index"] in adsorbate_index_set
+                for neighbor in jmol_nn.get_nn_info(structure, index)
+            )
+        ]
         print(f"Reaction: {reaction}")
-        print(f"Top-layer coordination numbers: {top_layer_coordination_numbers}")
+        print(f"Saturated surface indices: {saturated_surface_indices}")
