@@ -129,10 +129,11 @@ if __name__ == "__main__":
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
-        bare_surface_with_markers = add_binding_site_markers(
-            bare_surface, nearby_adsorption_sites
-        )
+        bare_surface_with_marker_sites = [
+            add_binding_site_markers(bare_surface, np.array([adsorption_site]))
+            for adsorption_site in nearby_adsorption_sites
+        ]
         print(f"Reaction: {reaction}")
         print(f"Saturated atoms: {saturated_atoms}")
         print(f"Nearby adsorption sites: {nearby_adsorption_sites.tolist()}")
-        view(bare_surface_with_markers)
+        print(f"Marker structures: {len(bare_surface_with_marker_sites)}")
