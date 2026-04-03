@@ -1,11 +1,12 @@
 from functools import partial
 import json
 from pathlib import Path
-from typing import Any
 
 from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.visualize import view
+from pymatgen.analysis.local_env import JmolNN
+from pymatgen.io.ase import AseAtomsAdaptor
 
 from oasis.config import get_config
 from oasis.ingest.site_constraints import (
@@ -50,12 +51,23 @@ def load_tolstar_atoms(json_path=DEFAULT_JSON_PATH):
 
 if __name__ == "__main__":
     cfg = get_config()
-    index_fn = partial(index_by_layers, layers=(-1))
+    index_fn = partial(index_by_layers, layers=-1)
+    adaptor = AseAtomsAdaptor()
+    jmol_nn = JmolNN()
     dataset = load_mlip_dataset(cfg)
-    updated_dataset: dict[str, Any] = {}
     for reaction, entry in dataset.items():
         adsorbed_atom = extract_adsorbed_atom(entry, reaction)
-        indices = extract_adsorbate_indices(entry, reaction)
-        bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, indices)
+        adsorbate_indices = extract_adsorbate_indices(entry, reaction)
+        bare_surface = strip_adsorbate_from_adslab(adsorbed_atom, adsorbate_indices)
         top_layer_indices = index_fn(bare_surface)
+        slab_indices = [
+            i for i in range(len(adsorbed_atom)) if i not in set(adsorbate_indices)
+        ]
+        adsorbed_top_layer_indices = [slab_indices[i] for i in top_layer_indices]
+        structure = adaptor.get_structure(adsorbed_atom)
+        top_layer_coordination_numbers = {
+            index: jmol_nn.get_cn(structure, index)
+            for index in adsorbed_top_layer_indices
+        }
         print(f"Reaction: {reaction}")
+        print(f"Top-layer coordination numbers: {top_layer_coordination_numbers}")
