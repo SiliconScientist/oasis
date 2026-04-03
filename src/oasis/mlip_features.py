@@ -2,6 +2,7 @@ from functools import partial
 import json
 from pathlib import Path
 
+import numpy as np
 from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.visualize import view
@@ -10,15 +11,19 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from oasis.config import get_config
 from oasis.ingest.site_constraints import (
+    add_binding_site_markers,
     extract_adsorbate_indices,
     extract_adsorbed_atom,
+    find_adsorption_sites_on_slab,
     index_by_layers,
     load_mlip_dataset,
+    plane_from_lowest_atoms,
     strip_adsorbate_from_adslab,
 )
 
 
 DEFAULT_JSON_PATH = Path(__file__).with_name("KHLOHC_origin_adsorption.json")
+ADSORPTION_SITE_TOLERANCE = 0.5
 
 
 def atoms_from_ase_db_json(atoms_json: str):
@@ -49,6 +54,37 @@ def load_tolstar_atoms(json_path=DEFAULT_JSON_PATH):
     return atoms_list
 
 
+def project_points_onto_plane(
+    points: np.ndarray, plane_centroid: np.ndarray, plane_normal: np.ndarray
+) -> np.ndarray:
+    """Project Cartesian points onto a plane."""
+    displacements = np.asarray(points, dtype=float) - np.asarray(plane_centroid, dtype=float)
+    distances = displacements @ np.asarray(plane_normal, dtype=float)
+    return np.asarray(points, dtype=float) - np.outer(distances, plane_normal)
+
+
+def find_nearby_adsorption_sites(
+    adsorption_sites: np.ndarray,
+    surface_positions: np.ndarray,
+    plane_centroid: np.ndarray,
+    plane_normal: np.ndarray,
+    tolerance: float = ADSORPTION_SITE_TOLERANCE,
+) -> np.ndarray:
+    """Keep adsorption sites whose in-plane distance to a bound surface atom is within tolerance."""
+    projected_sites = project_points_onto_plane(
+        adsorption_sites, plane_centroid, plane_normal
+    )
+    projected_surface_positions = project_points_onto_plane(
+        surface_positions, plane_centroid, plane_normal
+    )
+    matched_sites = []
+    for site, projected_site in zip(adsorption_sites, projected_sites, strict=False):
+        distances = np.linalg.norm(projected_surface_positions - projected_site, axis=1)
+        if np.any(distances <= tolerance):
+            matched_sites.append(site)
+    return np.array(matched_sites, dtype=float)
+
+
 if __name__ == "__main__":
     cfg = get_config()
     index_fn = partial(index_by_layers, layers=-1)
@@ -59,6 +95,7 @@ if __name__ == "__main__":
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atoms, adsorbate_indices)
+        adsorption_sites = find_adsorption_sites_on_slab(bare_surface)
         top_layer_indices = index_fn(bare_surface)
         adsorbate_index_set = set(adsorbate_indices)
         slab_indices = [
@@ -67,6 +104,7 @@ if __name__ == "__main__":
         adsorbed_top_layer_indices = [slab_indices[i] for i in top_layer_indices]
         structure = adaptor.get_structure(adsorbed_atoms)
         saturated_atoms = []
+        bound_surface_indices = []
         for surface_index in adsorbed_top_layer_indices:
             adsorbate_neighbors = [
                 int(neighbor["site_index"])
@@ -83,5 +121,18 @@ if __name__ == "__main__":
                     "adsorbate_element": adsorbed_atoms[adsorbate_index].symbol,
                 }
             )
+            bound_surface_indices.append(slab_indices.index(surface_index))
+        plane_centroid, plane_normal, _ = plane_from_lowest_atoms(bare_surface)
+        nearby_adsorption_sites = find_nearby_adsorption_sites(
+            adsorption_sites=adsorption_sites,
+            surface_positions=bare_surface.positions[bound_surface_indices],
+            plane_centroid=plane_centroid,
+            plane_normal=plane_normal,
+        )
+        bare_surface_with_markers = add_binding_site_markers(
+            bare_surface, nearby_adsorption_sites
+        )
         print(f"Reaction: {reaction}")
         print(f"Saturated atoms: {saturated_atoms}")
+        print(f"Nearby adsorption sites: {nearby_adsorption_sites.tolist()}")
+        view(bare_surface_with_markers)
