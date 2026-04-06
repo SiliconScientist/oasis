@@ -67,67 +67,70 @@ def project_points_onto_plane(
     return np.asarray(points, dtype=float) - np.outer(distances, plane_normal)
 
 
-def find_nearby_adsorption_sites(
+def site_adsorbate_associations(
     adsorption_sites: np.ndarray,
     surface_positions: np.ndarray,
+    adsorbate_elements: list[str],
     plane_centroid: np.ndarray,
     plane_normal: np.ndarray,
     tolerance: float = ADSORPTION_SITE_TOLERANCE,
-) -> np.ndarray:
-    """Keep adsorption sites whose in-plane distance to a bound surface atom is within tolerance."""
+) -> list[tuple[np.ndarray, str]]:
+    """Associate each nearby adsorption site with the nearest bound adsorbate element."""
     projected_sites = project_points_onto_plane(
         adsorption_sites, plane_centroid, plane_normal
     )
     projected_surface_positions = project_points_onto_plane(
         surface_positions, plane_centroid, plane_normal
     )
-    matched_sites = []
+
+    associated_sites: list[tuple[np.ndarray, str]] = []
     for site, projected_site in zip(adsorption_sites, projected_sites, strict=False):
         distances = np.linalg.norm(projected_surface_positions - projected_site, axis=1)
-        if np.any(distances <= tolerance):
-            matched_sites.append(site)
-    return np.array(matched_sites, dtype=float)
+        closest_index = int(np.argmin(distances))
+        if distances[closest_index] <= tolerance:
+            associated_sites.append((site, adsorbate_elements[closest_index]))
+    return associated_sites
 
 
 def select_adsorbate_atoms_for_deduplication(
     atoms: Atoms,
     slab_atom_count: int,
-    atoms_per_adsorbate: int,
     dedup_atom_indices: tuple[int, ...],
 ) -> Atoms:
-    """Return the slab plus the selected atoms from each appended adsorbate."""
-    marker_atom_count = len(atoms) - slab_atom_count
-    if marker_atom_count < 0 or marker_atom_count % atoms_per_adsorbate != 0:
-        raise ValueError("Marker atoms do not match the expected adsorbate layout")
-
+    """Return the slab plus selected atoms from the appended adsorbate."""
+    adsorbate_atom_count = len(atoms) - slab_atom_count
+    if adsorbate_atom_count <= 0:
+        raise ValueError("Expected appended adsorbate atoms for deduplication")
     if not dedup_atom_indices:
         raise ValueError("dedup_atom_indices must not be empty")
-    if any(index < 0 or index >= atoms_per_adsorbate for index in dedup_atom_indices):
-        raise ValueError("dedup_atom_indices must refer to atoms within each adsorbate")
+    if any(index < 0 or index >= adsorbate_atom_count for index in dedup_atom_indices):
+        raise ValueError("dedup_atom_indices must refer to atoms within the adsorbate")
 
     selected_indices = list(range(slab_atom_count))
-    for start in range(slab_atom_count, len(atoms), atoms_per_adsorbate):
-        selected_indices.extend(start + index for index in dedup_atom_indices)
+    selected_indices.extend(slab_atom_count + index for index in dedup_atom_indices)
     return atoms[selected_indices]
 
 
 def deduplicate_marker_structures(
     marker_atoms_list,
+    dedup_atom_indices_list,
     adaptor,
     matcher,
     slab_atom_count: int,
-    atoms_per_adsorbate: int,
-    dedup_atom_indices: tuple[int, ...],
 ):
     """Remove duplicate marker structures using selected adsorbate atoms only."""
+    if len(marker_atoms_list) != len(dedup_atom_indices_list):
+        raise ValueError("dedup_atom_indices_list must align with marker_atoms_list")
+
     unique_atoms = []
     unique_structures = []
-    for atoms in marker_atoms_list:
+    for atoms, dedup_atom_indices in zip(
+        marker_atoms_list, dedup_atom_indices_list, strict=False
+    ):
         structure = adaptor.get_structure(
             select_adsorbate_atoms_for_deduplication(
                 atoms,
                 slab_atom_count=slab_atom_count,
-                atoms_per_adsorbate=atoms_per_adsorbate,
                 dedup_atom_indices=dedup_atom_indices,
             )
         )
@@ -153,7 +156,7 @@ def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
 def methyl_adsorbate_geometry(
     ch_bond_length: float = METHYL_CH_BOND_LENGTH,
-) -> tuple[list[str], np.ndarray]:
+) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
     """
     Return local methyl geometry with the carbon at the origin.
 
@@ -177,7 +180,23 @@ def methyl_adsorbate_geometry(
         )
         symbols.append("H")
         positions.append(ch_bond_length * direction)
-    return symbols, np.asarray(positions, dtype=float)
+    return symbols, np.asarray(positions, dtype=float), (0,)
+
+
+def monatomic_adsorbate_geometry(
+    element: str,
+) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """Return a single-atom adsorbate template anchored at the adsorption site."""
+    return [element], np.zeros((1, 3), dtype=float), (0,)
+
+
+def adsorbate_geometry_template(
+    adsorbate_element: str,
+) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """Return a visualization adsorbate template for a bound adsorbate element."""
+    if adsorbate_element == "C":
+        return methyl_adsorbate_geometry()
+    return monatomic_adsorbate_geometry(adsorbate_element)
 
 
 def add_adsorbates(
@@ -275,33 +294,40 @@ if __name__ == "__main__":
             )
             bound_surface_indices.append(slab_indices.index(surface_index))
         plane_centroid, plane_normal, _ = plane_from_lowest_atoms(bare_surface)
-        nearby_adsorption_sites = find_nearby_adsorption_sites(
+        surface_positions = bare_surface.positions[bound_surface_indices]
+        adsorbate_elements = [
+            saturated_atom["adsorbate_element"] for saturated_atom in saturated_atoms
+        ]
+        nearby_site_adsorbates = site_adsorbate_associations(
             adsorption_sites=adsorption_sites,
-            surface_positions=bare_surface.positions[bound_surface_indices],
+            surface_positions=surface_positions,
+            adsorbate_elements=adsorbate_elements,
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
-        methyl_symbols, methyl_positions = methyl_adsorbate_geometry()
-        bare_surface_with_marker_sites = [
-            add_adsorbates(
-                bare_surface,
-                np.array([adsorption_site]),
-                adsorbate_symbols=methyl_symbols,
-                adsorbate_positions=methyl_positions,
-                plane_centroid=plane_centroid,
-                plane_normal=plane_normal,
+        marker_structures = []
+        dedup_atom_indices_list = []
+        for adsorption_site, adsorbate_element in nearby_site_adsorbates:
+            adsorbate_symbols, adsorbate_positions, dedup_atom_indices = (
+                adsorbate_geometry_template(adsorbate_element)
             )
-            for adsorption_site in nearby_adsorption_sites
-        ]
+            marker_structures.append(
+                add_adsorbates(
+                    bare_surface,
+                    np.array([adsorption_site]),
+                    adsorbate_symbols=adsorbate_symbols,
+                    adsorbate_positions=adsorbate_positions,
+                    plane_centroid=plane_centroid,
+                    plane_normal=plane_normal,
+                )
+            )
+            dedup_atom_indices_list.append(dedup_atom_indices)
         unique_marker_structures = deduplicate_marker_structures(
-            bare_surface_with_marker_sites,
+            marker_structures,
+            dedup_atom_indices_list,
             adaptor,
             structure_matcher,
             slab_atom_count=len(bare_surface),
-            atoms_per_adsorbate=len(methyl_symbols),
-            dedup_atom_indices=(0,),
         )
-        print(f"Reaction: {reaction}")
-        print(f"Saturated atoms: {saturated_atoms}")
-        print(f"Nearby adsorption sites: {nearby_adsorption_sites.tolist()}")
-        print(f"Marker structures: {len(unique_marker_structures)}")
+        if len(unique_marker_structures) > 1:
+            print("Stop here for visualization")
