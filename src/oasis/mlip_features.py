@@ -89,12 +89,29 @@ def find_nearby_adsorption_sites(
     return np.array(matched_sites, dtype=float)
 
 
-def deduplicate_marker_structures(marker_atoms_list, adaptor, matcher):
-    """Remove duplicate marker structures using pymatgen StructureMatcher."""
+def carbon_only_marker_structure(
+    atoms: Atoms, slab_atom_count: int, atoms_per_marker: int = 4
+) -> Atoms:
+    """Return the slab plus marker carbons, omitting marker hydrogens."""
+    marker_atom_count = len(atoms) - slab_atom_count
+    if marker_atom_count < 0 or marker_atom_count % atoms_per_marker != 0:
+        raise ValueError("Marker atoms do not match the expected methyl-group layout")
+
+    marker_indices = range(slab_atom_count, len(atoms), atoms_per_marker)
+    selected_indices = list(range(slab_atom_count)) + list(marker_indices)
+    return atoms[selected_indices]
+
+
+def deduplicate_marker_structures(
+    marker_atoms_list, adaptor, matcher, slab_atom_count: int
+):
+    """Remove duplicate marker structures using slab atoms and marker carbons only."""
     unique_atoms = []
     unique_structures = []
     for atoms in marker_atoms_list:
-        structure = adaptor.get_structure(atoms)
+        structure = adaptor.get_structure(
+            carbon_only_marker_structure(atoms, slab_atom_count=slab_atom_count)
+        )
         if any(matcher.fit(structure, other) for other in unique_structures):
             continue
         unique_atoms.append(atoms)
@@ -227,7 +244,10 @@ if __name__ == "__main__":
             for adsorption_site in nearby_adsorption_sites
         ]
         unique_marker_structures = deduplicate_marker_structures(
-            bare_surface_with_marker_sites, adaptor, structure_matcher
+            bare_surface_with_marker_sites,
+            adaptor,
+            structure_matcher,
+            slab_atom_count=len(bare_surface),
         )
         print(f"Reaction: {reaction}")
         print(f"Saturated atoms: {saturated_atoms}")
