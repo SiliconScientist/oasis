@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from ase import Atoms
 from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.visualize import view
@@ -12,7 +13,6 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from oasis.config import get_config
 from oasis.ingest.site_constraints import (
-    add_binding_site_markers,
     extract_adsorbate_indices,
     extract_adsorbed_atom,
     find_adsorption_sites_on_slab,
@@ -25,6 +25,7 @@ from oasis.ingest.site_constraints import (
 
 DEFAULT_JSON_PATH = Path(__file__).with_name("KHLOHC_origin_adsorption.json")
 ADSORPTION_SITE_TOLERANCE = 0.5
+METHYL_CH_BOND_LENGTH = 1.09
 
 
 def atoms_from_ase_db_json(atoms_json: str):
@@ -59,7 +60,9 @@ def project_points_onto_plane(
     points: np.ndarray, plane_centroid: np.ndarray, plane_normal: np.ndarray
 ) -> np.ndarray:
     """Project Cartesian points onto a plane."""
-    displacements = np.asarray(points, dtype=float) - np.asarray(plane_centroid, dtype=float)
+    displacements = np.asarray(points, dtype=float) - np.asarray(
+        plane_centroid, dtype=float
+    )
     distances = displacements @ np.asarray(plane_normal, dtype=float)
     return np.asarray(points, dtype=float) - np.outer(distances, plane_normal)
 
@@ -99,6 +102,74 @@ def deduplicate_marker_structures(marker_atoms_list, adaptor, matcher):
     return unique_atoms
 
 
+def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Build two unit vectors orthogonal to a given unit axis."""
+    helper_axis = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(float(np.dot(helper_axis, axis))) > 0.9:
+        helper_axis = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    basis_1 = np.cross(axis, helper_axis)
+    basis_1 /= np.linalg.norm(basis_1)
+    basis_2 = np.cross(axis, basis_1)
+    basis_2 /= np.linalg.norm(basis_2)
+    return basis_1, basis_2
+
+
+def add_methyl_site_markers(
+    adslab: Atoms,
+    adsorption_sites: np.ndarray,
+    plane_centroid: np.ndarray,
+    plane_normal: np.ndarray,
+    ch_bond_length: float = METHYL_CH_BOND_LENGTH,
+) -> Atoms:
+    """
+    Return a visualization structure with a methyl group placed at each adsorption site.
+
+    The carbon atom is placed at the adsorption site. The three hydrogens are
+    oriented tetrahedrally so they point away from the slab, treating the
+    surface-C bond as the fourth tetrahedral direction.
+    """
+    axis = np.asarray(plane_normal, dtype=float)
+    axis /= np.linalg.norm(axis)
+
+    # If a site lies on the opposite side of the plane, flip the local outward axis.
+    polar_component = 1.0 / 3.0
+    radial_component = np.sqrt(1.0 - polar_component**2)
+    azimuthal_angles = (0.0, 2.0 * np.pi / 3.0, 4.0 * np.pi / 3.0)
+
+    marker_symbols: list[str] = []
+    marker_positions: list[np.ndarray] = []
+    for site in np.asarray(adsorption_sites, dtype=float):
+        local_axis = axis.copy()
+        if float(np.dot(site - plane_centroid, local_axis)) < 0.0:
+            local_axis = -local_axis
+        local_basis_1, local_basis_2 = orthonormal_basis_from_axis(local_axis)
+
+        marker_symbols.append("C")
+        marker_positions.append(site)
+        for angle in azimuthal_angles:
+            direction = (
+                polar_component * local_axis
+                + radial_component
+                * (
+                    np.cos(angle) * local_basis_1
+                    + np.sin(angle) * local_basis_2
+                )
+            )
+            marker_symbols.append("H")
+            marker_positions.append(site + ch_bond_length * direction)
+
+    markers = Atoms(
+        symbols=marker_symbols,
+        positions=np.asarray(marker_positions, dtype=float),
+        cell=adslab.cell,
+        pbc=adslab.pbc,
+    )
+    visual = adslab.copy()
+    visual.extend(markers)
+    return visual
+
+
 if __name__ == "__main__":
     cfg = get_config()
     index_fn = partial(index_by_layers, layers=-1)
@@ -107,6 +178,8 @@ if __name__ == "__main__":
     structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
     for reaction, entry in dataset.items():
+        if "Tolstar" not in entry.get("raw", {}):
+            continue
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
         bare_surface = strip_adsorbate_from_adslab(adsorbed_atoms, adsorbate_indices)
@@ -145,7 +218,12 @@ if __name__ == "__main__":
             plane_normal=plane_normal,
         )
         bare_surface_with_marker_sites = [
-            add_binding_site_markers(bare_surface, np.array([adsorption_site]))
+            add_methyl_site_markers(
+                bare_surface,
+                np.array([adsorption_site]),
+                plane_centroid=plane_centroid,
+                plane_normal=plane_normal,
+            )
             for adsorption_site in nearby_adsorption_sites
         ]
         unique_marker_structures = deduplicate_marker_structures(
