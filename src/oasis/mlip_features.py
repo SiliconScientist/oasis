@@ -89,28 +89,47 @@ def find_nearby_adsorption_sites(
     return np.array(matched_sites, dtype=float)
 
 
-def carbon_only_marker_structure(
-    atoms: Atoms, slab_atom_count: int, atoms_per_marker: int = 4
+def select_adsorbate_atoms_for_deduplication(
+    atoms: Atoms,
+    slab_atom_count: int,
+    atoms_per_adsorbate: int,
+    dedup_atom_indices: tuple[int, ...],
 ) -> Atoms:
-    """Return the slab plus marker carbons, omitting marker hydrogens."""
+    """Return the slab plus the selected atoms from each appended adsorbate."""
     marker_atom_count = len(atoms) - slab_atom_count
-    if marker_atom_count < 0 or marker_atom_count % atoms_per_marker != 0:
-        raise ValueError("Marker atoms do not match the expected methyl-group layout")
+    if marker_atom_count < 0 or marker_atom_count % atoms_per_adsorbate != 0:
+        raise ValueError("Marker atoms do not match the expected adsorbate layout")
 
-    marker_indices = range(slab_atom_count, len(atoms), atoms_per_marker)
-    selected_indices = list(range(slab_atom_count)) + list(marker_indices)
+    if not dedup_atom_indices:
+        raise ValueError("dedup_atom_indices must not be empty")
+    if any(index < 0 or index >= atoms_per_adsorbate for index in dedup_atom_indices):
+        raise ValueError("dedup_atom_indices must refer to atoms within each adsorbate")
+
+    selected_indices = list(range(slab_atom_count))
+    for start in range(slab_atom_count, len(atoms), atoms_per_adsorbate):
+        selected_indices.extend(start + index for index in dedup_atom_indices)
     return atoms[selected_indices]
 
 
 def deduplicate_marker_structures(
-    marker_atoms_list, adaptor, matcher, slab_atom_count: int
+    marker_atoms_list,
+    adaptor,
+    matcher,
+    slab_atom_count: int,
+    atoms_per_adsorbate: int,
+    dedup_atom_indices: tuple[int, ...],
 ):
-    """Remove duplicate marker structures using slab atoms and marker carbons only."""
+    """Remove duplicate marker structures using selected adsorbate atoms only."""
     unique_atoms = []
     unique_structures = []
     for atoms in marker_atoms_list:
         structure = adaptor.get_structure(
-            carbon_only_marker_structure(atoms, slab_atom_count=slab_atom_count)
+            select_adsorbate_atoms_for_deduplication(
+                atoms,
+                slab_atom_count=slab_atom_count,
+                atoms_per_adsorbate=atoms_per_adsorbate,
+                dedup_atom_indices=dedup_atom_indices,
+            )
         )
         if any(matcher.fit(structure, other) for other in unique_structures):
             continue
@@ -132,27 +151,62 @@ def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return basis_1, basis_2
 
 
-def add_methyl_site_markers(
-    adslab: Atoms,
-    adsorption_sites: np.ndarray,
-    plane_centroid: np.ndarray,
-    plane_normal: np.ndarray,
+def methyl_adsorbate_geometry(
     ch_bond_length: float = METHYL_CH_BOND_LENGTH,
-) -> Atoms:
+) -> tuple[list[str], np.ndarray]:
     """
-    Return a visualization structure with a methyl group placed at each adsorption site.
+    Return local methyl geometry with the carbon at the origin.
 
-    The carbon atom is placed at the adsorption site. The three hydrogens are
-    oriented tetrahedrally so they point away from the slab, treating the
-    surface-C bond as the fourth tetrahedral direction.
+    The local +z direction points away from the surface, while the implicit
+    surface-C bond is the fourth tetrahedral direction along -z.
     """
-    axis = np.asarray(plane_normal, dtype=float)
-    axis /= np.linalg.norm(axis)
-
-    # If a site lies on the opposite side of the plane, flip the local outward axis.
     polar_component = 1.0 / 3.0
     radial_component = np.sqrt(1.0 - polar_component**2)
     azimuthal_angles = (0.0, 2.0 * np.pi / 3.0, 4.0 * np.pi / 3.0)
+
+    symbols = ["C"]
+    positions = [np.zeros(3, dtype=float)]
+    for angle in azimuthal_angles:
+        direction = np.array(
+            [
+                radial_component * np.cos(angle),
+                radial_component * np.sin(angle),
+                polar_component,
+            ],
+            dtype=float,
+        )
+        symbols.append("H")
+        positions.append(ch_bond_length * direction)
+    return symbols, np.asarray(positions, dtype=float)
+
+
+def add_adsorbates(
+    adslab: Atoms,
+    adsorption_sites: np.ndarray,
+    adsorbate_symbols: list[str],
+    adsorbate_positions: np.ndarray,
+    plane_centroid: np.ndarray,
+    plane_normal: np.ndarray,
+    anchor_index: int = 0,
+) -> Atoms:
+    """
+    Return a visualization structure with a local adsorbate template at each site.
+
+    `adsorbate_positions` are local coordinates. The atom at `anchor_index` is
+    translated onto each adsorption site, and the local +z direction is aligned
+    with the outward surface normal.
+    """
+    local_positions = np.asarray(adsorbate_positions, dtype=float)
+    if local_positions.ndim != 2 or local_positions.shape[1] != 3:
+        raise ValueError("adsorbate_positions must have shape (n_atoms, 3)")
+    if len(adsorbate_symbols) != len(local_positions):
+        raise ValueError("adsorbate_symbols must match adsorbate_positions")
+    if anchor_index < 0 or anchor_index >= len(local_positions):
+        raise ValueError("anchor_index is out of range for the adsorbate template")
+
+    axis = np.asarray(plane_normal, dtype=float)
+    axis /= np.linalg.norm(axis)
+    centered_positions = local_positions - local_positions[anchor_index]
 
     marker_symbols: list[str] = []
     marker_positions: list[np.ndarray] = []
@@ -161,20 +215,13 @@ def add_methyl_site_markers(
         if float(np.dot(site - plane_centroid, local_axis)) < 0.0:
             local_axis = -local_axis
         local_basis_1, local_basis_2 = orthonormal_basis_from_axis(local_axis)
-
-        marker_symbols.append("C")
-        marker_positions.append(site)
-        for angle in azimuthal_angles:
-            direction = (
-                polar_component * local_axis
-                + radial_component
-                * (
-                    np.cos(angle) * local_basis_1
-                    + np.sin(angle) * local_basis_2
-                )
-            )
-            marker_symbols.append("H")
-            marker_positions.append(site + ch_bond_length * direction)
+        rotation = np.column_stack((local_basis_1, local_basis_2, local_axis))
+        rotated_positions = centered_positions @ rotation.T
+        for symbol, position in zip(
+            adsorbate_symbols, site + rotated_positions, strict=False
+        ):
+            marker_symbols.append(symbol)
+            marker_positions.append(position)
 
     markers = Atoms(
         symbols=marker_symbols,
@@ -234,10 +281,13 @@ if __name__ == "__main__":
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
+        methyl_symbols, methyl_positions = methyl_adsorbate_geometry()
         bare_surface_with_marker_sites = [
-            add_methyl_site_markers(
+            add_adsorbates(
                 bare_surface,
                 np.array([adsorption_site]),
+                adsorbate_symbols=methyl_symbols,
+                adsorbate_positions=methyl_positions,
                 plane_centroid=plane_centroid,
                 plane_normal=plane_normal,
             )
@@ -248,6 +298,8 @@ if __name__ == "__main__":
             adaptor,
             structure_matcher,
             slab_atom_count=len(bare_surface),
+            atoms_per_adsorbate=len(methyl_symbols),
+            dedup_atom_indices=(0,),
         )
         print(f"Reaction: {reaction}")
         print(f"Saturated atoms: {saturated_atoms}")
