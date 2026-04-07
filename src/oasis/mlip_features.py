@@ -284,9 +284,7 @@ if __name__ == "__main__":
     unique_probe_match_structures = {}
     unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
     next_unique_probe_id = 0
-    for reaction, entry in islice(dataset.items(), 140):
-        if "Tolstar" not in entry.get("raw", {}):
-            continue
+    for reaction, entry in dataset.items():
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
         bare_surface = rewrap_slab_by_largest_gap(
@@ -371,8 +369,6 @@ if __name__ == "__main__":
                 )
 
             entry_unique_probe_ids.append(matching_unique_id)
-        if len(entry_unique_probe_ids) < 1:
-            print("Stop here")
         entry["unique_probe_ids"] = entry_unique_probe_ids
 
     print(len(unique_probe_structures))
