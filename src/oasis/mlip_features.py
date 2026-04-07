@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from ase import Atoms
+from ase.build import molecule
 from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.visualize import view
@@ -14,6 +15,7 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from oasis.config import get_config
 from oasis.ingest.site_constraints import (
+    atoms_to_atoms_json_like_template,
     extract_adsorbate_indices,
     extract_adsorbed_atom,
     find_adsorption_sites_on_slab,
@@ -27,7 +29,7 @@ from oasis.ingest.site_constraints import (
 
 DEFAULT_JSON_PATH = Path(__file__).with_name("KHLOHC_origin_adsorption.json")
 ADSORPTION_SITE_TOLERANCE = 0.5
-METHYL_CH_BOND_LENGTH = 1.09
+GAS_CELL_LENGTH = 15.0
 
 
 def atoms_from_ase_db_json(atoms_json: str):
@@ -35,6 +37,86 @@ def atoms_from_ase_db_json(atoms_json: str):
     decoded = jsonio.decode(atoms_json)
     row_id = decoded["ids"][0]
     return AtomsRow(decoded[row_id]).toatoms()
+
+
+def unique_probe_output_path(input_dataset_path: Path) -> Path:
+    """Build the output path for the unique probe dataset."""
+    stem = input_dataset_path.stem
+    lower_stem = stem.lower()
+    marker = "tolstar"
+    if marker in lower_stem:
+        start = lower_stem.index(marker)
+        stem = f"{stem[:start]}unique_probe{stem[start + len(marker) :]}"
+    else:
+        stem = f"{stem}_unique_probe"
+    return input_dataset_path.with_name(f"{stem}{input_dataset_path.suffix}")
+
+
+def wrap_atoms_json(atoms: Atoms, unique_id: str) -> str:
+    """Serialize Atoms into the ASE DB-style wrapped payload used by the dataset."""
+    row = json.loads(jsonio.encode(atoms))
+    row["unique_id"] = unique_id
+    return json.dumps({"1": row, "ids": [1], "nextid": 2})
+
+
+def gas_reference_atoms(formula: str, cell_length: float = GAS_CELL_LENGTH) -> Atoms:
+    """Build a simple gas-phase molecule in a cubic periodic box."""
+    gas = molecule(formula)
+    gas.set_cell(np.eye(3) * cell_length)
+    gas.center()
+    gas.set_pbc(True)
+    return gas
+
+
+def build_unique_probe_entry(
+    *,
+    unique_id: str,
+    bare_surface: Atoms,
+    probe_structure: Atoms,
+    star_template_atoms_json: str,
+    probe_template_atoms_json: str,
+    ch4_gas: Atoms,
+    h2_gas: Atoms,
+) -> dict[str, object]:
+    """Build one dataset entry for a newly discovered unique probe system."""
+    slab_atom_count = len(bare_surface)
+    probe_indices = list(range(slab_atom_count, len(probe_structure)))
+
+    return {
+        "unique_id": unique_id,
+        "raw": {
+            "star": {
+                "stoi": -1,
+                "energy_ref": None,
+                "atoms_json": atoms_to_atoms_json_like_template(
+                    bare_surface, star_template_atoms_json
+                ),
+            },
+            "ch3star": {
+                "stoi": 1,
+                "energy_ref": None,
+                "atoms_json": atoms_to_atoms_json_like_template(
+                    probe_structure, probe_template_atoms_json
+                ),
+            },
+            "ch4gas": {
+                "stoi": -1,
+                "energy_ref": None,
+                "atoms_json": wrap_atoms_json(
+                    ch4_gas.copy(), unique_id=f"{unique_id}_ch4gas"
+                ),
+            },
+            "h2gas": {
+                "stoi": 0.5,
+                "energy_ref": None,
+                "atoms_json": wrap_atoms_json(
+                    h2_gas.copy(), unique_id=f"{unique_id}_h2gas"
+                ),
+            },
+        },
+        "ref_ads_eng": None,
+        "adsorbate_indices": probe_indices,
+    }
 
 
 def load_tolstar_atoms(json_path=DEFAULT_JSON_PATH):
@@ -174,33 +256,72 @@ def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return basis_1, basis_2
 
 
-def methyl_adsorbate_geometry(
-    ch_bond_length: float = METHYL_CH_BOND_LENGTH,
-) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
-    """
-    Return local methyl geometry with the carbon at the origin.
+def rotation_matrix_from_vectors(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Return a rotation matrix that maps one vector onto another."""
+    source = np.asarray(source, dtype=float)
+    target = np.asarray(target, dtype=float)
+    source /= np.linalg.norm(source)
+    target /= np.linalg.norm(target)
 
-    The local +z direction points away from the surface, while the implicit
-    surface-C bond is the fourth tetrahedral direction along -z.
-    """
-    polar_component = 1.0 / 3.0
-    radial_component = np.sqrt(1.0 - polar_component**2)
-    azimuthal_angles = (0.0, 2.0 * np.pi / 3.0, 4.0 * np.pi / 3.0)
+    cross = np.cross(source, target)
+    sin_theta = np.linalg.norm(cross)
+    cos_theta = float(np.dot(source, target))
 
-    symbols = ["C"]
-    positions = [np.zeros(3, dtype=float)]
-    for angle in azimuthal_angles:
-        direction = np.array(
-            [
-                radial_component * np.cos(angle),
-                radial_component * np.sin(angle),
-                polar_component,
-            ],
-            dtype=float,
-        )
-        symbols.append("H")
-        positions.append(ch_bond_length * direction)
-    return symbols, np.asarray(positions, dtype=float), (0,)
+    if sin_theta < 1e-12:
+        if cos_theta > 0.0:
+            return np.eye(3)
+        helper = np.array([1.0, 0.0, 0.0], dtype=float)
+        if abs(float(np.dot(source, helper))) > 0.9:
+            helper = np.array([0.0, 1.0, 0.0], dtype=float)
+        axis = np.cross(source, helper)
+        axis /= np.linalg.norm(axis)
+        return -np.eye(3) + 2.0 * np.outer(axis, axis)
+
+    skew = np.array(
+        [
+            [0.0, -cross[2], cross[1]],
+            [cross[2], 0.0, -cross[0]],
+            [-cross[1], cross[0], 0.0],
+        ],
+        dtype=float,
+    )
+    return np.eye(3) + skew + skew @ skew * ((1.0 - cos_theta) / (sin_theta**2))
+
+
+def methyl_adsorbate_geometry() -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """
+    Return local methyl geometry derived from ASE methane.
+
+    The carbon is at the origin. The removed methane hydrogen defines the
+    implicit surface-C bond direction, which is aligned with local -z.
+    """
+    methane = molecule("CH4")
+    symbols = methane.get_chemical_symbols()
+    positions = methane.get_positions()
+
+    carbon_index = symbols.index("C")
+    carbon_position = positions[carbon_index]
+    hydrogen_indices = [i for i, symbol in enumerate(symbols) if symbol == "H"]
+    removed_hydrogen_index = min(
+        hydrogen_indices,
+        key=lambda index: positions[index][2],
+    )
+
+    centered_positions = positions - carbon_position
+    removed_direction = centered_positions[removed_hydrogen_index]
+    rotation = rotation_matrix_from_vectors(
+        removed_direction, np.array([0.0, 0.0, -1.0], dtype=float)
+    )
+    rotated_positions = centered_positions @ rotation.T
+
+    kept_indices = [carbon_index] + [
+        index for index in hydrogen_indices if index != removed_hydrogen_index
+    ]
+    return (
+        [symbols[index] for index in kept_indices],
+        rotated_positions[kept_indices],
+        (0,),
+    )
 
 
 def monatomic_adsorbate_geometry(
@@ -275,16 +396,21 @@ def add_adsorbates(
 
 if __name__ == "__main__":
     cfg = get_config()
+    dataset_path = Path(cfg.mlip.dataset)
     index_fn = partial(index_by_layers, layers=-1)
     adaptor = AseAtomsAdaptor()
     jmol_nn = JmolNN()
     structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
+    dataset_items = islice(dataset.items(), 50) if cfg.mlip.dev_run else dataset.items()
     unique_probe_structures: dict[str, Atoms] = {}
     unique_probe_match_structures = {}
     unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
+    unique_probe_dataset: dict[str, dict[str, object]] = {}
     next_unique_probe_id = 0
-    for reaction, entry in dataset.items():
+    ch4_gas = gas_reference_atoms("CH4")
+    h2_gas = gas_reference_atoms("H2")
+    for reaction, entry in dataset_items:
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
         bare_surface = rewrap_slab_by_largest_gap(
@@ -367,8 +493,22 @@ if __name__ == "__main__":
                 unique_probe_buckets.setdefault(signature, []).append(
                     matching_unique_id
                 )
+                unique_probe_dataset[f"unique_probe_{matching_unique_id}"] = (
+                    build_unique_probe_entry(
+                        unique_id=matching_unique_id,
+                        bare_surface=bare_surface,
+                        probe_structure=probe_structure,
+                        star_template_atoms_json=entry["raw"]["star"]["atoms_json"],
+                        probe_template_atoms_json=entry["raw"]["Tolstar"]["atoms_json"],
+                        ch4_gas=ch4_gas,
+                        h2_gas=h2_gas,
+                    )
+                )
 
             entry_unique_probe_ids.append(matching_unique_id)
         entry["unique_probe_ids"] = entry_unique_probe_ids
 
+    output_path = unique_probe_output_path(dataset_path)
+    output_path.write_text(json.dumps(unique_probe_dataset, indent=2) + "\n")
     print(len(unique_probe_structures))
+    print(output_path)
