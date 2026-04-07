@@ -111,21 +111,21 @@ def select_adsorbate_atoms_for_deduplication(
     return atoms[selected_indices]
 
 
-def deduplicate_marker_structures(
-    marker_atoms_list,
+def deduplicate_probe_structures(
+    probe_atoms_list,
     dedup_atom_indices_list,
     adaptor,
     matcher,
     slab_atom_count: int,
 ):
-    """Remove duplicate marker structures using selected adsorbate atoms only."""
-    if len(marker_atoms_list) != len(dedup_atom_indices_list):
-        raise ValueError("dedup_atom_indices_list must align with marker_atoms_list")
+    """Remove duplicate probe structures using selected adsorbate atoms only."""
+    if len(probe_atoms_list) != len(dedup_atom_indices_list):
+        raise ValueError("dedup_atom_indices_list must align with probe_atoms_list")
 
     unique_atoms = []
     unique_structures = []
     for atoms, dedup_atom_indices in zip(
-        marker_atoms_list, dedup_atom_indices_list, strict=False
+        probe_atoms_list, dedup_atom_indices_list, strict=False
     ):
         structure = adaptor.get_structure(
             select_adsorbate_atoms_for_deduplication(
@@ -227,8 +227,8 @@ def add_adsorbates(
     axis /= np.linalg.norm(axis)
     centered_positions = local_positions - local_positions[anchor_index]
 
-    marker_symbols: list[str] = []
-    marker_positions: list[np.ndarray] = []
+    probe_symbols: list[str] = []
+    probe_positions: list[np.ndarray] = []
     for site in np.asarray(adsorption_sites, dtype=float):
         local_axis = axis.copy()
         if float(np.dot(site - plane_centroid, local_axis)) < 0.0:
@@ -239,17 +239,17 @@ def add_adsorbates(
         for symbol, position in zip(
             adsorbate_symbols, site + rotated_positions, strict=False
         ):
-            marker_symbols.append(symbol)
-            marker_positions.append(position)
+            probe_symbols.append(symbol)
+            probe_positions.append(position)
 
-    markers = Atoms(
-        symbols=marker_symbols,
-        positions=np.asarray(marker_positions, dtype=float),
+    probes = Atoms(
+        symbols=probe_symbols,
+        positions=np.asarray(probe_positions, dtype=float),
         cell=adslab.cell,
         pbc=adslab.pbc,
     )
     visual = adslab.copy()
-    visual.extend(markers)
+    visual.extend(probes)
     return visual
 
 
@@ -305,13 +305,13 @@ if __name__ == "__main__":
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
-        marker_structures = []
+        probe_structures = []
         dedup_atom_indices_list = []
         for adsorption_site, adsorbate_element in nearby_site_adsorbates:
             adsorbate_symbols, adsorbate_positions, dedup_atom_indices = (
                 adsorbate_geometry_template(adsorbate_element)
             )
-            marker_structures.append(
+            probe_structures.append(
                 add_adsorbates(
                     bare_surface,
                     np.array([adsorption_site]),
@@ -322,12 +322,12 @@ if __name__ == "__main__":
                 )
             )
             dedup_atom_indices_list.append(dedup_atom_indices)
-        unique_marker_structures = deduplicate_marker_structures(
-            marker_structures,
+        unique_probe_structures = deduplicate_probe_structures(
+            probe_structures,
             dedup_atom_indices_list,
             adaptor,
             structure_matcher,
             slab_atom_count=len(bare_surface),
         )
-        if len(unique_marker_structures) > 1:
+        if len(unique_probe_structures) > 1:
             print("Stop here for visualization")
