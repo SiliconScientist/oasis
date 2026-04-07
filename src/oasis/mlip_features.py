@@ -1,4 +1,5 @@
 from functools import partial
+from itertools import islice
 import json
 from pathlib import Path
 
@@ -141,6 +142,24 @@ def deduplicate_probe_structures(
     return unique_atoms
 
 
+def probe_matching_structure(
+    probe_atoms: Atoms,
+    slab_atom_count: int,
+    dedup_atom_indices: tuple[int, ...],
+) -> Atoms:
+    """Return the reduced probe structure used for global matching."""
+    return select_adsorbate_atoms_for_deduplication(
+        probe_atoms,
+        slab_atom_count=slab_atom_count,
+        dedup_atom_indices=dedup_atom_indices,
+    )
+
+
+def probe_match_signature(structure) -> tuple[str, int]:
+    """Return a cheap signature used to prefilter probe match candidates."""
+    return structure.composition.reduced_formula, len(structure)
+
+
 def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Build two unit vectors orthogonal to a given unit axis."""
     helper_axis = np.array([1.0, 0.0, 0.0], dtype=float)
@@ -260,7 +279,11 @@ if __name__ == "__main__":
     jmol_nn = JmolNN()
     structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
-    for reaction, entry in dataset.items():
+    unique_probe_structures: dict[str, Atoms] = {}
+    unique_probe_match_structures = {}
+    unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
+    next_unique_probe_id = 0
+    for reaction, entry in islice(dataset.items(), 50):
         if "Tolstar" not in entry.get("raw", {}):
             continue
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
@@ -305,29 +328,47 @@ if __name__ == "__main__":
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
-        probe_structures = []
-        dedup_atom_indices_list = []
+        entry_unique_probe_ids: list[str] = []
         for adsorption_site, adsorbate_element in nearby_site_adsorbates:
             adsorbate_symbols, adsorbate_positions, dedup_atom_indices = (
                 adsorbate_geometry_template(adsorbate_element)
             )
-            probe_structures.append(
-                add_adsorbates(
-                    bare_surface,
-                    np.array([adsorption_site]),
-                    adsorbate_symbols=adsorbate_symbols,
-                    adsorbate_positions=adsorbate_positions,
-                    plane_centroid=plane_centroid,
-                    plane_normal=plane_normal,
+            probe_structure = add_adsorbates(
+                bare_surface,
+                np.array([adsorption_site]),
+                adsorbate_symbols=adsorbate_symbols,
+                adsorbate_positions=adsorbate_positions,
+                plane_centroid=plane_centroid,
+                plane_normal=plane_normal,
+            )
+            match_structure = adaptor.get_structure(
+                probe_matching_structure(
+                    probe_structure,
+                    slab_atom_count=len(bare_surface),
+                    dedup_atom_indices=dedup_atom_indices,
                 )
             )
-            dedup_atom_indices_list.append(dedup_atom_indices)
-        unique_probe_structures = deduplicate_probe_structures(
-            probe_structures,
-            dedup_atom_indices_list,
-            adaptor,
-            structure_matcher,
-            slab_atom_count=len(bare_surface),
-        )
-        if len(unique_probe_structures) > 1:
-            print("Stop here for visualization")
+            signature = probe_match_signature(match_structure)
+
+            matching_unique_id = None
+            for unique_id in unique_probe_buckets.get(signature, []):
+                if structure_matcher.fit(
+                    match_structure, unique_probe_match_structures[unique_id]
+                ):
+                    matching_unique_id = unique_id
+                    break
+
+            if matching_unique_id is None:
+                matching_unique_id = str(next_unique_probe_id)
+                next_unique_probe_id += 1
+                unique_probe_structures[matching_unique_id] = probe_structure
+                unique_probe_match_structures[matching_unique_id] = match_structure
+                unique_probe_buckets.setdefault(signature, []).append(
+                    matching_unique_id
+                )
+
+            entry_unique_probe_ids.append(matching_unique_id)
+
+        entry["unique_probe_ids"] = entry_unique_probe_ids
+
+    print(len(unique_probe_structures))
