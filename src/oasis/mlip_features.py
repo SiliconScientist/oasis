@@ -19,6 +19,7 @@ from oasis.ingest.site_constraints import (
     extract_adsorbate_indices,
     extract_adsorbed_atom,
     find_adsorption_sites_on_slab,
+    fix_binding_atom_xy,
     index_by_layers,
     load_mlip_dataset,
     plane_from_lowest_atoms,
@@ -87,6 +88,7 @@ def build_unique_probe_entry(
     """Build one dataset entry for a newly discovered unique probe system."""
     slab_atom_count = len(bare_surface)
     probe_indices = list(range(slab_atom_count, len(probe_structure)))
+    constrained_probe_structure = fix_binding_atom_xy(probe_structure, slab_atom_count)
 
     return {
         "unique_id": unique_id,
@@ -102,7 +104,7 @@ def build_unique_probe_entry(
                 "stoi": 1,
                 "energy_ref": None,
                 "atoms_json": atoms_to_atoms_json_like_template(
-                    probe_structure, probe_template_atoms_json
+                    constrained_probe_structure, probe_template_atoms_json
                 ),
             },
             "ch4gas": {
