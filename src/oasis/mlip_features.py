@@ -56,7 +56,9 @@ def unique_probe_output_path(input_dataset_path: Path) -> Path:
 def updated_dataset_output_path(input_dataset_path: Path) -> Path:
     """Build the output path for the original dataset with probe ids added."""
     stem = input_dataset_path.stem
-    return input_dataset_path.with_name(f"{stem}_with_probe_ids{input_dataset_path.suffix}")
+    return input_dataset_path.with_name(
+        f"{stem}_with_probe_ids{input_dataset_path.suffix}"
+    )
 
 
 def wrap_atoms_json(atoms: Atoms, unique_id: str) -> str:
