@@ -20,6 +20,7 @@ from oasis.ingest.site_constraints import (
     index_by_layers,
     load_mlip_dataset,
     plane_from_lowest_atoms,
+    rewrap_slab_by_largest_gap,
     strip_adsorbate_from_adslab,
 )
 
@@ -283,12 +284,14 @@ if __name__ == "__main__":
     unique_probe_match_structures = {}
     unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
     next_unique_probe_id = 0
-    for reaction, entry in islice(dataset.items(), 50):
+    for reaction, entry in islice(dataset.items(), 140):
         if "Tolstar" not in entry.get("raw", {}):
             continue
         adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
         adsorbate_indices = extract_adsorbate_indices(entry, reaction)
-        bare_surface = strip_adsorbate_from_adslab(adsorbed_atoms, adsorbate_indices)
+        bare_surface = rewrap_slab_by_largest_gap(
+            strip_adsorbate_from_adslab(adsorbed_atoms, adsorbate_indices)
+        )
         adsorption_sites = find_adsorption_sites_on_slab(bare_surface)
         top_layer_indices = index_fn(bare_surface)
         adsorbate_index_set = set(adsorbate_indices)
@@ -368,7 +371,8 @@ if __name__ == "__main__":
                 )
 
             entry_unique_probe_ids.append(matching_unique_id)
-
+        if len(entry_unique_probe_ids) < 1:
+            print("Stop here")
         entry["unique_probe_ids"] = entry_unique_probe_ids
 
     print(len(unique_probe_structures))

@@ -636,6 +636,35 @@ def get_lowest_atom_indices(atoms: Atoms, z_tolerance: float = 0.5) -> list[int]
     return lowest_indices.tolist()
 
 
+def rewrap_slab_by_largest_gap(atoms: Atoms) -> Atoms:
+    """
+    Return a copy with fractional z rewrapped so the slab is contiguous.
+
+    The largest cyclic gap in fractional z is assumed to be the vacuum region.
+    The slab is shifted so the midpoint of that gap lies on the periodic
+    boundary, which keeps wrapped bottom-layer atoms from appearing at the top
+    of the cell.
+    """
+    if len(atoms) == 0:
+        return atoms.copy()
+
+    rewrapped = atoms.copy()
+    scaled_positions = rewrapped.get_scaled_positions(wrap=True)
+    fractional_z = np.mod(scaled_positions[:, 2], 1.0)
+    sorted_fractional_z = np.sort(fractional_z)
+
+    cyclic_gaps = np.diff(
+        np.concatenate((sorted_fractional_z, [sorted_fractional_z[0] + 1.0]))
+    )
+    largest_gap_index = int(np.argmax(cyclic_gaps))
+    gap_start = sorted_fractional_z[largest_gap_index]
+    gap_midpoint = (gap_start + 0.5 * cyclic_gaps[largest_gap_index]) % 1.0
+
+    scaled_positions[:, 2] = np.mod(fractional_z - gap_midpoint, 1.0)
+    rewrapped.set_scaled_positions(scaled_positions)
+    return rewrapped
+
+
 def plane_from_lowest_atoms(
     atoms: Atoms, lowest_z_tolerance: float = 0.5
 ) -> tuple[np.ndarray, np.ndarray, float]:
