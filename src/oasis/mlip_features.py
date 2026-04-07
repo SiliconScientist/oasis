@@ -52,6 +52,12 @@ def unique_probe_output_path(input_dataset_path: Path) -> Path:
     return input_dataset_path.with_name(f"{stem}{input_dataset_path.suffix}")
 
 
+def updated_dataset_output_path(input_dataset_path: Path) -> Path:
+    """Build the output path for the original dataset with probe ids added."""
+    stem = input_dataset_path.stem
+    return input_dataset_path.with_name(f"{stem}_with_probe_ids{input_dataset_path.suffix}")
+
+
 def wrap_atoms_json(atoms: Atoms, unique_id: str) -> str:
     """Serialize Atoms into the ASE DB-style wrapped payload used by the dataset."""
     row = json.loads(jsonio.encode(atoms))
@@ -403,6 +409,7 @@ if __name__ == "__main__":
     structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
     dataset_items = islice(dataset.items(), 50) if cfg.mlip.dev_run else dataset.items()
+    updated_dataset: dict[str, dict[str, object]] = {}
     unique_probe_structures: dict[str, Atoms] = {}
     unique_probe_match_structures = {}
     unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
@@ -507,8 +514,12 @@ if __name__ == "__main__":
 
             entry_unique_probe_ids.append(matching_unique_id)
         entry["unique_probe_ids"] = entry_unique_probe_ids
+        updated_dataset[reaction] = entry
 
     output_path = unique_probe_output_path(dataset_path)
     output_path.write_text(json.dumps(unique_probe_dataset, indent=2) + "\n")
+    updated_output_path = updated_dataset_output_path(dataset_path)
+    updated_output_path.write_text(json.dumps(updated_dataset, indent=2) + "\n")
     print(len(unique_probe_structures))
     print(output_path)
+    print(updated_output_path)
