@@ -454,6 +454,11 @@ if __name__ == "__main__":
                 }
             )
             bound_surface_indices.append(slab_indices.index(surface_index))
+        entry_unique_probe_ids: list[str] = []
+        if len(bound_surface_indices) == 0:
+            entry["unique_probe_ids"] = entry_unique_probe_ids
+            updated_dataset[reaction] = entry
+            continue
         plane_centroid, plane_normal, _ = plane_from_lowest_atoms(bare_surface)
         surface_positions = bare_surface.positions[bound_surface_indices]
         adsorbate_elements = [
@@ -466,7 +471,6 @@ if __name__ == "__main__":
             plane_centroid=plane_centroid,
             plane_normal=plane_normal,
         )
-        entry_unique_probe_ids: list[str] = []
         for adsorption_site, adsorbate_element in nearby_site_adsorbates:
             adsorbate_symbols, adsorbate_positions, dedup_atom_indices = (
                 adsorbate_geometry_template(adsorbate_element)
