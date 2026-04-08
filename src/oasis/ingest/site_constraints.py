@@ -412,6 +412,17 @@ def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) ->
     row["positions"] = encoded["positions"]
     row["cell"] = encoded["cell"]
     row["pbc"] = encoded["pbc"]
+    for key in (
+        "momenta",
+        "masses",
+        "tags",
+        "initial_charges",
+        "initial_magmoms",
+    ):
+        if key in encoded:
+            row[key] = encoded[key]
+        else:
+            row.pop(key, None)
     if "constraints" in encoded:
         row["constraints"] = encoded["constraints"]
     else:

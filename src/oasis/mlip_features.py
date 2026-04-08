@@ -8,7 +8,6 @@ from ase import Atoms
 from ase.build import molecule
 from ase.db.row import AtomsRow
 from ase.io import jsonio
-from ase.visualize import view
 from pymatgen.analysis.local_env import JmolNN
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.io.ase import AseAtomsAdaptor
@@ -37,7 +36,19 @@ def atoms_from_ase_db_json(atoms_json: str):
     """Convert an ASE database-style JSON string into an ASE Atoms object."""
     decoded = jsonio.decode(atoms_json)
     row_id = decoded["ids"][0]
-    return AtomsRow(decoded[row_id]).toatoms()
+    row = decoded[row_id]
+    atom_count = len(row["numbers"])
+    for key in (
+        "momenta",
+        "masses",
+        "tags",
+        "initial_charges",
+        "initial_magmoms",
+    ):
+        values = row.get(key)
+        if values is not None and len(values) != atom_count:
+            row.pop(key)
+    return AtomsRow(row).toatoms()
 
 
 def unique_probe_output_path(input_dataset_path: Path) -> Path:
