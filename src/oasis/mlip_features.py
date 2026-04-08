@@ -72,10 +72,9 @@ def updated_dataset_output_path(input_dataset_path: Path) -> Path:
     )
 
 
-def wrap_atoms_json(atoms: Atoms, unique_id: str) -> str:
+def wrap_atoms_json(atoms: Atoms) -> str:
     """Serialize Atoms into the ASE DB-style wrapped payload used by the dataset."""
     row = json.loads(jsonio.encode(atoms))
-    row["unique_id"] = unique_id
     return json.dumps({"1": row, "ids": [1], "nextid": 2})
 
 
@@ -104,7 +103,6 @@ def build_unique_probe_entry(
     constrained_probe_structure = fix_binding_atom_xy(probe_structure, slab_atom_count)
 
     return {
-        "unique_id": unique_id,
         "raw": {
             "star": {
                 "stoi": -1,
@@ -123,16 +121,12 @@ def build_unique_probe_entry(
             "ch4gas": {
                 "stoi": -1,
                 "energy_ref": None,
-                "atoms_json": wrap_atoms_json(
-                    ch4_gas.copy(), unique_id=f"{unique_id}_ch4gas"
-                ),
+                "atoms_json": wrap_atoms_json(ch4_gas.copy()),
             },
             "h2gas": {
                 "stoi": 0.5,
                 "energy_ref": None,
-                "atoms_json": wrap_atoms_json(
-                    h2_gas.copy(), unique_id=f"{unique_id}_h2gas"
-                ),
+                "atoms_json": wrap_atoms_json(h2_gas.copy()),
             },
         },
         "ref_ads_eng": None,

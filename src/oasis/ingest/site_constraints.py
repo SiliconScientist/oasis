@@ -412,6 +412,7 @@ def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) ->
     row["positions"] = encoded["positions"]
     row["cell"] = encoded["cell"]
     row["pbc"] = encoded["pbc"]
+    row.pop("unique_id", None)
     for key in (
         "momenta",
         "masses",
