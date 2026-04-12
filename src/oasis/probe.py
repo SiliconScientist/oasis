@@ -466,6 +466,26 @@ def build_entry_trajectory_frames(
     return frames
 
 
+def ordered_dataset_entry(entry: dict[str, object]) -> dict[str, object]:
+    """Keep commonly used fields in a stable, readable order when writing JSON."""
+    preferred_order = [
+        "raw",
+        "ref_ads_eng",
+        "adsorbate_indices",
+        "bound_surface_indices",
+        "unique_probe_ids",
+        "mlip_feature_matrix",
+    ]
+    ordered: dict[str, object] = {}
+    for key in preferred_order:
+        if key in entry:
+            ordered[key] = entry[key]
+    for key, value in entry.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
 if __name__ == "__main__":
     cfg = get_config()
     dataset_path = Path(cfg.mlip.dataset)
@@ -522,7 +542,7 @@ if __name__ == "__main__":
         if len(bound_surface_indices) == 0:
             entry["bound_surface_indices"] = bound_surface_indices
             entry["unique_probe_ids"] = entry_unique_probe_ids
-            updated_dataset[reaction] = entry
+            updated_dataset[reaction] = ordered_dataset_entry(entry)
             continue
         plane_centroid, plane_normal, _ = plane_from_lowest_atoms(bare_surface)
         surface_positions = bare_surface.positions[bound_surface_indices]
@@ -595,7 +615,7 @@ if __name__ == "__main__":
                 )
         entry["bound_surface_indices"] = bound_surface_indices
         entry["unique_probe_ids"] = entry_unique_probe_ids
-        updated_dataset[reaction] = entry
+        updated_dataset[reaction] = ordered_dataset_entry(entry)
         trajectory_frames = build_entry_trajectory_frames(
             adsorbed_atoms=adsorbed_atoms,
             bare_surface_unwrapped=bare_surface_unwrapped,
