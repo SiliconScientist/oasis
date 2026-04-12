@@ -520,6 +520,7 @@ if __name__ == "__main__":
             bound_surface_indices.append(slab_indices.index(surface_index))
         entry_unique_probe_ids: list[str] = []
         if len(bound_surface_indices) == 0:
+            entry["bound_surface_indices"] = bound_surface_indices
             entry["unique_probe_ids"] = entry_unique_probe_ids
             updated_dataset[reaction] = entry
             continue
@@ -592,6 +593,7 @@ if __name__ == "__main__":
                 entry_unique_probe_sequence.append(
                     (matching_unique_id, probe_structure)
                 )
+        entry["bound_surface_indices"] = bound_surface_indices
         entry["unique_probe_ids"] = entry_unique_probe_ids
         updated_dataset[reaction] = entry
         trajectory_frames = build_entry_trajectory_frames(
