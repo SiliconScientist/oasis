@@ -19,14 +19,12 @@ DEFAULT_MLIP_RESULTS_DIR = REPO_ROOT / "data/mlips/khlohc_toluene_unique_probes"
 class SampleMLIPFeatureMatrix:
     reaction: str
     mlip_names: list[str]
-    unique_probe_ids: list[str]
     matrix: np.ndarray
 
     def to_dict(self) -> dict[str, object]:
         return {
             "reaction": self.reaction,
             "mlip_names": self.mlip_names,
-            "unique_probe_ids": self.unique_probe_ids,
             "matrix": self.matrix.tolist(),
         }
 
@@ -108,7 +106,6 @@ def build_sample_mlip_feature_matrices(
         feature_matrices[reaction] = SampleMLIPFeatureMatrix(
             reaction=reaction,
             mlip_names=mlip_names,
-            unique_probe_ids=unique_probe_ids,
             matrix=matrix,
         )
 
@@ -146,7 +143,6 @@ def add_mlip_feature_matrices_to_dataset(
         feature_matrix = feature_matrices[reaction]
         entry[field_name] = {
             "mlip_names": feature_matrix.mlip_names,
-            "unique_probe_ids": feature_matrix.unique_probe_ids,
             "matrix": feature_matrix.matrix.tolist(),
         }
 
@@ -195,7 +191,7 @@ def main() -> None:
                     "example_reaction": first_reaction,
                     "example_shape": [
                         len(first_entry["mlip_feature_matrix"]["mlip_names"]),
-                        len(first_entry["mlip_feature_matrix"]["unique_probe_ids"]),
+                        len(first_entry["unique_probe_ids"]),
                     ],
                 },
                 indent=2,
@@ -226,7 +222,7 @@ def main() -> None:
                 "mlips": feature_matrix.mlip_names,
                 "example_reaction": first_reaction,
                 "example_shape": list(feature_matrix.matrix.shape),
-                "example_unique_probe_ids": feature_matrix.unique_probe_ids,
+                "example_num_probe_sites": int(feature_matrix.matrix.shape[1]),
             },
             indent=2,
         )
