@@ -45,6 +45,7 @@ class MLIPConfig(BaseModel):
     dev_n: int
     dev_run: bool
     dataset: Optional[str] = None
+    optimizer: str = "LBFGS"
     interpreters: MLIPInterpretersConfig
     model_paths: MLIPModelPathConfig
     models: MLIPModelsConfig

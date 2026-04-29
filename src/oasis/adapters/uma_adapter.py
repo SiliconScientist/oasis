@@ -11,6 +11,8 @@ from catbench.adsorption import AdsorptionCalculation
 from fairchem.core import FAIRChemCalculator
 from fairchem.core.units.mlip_unit import load_predict_unit
 
+from oasis.mlip.registry import load_config
+
 MLIP_NAME = "uma-s-1p1"
 TASK_NAME = "oc20"
 
@@ -33,6 +35,8 @@ def main() -> None:
     )
     parser.add_argument("--n-calcs", type=int, default=3)
     args = parser.parse_args()
+    config = load_config(args.config)
+    optimizer = str(config.get("mlip", {}).get("optimizer", "LBFGS"))
 
     t0 = time.time()
 
@@ -54,6 +58,7 @@ def main() -> None:
         calculators,
         mlip_name=MLIP_NAME,
         benchmark=args.dataset_name,
+        optimizer=optimizer,
     )
     results = adsorption_calc.run()
 
@@ -65,6 +70,7 @@ def main() -> None:
         "task_name": TASK_NAME,
         "n_calculators": args.n_calcs,
         "device": args.device,
+        "optimizer": optimizer,
         "dataset_name": args.dataset_name,
         "input_dataset": Path(args.input).name,
         "wall_time_s": time.time() - t0,

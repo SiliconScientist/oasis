@@ -9,7 +9,9 @@ from pathlib import Path
 
 from catbench.adsorption import AdsorptionCalculation
 from orb_models.forcefield import pretrained
-from orb_models.forcefield.calculator import ORBCalculator
+from orb_models.forcefield.inference.calculator import ORBCalculator
+
+from oasis.mlip.registry import load_config
 
 MLIP_NAME = "orb-v3-conservative-inf-omat"
 
@@ -32,24 +34,29 @@ def main() -> None:
     )
     parser.add_argument("--n-calcs", type=int, default=3)
     args = parser.parse_args()
+    config = load_config(args.config)
+    optimizer = str(config.get("mlip", {}).get("optimizer", "LBFGS"))
 
     t0 = time.time()
 
     # --- Build calculators ---
     calculators = []
     for _ in range(args.n_calcs):
-        orbff = pretrained.orb_v3_conservative_inf_omat(
+        orbff, atoms_adapter = pretrained.orb_v3_conservative_inf_omat(
             weights_path=args.model_path,  # This arg is ignored by the pretrained loader, but included here for clarity.
             device=args.device,
             precision="float32-high",  # or "float32-highest" / "float64"
         )
-        calculators.append(ORBCalculator(model=orbff, device=args.device))
+        calculators.append(
+            ORBCalculator(model=orbff, atoms_adapter=atoms_adapter, device=args.device)
+        )
 
     # --- Run CatBench adsorption workflow ---
     adsorption_calc = AdsorptionCalculation(
         calculators,
         mlip_name=MLIP_NAME,
         benchmark=args.dataset_name,
+        optimizer=optimizer,
     )
     results = adsorption_calc.run()
 
@@ -60,6 +67,7 @@ def main() -> None:
         "checkpoint": Path(args.model_path).name if args.model_path else None,
         "n_calculators": args.n_calcs,
         "device": args.device,
+        "optimizer": optimizer,
         "dataset_name": args.dataset_name,
         "input_dataset": Path(args.input).name,
         "wall_time_s": time.time() - t0,
