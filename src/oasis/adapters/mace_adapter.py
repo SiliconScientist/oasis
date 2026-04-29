@@ -48,15 +48,14 @@ def main() -> None:
             )
             for _ in range(args.n_calcs)
         ]
-    # --- Run CatBench adsorption workflow ---
-    adsorption_calc = AdsorptionCalculation(
-        calculators,
-        mlip_name=MLIP_NAME,
-        benchmark=args.dataset_name,
-        optimizer=optimizer,
-    )
-
-    results = adsorption_calc.run()
+        # --- Run CatBench adsorption workflow ---
+        adsorption_calc = AdsorptionCalculation(
+            calculators,
+            mlip_name=MLIP_NAME,
+            benchmark=args.dataset_name,
+            optimizer=optimizer,
+        )
+        results = adsorption_calc.run()
 
     # --- Standardized output ---
     out = {
