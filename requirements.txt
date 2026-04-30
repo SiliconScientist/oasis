@@ -3,5 +3,6 @@ pydantic
 PyYAML
 sympy
 pandas
+openpyxl
 pymatgen
 -e .

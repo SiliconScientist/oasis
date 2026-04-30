@@ -22,6 +22,73 @@ except ModuleNotFoundError:  # optional for parity-only workflows
     mean_squared_error = None
 
 
+_MLIP_DISPLAY_NAMES = {
+    "7net-omni": "7Net-Omni",
+    "mace-mh-1": "MACE-MH-1",
+    "mattersim-v1-5m": "MatterSim-v1-5M",
+    "orb-v3-conservative-inf-omat": "ORB-v3\nconservative",
+    "uma-s-1p1": "UMA-s-1p1",
+}
+
+
+def mae_comparison_plot(
+    comparison_df: pd.DataFrame,
+    summary_df: pd.DataFrame,
+    output_path: str | Path,
+) -> Path:
+    required_columns = {"MLIP_name", "MAE_total (eV)"}
+    for label, df in (("comparison_df", comparison_df), ("summary_df", summary_df)):
+        missing_columns = required_columns - set(df.columns)
+        if missing_columns:
+            raise ValueError(
+                f"{label} is missing required columns: {sorted(missing_columns)}"
+            )
+
+    comparison_mae = comparison_df.loc[:, ["MLIP_name", "MAE_total (eV)"]].rename(
+        columns={"MAE_total (eV)": "control_mae"}
+    )
+    summary_mae = summary_df.loc[:, ["MLIP_name", "MAE_total (eV)"]].rename(
+        columns={"MAE_total (eV)": "comparison_mae"}
+    )
+    merged = comparison_mae.merge(summary_mae, on="MLIP_name", how="inner")
+    if merged.empty:
+        raise ValueError(
+            "No overlapping MLIP_name values found between the two dataframes."
+        )
+
+    merged["control_mae"] = pd.to_numeric(merged["control_mae"], errors="coerce")
+    merged["comparison_mae"] = pd.to_numeric(merged["comparison_mae"], errors="coerce")
+    merged = merged.dropna(subset=["control_mae", "comparison_mae"])
+    if merged.empty:
+        raise ValueError(
+            "No numeric MAE_total (eV) values found for overlapping MLIPs."
+        )
+
+    merged["display_name"] = (
+        merged["MLIP_name"].map(_MLIP_DISPLAY_NAMES).fillna(merged["MLIP_name"])
+    )
+
+    x = np.arange(len(merged))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(x - width / 2, merged["control_mae"], width, label="Control")
+    ax.bar(x + width / 2, merged["comparison_mae"], width, label="Constrained")
+
+    ax.set_ylabel("MAE (eV$^2$)", fontsize=16)
+    ax.set_xticks(x, merged["display_name"])
+    ax.legend(frameon=False)
+
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    return output_path
+
+
 def _mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
