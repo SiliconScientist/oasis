@@ -224,3 +224,6 @@ result/*
 # SLURM files
 slurm_output/
 dev_run.sh
+
+# Agent files
+.codex

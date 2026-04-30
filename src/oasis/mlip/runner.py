@@ -2,12 +2,12 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from oasis.mlip.registry import (
     get_catbench_source_path,
-    get_model_path,
-    get_model_python,
+    get_rootstock_python,
 )
 
 
@@ -25,8 +25,7 @@ def run_one_task(line: str, config_path: str):
             "<model> <dataset_name> <input_path> <output_path>"
         )
 
-    python_exe = get_model_python(model, config_path)
-    model_path = get_model_path(model, config_path)  # may be None
+    python_exe = get_rootstock_python(config_path) or sys.executable
     catbench_source = get_catbench_source_path(config_path)
 
     env = os.environ.copy()
@@ -49,7 +48,9 @@ def run_one_task(line: str, config_path: str):
     cmd = [
         python_exe,
         "-m",
-        f"oasis.adapters.{model}_adapter",
+        "oasis.adapters.rootstock_adapter",
+        "--model",
+        model,
         "--input",
         input_path,
         "--output",
@@ -60,7 +61,5 @@ def run_one_task(line: str, config_path: str):
         str(config_path),
     ]
 
-    if model_path is not None:
-        cmd += ["--model-path", str(model_path)]
     print("Running:", " ".join(cmd))
     subprocess.run(cmd, check=True, env=env)

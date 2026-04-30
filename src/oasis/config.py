@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:
     import tomllib
@@ -22,23 +22,23 @@ class IngestConfig(BaseModel):
     stoich: StoichConfig
 
 
-class MLIPInterpretersConfig(BaseModel):
-    mace: Path
-    mattersim: Path
-    orb_v3: Optional[Path] = None
-    sevennet: Optional[Path] = None
-    uma_s1p1: Optional[Path] = None
-
-
-class MLIPModelPathConfig(BaseModel):
-    mace: Path
-    mattersim: Path
-    orb_v3: Optional[Path] = None
-    uma: Optional[Path] = None
-
-
 class MLIPModelsConfig(BaseModel):
     enabled: List[str]
+
+
+class RootstockModelConfig(BaseModel):
+    model: str
+    mlip_name: str
+    checkpoint: Optional[str] = None
+    output_model: Optional[str] = None
+    model_version: Optional[str] = None
+    metadata: Dict[str, str] = Field(default_factory=dict)
+
+
+class RootstockConfig(BaseModel):
+    root: Path
+    python: Optional[Path] = None
+    models: Dict[str, RootstockModelConfig]
 
 
 class MLIPConfig(BaseModel):
@@ -46,9 +46,8 @@ class MLIPConfig(BaseModel):
     dev_run: bool
     dataset: Optional[str] = None
     optimizer: str = "LBFGS"
-    interpreters: MLIPInterpretersConfig
-    model_paths: MLIPModelPathConfig
     models: MLIPModelsConfig
+    rootstock: RootstockConfig
 
 
 class AnalysisConfig(BaseModel):
