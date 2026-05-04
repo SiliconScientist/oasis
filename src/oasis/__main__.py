@@ -6,11 +6,13 @@ import sys
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.dataset import GatingDataset, collate_gating_samples
+from oasis.evaluate import evaluate_models_and_baselines
 from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.model import BaselineMLPGatedMoE, SchNetGatedMoE
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
+from oasis.train import build_gating_dataloaders
 
 
 def main() -> None:
@@ -46,6 +48,21 @@ def main() -> None:
     schnet_output = schnet_gate(
         debug_batch.graph_batch,
         debug_batch.mlip_energies,
+    )
+    eval_loader, _ = build_gating_dataloaders(
+        gating_dataset,
+        batch_size=min(8, len(gating_dataset)),
+        val_fraction=0.2,
+        seed=cfg.seed or 0,
+    )
+    eval_report = evaluate_models_and_baselines(
+        debug_batch,
+        data_loader=eval_loader,
+        models=[
+            ("mlp_gate", baseline_gate),
+            ("schnet_gate", schnet_gate),
+        ],
+        device="cpu",
     )
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
@@ -110,6 +127,15 @@ def main() -> None:
         f"SchNet gate logits shape: {tuple(schnet_output.logits.shape)}, "
         f"weights shape: {tuple(schnet_output.weights.shape)}, "
         f"prediction shape: {tuple(schnet_output.prediction.shape)}"
+    )
+    print(
+        f"Best single expert: {eval_report.baselines.best_single_expert_name}, "
+        f"RMSE={eval_report.baselines.best_single_expert.rmse:.4f}"
+    )
+    print(
+        f"Mean ensemble RMSE={eval_report.baselines.mean_ensemble.rmse:.4f}, "
+        f"MLP gate RMSE={eval_report.models[0].metrics.rmse:.4f}, "
+        f"SchNet gate RMSE={eval_report.models[1].metrics.rmse:.4f}"
     )
 
     learning_curve_plot(
