@@ -5,7 +5,7 @@ import sys
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
-from oasis.io import find_result_files, load_wide_predictions
+from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
 
@@ -20,6 +20,8 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
+    atoms_list = load_corresponding_atoms(wide_df, cfg.mlip.dataset)
+
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
     reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
@@ -55,6 +57,7 @@ def main() -> None:
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
+    print(f"Loaded {len(atoms_list)} corresponding adsorbed Atoms objects")
 
     learning_curve_plot(
         cfg=cfg,

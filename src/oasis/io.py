@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import polars as pl
+from ase import Atoms
 
 from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
+from oasis.ingest.site_constraints import extract_adsorbed_atom
 
 
 def find_result_files(base_dir: Path) -> list[Path]:
@@ -121,3 +125,37 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
         subset=["reference_ads_eng", *mlip_cols, *label_cols]
     ).sort("reaction")
     return wide_df
+
+
+def load_corresponding_atoms(
+    wide_df: pl.DataFrame,
+    dataset_path: str | Path,
+) -> list[Atoms]:
+    """
+    Return the adsorbed ASE Atoms objects aligned with ``wide_df`` reaction rows.
+    """
+    path = Path(dataset_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"MLIP dataset JSON not found: {path}")
+
+    with path.open("r", encoding="utf-8") as f:
+        dataset = json.load(f)
+
+    if not isinstance(dataset, dict):
+        raise TypeError(
+            f"Expected dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
+        )
+
+    reactions = wide_df["reaction"].to_list()
+    atoms_list: list[Atoms] = []
+    for reaction in reactions:
+        entry = dataset.get(reaction)
+        if entry is None:
+            raise KeyError(f"Reaction '{reaction}' not found in dataset {path}")
+        if not isinstance(entry, dict):
+            raise TypeError(
+                f"Expected dataset entry for '{reaction}' to be dict, got {type(entry).__name__}"
+            )
+        atoms_list.append(extract_adsorbed_atom(entry, reaction))
+
+    return atoms_list
