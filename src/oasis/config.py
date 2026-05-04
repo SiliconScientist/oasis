@@ -78,6 +78,45 @@ class PlotConfig(BaseModel):
     reaction_contains: Optional[List[str]] = None
 
 
+class MoeGraphConfig(BaseModel):
+    cutoff: float = 6.0
+    max_neighbors: Optional[int] = None
+    n_rbf: int = 32
+
+
+class MoeBaselineGateConfig(BaseModel):
+    hidden_dims: List[int] = Field(default_factory=lambda: [32, 32])
+    dropout: float = 0.0
+
+
+class MoeSchNetGateConfig(BaseModel):
+    structure_hidden_dim: int = 64
+    n_interactions: int = 3
+    gate_hidden_dims: List[int] = Field(default_factory=lambda: [64, 32])
+    dropout: float = 0.0
+
+
+class MoeTrainConfig(BaseModel):
+    batch_size: int = 16
+    learning_rate: float = 1e-3
+    weight_decay: float = 0.0
+    epochs: int = 10
+    val_fraction: float = 0.2
+    checkpoint_dir: Optional[Path] = None
+    device: str = "cpu"
+
+
+class MoeConfig(BaseModel):
+    use_structure_features: bool = True
+    use_mlip_features: bool = True
+    graph: MoeGraphConfig = Field(default_factory=MoeGraphConfig)
+    baseline_gate: MoeBaselineGateConfig = Field(
+        default_factory=MoeBaselineGateConfig
+    )
+    schnet_gate: MoeSchNetGateConfig = Field(default_factory=MoeSchNetGateConfig)
+    train: MoeTrainConfig = Field(default_factory=MoeTrainConfig)
+
+
 class Config(BaseModel):
     seed: Optional[int] = None
     dev_run: Optional[bool] = None
@@ -87,6 +126,7 @@ class Config(BaseModel):
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
     plot: Optional[PlotConfig] = None
+    moe: Optional[MoeConfig] = None
 
     def init_paths(self):
         catbench_folder = (
