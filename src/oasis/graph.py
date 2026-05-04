@@ -5,6 +5,7 @@ from typing import Sequence
 
 from ase import Atoms
 from ase.neighborlist import neighbor_list
+import numpy as np
 import polars as pl
 import torch
 
@@ -66,7 +67,9 @@ def _build_edge_tensors(
         receivers = receivers[kept_indices]
         distances = distances[kept_indices]
 
-    edge_index = torch.tensor([senders, receivers], dtype=torch.long)
+    edge_index = torch.from_numpy(
+        np.stack([senders, receivers], axis=0)
+    ).to(dtype=torch.long)
     edge_weight = torch.tensor(distances, dtype=torch.float32)
     return edge_index, edge_weight
 
