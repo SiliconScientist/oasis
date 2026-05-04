@@ -204,55 +204,6 @@ def detect_anomalies_from_result_json(
     return detect_anomalies_from_result_dict(mlip_result, **kwargs)
 
 
-def write_processed_result_file(
-    result_json_path: str | Path,
-    output_path: str | Path | None = None,
-    **kwargs,
-) -> Path:
-    result_json_path = Path(result_json_path)
-    if output_path is None:
-        output_path = result_json_path.with_name(
-            result_json_path.name.replace("_result.json", "_processed_result.json")
-        )
-    output_path = Path(output_path)
-
-    per_reaction = detect_anomalies_from_result_json(result_json_path, **kwargs)
-    rows = [
-        {"reaction": reaction, **payload}
-        for reaction, payload in per_reaction.items()
-    ]
-    output_path.write_text(json.dumps(rows, indent=2))
-    return output_path
-
-
-def write_processed_result_files(
-    mlip_results_dir: str | Path,
-    **kwargs,
-) -> list[Path]:
-    mlip_results_dir = Path(mlip_results_dir)
-    written_paths: list[Path] = []
-
-    for model_dir in sorted(mlip_results_dir.iterdir()):
-        if not model_dir.is_dir():
-            continue
-
-        model_name = model_dir.name
-        result_path = model_dir / f"{model_name}_result.json"
-        if not result_path.exists():
-            result_candidates = sorted(
-                p
-                for p in model_dir.glob("*_result.json")
-                if not p.name.endswith("_processed_result.json")
-            )
-            if not result_candidates:
-                continue
-            result_path = result_candidates[0]
-
-        written_paths.append(write_processed_result_file(result_path, **kwargs))
-
-    return written_paths
-
-
 def run_summary_analysis(cfg: Config | None = None) -> Path | None:
     cfg = cfg or get_config()
     if cfg.analysis is None:
