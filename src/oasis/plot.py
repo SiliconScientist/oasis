@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -144,6 +144,69 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
+def _coerce_sweep_dataframe(
+    sweep_data: Any,
+) -> pd.DataFrame:
+    if isinstance(sweep_data, pd.DataFrame):
+        return sweep_data.copy()
+    if isinstance(sweep_data, (str, Path)):
+        path = Path(sweep_data)
+        if path.suffix.lower() == ".csv":
+            return pd.read_csv(path)
+        raise ValueError(f"Unsupported sweep file format: {path.suffix}")
+    if pl is not None and isinstance(sweep_data, pl.DataFrame):
+        return sweep_data.to_pandas()
+    if isinstance(sweep_data, Sequence) and not isinstance(sweep_data, (str, bytes)):
+        rows: list[Mapping[str, Any] | dict[str, Any]] = []
+        for item in sweep_data:
+            if hasattr(item, "__dict__"):
+                rows.append(vars(item))
+            else:
+                rows.append(dict(item))
+        return pd.DataFrame(rows)
+    raise TypeError("sweep_data must be a DataFrame, CSV path, or row sequence")
+
+
+def moe_learning_speed_plot(
+    sweep_data: Any,
+    output_path: str | Path,
+    *,
+    metric: str = "val_rmse",
+    title: str = "MOE learning speed",
+) -> Path:
+    df = _coerce_sweep_dataframe(sweep_data)
+    required_columns = {"train_size", metric}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Sweep data is missing required columns: {sorted(missing_columns)}"
+        )
+
+    df = df.sort_values("train_size").reset_index(drop=True)
+    x = pd.to_numeric(df["train_size"], errors="coerce")
+    y = pd.to_numeric(df[metric], errors="coerce")
+    valid = x.notna() & y.notna()
+    if not valid.any():
+        raise ValueError(f"No numeric values available for metric '{metric}'")
+    x = x[valid]
+    y = y[valid]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(x, y, marker="o", linewidth=2, markersize=6, color="#1f77b4")
+    ax.set_xlabel("Training samples")
+    ax.set_ylabel(metric.replace("_", " ").upper())
+    ax.set_title(title)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     return output_path
