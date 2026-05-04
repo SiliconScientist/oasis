@@ -204,6 +204,67 @@ def detect_anomalies_from_result_json(
     return detect_anomalies_from_result_dict(mlip_result, **kwargs)
 
 
+def extract_adsorbate(reaction: str) -> str | None:
+    if "->" not in reaction:
+        return None
+    product = reaction.split("->", 1)[1].strip()
+    return product.removesuffix("*") or None
+
+
+def filter_wide_predictions(
+    wide_df: pd.DataFrame,
+    adsorbate_filter: str | None = None,
+    anomaly_filter: str | None = None,
+    reaction_contains_filter: list[str] | None = None,
+) -> pd.DataFrame:
+    filtered_df = wide_df.copy()
+
+    if adsorbate_filter is not None:
+        if "adsorbate" not in filtered_df.columns:
+            raise ValueError(
+                f"Configured plot.adsorbate='{adsorbate_filter}', but no "
+                "'adsorbate' column exists in the combined dataframe"
+            )
+        filtered_df = filtered_df[filtered_df["adsorbate"] == adsorbate_filter]
+        if filtered_df.empty:
+            raise ValueError(
+                f"No rows left after adsorbate filter '{adsorbate_filter}'"
+            )
+
+    if anomaly_filter is not None:
+        label_cols = [col for col in filtered_df.columns if col.endswith("_label")]
+        if not label_cols:
+            raise ValueError(
+                f"Configured plot.anomaly_label='{anomaly_filter}', but no "
+                "label columns exist in the combined dataframe"
+            )
+        mask = filtered_df[label_cols].eq(anomaly_filter).all(axis=1)
+        filtered_df = filtered_df[mask]
+        if filtered_df.empty:
+            raise ValueError(
+                f"No rows left after anomaly_label filter '{anomaly_filter}'"
+            )
+
+    if reaction_contains_filter is not None:
+        mask = pd.Series(False, index=filtered_df.index)
+        for substring in reaction_contains_filter:
+            token = f"_{substring}_"
+            reaction_with_edges = "_" + filtered_df["reaction"].astype(str) + "_"
+            mask = mask | reaction_with_edges.str.contains(
+                token,
+                regex=False,
+                na=False,
+            )
+        filtered_df = filtered_df[mask]
+        if filtered_df.empty:
+            raise ValueError(
+                f"No rows left after reaction_contains filter "
+                f"'{reaction_contains_filter}'"
+            )
+
+    return filtered_df
+
+
 def run_summary_analysis(cfg: Config | None = None) -> Path | None:
     cfg = cfg or get_config()
     if cfg.analysis is None:
