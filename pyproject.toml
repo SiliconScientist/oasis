@@ -8,6 +8,7 @@ requires-python = ">=3.10"
 dependencies = [
     "rootstock",
     "scikit-learn",
+    "torch",
     "tomli; python_version < '3.11'",
 ]
 classifiers = [

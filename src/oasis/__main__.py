@@ -5,6 +5,7 @@ import sys
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
+from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
@@ -21,6 +22,8 @@ def main() -> None:
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
     atoms_list = load_corresponding_atoms(wide_df, cfg.mlip.dataset)
+    graphs = build_adsorption_graphs(wide_df, atoms_list)
+    graph_batch = batch_adsorption_graphs(graphs)
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -58,6 +61,15 @@ def main() -> None:
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
     print(f"Loaded {len(atoms_list)} corresponding adsorbed Atoms objects")
+    print(
+        f"Built {len(graphs)} adsorption graphs"
+        f" with {graph_batch.z.shape[0]} total nodes"
+        f" and {graph_batch.edge_index.shape[1]} total edges"
+    )
+    print(
+        f"Graph targets shape: {tuple(graph_batch.y.shape)}, "
+        f"MLIP feature shape: {tuple(graph_batch.mlip_energies.shape)}"
+    )
 
     learning_curve_plot(
         cfg=cfg,

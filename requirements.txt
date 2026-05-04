@@ -7,4 +7,5 @@ polars
 openpyxl
 pymatgen
 scikit-learn
+torch
 -e .

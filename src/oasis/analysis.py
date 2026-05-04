@@ -209,7 +209,8 @@ def extract_adsorbate(reaction: str) -> str | None:
     if "->" not in reaction:
         return None
     product = reaction.split("->", 1)[1].strip()
-    return product.removesuffix("*") or None
+    adsorbate = product.split("*", 1)[0].strip()
+    return adsorbate or None
 
 
 def filter_wide_predictions(
