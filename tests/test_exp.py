@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from ase import Atoms
+import polars as pl
+
+from oasis.dataset import GatingDataset
+from oasis.exp import run_data_fraction_sweep, save_sweep_points_csv
+from oasis.graph import build_adsorption_graphs
+from oasis.model import BaselineMLPGatedMoE
+from oasis.train import TrainConfig
+
+
+def _example_dataset() -> GatingDataset:
+    wide_df = pl.DataFrame(
+        {
+            "reaction": [
+                "CuOH_* -> OH*",
+                "CuH_* -> H*",
+                "NiOH_* -> OH*",
+                "NiH_* -> H*",
+                "PtOH_* -> OH*",
+                "PtH_* -> H*",
+            ],
+            "adsorbate": ["OH", "H", "OH", "H", "OH", "H"],
+            "reference_ads_eng": [-1.25, -0.45, -1.10, -0.35, -0.95, -0.25],
+            "mace_mlip_ads_eng_median": [-1.10, -0.40, -1.05, -0.30, -0.90, -0.20],
+            "mace_label": ["normal"] * 6,
+            "orb_mlip_ads_eng_median": [-1.30, -0.50, -1.20, -0.45, -1.00, -0.35],
+            "orb_label": ["normal", "energy_anomaly", "normal", "normal", "normal", "normal"],
+        }
+    )
+    atoms_list = [
+        Atoms("Cu2OH", positions=[[0, 0, 0], [2.5, 0, 0], [1.2, 0.1, 1.3], [1.2, 0.1, 2.2]], cell=[12, 12, 12], pbc=[False, False, False]),
+        Atoms("Cu2H", positions=[[0, 0, 0], [2.5, 0, 0], [1.3, 0, 1.1]], cell=[12, 12, 12], pbc=[False, False, False]),
+        Atoms("Ni2OH", positions=[[0, 0, 0], [2.4, 0, 0], [1.1, 0.1, 1.2], [1.1, 0.1, 2.1]], cell=[12, 12, 12], pbc=[False, False, False]),
+        Atoms("Ni2H", positions=[[0, 0, 0], [2.4, 0, 0], [1.2, 0, 1.0]], cell=[12, 12, 12], pbc=[False, False, False]),
+        Atoms("Pt2OH", positions=[[0, 0, 0], [2.6, 0, 0], [1.3, 0.1, 1.4], [1.3, 0.1, 2.3]], cell=[12, 12, 12], pbc=[False, False, False]),
+        Atoms("Pt2H", positions=[[0, 0, 0], [2.6, 0, 0], [1.4, 0, 1.1]], cell=[12, 12, 12], pbc=[False, False, False]),
+    ]
+    graphs = build_adsorption_graphs(wide_df, atoms_list, cutoff=3.0)
+    return GatingDataset(graphs, wide_df)
+
+
+class ExperimentTests(unittest.TestCase):
+    def test_data_fraction_sweep_and_csv(self) -> None:
+        dataset = _example_dataset()
+        with TemporaryDirectory() as tmpdir:
+            sweep_points, train_results = run_data_fraction_sweep(
+                dataset,
+                model_factory=lambda: BaselineMLPGatedMoE(n_experts=2, hidden_dims=(8,)),
+                fractions=[0.34, 0.67, 1.0],
+                train_config=TrainConfig(
+                    batch_size=2,
+                    epochs=1,
+                    learning_rate=1e-2,
+                    val_fraction=0.33,
+                    random_seed=11,
+                    checkpoint_dir=tmpdir,
+                    device="cpu",
+                ),
+            )
+            self.assertEqual(len(sweep_points), 3)
+            self.assertEqual(len(train_results), 3)
+            self.assertEqual([p.train_size for p in sweep_points], sorted([p.train_size for p in sweep_points]))
+            self.assertEqual(sweep_points[-1].val_size, 2)
+
+            csv_path = save_sweep_points_csv(sweep_points, Path(tmpdir) / "sweep.csv")
+            self.assertTrue(csv_path.is_file())
+            df = pl.read_csv(csv_path)
+            self.assertEqual(df.height, 3)
+            self.assertEqual(df["train_size"].to_list(), [1, 3, 4])
+
+
+if __name__ == "__main__":
+    unittest.main()

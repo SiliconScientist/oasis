@@ -22,11 +22,19 @@ def main() -> None:
         return
 
     cfg = get_config()
+    if cfg.moe is None:
+        raise ValueError("config.toml must define a [moe] section")
+    moe_cfg = cfg.moe
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
     atoms_list = load_corresponding_atoms(wide_df, cfg.mlip.dataset)
-    graphs = build_adsorption_graphs(wide_df, atoms_list)
+    graphs = build_adsorption_graphs(
+        wide_df,
+        atoms_list,
+        cutoff=moe_cfg.graph.cutoff,
+        max_neighbors=moe_cfg.graph.max_neighbors,
+    )
     graph_batch = batch_adsorption_graphs(graphs)
     gating_dataset = GatingDataset(graphs, wide_df)
     debug_batch = collate_gating_samples(
@@ -34,16 +42,18 @@ def main() -> None:
     )
     baseline_gate = BaselineMLPGatedMoE(
         n_experts=debug_batch.mlip_energies.shape[1],
-        hidden_dims=(16, 16),
+        hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
+        dropout=moe_cfg.baseline_gate.dropout,
     )
     baseline_output = baseline_gate(debug_batch.mlip_energies)
     schnet_gate = SchNetGatedMoE(
         n_experts=debug_batch.mlip_energies.shape[1],
-        structure_hidden_dim=16,
-        n_interactions=2,
-        n_rbf=8,
-        cutoff=6.0,
-        gate_hidden_dims=(16,),
+        structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
+        n_interactions=moe_cfg.schnet_gate.n_interactions,
+        n_rbf=moe_cfg.graph.n_rbf,
+        cutoff=moe_cfg.graph.cutoff,
+        gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
+        dropout=moe_cfg.schnet_gate.dropout,
     )
     schnet_output = schnet_gate(
         debug_batch.graph_batch,
@@ -52,7 +62,7 @@ def main() -> None:
     eval_loader, _ = build_gating_dataloaders(
         gating_dataset,
         batch_size=min(8, len(gating_dataset)),
-        val_fraction=0.2,
+        val_fraction=moe_cfg.train.val_fraction,
         seed=cfg.seed or 0,
     )
     eval_report = evaluate_models_and_baselines(
@@ -92,6 +102,7 @@ def main() -> None:
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
+
     print(
         f"Processed {len(result_files)} MLIP files"
         f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
