@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from ase import Atoms
+import polars as pl
+
+from oasis.dataset import GatingDataset
+from oasis.graph import build_adsorption_graphs
+from oasis.model import BaselineMLPGatedMoE
+from oasis.train import (
+    TrainConfig,
+    build_gating_dataloaders,
+    split_gating_dataset,
+    train_gating_model,
+)
+
+
+def _example_dataset() -> GatingDataset:
+    wide_df = pl.DataFrame(
+        {
+            "reaction": [
+                "CuOH_* -> OH*",
+                "CuH_* -> H*",
+                "NiOH_* -> OH*",
+                "NiH_* -> H*",
+            ],
+            "adsorbate": ["OH", "H", "OH", "H"],
+            "reference_ads_eng": [-1.25, -0.45, -1.10, -0.35],
+            "mace_mlip_ads_eng_median": [-1.10, -0.40, -1.05, -0.30],
+            "mace_label": ["normal", "normal", "normal", "normal"],
+            "orb_mlip_ads_eng_median": [-1.30, -0.50, -1.20, -0.45],
+            "orb_label": ["normal", "energy_anomaly", "normal", "normal"],
+        }
+    )
+    atoms_list = [
+        Atoms(
+            "Cu2OH",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [2.5, 0.0, 0.0],
+                [1.2, 0.1, 1.3],
+                [1.2, 0.1, 2.2],
+            ],
+            cell=[12.0, 12.0, 12.0],
+            pbc=[False, False, False],
+        ),
+        Atoms(
+            "Cu2H",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [2.5, 0.0, 0.0],
+                [1.3, 0.0, 1.1],
+            ],
+            cell=[12.0, 12.0, 12.0],
+            pbc=[False, False, False],
+        ),
+        Atoms(
+            "Ni2OH",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [2.4, 0.0, 0.0],
+                [1.1, 0.1, 1.2],
+                [1.1, 0.1, 2.1],
+            ],
+            cell=[12.0, 12.0, 12.0],
+            pbc=[False, False, False],
+        ),
+        Atoms(
+            "Ni2H",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [2.4, 0.0, 0.0],
+                [1.2, 0.0, 1.0],
+            ],
+            cell=[12.0, 12.0, 12.0],
+            pbc=[False, False, False],
+        ),
+    ]
+    graphs = build_adsorption_graphs(wide_df, atoms_list, cutoff=3.0)
+    return GatingDataset(graphs, wide_df)
+
+
+class TrainingTests(unittest.TestCase):
+    def test_dataset_split_has_train_and_val_samples(self) -> None:
+        dataset = _example_dataset()
+        train_subset, val_subset = split_gating_dataset(
+            dataset,
+            val_fraction=0.25,
+            seed=7,
+        )
+        self.assertEqual(len(train_subset), 3)
+        self.assertEqual(len(val_subset), 1)
+
+    def test_baseline_training_loop_writes_checkpoints(self) -> None:
+        dataset = _example_dataset()
+        train_loader, val_loader = build_gating_dataloaders(
+            dataset,
+            batch_size=2,
+            val_fraction=0.25,
+            seed=7,
+        )
+        model = BaselineMLPGatedMoE(n_experts=2, hidden_dims=(8,))
+
+        with TemporaryDirectory() as tmpdir:
+            result = train_gating_model(
+                model,
+                train_loader,
+                val_loader,
+                config=TrainConfig(
+                    batch_size=2,
+                    epochs=2,
+                    learning_rate=1e-2,
+                    val_fraction=0.25,
+                    random_seed=7,
+                    checkpoint_dir=tmpdir,
+                    device="cpu",
+                ),
+            )
+
+            self.assertEqual(len(result.history), 2)
+            self.assertTrue(math.isfinite(result.best_val_loss))
+            self.assertIsNotNone(result.best_checkpoint_path)
+            self.assertIsNotNone(result.latest_checkpoint_path)
+            self.assertTrue(Path(result.best_checkpoint_path).is_file())
+            self.assertTrue(Path(result.latest_checkpoint_path).is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()
