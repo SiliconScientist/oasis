@@ -8,7 +8,7 @@ from oasis.config import get_config
 from oasis.dataset import GatingDataset, collate_gating_samples
 from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
-from oasis.model import BaselineMLPGatedMoE
+from oasis.model import BaselineMLPGatedMoE, SchNetGatedMoE
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
 
@@ -35,6 +35,18 @@ def main() -> None:
         hidden_dims=(16, 16),
     )
     baseline_output = baseline_gate(debug_batch.mlip_energies)
+    schnet_gate = SchNetGatedMoE(
+        n_experts=debug_batch.mlip_energies.shape[1],
+        structure_hidden_dim=16,
+        n_interactions=2,
+        n_rbf=8,
+        cutoff=6.0,
+        gate_hidden_dims=(16,),
+    )
+    schnet_output = schnet_gate(
+        debug_batch.graph_batch,
+        debug_batch.mlip_energies,
+    )
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -93,6 +105,11 @@ def main() -> None:
         f"Baseline gate logits shape: {tuple(baseline_output.logits.shape)}, "
         f"weights shape: {tuple(baseline_output.weights.shape)}, "
         f"prediction shape: {tuple(baseline_output.prediction.shape)}"
+    )
+    print(
+        f"SchNet gate logits shape: {tuple(schnet_output.logits.shape)}, "
+        f"weights shape: {tuple(schnet_output.weights.shape)}, "
+        f"prediction shape: {tuple(schnet_output.prediction.shape)}"
     )
 
     learning_curve_plot(
