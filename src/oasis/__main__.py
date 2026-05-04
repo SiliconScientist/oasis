@@ -5,6 +5,7 @@ import sys
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
+from oasis.dataset import GatingDataset, collate_gating_samples
 from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.plot import learning_curve_plot, parity_plot
@@ -24,6 +25,10 @@ def main() -> None:
     atoms_list = load_corresponding_atoms(wide_df, cfg.mlip.dataset)
     graphs = build_adsorption_graphs(wide_df, atoms_list)
     graph_batch = batch_adsorption_graphs(graphs)
+    gating_dataset = GatingDataset(graphs, wide_df)
+    debug_batch = collate_gating_samples(
+        [gating_dataset[idx] for idx in range(min(2, len(gating_dataset)))]
+    )
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -69,6 +74,14 @@ def main() -> None:
     print(
         f"Graph targets shape: {tuple(graph_batch.y.shape)}, "
         f"MLIP feature shape: {tuple(graph_batch.mlip_energies.shape)}"
+    )
+    print(
+        f"Gating dataset size: {len(gating_dataset)}, "
+        f"debug batch target shape: {tuple(debug_batch.target_ads_eng.shape)}"
+    )
+    print(
+        f"Debug batch graph nodes: {debug_batch.graph_batch.z.shape[0]}, "
+        f"expert labels keys: {sorted(debug_batch.expert_labels[0]) if debug_batch.expert_labels else []}"
     )
 
     learning_curve_plot(
