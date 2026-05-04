@@ -60,6 +60,27 @@ def weighted_expert_prediction(
     return (mlip_energies * expert_weights).sum(dim=-1)
 
 
+class MixtureOfExpertsPredictionHead(nn.Module):
+    def forward(
+        self,
+        logits: torch.Tensor,
+        mlip_energies: torch.Tensor,
+    ) -> GatingOutput:
+        if logits.shape != mlip_energies.shape:
+            raise ValueError(
+                "logits and mlip_energies must have the same shape, got "
+                f"{tuple(logits.shape)} and {tuple(mlip_energies.shape)}"
+            )
+
+        weights = torch.softmax(logits, dim=-1)
+        prediction = weighted_expert_prediction(mlip_energies, weights)
+        return GatingOutput(
+            logits=logits,
+            weights=weights,
+            prediction=prediction,
+        )
+
+
 class BaselineMLPGatedMoE(nn.Module):
     def __init__(
         self,
@@ -73,13 +94,8 @@ class BaselineMLPGatedMoE(nn.Module):
             hidden_dims=hidden_dims,
             dropout=dropout,
         )
+        self.head = MixtureOfExpertsPredictionHead()
 
     def forward(self, mlip_energies: torch.Tensor) -> GatingOutput:
         logits = self.gate(mlip_energies)
-        weights = torch.softmax(logits, dim=-1)
-        prediction = weighted_expert_prediction(mlip_energies, weights)
-        return GatingOutput(
-            logits=logits,
-            weights=weights,
-            prediction=prediction,
-        )
+        return self.head(logits, mlip_energies)

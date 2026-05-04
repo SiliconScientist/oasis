@@ -7,6 +7,7 @@ import torch
 from oasis.model import (
     BaselineMLPGatedMoE,
     MLPGatingNetwork,
+    MixtureOfExpertsPredictionHead,
     weighted_expert_prediction,
 )
 
@@ -41,6 +42,31 @@ class BaselineModelTests(unittest.TestCase):
             dtype=torch.float32,
         )
         self.assertTrue(torch.allclose(prediction, expected))
+
+    def test_moe_prediction_head_normalizes_logits_to_simplex(self) -> None:
+        head = MixtureOfExpertsPredictionHead()
+        logits = torch.tensor(
+            [[0.0, 1.0, -1.0], [2.0, 0.0, 0.0]],
+            dtype=torch.float32,
+        )
+        mlip_energies = torch.tensor(
+            [[-1.0, -0.8, -1.2], [-0.3, -0.4, -0.2]],
+            dtype=torch.float32,
+        )
+
+        output = head(logits, mlip_energies)
+        self.assertEqual(tuple(output.weights.shape), (2, 3))
+        self.assertEqual(tuple(output.prediction.shape), (2,))
+        self.assertTrue(
+            torch.allclose(
+                output.weights.sum(dim=-1),
+                torch.ones(2, dtype=torch.float32),
+                atol=1e-6,
+            )
+        )
+        self.assertTrue(
+            torch.all(output.weights >= 0.0).item()
+        )
 
     def test_baseline_moe_outputs_normalized_weights(self) -> None:
         model = BaselineMLPGatedMoE(n_experts=3, hidden_dims=(8, 8))
