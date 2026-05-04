@@ -34,9 +34,6 @@ def _find_processed_result_files(base_dir: Path) -> list[Path]:
 
 def _load_wide_predictions(
     processed_files: list[Path],
-    adsorbate_filter: str | None = None,
-    anomaly_filter: str | None = None,
-    reaction_contains_filter: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Build a wide table with:
@@ -53,53 +50,7 @@ def _load_wide_predictions(
             rows = json.load(f)
         df = pd.DataFrame(rows)
 
-        if adsorbate_filter is not None:
-            if "adsorbate" not in df.columns:
-                raise ValueError(
-                    f"Configured plot.adsorbate='{adsorbate_filter}', but no "
-                    f"'adsorbate' column exists in {path}"
-                )
-            df = df[df["adsorbate"] == adsorbate_filter]
-            if df.empty:
-                raise ValueError(
-                    f"No rows left in {path} after adsorbate filter '{adsorbate_filter}'"
-                )
-
-        if anomaly_filter is not None:
-            if "label" not in df.columns:
-                raise ValueError(
-                    f"Configured plot.anomaly_label='{anomaly_filter}', but no "
-                    f"'label' column exists in {path}"
-                )
-            df = df[df["label"] == anomaly_filter]
-            if df.empty:
-                raise ValueError(
-                    f"No rows left in {path} after anomaly_label filter '{anomaly_filter}'"
-                )
-
         reaction_col = "id" if "id" in df.columns else "reaction"
-        if reaction_contains_filter is not None:
-            if reaction_col not in df.columns:
-                raise ValueError(
-                    f"Configured plot.reaction_contains='{reaction_contains_filter}', "
-                    f"but no '{reaction_col}' column exists in {path}"
-                )
-            mask = pd.Series(False, index=df.index)
-            for substring in reaction_contains_filter:
-                token = f"_{substring}_"
-                reaction_with_edges = "_" + df[reaction_col].astype(str) + "_"
-                mask = mask | reaction_with_edges.str.contains(
-                    token,
-                    regex=False,
-                    na=False,
-                )
-            df = df[mask]
-            if df.empty:
-                raise ValueError(
-                    f"No rows left in {path} after reaction_contains filter "
-                    f"'{reaction_contains_filter}'"
-                )
-
         required = {reaction_col, "dft_ads_eng", "mlip_ads_eng_median"}
         missing = required.difference(set(df.columns))
         if missing:
@@ -171,38 +122,14 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     write_processed_result_files(base_dir)
     processed_files = _find_processed_result_files(base_dir)
-    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
-    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
-    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
-    if reaction_contains_filter is not None:
-        reaction_contains_filter = [s for s in reaction_contains_filter if s]
-        if not reaction_contains_filter:
-            reaction_contains_filter = None
-    wide_df = _load_wide_predictions(
-        processed_files,
-        adsorbate_filter=adsorbate_filter,
-        anomaly_filter=anomaly_filter,
-        reaction_contains_filter=reaction_contains_filter,
-    )
+    wide_df = _load_wide_predictions(processed_files)
 
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
-    suffix_parts: list[str] = []
-    if adsorbate_filter:
-        suffix_parts.append(f"adsorbate_{adsorbate_filter}")
-    if anomaly_filter:
-        suffix_parts.append(f"anomaly_{anomaly_filter}")
-    if reaction_contains_filter:
-        joined = "-".join(reaction_contains_filter)
-        suffix_parts.append(f"reaction_contains_{joined}")
-    suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
-    output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
+    output_path = output_dir / "mlips_vs_dft_parity.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
     print(
         f"Processed {len(processed_files)} MLIP files"
-        f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
-        f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
-        f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
