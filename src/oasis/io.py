@@ -6,9 +6,10 @@ from typing import Any
 
 import polars as pl
 from ase import Atoms
+from ase.formula import Formula
 
 from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
-from oasis.ingest.site_constraints import extract_adsorbed_atom
+from oasis.ingest.site_constraints import extract_adsorbate_indices, extract_adsorbed_atom
 
 
 def find_result_files(base_dir: Path) -> list[Path]:
@@ -146,7 +147,7 @@ def load_corresponding_atoms(
             f"Expected dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
         )
 
-    reactions = wide_df["reaction"].to_list()
+    reactions = _assert_stable_reaction_order(wide_df)
     atoms_list: list[Atoms] = []
     for reaction in reactions:
         entry = dataset.get(reaction)
@@ -156,6 +157,35 @@ def load_corresponding_atoms(
             raise TypeError(
                 f"Expected dataset entry for '{reaction}' to be dict, got {type(entry).__name__}"
             )
-        atoms_list.append(extract_adsorbed_atom(entry, reaction))
+        atoms = extract_adsorbed_atom(entry, reaction)
+        _assert_reaction_matches_structure(reaction, entry, atoms)
+        atoms_list.append(atoms)
 
     return atoms_list
+
+
+def _assert_stable_reaction_order(wide_df: pl.DataFrame) -> list[str]:
+    reactions = wide_df["reaction"].to_list()
+    if len(reactions) != len(set(reactions)):
+        raise ValueError("wide_df contains duplicate reaction rows")
+    if reactions != sorted(reactions):
+        raise ValueError("wide_df reaction rows are not in stable sorted order")
+    return reactions
+
+
+def _assert_reaction_matches_structure(
+    reaction: str,
+    entry: dict[str, Any],
+    atoms: Atoms,
+) -> None:
+    expected_adsorbate = extract_adsorbate(reaction)
+    if expected_adsorbate is None:
+        return
+
+    adsorbate_indices = extract_adsorbate_indices(entry, reaction)
+    observed_adsorbate = atoms[adsorbate_indices].get_chemical_formula()
+    if Formula(expected_adsorbate).count() != Formula(observed_adsorbate).count():
+        raise ValueError(
+            f"Reaction '{reaction}' expected adsorbate '{expected_adsorbate}', "
+            f"but extracted structure contains '{observed_adsorbate}'"
+        )
