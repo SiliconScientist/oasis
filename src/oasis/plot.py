@@ -13,13 +13,9 @@ try:
 except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
     pl = None
 
-try:
-    from sklearn.kernel_ridge import KernelRidge
-    from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
-    from sklearn.metrics import mean_squared_error
-except ModuleNotFoundError:  # optional for parity-only workflows
-    KernelRidge = ElasticNet = Lasso = LinearRegression = Ridge = None
-    mean_squared_error = None
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
+from sklearn.metrics import mean_squared_error
 
 
 _MLIP_DISPLAY_NAMES = {

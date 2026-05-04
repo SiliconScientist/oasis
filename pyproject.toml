@@ -7,6 +7,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "rootstock",
+    "scikit-learn",
     "tomli; python_version < '3.11'",
 ]
 classifiers = [

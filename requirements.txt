@@ -3,7 +3,8 @@ rootstock
 pydantic
 PyYAML
 sympy
-pandas
+polars
 openpyxl
 pymatgen
+scikit-learn
 -e .

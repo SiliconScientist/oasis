@@ -1,7 +1,7 @@
 from functools import partial
 import json
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import numpy as np
 from ase import Atoms

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import polars as pl
 from catbench.adsorption import AdsorptionAnalysis
 from catbench.utils.analysis_utils import (
     get_calculator_keys,
@@ -212,12 +213,12 @@ def extract_adsorbate(reaction: str) -> str | None:
 
 
 def filter_wide_predictions(
-    wide_df: pd.DataFrame,
+    wide_df: pl.DataFrame,
     adsorbate_filter: str | None = None,
     anomaly_filter: str | None = None,
     reaction_contains_filter: list[str] | None = None,
-) -> pd.DataFrame:
-    filtered_df = wide_df.copy()
+) -> pl.DataFrame:
+    filtered_df = wide_df.clone()
 
     if adsorbate_filter is not None:
         if "adsorbate" not in filtered_df.columns:
@@ -225,8 +226,8 @@ def filter_wide_predictions(
                 f"Configured plot.adsorbate='{adsorbate_filter}', but no "
                 "'adsorbate' column exists in the combined dataframe"
             )
-        filtered_df = filtered_df[filtered_df["adsorbate"] == adsorbate_filter]
-        if filtered_df.empty:
+        filtered_df = filtered_df.filter(pl.col("adsorbate") == adsorbate_filter)
+        if filtered_df.height == 0:
             raise ValueError(
                 f"No rows left after adsorbate filter '{adsorbate_filter}'"
             )
@@ -238,25 +239,26 @@ def filter_wide_predictions(
                 f"Configured plot.anomaly_label='{anomaly_filter}', but no "
                 "label columns exist in the combined dataframe"
             )
-        mask = filtered_df[label_cols].eq(anomaly_filter).all(axis=1)
-        filtered_df = filtered_df[mask]
-        if filtered_df.empty:
+        label_expr = pl.all_horizontal(
+            [pl.col(col) == anomaly_filter for col in label_cols]
+        )
+        filtered_df = filtered_df.filter(label_expr)
+        if filtered_df.height == 0:
             raise ValueError(
                 f"No rows left after anomaly_label filter '{anomaly_filter}'"
             )
 
     if reaction_contains_filter is not None:
-        mask = pd.Series(False, index=filtered_df.index)
+        mask_expr = None
         for substring in reaction_contains_filter:
             token = f"_{substring}_"
-            reaction_with_edges = "_" + filtered_df["reaction"].astype(str) + "_"
-            mask = mask | reaction_with_edges.str.contains(
-                token,
-                regex=False,
-                na=False,
-            )
-        filtered_df = filtered_df[mask]
-        if filtered_df.empty:
+            expr = (
+                pl.lit("_") + pl.col("reaction").cast(pl.String) + pl.lit("_")
+            ).str.contains(token, literal=True)
+            mask_expr = expr if mask_expr is None else (mask_expr | expr)
+        if mask_expr is not None:
+            filtered_df = filtered_df.filter(mask_expr)
+        if filtered_df.height == 0:
             raise ValueError(
                 f"No rows left after reaction_contains filter "
                 f"'{reaction_contains_filter}'"

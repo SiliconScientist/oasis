@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
 
@@ -26,13 +26,13 @@ def find_result_files(base_dir: Path) -> list[Path]:
     )
 
 
-def load_wide_predictions(result_files: list[Path]) -> pd.DataFrame:
+def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
     """
     Build a wide table with:
       reaction, adsorbate, reference_ads_eng, <mlip>_mlip_ads_eng_median, <mlip>_label, ...
     """
-    reference_df: pd.DataFrame | None = None
-    wide_parts: list[pd.DataFrame] = []
+    reference_df: pl.DataFrame | None = None
+    wide_parts: list[pl.DataFrame] = []
     mlip_cols: list[str] = []
     label_cols: list[str] = []
 
@@ -47,7 +47,7 @@ def load_wide_predictions(result_files: list[Path]) -> pd.DataFrame:
             }
             for reaction, payload in per_reaction.items()
         ]
-        df = pd.DataFrame(rows)
+        df = pl.from_dicts(rows)
 
         reaction_col = "id" if "id" in df.columns else "reaction"
         required = {
@@ -62,68 +62,62 @@ def load_wide_predictions(result_files: list[Path]) -> pd.DataFrame:
             missing_cols = ", ".join(sorted(missing))
             raise ValueError(f"Missing required columns in {path}: {missing_cols}")
 
-        part = df[
+        part = df.select(
             [reaction_col, "adsorbate", "dft_ads_eng", "mlip_ads_eng_median", "label"]
-        ].rename(
-            columns={
+        ).rename(
+            {
                 reaction_col: "reaction",
                 "dft_ads_eng": "reference_ads_eng",
                 "mlip_ads_eng_median": f"{model_name}_mlip_ads_eng_median",
                 "label": f"{model_name}_label",
             }
         )
-        part = part.dropna(
-            subset=[
-                "reaction",
-                f"{model_name}_mlip_ads_eng_median",
-            ]
+        part = part.drop_nulls(
+            subset=["reaction", f"{model_name}_mlip_ads_eng_median"]
         )
 
         if reference_df is None:
-            reference_df = part[["reaction", "adsorbate", "reference_ads_eng"]].copy()
+            reference_df = part.select(["reaction", "adsorbate", "reference_ads_eng"])
         else:
-            ref_part = part[["reaction", "adsorbate", "reference_ads_eng"]].copy()
-            overlap = reference_df.merge(
-                ref_part,
-                on="reaction",
-                how="inner",
-                suffixes=("", "_incoming"),
+            ref_part = part.select(["reaction", "adsorbate", "reference_ads_eng"])
+            overlap = reference_df.join(
+                ref_part, on="reaction", how="inner", suffix="_incoming"
             )
-            energy_mismatch = overlap[
-                overlap["reference_ads_eng"] != overlap["reference_ads_eng_incoming"]
-            ]
-            if not energy_mismatch.empty:
+            energy_mismatch = overlap.filter(
+                pl.col("reference_ads_eng") != pl.col("reference_ads_eng_incoming")
+            )
+            if energy_mismatch.height > 0:
                 raise ValueError(
                     f"Reference energies differ for overlapping reactions in {path}"
                 )
-            adsorbate_mismatch = overlap[
-                overlap["adsorbate"].fillna("")
-                != overlap["adsorbate_incoming"].fillna("")
-            ]
-            if not adsorbate_mismatch.empty:
+            adsorbate_mismatch = overlap.filter(
+                pl.col("adsorbate").fill_null("")
+                != pl.col("adsorbate_incoming").fill_null("")
+            )
+            if adsorbate_mismatch.height > 0:
                 raise ValueError(
                     f"Adsorbates differ for overlapping reactions in {path}"
                 )
             reference_df = (
-                pd.concat([reference_df, ref_part], ignore_index=True)
-                .drop_duplicates(subset="reaction", keep="first")
-                .sort_values("reaction")
+                pl.concat([reference_df, ref_part])
+                .unique(subset="reaction", keep="first")
+                .sort("reaction")
             )
 
         mlip_col = f"{model_name}_mlip_ads_eng_median"
         label_col = f"{model_name}_label"
         mlip_cols.append(mlip_col)
         label_cols.append(label_col)
-        wide_parts.append(part[["reaction", mlip_col, label_col]].copy())
+        wide_parts.append(part.select(["reaction", mlip_col, label_col]))
 
     if reference_df is None:
         raise RuntimeError("No MLIP result rows were loaded.")
 
-    wide_df = reference_df.copy()
+    wide_df = reference_df.clone()
     for part in wide_parts:
-        wide_df = wide_df.merge(part, on="reaction", how="inner")
+        wide_df = wide_df.join(part, on="reaction", how="inner")
 
-    wide_df = wide_df.dropna(
+    wide_df = wide_df.drop_nulls(
         subset=["reference_ads_eng", *mlip_cols, *label_cols]
-    ).sort_values("reaction")
+    ).sort("reaction")
     return wide_df
