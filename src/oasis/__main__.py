@@ -8,6 +8,7 @@ from oasis.config import get_config
 from oasis.dataset import GatingDataset, collate_gating_samples
 from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
+from oasis.model import BaselineMLPGatedMoE
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
 
@@ -29,6 +30,11 @@ def main() -> None:
     debug_batch = collate_gating_samples(
         [gating_dataset[idx] for idx in range(min(2, len(gating_dataset)))]
     )
+    baseline_gate = BaselineMLPGatedMoE(
+        n_experts=debug_batch.mlip_energies.shape[1],
+        hidden_dims=(16, 16),
+    )
+    baseline_output = baseline_gate(debug_batch.mlip_energies)
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -82,6 +88,11 @@ def main() -> None:
     print(
         f"Debug batch graph nodes: {debug_batch.graph_batch.z.shape[0]}, "
         f"expert labels keys: {sorted(debug_batch.expert_labels[0]) if debug_batch.expert_labels else []}"
+    )
+    print(
+        f"Baseline gate logits shape: {tuple(baseline_output.logits.shape)}, "
+        f"weights shape: {tuple(baseline_output.weights.shape)}, "
+        f"prediction shape: {tuple(baseline_output.prediction.shape)}"
     )
 
     learning_curve_plot(
