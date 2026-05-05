@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import torch
 from torch import nn
@@ -90,6 +90,35 @@ def build_gating_dataloaders(
         collate_fn=collate_gating_samples,
     )
     return train_loader, val_loader
+
+
+def build_gating_dataloaders_from_indices(
+    dataset: GatingDataset,
+    *,
+    train_indices: Sequence[int],
+    eval_indices: Sequence[int],
+    batch_size: int = 16,
+) -> tuple[DataLoader[GatingBatch], DataLoader[GatingBatch]]:
+    if not train_indices:
+        raise ValueError("train_indices must not be empty")
+    if not eval_indices:
+        raise ValueError("eval_indices must not be empty")
+
+    train_subset = Subset(dataset, list(train_indices))
+    eval_subset = Subset(dataset, list(eval_indices))
+    train_loader = DataLoader(
+        train_subset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_gating_samples,
+    )
+    eval_loader = DataLoader(
+        eval_subset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_gating_samples,
+    )
+    return train_loader, eval_loader
 
 
 def _move_batch_to_device(batch: GatingBatch, device: torch.device) -> GatingBatch:

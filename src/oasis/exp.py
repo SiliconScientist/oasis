@@ -17,7 +17,13 @@ from oasis.methods import (
     residual_rmse,
     ridge_rmse,
 )
-from oasis.train import TrainConfig, TrainResult, split_gating_dataset, train_gating_model
+from oasis.train import (
+    TrainConfig,
+    TrainResult,
+    build_gating_dataloaders_from_indices,
+    split_gating_dataset,
+    train_gating_model,
+)
 
 
 @dataclass(frozen=True)
@@ -191,20 +197,6 @@ def build_holdout_size_splits(
     return splits
 
 
-def _build_subset_loader_from_indices(
-    dataset: GatingDataset,
-    indices: Sequence[int],
-    *,
-    batch_size: int,
-    shuffle: bool,
-) -> DataLoader[GatingBatch]:
-    return _build_subset_loader(
-        Subset(dataset, list(indices)),
-        batch_size=batch_size,
-        shuffle=shuffle,
-    )
-
-
 def run_gating_method_sweep(
     dataset: GatingDataset,
     *,
@@ -228,17 +220,11 @@ def run_gating_method_sweep(
         for split in splits:
             if split.size != train_size:
                 continue
-            train_loader = _build_subset_loader_from_indices(
+            train_loader, val_loader = build_gating_dataloaders_from_indices(
                 dataset,
-                split.train_idx,
                 batch_size=method.train_config.batch_size,
-                shuffle=True,
-            )
-            val_loader = _build_subset_loader_from_indices(
-                dataset,
-                split.eval_idx,
-                batch_size=method.train_config.batch_size,
-                shuffle=False,
+                train_indices=split.train_idx,
+                eval_indices=split.eval_idx,
             )
             model = method.model_factory()
             train_gating_model(
