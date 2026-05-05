@@ -3,14 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from ase import Atoms
+import numpy as np
 import polars as pl
 
 from oasis.dataset import GatingDataset
 from oasis.exp import (
     GatingMethodSpec,
     SweepSplit,
+    TabularMethodSpec,
     build_learning_curve_sweeps,
     build_train_size_splits,
     default_tabular_method_specs,
@@ -163,6 +166,134 @@ class ExperimentTests(unittest.TestCase):
             self.assertIn("repeat", df.columns)
             self.assertIn("split_id", df.columns)
             self.assertIn("rmse", df.columns)
+
+    def test_shared_splits_across_ridge_residual_and_moe(self) -> None:
+        dataset, wide_df = _example_dataset()
+        X = wide_df.select(
+            [
+                "mace_mlip_ads_eng_median",
+                "orb_mlip_ads_eng_median",
+            ]
+        ).to_numpy()
+        row_lookup = {tuple(row.tolist()): idx for idx, row in enumerate(X)}
+
+        def _rows_to_indices(rows: np.ndarray) -> tuple[int, ...]:
+            return tuple(sorted(row_lookup[tuple(row.tolist())] for row in rows))
+
+        tabular_calls: dict[str, list[tuple[tuple[int, ...], tuple[int, ...]]]] = {
+            "ridge": [],
+            "residual": [],
+        }
+
+        def _tabular_evaluator(method_name: str):
+            def _evaluate(
+                X_train: np.ndarray,
+                y_train: np.ndarray,
+                X_eval: np.ndarray,
+                y_eval: np.ndarray,
+            ) -> float:
+                del y_train, y_eval
+                tabular_calls[method_name].append(
+                    (_rows_to_indices(X_train), _rows_to_indices(X_eval))
+                )
+                return 0.0
+
+            return _evaluate
+
+        tabular_methods = [
+            TabularMethodSpec(
+                name="ridge",
+                sweep_axis="train_size",
+                evaluator=_tabular_evaluator("ridge"),
+                n_repeats=2,
+                seed=41,
+            ),
+            TabularMethodSpec(
+                name="residual",
+                sweep_axis="train_size",
+                evaluator=_tabular_evaluator("residual"),
+                n_repeats=2,
+                seed=999,
+            ),
+        ]
+
+        gating_calls: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+        class _DummyMetrics:
+            rmse = 0.0
+
+        def _fake_build_loaders(
+            dataset: GatingDataset,
+            *,
+            batch_size: int,
+            train_indices: tuple[int, ...],
+            eval_indices: tuple[int, ...],
+        ) -> tuple[object, object]:
+            del dataset, batch_size
+            gating_calls.append(
+                (
+                    tuple(sorted(int(i) for i in train_indices)),
+                    tuple(sorted(int(i) for i in eval_indices)),
+                )
+            )
+            return object(), object()
+
+        expected_splits = build_train_size_splits(
+            len(dataset),
+            train_sizes=[2, 3],
+            n_repeats=2,
+            seed=17,
+        )
+        expected_by_size = {
+            size: [
+                (
+                    tuple(sorted(split.train_idx)),
+                    tuple(sorted(split.eval_idx)),
+                )
+                for split in expected_splits
+                if split.size == size
+            ]
+            for size in (2, 3)
+        }
+
+        with (
+            patch("oasis.exp.build_gating_dataloaders_from_indices", _fake_build_loaders),
+            patch("oasis.exp.train_gating_model", lambda *args, **kwargs: None),
+            patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
+        ):
+            run_all_method_sweeps(
+                wide_df=wide_df,
+                gating_dataset=dataset,
+                tabular_methods=tabular_methods,
+                gating_methods=[
+                    GatingMethodSpec(
+                        name="moe_baseline",
+                        model_factory=lambda: object(),
+                        train_config=TrainConfig(
+                            batch_size=2,
+                            epochs=1,
+                            learning_rate=1e-2,
+                            checkpoint_dir=None,
+                            device="cpu",
+                        ),
+                        n_repeats=2,
+                        seed=7,
+                    )
+                ],
+                tabular_train_sizes=[2, 3],
+                gating_train_sizes=[2, 3],
+                shared_train_seed=17,
+            )
+
+        for method_name in ("ridge", "residual"):
+            self.assertEqual(
+                sorted(tabular_calls[method_name]),
+                sorted(expected_by_size[2] + expected_by_size[3]),
+            )
+        self.assertEqual(
+            sorted(gating_calls),
+            sorted(expected_by_size[2] + expected_by_size[3]),
+        )
 
 
 if __name__ == "__main__":
