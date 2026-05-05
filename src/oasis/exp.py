@@ -44,13 +44,19 @@ class MethodSweepRecord:
     size: int
     repeat: int
     split_id: str
+    outer_split_id: str
+    outer_train_size: int
+    inner_train_size: int | None
+    inner_val_size: int | None
+    outer_test_size: int
+    best_epoch: int | None
     rmse: float
 
 
 @dataclass(frozen=True)
 class SweepSplit:
     train_idx: tuple[int, ...]
-    eval_idx: tuple[int, ...]
+    test_idx: tuple[int, ...]
     size: int
     repeat: int
     axis: Literal["train_size"]
@@ -98,8 +104,8 @@ def _train_size_sweep(
     results: list[tuple[SweepSplit, float]] = []
     for split in splits:
         train_idx = np.asarray(split.train_idx, dtype=int)
-        eval_idx = np.asarray(split.eval_idx, dtype=int)
-        rmse = evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx])
+        test_idx = np.asarray(split.test_idx, dtype=int)
+        rmse = evaluator(X[train_idx], y[train_idx], X[test_idx], y[test_idx])
         results.append((split, rmse))
     return results
 
@@ -125,24 +131,54 @@ def build_train_size_splits(
     seed: int,
 ) -> list[SweepSplit]:
     if n_total < 2:
-        raise ValueError("Need at least 2 samples to create train/eval splits")
+        raise ValueError("Need at least 2 samples to create train/test splits")
     rng = np.random.default_rng(seed)
     splits: list[SweepSplit] = []
     indices = np.arange(n_total)
     for n_train in _normalize_sizes(train_sizes, max_size=n_total - 1):
         for repeat in range(n_repeats):
             train_idx = rng.choice(indices, size=n_train, replace=False)
-            eval_idx = np.setdiff1d(indices, train_idx, assume_unique=False)
+            test_idx = np.setdiff1d(indices, train_idx, assume_unique=False)
             splits.append(
                 SweepSplit(
                     train_idx=tuple(int(i) for i in train_idx.tolist()),
-                    eval_idx=tuple(int(i) for i in eval_idx.tolist()),
+                    test_idx=tuple(int(i) for i in test_idx.tolist()),
                     size=n_train,
                     repeat=repeat,
                     axis="train_size",
                 )
             )
     return splits
+
+
+def _split_id(split: SweepSplit) -> str:
+    return f"{split.axis}:{split.size}:repeat:{split.repeat}"
+
+
+def _build_method_sweep_record(
+    *,
+    method: str,
+    split: SweepSplit,
+    rmse: float,
+    inner_train_size: int | None = None,
+    inner_val_size: int | None = None,
+    best_epoch: int | None = None,
+) -> MethodSweepRecord:
+    split_id = _split_id(split)
+    return MethodSweepRecord(
+        method=method,
+        sweep_axis=split.axis,
+        size=split.size,
+        repeat=split.repeat,
+        split_id=split_id,
+        outer_split_id=split_id,
+        outer_train_size=len(split.train_idx),
+        inner_train_size=inner_train_size,
+        inner_val_size=inner_val_size,
+        outer_test_size=len(split.test_idx),
+        best_epoch=best_epoch,
+        rmse=rmse,
+    )
 
 
 def run_gating_method_sweep(
@@ -177,13 +213,13 @@ def run_gating_method_sweep(
                 dataset,
                 batch_size=method.train_config.batch_size,
                 train_pool_indices=split.train_idx,
-                test_indices=split.eval_idx,
+                test_indices=split.test_idx,
                 val_fraction=method.train_config.val_fraction,
                 seed=method.train_config.random_seed + split.repeat,
             )
         )
         model = method.model_factory()
-        train_gating_model(
+        train_result = train_gating_model(
             model,
             inner_train_loader,
             inner_val_loader,
@@ -204,12 +240,12 @@ def run_gating_method_sweep(
             device=method.train_config.device,
         )
         rows.append(
-            MethodSweepRecord(
+            _build_method_sweep_record(
                 method=method.name,
-                sweep_axis="train_size",
-                size=split.size,
-                repeat=split.repeat,
-                split_id=f"train_size:{split.size}:repeat:{split.repeat}",
+                split=split,
+                inner_train_size=len(inner_train_loader.dataset),
+                inner_val_size=len(inner_val_loader.dataset),
+                best_epoch=train_result.best_epoch,
                 rmse=metrics.rmse,
             )
         )
@@ -285,12 +321,9 @@ def run_tabular_method_sweeps(
             splits,
         )
         rows.extend(
-            MethodSweepRecord(
+            _build_method_sweep_record(
                 method=method.name,
-                sweep_axis="train_size",
-                size=split.size,
-                repeat=split.repeat,
-                split_id=f"train_size:{split.size}:repeat:{split.repeat}",
+                split=split,
                 rmse=float(rmse),
             )
             for split, rmse in results
@@ -357,18 +390,15 @@ def run_single_split_comparison(
     X = wide_df.select(feature_cols).to_numpy()
     y = wide_df["reference_ads_eng"].to_numpy()
     train_idx = np.asarray(split.train_idx, dtype=int)
-    eval_idx = np.asarray(split.eval_idx, dtype=int)
+    test_idx = np.asarray(split.test_idx, dtype=int)
     rows: list[MethodSweepRecord] = []
 
     for method in tabular_methods:
-        rmse = method.evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx])
+        rmse = method.evaluator(X[train_idx], y[train_idx], X[test_idx], y[test_idx])
         rows.append(
-            MethodSweepRecord(
+            _build_method_sweep_record(
                 method=method.name,
-                sweep_axis=split.axis,
-                size=split.size,
-                repeat=split.repeat,
-                split_id=f"{split.axis}:{split.size}:repeat:{split.repeat}",
+                split=split,
                 rmse=float(rmse),
             )
         )
@@ -379,13 +409,13 @@ def run_single_split_comparison(
                 gating_dataset,
                 batch_size=method.train_config.batch_size,
                 train_pool_indices=split.train_idx,
-                test_indices=split.eval_idx,
+                test_indices=split.test_idx,
                 val_fraction=method.train_config.val_fraction,
                 seed=method.train_config.random_seed + split.repeat,
             )
         )
         model = method.model_factory()
-        train_gating_model(
+        train_result = train_gating_model(
             model,
             inner_train_loader,
             inner_val_loader,
@@ -406,12 +436,12 @@ def run_single_split_comparison(
             device=method.train_config.device,
         )
         rows.append(
-            MethodSweepRecord(
+            _build_method_sweep_record(
                 method=method.name,
-                sweep_axis=split.axis,
-                size=split.size,
-                repeat=split.repeat,
-                split_id=f"{split.axis}:{split.size}:repeat:{split.repeat}",
+                split=split,
+                inner_train_size=len(inner_train_loader.dataset),
+                inner_val_size=len(inner_val_loader.dataset),
+                best_epoch=train_result.best_epoch,
                 rmse=metrics.rmse,
             )
         )

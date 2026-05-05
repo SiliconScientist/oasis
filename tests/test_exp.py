@@ -75,13 +75,13 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(all(len(split.train_idx) == split.size for split in splits))
         self.assertTrue(
             all(
-                len(set(split.train_idx).intersection(split.eval_idx)) == 0
+                len(set(split.train_idx).intersection(split.test_idx)) == 0
                 for split in splits
             )
         )
         self.assertTrue(
             all(
-                sorted(split.train_idx + split.eval_idx) == list(range(6))
+                sorted(split.train_idx + split.test_idx) == list(range(6))
                 for split in splits
             )
         )
@@ -173,6 +173,12 @@ class ExperimentTests(unittest.TestCase):
             self.assertIn("method", df.columns)
             self.assertIn("repeat", df.columns)
             self.assertIn("split_id", df.columns)
+            self.assertIn("outer_split_id", df.columns)
+            self.assertIn("outer_train_size", df.columns)
+            self.assertIn("inner_train_size", df.columns)
+            self.assertIn("inner_val_size", df.columns)
+            self.assertIn("outer_test_size", df.columns)
+            self.assertIn("best_epoch", df.columns)
             self.assertIn("rmse", df.columns)
 
     def test_shared_splits_across_ridge_residual_and_moe(self) -> None:
@@ -227,8 +233,15 @@ class ExperimentTests(unittest.TestCase):
 
         gating_calls: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
 
+        class _DummyTrainResult:
+            best_epoch = 1
+
         class _DummyMetrics:
             rmse = 0.0
+
+        class _DummyLoader:
+            def __init__(self, size: int) -> None:
+                self.dataset = list(range(size))
 
         def _fake_build_loaders(
             dataset: GatingDataset,
@@ -239,14 +252,22 @@ class ExperimentTests(unittest.TestCase):
             val_fraction: float,
             seed: int,
         ) -> tuple[object, object, object]:
-            del dataset, batch_size, val_fraction, seed
+            del dataset, batch_size, seed
             gating_calls.append(
                 (
                     tuple(sorted(int(i) for i in train_pool_indices)),
                     tuple(sorted(int(i) for i in test_indices)),
                 )
             )
-            return object(), object(), object()
+            n_train_pool = len(train_pool_indices)
+            n_inner_val = max(1, int(round(n_train_pool * val_fraction)))
+            n_inner_val = min(n_inner_val, n_train_pool - 1)
+            n_inner_train = n_train_pool - n_inner_val
+            return (
+                _DummyLoader(n_inner_train),
+                _DummyLoader(n_inner_val),
+                _DummyLoader(len(test_indices)),
+            )
 
         expected_splits = build_train_size_splits(
             len(dataset),
@@ -258,7 +279,7 @@ class ExperimentTests(unittest.TestCase):
             size: [
                 (
                     tuple(sorted(split.train_idx)),
-                    tuple(sorted(split.eval_idx)),
+                    tuple(sorted(split.test_idx)),
                 )
                 for split in expected_splits
                 if split.size == size
@@ -268,7 +289,10 @@ class ExperimentTests(unittest.TestCase):
 
         with (
             patch("oasis.exp.build_nested_gating_dataloaders", _fake_build_loaders),
-            patch("oasis.exp.train_gating_model", lambda *args, **kwargs: None),
+            patch(
+                "oasis.exp.train_gating_model",
+                lambda *args, **kwargs: _DummyTrainResult(),
+            ),
             patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
         ):
             run_all_method_sweeps(
@@ -356,7 +380,7 @@ class ExperimentTests(unittest.TestCase):
         dataset, wide_df = _example_dataset()
         split = SweepSplit(
             train_idx=(0, 1, 2),
-            eval_idx=(3, 4, 5),
+            test_idx=(3, 4, 5),
             size=3,
             repeat=0,
             axis="train_size",
@@ -367,6 +391,9 @@ class ExperimentTests(unittest.TestCase):
 
         class _DummyMetrics:
             rmse = 0.0
+
+        class _DummyTrainResult:
+            best_epoch = 1
 
         def _train_spy(model, train_loader, val_loader, *, config):
             del model, config
@@ -387,7 +414,7 @@ class ExperimentTests(unittest.TestCase):
                     )
                 )
             )
-            return None
+            return _DummyTrainResult()
 
         def _eval_spy(model, data_loader, *, device):
             del model, device
@@ -428,13 +455,13 @@ class ExperimentTests(unittest.TestCase):
 
         self.assertEqual(len(observed_inner_train_indices), 1)
         self.assertEqual(len(observed_inner_val_indices), 1)
-        self.assertEqual(observed_outer_test_indices, [tuple(sorted(split.eval_idx))])
+        self.assertEqual(observed_outer_test_indices, [tuple(sorted(split.test_idx))])
         self.assertEqual(
-            set(observed_inner_train_indices[0]).intersection(split.eval_idx),
+            set(observed_inner_train_indices[0]).intersection(split.test_idx),
             set(),
         )
         self.assertEqual(
-            set(observed_inner_val_indices[0]).intersection(split.eval_idx),
+            set(observed_inner_val_indices[0]).intersection(split.test_idx),
             set(),
         )
         self.assertEqual(
@@ -452,7 +479,7 @@ class ExperimentTests(unittest.TestCase):
         dataset, wide_df = _example_dataset()
         split = SweepSplit(
             train_idx=(0, 1),
-            eval_idx=(2, 3, 4, 5),
+            test_idx=(2, 3, 4, 5),
             size=2,
             repeat=0,
             axis="train_size",
@@ -461,8 +488,14 @@ class ExperimentTests(unittest.TestCase):
         class _DummyMetrics:
             rmse = 0.123
 
+        class _DummyTrainResult:
+            best_epoch = 1
+
         with (
-            patch("oasis.exp.train_gating_model", lambda *args, **kwargs: None),
+            patch(
+                "oasis.exp.train_gating_model",
+                lambda *args, **kwargs: _DummyTrainResult(),
+            ),
             patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
         ):
             rows = run_single_split_comparison(
@@ -498,6 +531,17 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(all(row.size == 2 for row in rows))
         self.assertTrue(all(row.repeat == 0 for row in rows))
         self.assertTrue(all(row.split_id == "train_size:2:repeat:0" for row in rows))
+        self.assertTrue(
+            all(row.outer_split_id == "train_size:2:repeat:0" for row in rows)
+        )
+        self.assertTrue(all(row.outer_train_size == 2 for row in rows))
+        self.assertTrue(all(row.outer_test_size == 4 for row in rows))
+        self.assertTrue(all(row.inner_train_size is None for row in rows[:2]))
+        self.assertTrue(all(row.inner_val_size is None for row in rows[:2]))
+        self.assertTrue(all(row.best_epoch is None for row in rows[:2]))
+        self.assertIsNotNone(rows[-1].inner_train_size)
+        self.assertIsNotNone(rows[-1].inner_val_size)
+        self.assertEqual(rows[-1].best_epoch, 1)
         self.assertEqual(rows[-1].rmse, 0.123)
 
 
