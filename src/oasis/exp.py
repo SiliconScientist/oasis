@@ -330,7 +330,82 @@ def run_all_method_sweeps(
                 train_sizes=gating_train_sizes,
                 train_splits=shared_train_splits,
             )
+    )
+    return rows
+
+
+def run_single_split_comparison(
+    *,
+    wide_df: pl.DataFrame,
+    gating_dataset: GatingDataset,
+    tabular_methods: Sequence[TabularMethodSpec],
+    gating_methods: Sequence[GatingMethodSpec],
+    split: SweepSplit,
+) -> list[MethodSweepRecord]:
+    feature_cols = _mlip_columns(wide_df)
+    if not feature_cols:
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
         )
+
+    X = wide_df.select(feature_cols).to_numpy()
+    y = wide_df["reference_ads_eng"].to_numpy()
+    train_idx = np.asarray(split.train_idx, dtype=int)
+    eval_idx = np.asarray(split.eval_idx, dtype=int)
+    rows: list[MethodSweepRecord] = []
+
+    for method in tabular_methods:
+        rmse = method.evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx])
+        rows.append(
+            MethodSweepRecord(
+                method=method.name,
+                sweep_axis=split.axis,
+                size=split.size,
+                repeat=split.repeat,
+                split_id=f"{split.axis}:{split.size}:repeat:{split.repeat}",
+                rmse=float(rmse),
+            )
+        )
+
+    for method in gating_methods:
+        train_loader, val_loader = build_gating_dataloaders_from_indices(
+            gating_dataset,
+            batch_size=method.train_config.batch_size,
+            train_indices=split.train_idx,
+            eval_indices=split.eval_idx,
+        )
+        model = method.model_factory()
+        train_gating_model(
+            model,
+            train_loader,
+            val_loader,
+            config=TrainConfig(
+                batch_size=method.train_config.batch_size,
+                epochs=method.train_config.epochs,
+                learning_rate=method.train_config.learning_rate,
+                weight_decay=method.train_config.weight_decay,
+                val_fraction=method.train_config.val_fraction,
+                random_seed=method.train_config.random_seed + split.repeat,
+                checkpoint_dir=None,
+                device=method.train_config.device,
+            ),
+        )
+        metrics = evaluate_gating_model(
+            model,
+            val_loader,
+            device=method.train_config.device,
+        )
+        rows.append(
+            MethodSweepRecord(
+                method=method.name,
+                sweep_axis=split.axis,
+                size=split.size,
+                repeat=split.repeat,
+                split_id=f"{split.axis}:{split.size}:repeat:{split.repeat}",
+                rmse=metrics.rmse,
+            )
+        )
+
     return rows
 
 

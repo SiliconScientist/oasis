@@ -19,6 +19,7 @@ from oasis.exp import (
     default_tabular_method_specs,
     run_all_method_sweeps,
     run_data_fraction_sweep,
+    run_single_split_comparison,
     save_method_sweep_rows_csv,
     save_sweep_points_csv,
 )
@@ -294,6 +295,58 @@ class ExperimentTests(unittest.TestCase):
             sorted(gating_calls),
             sorted(expected_by_size[2] + expected_by_size[3]),
         )
+
+    def test_run_single_split_comparison(self) -> None:
+        dataset, wide_df = _example_dataset()
+        split = SweepSplit(
+            train_idx=(0, 1),
+            eval_idx=(2, 3, 4, 5),
+            size=2,
+            repeat=0,
+            axis="train_size",
+        )
+
+        class _DummyMetrics:
+            rmse = 0.123
+
+        with (
+            patch("oasis.exp.train_gating_model", lambda *args, **kwargs: None),
+            patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
+        ):
+            rows = run_single_split_comparison(
+                wide_df=wide_df,
+                gating_dataset=dataset,
+                tabular_methods=default_tabular_method_specs(
+                    use_ridge=True,
+                    use_residual=True,
+                    n_repeats=1,
+                ),
+                gating_methods=[
+                    GatingMethodSpec(
+                        name="moe_baseline",
+                        model_factory=lambda: BaselineMLPGatedMoE(
+                            n_experts=2,
+                            hidden_dims=(8,),
+                        ),
+                        train_config=TrainConfig(
+                            batch_size=2,
+                            epochs=1,
+                            learning_rate=1e-2,
+                            checkpoint_dir=None,
+                            device="cpu",
+                        ),
+                        n_repeats=1,
+                        seed=7,
+                    )
+                ],
+                split=split,
+            )
+
+        self.assertEqual([row.method for row in rows], ["ridge", "residual", "moe_baseline"])
+        self.assertTrue(all(row.size == 2 for row in rows))
+        self.assertTrue(all(row.repeat == 0 for row in rows))
+        self.assertTrue(all(row.split_id == "train_size:2:repeat:0" for row in rows))
+        self.assertEqual(rows[-1].rmse, 0.123)
 
 
 if __name__ == "__main__":
