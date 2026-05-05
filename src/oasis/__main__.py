@@ -139,6 +139,8 @@ def main() -> None:
         df=wide_df,
         output_path=output_dir / "learning_curve.png",
     )
+    print(f"Saved parity plot: {saved_path}")
+    print(f"Saved learning curve plot: {output_dir / 'learning_curve.png'}")
 
 
 if __name__ == "__main__":
