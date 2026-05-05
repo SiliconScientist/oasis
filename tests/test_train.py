@@ -124,11 +124,25 @@ class TrainingTests(unittest.TestCase):
             )
 
             self.assertEqual(len(result.history), 2)
+            self.assertIsNotNone(result.best_epoch)
             self.assertTrue(math.isfinite(result.best_val_loss))
             self.assertIsNotNone(result.best_checkpoint_path)
             self.assertIsNotNone(result.latest_checkpoint_path)
             self.assertTrue(Path(result.best_checkpoint_path).is_file())
             self.assertTrue(Path(result.latest_checkpoint_path).is_file())
+            self.assertEqual(
+                result.best_epoch,
+                min(result.history, key=lambda metric: metric.val_loss).epoch,
+            )
+
+            best_checkpoint = torch.load(
+                result.best_checkpoint_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            best_state_dict = best_checkpoint["model_state_dict"]
+            for name, tensor in model.state_dict().items():
+                self.assertTrue(torch.equal(tensor.cpu(), best_state_dict[name]))
 
     def test_training_and_evaluation_are_reproducible_for_fixed_seed(self) -> None:
         dataset = _example_dataset()

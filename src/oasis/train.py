@@ -34,6 +34,7 @@ class EpochMetrics:
 @dataclass(frozen=True)
 class TrainResult:
     history: list[EpochMetrics]
+    best_epoch: int | None
     best_val_loss: float
     best_checkpoint_path: Path | None
     latest_checkpoint_path: Path | None
@@ -250,6 +251,13 @@ def _save_checkpoint(
     )
 
 
+def _clone_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
+    return {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in model.state_dict().items()
+    }
+
+
 def train_gating_model(
     model: nn.Module,
     train_loader: DataLoader[GatingBatch],
@@ -279,7 +287,9 @@ def train_gating_model(
     )
 
     history: list[EpochMetrics] = []
+    best_epoch: int | None = None
     best_val_loss = float("inf")
+    best_model_state: dict[str, torch.Tensor] | None = None
 
     for epoch in range(1, config.epochs + 1):
         model.train()
@@ -327,6 +337,8 @@ def train_gating_model(
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_epoch = epoch
+            best_model_state = _clone_state_dict(model)
             if best_checkpoint_path is not None:
                 _save_checkpoint(
                     best_checkpoint_path,
@@ -337,8 +349,12 @@ def train_gating_model(
                     best_val_loss=best_val_loss,
                 )
 
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+
     return TrainResult(
         history=history,
+        best_epoch=best_epoch,
         best_val_loss=best_val_loss,
         best_checkpoint_path=best_checkpoint_path,
         latest_checkpoint_path=latest_checkpoint_path,
