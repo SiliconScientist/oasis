@@ -8,21 +8,16 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import torch
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import ElasticNet, Lasso, Ridge
+from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader, Subset
 
 from oasis.dataset import GatingBatch, GatingDataset, collate_gating_samples
 from oasis.evaluate import evaluate_gating_model
 from oasis.methods import (
-    linearization_predict,
-    linearization_trimmed_predict,
     model_predict,
     residual_correction_predict,
-    residual_correction_trimmed_predict,
     rmse,
-    trimmed_model_predict,
 )
 from oasis.train import TrainConfig, TrainResult, split_gating_dataset, train_gating_model
 
@@ -219,13 +214,8 @@ def run_gating_method_sweep(
 
 def default_tabular_method_specs(
     *,
-    use_trim: bool,
     use_ridge: bool,
-    use_kernel_ridge: bool,
-    use_lasso: bool,
-    use_elastic: bool,
     use_residual: bool,
-    use_linearization: bool,
     n_repeats: int,
 ) -> list[TabularMethodSpec]:
     specs: list[TabularMethodSpec] = []
@@ -247,128 +237,6 @@ def default_tabular_method_specs(
                 seed=41,
             )
         )
-    if use_kernel_ridge:
-        specs.append(
-            TabularMethodSpec(
-                name="kernel_ridge",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: KernelRidge(alpha=1.0, kernel="rbf"),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                n_repeats=n_repeats,
-                seed=2718,
-            )
-        )
-    if use_trim and use_ridge:
-        specs.append(
-            TabularMethodSpec(
-                name="ridge_trimmed",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: Ridge(alpha=0.1),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                n_repeats=n_repeats,
-                seed=42,
-            )
-        )
-    if use_lasso:
-        specs.append(
-            TabularMethodSpec(
-                name="lasso",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: Lasso(alpha=0.1, max_iter=10000),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                n_repeats=n_repeats,
-                seed=123,
-            )
-        )
-    if use_trim and use_lasso:
-        specs.append(
-            TabularMethodSpec(
-                name="lasso_trimmed",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: Lasso(alpha=0.1, max_iter=10000),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                n_repeats=n_repeats,
-                seed=124,
-            )
-        )
-    if use_elastic:
-        specs.append(
-            TabularMethodSpec(
-                name="elastic",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: ElasticNet(
-                            alpha=0.1,
-                            l1_ratio=0.5,
-                            max_iter=20000,
-                        ),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                n_repeats=n_repeats,
-                seed=321,
-            )
-        )
-    if use_trim and use_elastic:
-        specs.append(
-            TabularMethodSpec(
-                name="elastic_trimmed",
-                sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: ElasticNet(
-                            alpha=0.1,
-                            l1_ratio=0.5,
-                            max_iter=20000,
-                        ),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                n_repeats=n_repeats,
-                seed=322,
-            )
-        )
     if use_residual:
         specs.append(
             TabularMethodSpec(
@@ -380,49 +248,6 @@ def default_tabular_method_specs(
                 ),
                 n_repeats=n_repeats,
                 seed=999,
-            )
-        )
-    if use_trim and use_residual:
-        specs.append(
-            TabularMethodSpec(
-                name="residual_trimmed",
-                sweep_axis="holdout_size",
-                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    residual_correction_trimmed_predict(
-                        X_holdout,
-                        y_holdout,
-                        X_eval,
-                    ),
-                ),
-                n_repeats=n_repeats,
-                seed=77,
-            )
-        )
-    if use_linearization:
-        specs.append(
-            TabularMethodSpec(
-                name="linearization",
-                sweep_axis="holdout_size",
-                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    linearization_predict(X_holdout, y_holdout, X_eval),
-                ),
-                n_repeats=n_repeats,
-                seed=2024,
-            )
-        )
-    if use_trim and use_linearization:
-        specs.append(
-            TabularMethodSpec(
-                name="linearization_trimmed",
-                sweep_axis="holdout_size",
-                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    linearization_trimmed_predict(X_holdout, y_holdout, X_eval),
-                ),
-                n_repeats=n_repeats,
-                seed=2025,
             )
         )
     return specs
@@ -534,22 +359,12 @@ def build_learning_curve_sweeps(
     min_train: int,
     max_train: int,
     n_repeats: int,
-    use_trim: bool,
     use_ridge: bool,
-    use_kernel_ridge: bool,
-    use_lasso: bool,
-    use_elastic: bool,
     use_residual: bool,
-    use_linearization: bool,
 ) -> dict[str, pd.DataFrame | None]:
     specs = default_tabular_method_specs(
-        use_trim=use_trim,
         use_ridge=use_ridge,
-        use_kernel_ridge=use_kernel_ridge,
-        use_lasso=use_lasso,
-        use_elastic=use_elastic,
         use_residual=use_residual,
-        use_linearization=use_linearization,
         n_repeats=n_repeats,
     )
     rows = run_tabular_method_sweeps(
@@ -576,16 +391,7 @@ def build_learning_curve_sweeps(
 
     return {
         "ridge_df": _rows_to_df("ridge", "n_train"),
-        "kernel_ridge_df": _rows_to_df("kernel_ridge", "n_train"),
-        "ridge_trimmed_df": _rows_to_df("ridge_trimmed", "n_train"),
-        "lasso_df": _rows_to_df("lasso", "n_train"),
-        "lasso_trimmed_df": _rows_to_df("lasso_trimmed", "n_train"),
-        "elastic_df": _rows_to_df("elastic", "n_train"),
-        "elastic_trimmed_df": _rows_to_df("elastic_trimmed", "n_train"),
         "resid_df": _rows_to_df("residual", "n_holdout"),
-        "resid_trimmed_df": _rows_to_df("residual_trimmed", "n_holdout"),
-        "linear_df": _rows_to_df("linearization", "n_holdout"),
-        "linear_trimmed_df": _rows_to_df("linearization_trimmed", "n_holdout"),
     }
 
 

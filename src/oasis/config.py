@@ -66,13 +66,10 @@ class PlotConfig(BaseModel):
     min_train: int
     max_train: int
     n_repeats: int
-    trim: bool
     use_ridge: bool
-    use_kernel_ridge: bool
-    use_lasso: bool
-    use_elastic_net: bool
     use_residual: bool
-    use_linearization: bool
+    plot_moe_baseline: bool = False
+    plot_moe_schnet: bool = False
     adsorbate: Optional[str] = None
     anomaly_label: Optional[str] = None
     reaction_contains: Optional[List[str]] = None

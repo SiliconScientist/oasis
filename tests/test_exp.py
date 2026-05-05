@@ -89,30 +89,18 @@ class ExperimentTests(unittest.TestCase):
             min_train=2,
             max_train=3,
             n_repeats=1,
-            use_trim=False,
             use_ridge=True,
-            use_kernel_ridge=False,
-            use_lasso=False,
-            use_elastic=False,
             use_residual=True,
-            use_linearization=True,
         )
         self.assertIsNotNone(sweep_results["ridge_df"])
-        self.assertIsNone(sweep_results["kernel_ridge_df"])
         self.assertIsNotNone(sweep_results["resid_df"])
-        self.assertIsNotNone(sweep_results["linear_df"])
         self.assertEqual(sweep_results["ridge_df"]["n_train"].tolist(), [2, 3])
 
     def test_run_all_method_sweeps_and_save_csv(self) -> None:
         dataset, wide_df = _example_dataset()
         tabular_methods = default_tabular_method_specs(
-            use_trim=False,
             use_ridge=True,
-            use_kernel_ridge=False,
-            use_lasso=False,
-            use_elastic=False,
             use_residual=True,
-            use_linearization=False,
             n_repeats=1,
         )
         gating_methods = [

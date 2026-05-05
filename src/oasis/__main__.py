@@ -18,7 +18,7 @@ from oasis.exp import (
 from oasis.graph import build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.model import BaselineMLPGatedMoE, SchNetGatedMoE
-from oasis.plot import learning_curve_plot, moe_learning_speed_plot, parity_plot
+from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
 from oasis.train import TrainConfig
 
@@ -47,6 +47,8 @@ def main() -> None:
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
     all_methods_csv = output_dir / "all_method_sweeps.csv"
+    plot_moe_baseline = cfg.plot.plot_moe_baseline if cfg.plot else False
+    plot_moe_schnet = cfg.plot.plot_moe_schnet if cfg.plot else False
 
     if cfg.train:
         moe_train_config = TrainConfig(
@@ -61,25 +63,41 @@ def main() -> None:
         )
         n_experts = len(gating_dataset[0].graph.mlip_names)
         tabular_methods = default_tabular_method_specs(
-            use_trim=cfg.plot.trim if cfg.plot else True,
             use_ridge=cfg.plot.use_ridge if cfg.plot else True,
-            use_kernel_ridge=cfg.plot.use_kernel_ridge if cfg.plot else True,
-            use_lasso=cfg.plot.use_lasso if cfg.plot else True,
-            use_elastic=cfg.plot.use_elastic_net if cfg.plot else True,
             use_residual=cfg.plot.use_residual if cfg.plot else True,
-            use_linearization=cfg.plot.use_linearization if cfg.plot else True,
             n_repeats=cfg.plot.n_repeats if cfg.plot else 30,
         )
+        tabular_train_sizes = (
+            list(range(cfg.plot.min_train, cfg.plot.max_train + 1))
+            if cfg.plot
+            else list(range(2, 11))
+        )
         available_train = len(gating_dataset) - 1
+        moe_interval_min = min(tabular_train_sizes)
+        moe_interval_max = min(max(tabular_train_sizes), available_train)
+        moe_size_fractions = (0.0, 0.25, 0.5, 0.75, 1.0)
         moe_train_sizes = sorted(
             {
-                max(1, int(round(available_train * fraction)))
-                for fraction in (0.1, 0.25, 0.5, 0.75, 1.0)
+                max(
+                    1,
+                    min(
+                        available_train,
+                        int(
+                            round(
+                                moe_interval_min
+                                + (moe_interval_max - moe_interval_min) * fraction
+                            )
+                        ),
+                    ),
+                )
+                for fraction in moe_size_fractions
             }
         )
         moe_repeats = max(1, min(5, (cfg.plot.n_repeats if cfg.plot else 30) // 5))
-        gating_methods = [
-            GatingMethodSpec(
+        gating_methods: list[GatingMethodSpec] = []
+        if plot_moe_baseline:
+            gating_methods.append(
+                GatingMethodSpec(
                 name="moe_baseline",
                 model_factory=lambda: BaselineMLPGatedMoE(
                     n_experts=n_experts,
@@ -89,8 +107,11 @@ def main() -> None:
                 train_config=moe_train_config,
                 n_repeats=moe_repeats,
                 seed=(cfg.seed or 0) + 101,
-            ),
-            GatingMethodSpec(
+                )
+            )
+        if plot_moe_schnet:
+            gating_methods.append(
+                GatingMethodSpec(
                 name="moe_schnet",
                 model_factory=lambda: SchNetGatedMoE(
                     n_experts=n_experts,
@@ -104,16 +125,14 @@ def main() -> None:
                 train_config=replace(moe_train_config, checkpoint_dir=None),
                 n_repeats=moe_repeats,
                 seed=(cfg.seed or 0) + 202,
-            ),
-        ]
+                )
+            )
         all_method_rows = run_all_method_sweeps(
             wide_df=wide_df,
             gating_dataset=gating_dataset,
             tabular_methods=tabular_methods,
             gating_methods=gating_methods,
-            tabular_train_sizes=list(range(cfg.plot.min_train, cfg.plot.max_train + 1))
-            if cfg.plot
-            else list(range(2, 11)),
+            tabular_train_sizes=tabular_train_sizes,
             gating_train_sizes=moe_train_sizes,
         )
         all_methods_csv = save_method_sweep_rows_csv(
@@ -121,29 +140,6 @@ def main() -> None:
             all_methods_csv,
         )
         print(f"Saved combined method sweep CSV: {all_methods_csv}")
-
-    if all_methods_csv.is_file():
-        sweep_df = pl.read_csv(all_methods_csv)
-        baseline_df = sweep_df.filter(pl.col("method") == "moe_baseline")
-        schnet_df = sweep_df.filter(pl.col("method") == "moe_schnet")
-        if baseline_df.height > 0:
-            baseline_plot = moe_learning_speed_plot(
-                baseline_df,
-                output_dir / "moe_baseline_learning_speed.png",
-                x_col="size",
-                metric="rmse_mean",
-                title="MOE baseline gate learning speed",
-            )
-            print(f"Saved MOE baseline sweep plot: {baseline_plot}")
-        if schnet_df.height > 0:
-            schnet_plot = moe_learning_speed_plot(
-                schnet_df,
-                output_dir / "moe_schnet_learning_speed.png",
-                x_col="size",
-                metric="rmse_mean",
-                title="MOE SchNet gate learning speed",
-            )
-            print(f"Saved MOE SchNet sweep plot: {schnet_plot}")
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -170,9 +166,19 @@ def main() -> None:
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
+    method_sweeps = pl.read_csv(all_methods_csv) if all_methods_csv.is_file() else None
+    if method_sweeps is not None:
+        excluded_methods: list[str] = []
+        if not plot_moe_baseline:
+            excluded_methods.append("moe_baseline")
+        if not plot_moe_schnet:
+            excluded_methods.append("moe_schnet")
+        if excluded_methods:
+            method_sweeps = method_sweeps.filter(~pl.col("method").is_in(excluded_methods))
     learning_curve_plot(
         cfg=cfg,
         df=wide_df,
+        method_sweeps=method_sweeps,
         output_path=output_dir / "learning_curve.png",
     )
     print(f"Saved parity plot: {saved_path}")
