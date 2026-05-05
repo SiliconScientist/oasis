@@ -20,7 +20,7 @@ from oasis.methods import (
 from oasis.train import (
     TrainConfig,
     TrainResult,
-    build_gating_dataloaders_from_indices,
+    build_nested_gating_dataloaders,
     split_gating_dataset,
     train_gating_model,
 )
@@ -143,6 +143,8 @@ def build_train_size_splits(
                 )
             )
     return splits
+
+
 def run_gating_method_sweep(
     dataset: GatingDataset,
     *,
@@ -170,17 +172,21 @@ def run_gating_method_sweep(
         )
     )
     for split in splits:
-        train_loader, val_loader = build_gating_dataloaders_from_indices(
-            dataset,
-            batch_size=method.train_config.batch_size,
-            train_indices=split.train_idx,
-            eval_indices=split.eval_idx,
+        inner_train_loader, inner_val_loader, outer_test_loader = (
+            build_nested_gating_dataloaders(
+                dataset,
+                batch_size=method.train_config.batch_size,
+                train_pool_indices=split.train_idx,
+                test_indices=split.eval_idx,
+                val_fraction=method.train_config.val_fraction,
+                seed=method.train_config.random_seed + split.repeat,
+            )
         )
         model = method.model_factory()
         train_gating_model(
             model,
-            train_loader,
-            val_loader,
+            inner_train_loader,
+            inner_val_loader,
             config=TrainConfig(
                 batch_size=method.train_config.batch_size,
                 epochs=method.train_config.epochs,
@@ -194,7 +200,7 @@ def run_gating_method_sweep(
         )
         metrics = evaluate_gating_model(
             model,
-            val_loader,
+            outer_test_loader,
             device=method.train_config.device,
         )
         rows.append(
@@ -368,17 +374,21 @@ def run_single_split_comparison(
         )
 
     for method in gating_methods:
-        train_loader, val_loader = build_gating_dataloaders_from_indices(
-            gating_dataset,
-            batch_size=method.train_config.batch_size,
-            train_indices=split.train_idx,
-            eval_indices=split.eval_idx,
+        inner_train_loader, inner_val_loader, outer_test_loader = (
+            build_nested_gating_dataloaders(
+                gating_dataset,
+                batch_size=method.train_config.batch_size,
+                train_pool_indices=split.train_idx,
+                test_indices=split.eval_idx,
+                val_fraction=method.train_config.val_fraction,
+                seed=method.train_config.random_seed + split.repeat,
+            )
         )
         model = method.model_factory()
         train_gating_model(
             model,
-            train_loader,
-            val_loader,
+            inner_train_loader,
+            inner_val_loader,
             config=TrainConfig(
                 batch_size=method.train_config.batch_size,
                 epochs=method.train_config.epochs,
@@ -392,7 +402,7 @@ def run_single_split_comparison(
         )
         metrics = evaluate_gating_model(
             model,
-            val_loader,
+            outer_test_loader,
             device=method.train_config.device,
         )
         rows.append(

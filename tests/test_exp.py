@@ -234,17 +234,19 @@ class ExperimentTests(unittest.TestCase):
             dataset: GatingDataset,
             *,
             batch_size: int,
-            train_indices: tuple[int, ...],
-            eval_indices: tuple[int, ...],
-        ) -> tuple[object, object]:
-            del dataset, batch_size
+            train_pool_indices: tuple[int, ...],
+            test_indices: tuple[int, ...],
+            val_fraction: float,
+            seed: int,
+        ) -> tuple[object, object, object]:
+            del dataset, batch_size, val_fraction, seed
             gating_calls.append(
                 (
-                    tuple(sorted(int(i) for i in train_indices)),
-                    tuple(sorted(int(i) for i in eval_indices)),
+                    tuple(sorted(int(i) for i in train_pool_indices)),
+                    tuple(sorted(int(i) for i in test_indices)),
                 )
             )
-            return object(), object()
+            return object(), object(), object()
 
         expected_splits = build_train_size_splits(
             len(dataset),
@@ -265,7 +267,7 @@ class ExperimentTests(unittest.TestCase):
         }
 
         with (
-            patch("oasis.exp.build_gating_dataloaders_from_indices", _fake_build_loaders),
+            patch("oasis.exp.build_nested_gating_dataloaders", _fake_build_loaders),
             patch("oasis.exp.train_gating_model", lambda *args, **kwargs: None),
             patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
         ):
@@ -350,7 +352,7 @@ class ExperimentTests(unittest.TestCase):
             },
         )
 
-    def test_moe_optimization_loader_excludes_outer_eval_indices(self) -> None:
+    def test_moe_uses_inner_val_and_outer_test_separately(self) -> None:
         dataset, wide_df = _example_dataset()
         split = SweepSplit(
             train_idx=(0, 1, 2),
@@ -359,22 +361,45 @@ class ExperimentTests(unittest.TestCase):
             repeat=0,
             axis="train_size",
         )
-        observed_train_indices: list[tuple[int, ...]] = []
+        observed_inner_train_indices: list[tuple[int, ...]] = []
+        observed_inner_val_indices: list[tuple[int, ...]] = []
+        observed_outer_test_indices: list[tuple[int, ...]] = []
 
         class _DummyMetrics:
             rmse = 0.0
 
         def _train_spy(model, train_loader, val_loader, *, config):
-            del model, val_loader, config
-            subset = train_loader.dataset
-            observed_train_indices.append(
-                tuple(sorted(int(i) for i in subset.indices))
+            del model, config
+            train_subset = train_loader.dataset
+            val_subset = val_loader.dataset
+            outer_train_subset = train_subset.dataset
+            observed_inner_train_indices.append(
+                tuple(
+                    sorted(
+                        int(outer_train_subset.indices[i]) for i in train_subset.indices
+                    )
+                )
+            )
+            observed_inner_val_indices.append(
+                tuple(
+                    sorted(
+                        int(outer_train_subset.indices[i]) for i in val_subset.indices
+                    )
+                )
             )
             return None
 
+        def _eval_spy(model, data_loader, *, device):
+            del model, device
+            subset = data_loader.dataset
+            observed_outer_test_indices.append(
+                tuple(sorted(int(i) for i in subset.indices))
+            )
+            return _DummyMetrics()
+
         with (
             patch("oasis.exp.train_gating_model", _train_spy),
-            patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
+            patch("oasis.exp.evaluate_gating_model", _eval_spy),
         ):
             run_single_split_comparison(
                 wide_df=wide_df,
@@ -401,10 +426,26 @@ class ExperimentTests(unittest.TestCase):
                 split=split,
             )
 
-        self.assertEqual(observed_train_indices, [tuple(sorted(split.train_idx))])
+        self.assertEqual(len(observed_inner_train_indices), 1)
+        self.assertEqual(len(observed_inner_val_indices), 1)
+        self.assertEqual(observed_outer_test_indices, [tuple(sorted(split.eval_idx))])
         self.assertEqual(
-            set(observed_train_indices[0]).intersection(split.eval_idx),
+            set(observed_inner_train_indices[0]).intersection(split.eval_idx),
             set(),
+        )
+        self.assertEqual(
+            set(observed_inner_val_indices[0]).intersection(split.eval_idx),
+            set(),
+        )
+        self.assertEqual(
+            set(observed_inner_train_indices[0]).intersection(
+                observed_inner_val_indices[0]
+            ),
+            set(),
+        )
+        self.assertEqual(
+            set(observed_inner_train_indices[0]).union(observed_inner_val_indices[0]),
+            set(split.train_idx),
         )
 
     def test_run_single_split_comparison(self) -> None:

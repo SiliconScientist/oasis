@@ -121,6 +121,49 @@ def build_gating_dataloaders_from_indices(
     return train_loader, eval_loader
 
 
+def build_nested_gating_dataloaders(
+    dataset: GatingDataset,
+    *,
+    train_pool_indices: Sequence[int],
+    test_indices: Sequence[int],
+    batch_size: int = 16,
+    val_fraction: float = 0.2,
+    seed: int = 0,
+) -> tuple[DataLoader[GatingBatch], DataLoader[GatingBatch], DataLoader[GatingBatch]]:
+    if not train_pool_indices:
+        raise ValueError("train_pool_indices must not be empty")
+    if not test_indices:
+        raise ValueError("test_indices must not be empty")
+
+    outer_train_subset = Subset(dataset, list(train_pool_indices))
+    inner_train_subset, inner_val_subset = split_gating_dataset(
+        outer_train_subset,
+        val_fraction=val_fraction,
+        seed=seed,
+    )
+    outer_test_subset = Subset(dataset, list(test_indices))
+
+    inner_train_loader = DataLoader(
+        inner_train_subset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_gating_samples,
+    )
+    inner_val_loader = DataLoader(
+        inner_val_subset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_gating_samples,
+    )
+    outer_test_loader = DataLoader(
+        outer_test_subset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_gating_samples,
+    )
+    return inner_train_loader, inner_val_loader, outer_test_loader
+
+
 def _move_batch_to_device(batch: GatingBatch, device: torch.device) -> GatingBatch:
     graph_batch = batch.graph_batch
     moved_graph_batch = type(graph_batch)(
