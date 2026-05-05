@@ -141,6 +141,19 @@ def _holdout_size_sweep(
     return pd.DataFrame(results)
 
 
+def _limit_splits_by_repeats(
+    splits: Sequence[SweepSplit],
+    *,
+    axis: Literal["train_size", "holdout_size"],
+    n_repeats: int,
+) -> list[SweepSplit]:
+    return [
+        split
+        for split in splits
+        if split.axis == axis and split.repeat < n_repeats
+    ]
+
+
 def build_train_size_splits(
     n_total: int,
     *,
@@ -202,17 +215,26 @@ def run_gating_method_sweep(
     *,
     method: GatingMethodSpec,
     train_sizes: Sequence[int],
+    train_splits: Sequence[SweepSplit] | None = None,
 ) -> list[MethodSweepRow]:
     n_total = len(dataset)
     if n_total < 2:
         raise ValueError("Need at least 2 samples to run a gating method sweep")
 
     rows: list[MethodSweepRow] = []
-    splits = build_train_size_splits(
-        n_total,
-        train_sizes=train_sizes,
-        n_repeats=method.n_repeats,
-        seed=method.seed,
+    splits = (
+        _limit_splits_by_repeats(
+            train_splits,
+            axis="train_size",
+            n_repeats=method.n_repeats,
+        )
+        if train_splits is not None
+        else build_train_size_splits(
+            n_total,
+            train_sizes=train_sizes,
+            n_repeats=method.n_repeats,
+            seed=method.seed,
+        )
     )
     valid_sizes = sorted({split.size for split in splits})
     for train_size in valid_sizes:
@@ -297,6 +319,8 @@ def run_tabular_method_sweeps(
     methods: Sequence[TabularMethodSpec],
     train_sizes: Sequence[int],
     holdout_sizes: Sequence[int] | None = None,
+    train_splits: Sequence[SweepSplit] | None = None,
+    holdout_splits: Sequence[SweepSplit] | None = None,
 ) -> list[MethodSweepRow]:
     feature_cols = _mlip_columns(df)
     if not feature_cols:
@@ -312,11 +336,19 @@ def run_tabular_method_sweeps(
     rows: list[MethodSweepRow] = []
     for method in methods:
         if method.sweep_axis == "train_size":
-            splits = build_train_size_splits(
-                len(X),
-                train_sizes=train_sizes,
-                n_repeats=method.n_repeats,
-                seed=method.seed,
+            splits = (
+                _limit_splits_by_repeats(
+                    train_splits,
+                    axis="train_size",
+                    n_repeats=method.n_repeats,
+                )
+                if train_splits is not None
+                else build_train_size_splits(
+                    len(X),
+                    train_sizes=train_sizes,
+                    n_repeats=method.n_repeats,
+                    seed=method.seed,
+                )
             )
             results = _train_size_sweep(
                 method.evaluator,
@@ -336,11 +368,19 @@ def run_tabular_method_sweeps(
                 for row in results.to_dict("records")
             )
         else:
-            splits = build_holdout_size_splits(
-                len(X),
-                holdout_sizes=holdout_sizes,
-                n_repeats=method.n_repeats,
-                seed=method.seed,
+            splits = (
+                _limit_splits_by_repeats(
+                    holdout_splits,
+                    axis="holdout_size",
+                    n_repeats=method.n_repeats,
+                )
+                if holdout_splits is not None
+                else build_holdout_size_splits(
+                    len(X),
+                    holdout_sizes=holdout_sizes,
+                    n_repeats=method.n_repeats,
+                    seed=method.seed,
+                )
             )
             results = _holdout_size_sweep(
                 method.evaluator,
@@ -371,12 +411,29 @@ def run_all_method_sweeps(
     tabular_train_sizes: Sequence[int],
     tabular_holdout_sizes: Sequence[int] | None = None,
     gating_train_sizes: Sequence[int],
+    shared_train_seed: int = 0,
 ) -> list[MethodSweepRow]:
+    train_size_methods = [m for m in tabular_methods if m.sweep_axis == "train_size"]
+    max_train_repeats = max(
+        [m.n_repeats for m in train_size_methods] + [m.n_repeats for m in gating_methods],
+        default=0,
+    )
+    shared_train_splits = (
+        build_train_size_splits(
+            len(gating_dataset),
+            train_sizes=sorted(set(tabular_train_sizes).union(gating_train_sizes)),
+            n_repeats=max_train_repeats,
+            seed=shared_train_seed,
+        )
+        if max_train_repeats > 0
+        else []
+    )
     rows = run_tabular_method_sweeps(
         wide_df,
         methods=tabular_methods,
         train_sizes=tabular_train_sizes,
         holdout_sizes=tabular_holdout_sizes,
+        train_splits=shared_train_splits,
     )
     for method in gating_methods:
         rows.extend(
@@ -384,6 +441,7 @@ def run_all_method_sweeps(
                 gating_dataset,
                 method=method,
                 train_sizes=gating_train_sizes,
+                train_splits=shared_train_splits,
             )
         )
     return rows

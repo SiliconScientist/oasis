@@ -149,6 +149,7 @@ class ExperimentTests(unittest.TestCase):
             gating_methods=gating_methods,
             tabular_train_sizes=[2, 3],
             gating_train_sizes=[2],
+            shared_train_seed=17,
         )
         self.assertTrue(any(row.method == "ridge" for row in rows))
         self.assertTrue(any(row.method == "residual" for row in rows))

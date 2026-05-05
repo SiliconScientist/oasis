@@ -147,6 +147,7 @@ def main() -> None:
             gating_methods=gating_methods,
             tabular_train_sizes=tabular_train_sizes,
             gating_train_sizes=moe_train_sizes,
+            shared_train_seed=cfg.seed or 0,
         )
         all_methods_csv = save_method_sweep_rows_csv(
             all_method_rows,
