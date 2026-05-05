@@ -36,6 +36,19 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
+    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
+    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
+    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
+    if reaction_contains_filter is not None:
+        reaction_contains_filter = [s for s in reaction_contains_filter if s]
+        if not reaction_contains_filter:
+            reaction_contains_filter = None
+    wide_df = filter_wide_predictions(
+        wide_df,
+        adsorbate_filter=adsorbate_filter,
+        anomaly_filter=anomaly_filter,
+        reaction_contains_filter=reaction_contains_filter,
+    )
     atoms_list = load_corresponding_atoms(wide_df, cfg.mlip.dataset)
     graphs = build_adsorption_graphs(
         wide_df,
@@ -141,22 +154,6 @@ def main() -> None:
         )
         print(f"Saved combined method sweep CSV: {all_methods_csv}")
 
-    ###
-
-    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
-    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
-    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
-    if reaction_contains_filter is not None:
-        reaction_contains_filter = [s for s in reaction_contains_filter if s]
-        if not reaction_contains_filter:
-            reaction_contains_filter = None
-    wide_df = filter_wide_predictions(
-        wide_df,
-        adsorbate_filter=adsorbate_filter,
-        anomaly_filter=anomaly_filter,
-        reaction_contains_filter=reaction_contains_filter,
-    )
-
     suffix_parts: list[str] = []
     if adsorbate_filter:
         suffix_parts.append(f"adsorbate_{adsorbate_filter}")
@@ -188,7 +185,7 @@ def main() -> None:
         method_sweeps=method_sweeps,
         output_path=output_dir / "learning_curve.png",
     )
-    # print(f"Saved parity plot: {saved_path}")
+    print(f"Saved parity plot: {saved_path}")
     print(f"Saved learning curve plot: {output_dir / 'learning_curve.png'}")
 
 
