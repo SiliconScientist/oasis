@@ -8,13 +8,17 @@ from ase import Atoms
 import polars as pl
 
 from oasis.dataset import GatingDataset
-from oasis.exp import run_data_fraction_sweep, save_sweep_points_csv
+from oasis.exp import (
+    build_learning_curve_sweeps,
+    run_data_fraction_sweep,
+    save_sweep_points_csv,
+)
 from oasis.graph import build_adsorption_graphs
 from oasis.model import BaselineMLPGatedMoE
 from oasis.train import TrainConfig
 
 
-def _example_dataset() -> GatingDataset:
+def _example_dataset() -> tuple[GatingDataset, pl.DataFrame]:
     wide_df = pl.DataFrame(
         {
             "reaction": [
@@ -42,12 +46,12 @@ def _example_dataset() -> GatingDataset:
         Atoms("Pt2H", positions=[[0, 0, 0], [2.6, 0, 0], [1.4, 0, 1.1]], cell=[12, 12, 12], pbc=[False, False, False]),
     ]
     graphs = build_adsorption_graphs(wide_df, atoms_list, cutoff=3.0)
-    return GatingDataset(graphs, wide_df)
+    return GatingDataset(graphs, wide_df), wide_df
 
 
 class ExperimentTests(unittest.TestCase):
     def test_data_fraction_sweep_and_csv(self) -> None:
-        dataset = _example_dataset()
+        dataset, _ = _example_dataset()
         with TemporaryDirectory() as tmpdir:
             sweep_points, train_results = run_data_fraction_sweep(
                 dataset,
@@ -73,6 +77,27 @@ class ExperimentTests(unittest.TestCase):
             df = pl.read_csv(csv_path)
             self.assertEqual(df.height, 3)
             self.assertEqual(df["train_size"].to_list(), [1, 3, 4])
+
+    def test_build_learning_curve_sweeps(self) -> None:
+        _, wide_df = _example_dataset()
+        sweep_results = build_learning_curve_sweeps(
+            wide_df,
+            min_train=2,
+            max_train=3,
+            n_repeats=1,
+            use_trim=False,
+            use_ridge=True,
+            use_kernel_ridge=False,
+            use_lasso=False,
+            use_elastic=False,
+            use_residual=True,
+            use_linearization=True,
+        )
+        self.assertIsNotNone(sweep_results["ridge_df"])
+        self.assertIsNone(sweep_results["kernel_ridge_df"])
+        self.assertIsNotNone(sweep_results["resid_df"])
+        self.assertIsNotNone(sweep_results["linear_df"])
+        self.assertEqual(sweep_results["ridge_df"]["n_train"].tolist(), [2, 3])
 
 
 if __name__ == "__main__":

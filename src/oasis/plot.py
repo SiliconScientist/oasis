@@ -7,16 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
+from oasis.exp import build_learning_curve_sweeps
 
 try:
     import polars as pl
 except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
     pl = None
-
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
-from sklearn.metrics import mean_squared_error
-
 
 _MLIP_DISPLAY_NAMES = {
     "7net-omni": "7Net-Omni",
@@ -212,279 +208,6 @@ def moe_learning_speed_plot(
     return output_path
 
 
-def _trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
-    """
-    Compute per-sample mean after dropping MLIP predictions outside 1 std from row mean.
-    """
-    row_means = X_corrected.mean(axis=1)
-    row_stds = X_corrected.std(axis=1)
-    # Broadcast masks; keep all if std is zero or mask would be empty.
-    mask = np.abs(X_corrected - row_means[:, None]) <= row_stds[:, None]
-    empty_mask = mask.sum(axis=1) == 0
-    if empty_mask.any():
-        mask[empty_mask] = True
-    return (X_corrected * mask).sum(axis=1) / mask.sum(axis=1)
-
-
-def _sweep_model(
-    model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    results = []
-    max_train = min(max_train, len(X) - 1)
-    for n_train in range(min_train, max_train + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
-            model = model_factory()
-            model.fit(X[train_idx], y[train_idx])
-            X_test = X[test_idx]
-            preds = model.predict(X_test)
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
-def _sweep_model_trimmed(
-    model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    """
-    Fit the model, drop test samples with large contribution z-scores, and refit.
-    """
-    results = []
-    max_train = min(max_train, len(X) - 1)
-    for n_train in range(min_train, max_train + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
-            model = model_factory()
-            model.fit(X[train_idx], y[train_idx])
-
-            X_test = X[test_idx]
-            preds = model.predict(X_test)
-
-            # Compute contribution z-scores per sample
-            w = model.coef_
-            contrib = X_test * w
-            mu = contrib.mean()
-            sigma = contrib.std() if contrib.std() > 0 else 1.0
-            z = (contrib - mu) / sigma
-            keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-            if keep_mask.sum() == 0:
-                keep_mask = np.ones(len(X_test), dtype=bool)
-
-            preds_eval = preds[keep_mask]
-            y_eval = y[test_idx][keep_mask]
-            rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
-
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
-def _residual_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
-
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            residuals = y_hold[:, None] - X_hold
-            mean_residuals = residuals.mean(axis=0)
-
-            X_corrected = X[keep_idx] + mean_residuals
-            preds = X_corrected.mean(axis=1)
-
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
-
-        results.append(
-            {
-                "n_holdout": n_hold,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
-def _residual_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    """
-    Residual correction with per-sample outlier MLIP removal before averaging.
-    """
-    results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
-
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            residuals = y_hold[:, None] - X_hold
-            mean_residuals = residuals.mean(axis=0)
-
-            X_corrected = X[keep_idx] + mean_residuals
-            preds = _trimmed_mean_predictions(X_corrected)
-
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
-
-        results.append(
-            {
-                "n_holdout": n_hold,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
-def _linearization_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
-
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            Xh = np.asarray(X_hold)
-            yh = np.asarray(y_hold).reshape(-1, 1)
-
-            if Xh.ndim == 1:
-                mu_h = Xh.reshape(-1, 1)
-            else:
-                mu_h = Xh.mean(axis=1, keepdims=True)
-
-            lr = LinearRegression().fit(mu_h, yh)
-            a = float(lr.coef_.ravel()[0])
-            b = float(lr.intercept_.ravel()[0])
-
-            X_linearized = a * X + b
-            preds = X_linearized[keep_idx].mean(axis=1)
-
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
-
-        results.append(
-            {
-                "n_holdout": n_hold,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
-def _linearization_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
-    n_repeats: int,
-    rng: np.random.Generator,
-) -> pd.DataFrame:
-    """
-    Linearize against trimmed holdout means, then trim ensemble averaging.
-    """
-    results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
-        rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
-
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            Xh = np.asarray(X_hold)
-            yh = np.asarray(y_hold).reshape(-1, 1)
-
-            if Xh.ndim == 1:
-                mu_h = Xh.reshape(-1, 1)
-            else:
-                mu_h = _trimmed_mean_predictions(Xh).reshape(-1, 1)
-
-            lr = LinearRegression().fit(mu_h, yh)
-            a = float(lr.coef_.ravel()[0])
-            b = float(lr.intercept_.ravel()[0])
-
-            X_linearized = a * X + b
-            preds = _trimmed_mean_predictions(X_linearized[keep_idx])
-
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
-
-        results.append(
-            {
-                "n_holdout": n_hold,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
 def learning_curve_plot(
     df: pl.DataFrame,
     output_path: str | Path,
@@ -497,9 +220,6 @@ def learning_curve_plot(
     """
     Reproduce the ensemble RMSE sweeps from the notebook's final cell and plot the overlay.
     """
-    feature_cols = _mlip_columns(df)
-    target_col = "reference_ads_eng"
-
     use_trim = cfg.plot.trim if cfg else True
     use_ridge = cfg.plot.use_ridge if cfg else True
     use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
@@ -512,146 +232,30 @@ def learning_curve_plot(
     min_train_val = min_train if min_train is not None else cfg_min_train
     max_train_val = max_train if max_train is not None else cfg_max_train
 
-    if not feature_cols:
-        raise ValueError(
-            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
-        )
-    if df.height <= 5:
-        raise ValueError("Not enough data to evaluate (need >5 samples).")
-
-    X = df.select(feature_cols).to_numpy()
-    y = df[target_col].to_numpy()
-
-    rng_ridge = np.random.default_rng(41)
-    rng_ridge_trimmed = np.random.default_rng(42)
-    rng_lasso = np.random.default_rng(123)
-    rng_lasso_trimmed = np.random.default_rng(124)
-    rng_elastic = np.random.default_rng(321)
-    rng_elastic_trimmed = np.random.default_rng(322)
-    rng_kernel_ridge = np.random.default_rng(2718)
-    rng_resid = np.random.default_rng(999)
-    rng_linear = np.random.default_rng(2024)
-    rng_resid_trimmed = np.random.default_rng(77)
-    rng_linear_trimmed = np.random.default_rng(2025)
-
-    ridge_df = (
-        _sweep_model(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge,
-        )
-        if use_ridge
-        else None
+    sweep_results = build_learning_curve_sweeps(
+        df,
+        min_train=min_train_val,
+        max_train=max_train_val,
+        n_repeats=n_repeats,
+        use_trim=use_trim,
+        use_ridge=use_ridge,
+        use_kernel_ridge=use_kernel_ridge,
+        use_lasso=use_lasso,
+        use_elastic=use_elastic,
+        use_residual=use_residual,
+        use_linearization=use_linearization,
     )
-    kernel_ridge_df = (
-        _sweep_model(
-            lambda: KernelRidge(alpha=1.0, kernel="rbf"),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_kernel_ridge,
-        )
-        if use_kernel_ridge
-        else None
-    )
-    ridge_trimmed_df = (
-        _sweep_model_trimmed(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge_trimmed,
-            z_thresh=1.0,
-        )
-        if use_trim and use_ridge
-        else None
-    )
-    lasso_df = (
-        _sweep_model(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_lasso,
-        )
-        if use_lasso
-        else None
-    )
-    lasso_trimmed_df = (
-        _sweep_model_trimmed(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_lasso_trimmed,
-            z_thresh=1.0,
-        )
-        if use_trim and use_lasso
-        else None
-    )
-    elastic_df = (
-        _sweep_model(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_elastic,
-        )
-        if use_elastic
-        else None
-    )
-    elastic_trimmed_df = (
-        _sweep_model_trimmed(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_elastic_trimmed,
-            z_thresh=1.0,
-        )
-        if use_trim and use_elastic
-        else None
-    )
-    resid_df = (
-        _residual_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_resid)
-        if use_residual
-        else None
-    )
-    resid_trimmed_df = (
-        _residual_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_resid_trimmed
-        )
-        if use_trim and use_residual
-        else None
-    )
-    linear_df = (
-        _linearization_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_linear)
-        if use_linearization
-        else None
-    )
-    linear_trimmed_df = (
-        _linearization_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_linear_trimmed
-        )
-        if use_trim and use_linearization
-        else None
-    )
+    ridge_df = sweep_results["ridge_df"]
+    kernel_ridge_df = sweep_results["kernel_ridge_df"]
+    ridge_trimmed_df = sweep_results["ridge_trimmed_df"]
+    lasso_df = sweep_results["lasso_df"]
+    lasso_trimmed_df = sweep_results["lasso_trimmed_df"]
+    elastic_df = sweep_results["elastic_df"]
+    elastic_trimmed_df = sweep_results["elastic_trimmed_df"]
+    resid_df = sweep_results["resid_df"]
+    resid_trimmed_df = sweep_results["resid_trimmed_df"]
+    linear_df = sweep_results["linear_df"]
+    linear_trimmed_df = sweep_results["linear_trimmed_df"]
     fig, ax = plt.subplots(figsize=(7, 4))
     if ridge_df is not None:
         ax.plot(

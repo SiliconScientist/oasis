@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import sys
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
-from oasis.dataset import GatingDataset, collate_gating_samples
-from oasis.evaluate import evaluate_models_and_baselines
-from oasis.graph import batch_adsorption_graphs, build_adsorption_graphs
+from oasis.dataset import GatingDataset
+from oasis.exp import run_data_fraction_sweep, save_sweep_points_csv
+from oasis.graph import build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.model import BaselineMLPGatedMoE, SchNetGatedMoE
-from oasis.plot import learning_curve_plot, parity_plot
+from oasis.plot import learning_curve_plot, moe_learning_speed_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
-from oasis.train import build_gating_dataloaders
+from oasis.train import TrainConfig
 
 
 def main() -> None:
@@ -35,45 +36,78 @@ def main() -> None:
         cutoff=moe_cfg.graph.cutoff,
         max_neighbors=moe_cfg.graph.max_neighbors,
     )
-    graph_batch = batch_adsorption_graphs(graphs)
     gating_dataset = GatingDataset(graphs, wide_df)
-    debug_batch = collate_gating_samples(
-        [gating_dataset[idx] for idx in range(min(2, len(gating_dataset)))]
-    )
-    baseline_gate = BaselineMLPGatedMoE(
-        n_experts=debug_batch.mlip_energies.shape[1],
-        hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
-        dropout=moe_cfg.baseline_gate.dropout,
-    )
-    baseline_output = baseline_gate(debug_batch.mlip_energies)
-    schnet_gate = SchNetGatedMoE(
-        n_experts=debug_batch.mlip_energies.shape[1],
-        structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
-        n_interactions=moe_cfg.schnet_gate.n_interactions,
-        n_rbf=moe_cfg.graph.n_rbf,
-        cutoff=moe_cfg.graph.cutoff,
-        gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
-        dropout=moe_cfg.schnet_gate.dropout,
-    )
-    schnet_output = schnet_gate(
-        debug_batch.graph_batch,
-        debug_batch.mlip_energies,
-    )
-    eval_loader, _ = build_gating_dataloaders(
-        gating_dataset,
-        batch_size=min(8, len(gating_dataset)),
-        val_fraction=moe_cfg.train.val_fraction,
-        seed=cfg.seed or 0,
-    )
-    eval_report = evaluate_models_and_baselines(
-        debug_batch,
-        data_loader=eval_loader,
-        models=[
-            ("mlp_gate", baseline_gate),
-            ("schnet_gate", schnet_gate),
-        ],
-        device="cpu",
-    )
+    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    baseline_csv = output_dir / "moe_baseline_sweep.csv"
+    schnet_csv = output_dir / "moe_schnet_sweep.csv"
+
+    if cfg.train:
+        sweep_train_config = TrainConfig(
+            batch_size=moe_cfg.train.batch_size,
+            epochs=moe_cfg.train.epochs,
+            learning_rate=moe_cfg.train.learning_rate,
+            weight_decay=moe_cfg.train.weight_decay,
+            val_fraction=moe_cfg.train.val_fraction,
+            random_seed=cfg.seed or 0,
+            checkpoint_dir=None,
+            device=moe_cfg.train.device,
+        )
+        n_experts = len(gating_dataset[0].graph.mlip_names)
+        fractions = (0.1, 0.2, 0.4, 0.6, 0.8, 1.0)
+
+        baseline_sweep_points, _ = run_data_fraction_sweep(
+            gating_dataset,
+            model_factory=lambda: BaselineMLPGatedMoE(
+                n_experts=n_experts,
+                hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
+                dropout=moe_cfg.baseline_gate.dropout,
+            ),
+            fractions=fractions,
+            train_config=sweep_train_config,
+        )
+        baseline_csv = save_sweep_points_csv(
+            baseline_sweep_points,
+            baseline_csv,
+        )
+
+        schnet_sweep_points, _ = run_data_fraction_sweep(
+            gating_dataset,
+            model_factory=lambda: SchNetGatedMoE(
+                n_experts=n_experts,
+                structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
+                n_interactions=moe_cfg.schnet_gate.n_interactions,
+                n_rbf=moe_cfg.graph.n_rbf,
+                cutoff=moe_cfg.graph.cutoff,
+                gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
+                dropout=moe_cfg.schnet_gate.dropout,
+            ),
+            fractions=fractions,
+            train_config=replace(sweep_train_config, checkpoint_dir=None),
+        )
+        schnet_csv = save_sweep_points_csv(
+            schnet_sweep_points,
+            schnet_csv,
+        )
+        print(f"Saved MOE baseline sweep CSV: {baseline_csv}")
+        print(f"Saved MOE SchNet sweep CSV: {schnet_csv}")
+
+    if baseline_csv.is_file():
+        baseline_plot = moe_learning_speed_plot(
+            baseline_csv,
+            output_dir / "moe_baseline_learning_speed.png",
+            metric="val_rmse",
+            title="MOE baseline gate learning speed",
+        )
+        print(f"Saved MOE baseline sweep plot: {baseline_plot}")
+    if schnet_csv.is_file():
+        schnet_plot = moe_learning_speed_plot(
+            schnet_csv,
+            output_dir / "moe_schnet_learning_speed.png",
+            metric="val_rmse",
+            title="MOE SchNet gate learning speed",
+        )
+        print(f"Saved MOE SchNet sweep plot: {schnet_plot}")
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -89,8 +123,6 @@ def main() -> None:
         reaction_contains_filter=reaction_contains_filter,
     )
 
-    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
-    output_dir.mkdir(parents=True, exist_ok=True)
     suffix_parts: list[str] = []
     if adsorbate_filter:
         suffix_parts.append(f"adsorbate_{adsorbate_filter}")
@@ -102,53 +134,6 @@ def main() -> None:
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
-
-    print(
-        f"Processed {len(result_files)} MLIP files"
-        f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
-        f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
-        f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
-        f" -> parity plot: {saved_path}"
-    )
-    print(f"Rows in combined parity dataset: {len(wide_df)}")
-    print(f"Loaded {len(atoms_list)} corresponding adsorbed Atoms objects")
-    print(
-        f"Built {len(graphs)} adsorption graphs"
-        f" with {graph_batch.z.shape[0]} total nodes"
-        f" and {graph_batch.edge_index.shape[1]} total edges"
-    )
-    print(
-        f"Graph targets shape: {tuple(graph_batch.y.shape)}, "
-        f"MLIP feature shape: {tuple(graph_batch.mlip_energies.shape)}"
-    )
-    print(
-        f"Gating dataset size: {len(gating_dataset)}, "
-        f"debug batch target shape: {tuple(debug_batch.target_ads_eng.shape)}"
-    )
-    print(
-        f"Debug batch graph nodes: {debug_batch.graph_batch.z.shape[0]}, "
-        f"expert labels keys: {sorted(debug_batch.expert_labels[0]) if debug_batch.expert_labels else []}"
-    )
-    print(
-        f"Baseline gate logits shape: {tuple(baseline_output.logits.shape)}, "
-        f"weights shape: {tuple(baseline_output.weights.shape)}, "
-        f"prediction shape: {tuple(baseline_output.prediction.shape)}"
-    )
-    print(
-        f"SchNet gate logits shape: {tuple(schnet_output.logits.shape)}, "
-        f"weights shape: {tuple(schnet_output.weights.shape)}, "
-        f"prediction shape: {tuple(schnet_output.prediction.shape)}"
-    )
-    print(
-        f"Best single expert: {eval_report.baselines.best_single_expert_name}, "
-        f"RMSE={eval_report.baselines.best_single_expert.rmse:.4f}"
-    )
-    print(
-        f"Mean ensemble RMSE={eval_report.baselines.mean_ensemble.rmse:.4f}, "
-        f"MLP gate RMSE={eval_report.models[0].metrics.rmse:.4f}, "
-        f"SchNet gate RMSE={eval_report.models[1].metrics.rmse:.4f}"
-    )
-
     learning_curve_plot(
         cfg=cfg,
         df=wide_df,
