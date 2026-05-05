@@ -98,33 +98,33 @@ def main() -> None:
         if plot_moe_baseline:
             gating_methods.append(
                 GatingMethodSpec(
-                name="moe_baseline",
-                model_factory=lambda: BaselineMLPGatedMoE(
-                    n_experts=n_experts,
-                    hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
-                    dropout=moe_cfg.baseline_gate.dropout,
-                ),
-                train_config=moe_train_config,
-                n_repeats=moe_repeats,
-                seed=(cfg.seed or 0) + 101,
+                    name="moe_baseline",
+                    model_factory=lambda: BaselineMLPGatedMoE(
+                        n_experts=n_experts,
+                        hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
+                        dropout=moe_cfg.baseline_gate.dropout,
+                    ),
+                    train_config=moe_train_config,
+                    n_repeats=moe_repeats,
+                    seed=(cfg.seed or 0) + 101,
                 )
             )
         if plot_moe_schnet:
             gating_methods.append(
                 GatingMethodSpec(
-                name="moe_schnet",
-                model_factory=lambda: SchNetGatedMoE(
-                    n_experts=n_experts,
-                    structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
-                    n_interactions=moe_cfg.schnet_gate.n_interactions,
-                    n_rbf=moe_cfg.graph.n_rbf,
-                    cutoff=moe_cfg.graph.cutoff,
-                    gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
-                    dropout=moe_cfg.schnet_gate.dropout,
-                ),
-                train_config=replace(moe_train_config, checkpoint_dir=None),
-                n_repeats=moe_repeats,
-                seed=(cfg.seed or 0) + 202,
+                    name="moe_schnet",
+                    model_factory=lambda: SchNetGatedMoE(
+                        n_experts=n_experts,
+                        structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
+                        n_interactions=moe_cfg.schnet_gate.n_interactions,
+                        n_rbf=moe_cfg.graph.n_rbf,
+                        cutoff=moe_cfg.graph.cutoff,
+                        gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
+                        dropout=moe_cfg.schnet_gate.dropout,
+                    ),
+                    train_config=replace(moe_train_config, checkpoint_dir=None),
+                    n_repeats=moe_repeats,
+                    seed=(cfg.seed or 0) + 202,
                 )
             )
         all_method_rows = run_all_method_sweeps(
@@ -140,6 +140,8 @@ def main() -> None:
             all_methods_csv,
         )
         print(f"Saved combined method sweep CSV: {all_methods_csv}")
+
+    ###
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
@@ -166,6 +168,9 @@ def main() -> None:
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
+
+    ###
+
     method_sweeps = pl.read_csv(all_methods_csv) if all_methods_csv.is_file() else None
     if method_sweeps is not None:
         excluded_methods: list[str] = []
@@ -174,14 +179,16 @@ def main() -> None:
         if not plot_moe_schnet:
             excluded_methods.append("moe_schnet")
         if excluded_methods:
-            method_sweeps = method_sweeps.filter(~pl.col("method").is_in(excluded_methods))
+            method_sweeps = method_sweeps.filter(
+                ~pl.col("method").is_in(excluded_methods)
+            )
     learning_curve_plot(
         cfg=cfg,
         df=wide_df,
         method_sweeps=method_sweeps,
         output_path=output_dir / "learning_curve.png",
     )
-    print(f"Saved parity plot: {saved_path}")
+    # print(f"Saved parity plot: {saved_path}")
     print(f"Saved learning curve plot: {output_dir / 'learning_curve.png'}")
 
 
