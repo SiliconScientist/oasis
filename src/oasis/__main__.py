@@ -4,10 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 
+import polars as pl
+
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.dataset import GatingDataset
-from oasis.exp import run_data_fraction_sweep, save_sweep_points_csv
+from oasis.exp import (
+    GatingMethodSpec,
+    default_tabular_method_specs,
+    run_all_method_sweeps,
+    save_method_sweep_rows_csv,
+)
 from oasis.graph import build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
 from oasis.model import BaselineMLPGatedMoE, SchNetGatedMoE
@@ -39,11 +46,10 @@ def main() -> None:
     gating_dataset = GatingDataset(graphs, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
-    baseline_csv = output_dir / "moe_baseline_sweep.csv"
-    schnet_csv = output_dir / "moe_schnet_sweep.csv"
+    all_methods_csv = output_dir / "all_method_sweeps.csv"
 
     if cfg.train:
-        sweep_train_config = TrainConfig(
+        moe_train_config = TrainConfig(
             batch_size=moe_cfg.train.batch_size,
             epochs=moe_cfg.train.epochs,
             learning_rate=moe_cfg.train.learning_rate,
@@ -54,60 +60,90 @@ def main() -> None:
             device=moe_cfg.train.device,
         )
         n_experts = len(gating_dataset[0].graph.mlip_names)
-        fractions = (0.1, 0.2, 0.4, 0.6, 0.8, 1.0)
-
-        baseline_sweep_points, _ = run_data_fraction_sweep(
-            gating_dataset,
-            model_factory=lambda: BaselineMLPGatedMoE(
-                n_experts=n_experts,
-                hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
-                dropout=moe_cfg.baseline_gate.dropout,
+        tabular_methods = default_tabular_method_specs(
+            use_trim=cfg.plot.trim if cfg.plot else True,
+            use_ridge=cfg.plot.use_ridge if cfg.plot else True,
+            use_kernel_ridge=cfg.plot.use_kernel_ridge if cfg.plot else True,
+            use_lasso=cfg.plot.use_lasso if cfg.plot else True,
+            use_elastic=cfg.plot.use_elastic_net if cfg.plot else True,
+            use_residual=cfg.plot.use_residual if cfg.plot else True,
+            use_linearization=cfg.plot.use_linearization if cfg.plot else True,
+            n_repeats=cfg.plot.n_repeats if cfg.plot else 30,
+        )
+        available_train = len(gating_dataset) - 1
+        moe_train_sizes = sorted(
+            {
+                max(1, int(round(available_train * fraction)))
+                for fraction in (0.1, 0.25, 0.5, 0.75, 1.0)
+            }
+        )
+        moe_repeats = max(1, min(5, (cfg.plot.n_repeats if cfg.plot else 30) // 5))
+        gating_methods = [
+            GatingMethodSpec(
+                name="moe_baseline",
+                model_factory=lambda: BaselineMLPGatedMoE(
+                    n_experts=n_experts,
+                    hidden_dims=tuple(moe_cfg.baseline_gate.hidden_dims),
+                    dropout=moe_cfg.baseline_gate.dropout,
+                ),
+                train_config=moe_train_config,
+                n_repeats=moe_repeats,
+                seed=(cfg.seed or 0) + 101,
             ),
-            fractions=fractions,
-            train_config=sweep_train_config,
-        )
-        baseline_csv = save_sweep_points_csv(
-            baseline_sweep_points,
-            baseline_csv,
-        )
-
-        schnet_sweep_points, _ = run_data_fraction_sweep(
-            gating_dataset,
-            model_factory=lambda: SchNetGatedMoE(
-                n_experts=n_experts,
-                structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
-                n_interactions=moe_cfg.schnet_gate.n_interactions,
-                n_rbf=moe_cfg.graph.n_rbf,
-                cutoff=moe_cfg.graph.cutoff,
-                gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
-                dropout=moe_cfg.schnet_gate.dropout,
+            GatingMethodSpec(
+                name="moe_schnet",
+                model_factory=lambda: SchNetGatedMoE(
+                    n_experts=n_experts,
+                    structure_hidden_dim=moe_cfg.schnet_gate.structure_hidden_dim,
+                    n_interactions=moe_cfg.schnet_gate.n_interactions,
+                    n_rbf=moe_cfg.graph.n_rbf,
+                    cutoff=moe_cfg.graph.cutoff,
+                    gate_hidden_dims=tuple(moe_cfg.schnet_gate.gate_hidden_dims),
+                    dropout=moe_cfg.schnet_gate.dropout,
+                ),
+                train_config=replace(moe_train_config, checkpoint_dir=None),
+                n_repeats=moe_repeats,
+                seed=(cfg.seed or 0) + 202,
             ),
-            fractions=fractions,
-            train_config=replace(sweep_train_config, checkpoint_dir=None),
+        ]
+        all_method_rows = run_all_method_sweeps(
+            wide_df=wide_df,
+            gating_dataset=gating_dataset,
+            tabular_methods=tabular_methods,
+            gating_methods=gating_methods,
+            tabular_train_sizes=list(range(cfg.plot.min_train, cfg.plot.max_train + 1))
+            if cfg.plot
+            else list(range(2, 11)),
+            gating_train_sizes=moe_train_sizes,
         )
-        schnet_csv = save_sweep_points_csv(
-            schnet_sweep_points,
-            schnet_csv,
+        all_methods_csv = save_method_sweep_rows_csv(
+            all_method_rows,
+            all_methods_csv,
         )
-        print(f"Saved MOE baseline sweep CSV: {baseline_csv}")
-        print(f"Saved MOE SchNet sweep CSV: {schnet_csv}")
+        print(f"Saved combined method sweep CSV: {all_methods_csv}")
 
-    if baseline_csv.is_file():
-        baseline_plot = moe_learning_speed_plot(
-            baseline_csv,
-            output_dir / "moe_baseline_learning_speed.png",
-            metric="val_rmse",
-            title="MOE baseline gate learning speed",
-        )
-        print(f"Saved MOE baseline sweep plot: {baseline_plot}")
-    if schnet_csv.is_file():
-        schnet_plot = moe_learning_speed_plot(
-            schnet_csv,
-            output_dir / "moe_schnet_learning_speed.png",
-            metric="val_rmse",
-            title="MOE SchNet gate learning speed",
-        )
-        print(f"Saved MOE SchNet sweep plot: {schnet_plot}")
+    if all_methods_csv.is_file():
+        sweep_df = pl.read_csv(all_methods_csv)
+        baseline_df = sweep_df.filter(pl.col("method") == "moe_baseline")
+        schnet_df = sweep_df.filter(pl.col("method") == "moe_schnet")
+        if baseline_df.height > 0:
+            baseline_plot = moe_learning_speed_plot(
+                baseline_df,
+                output_dir / "moe_baseline_learning_speed.png",
+                x_col="size",
+                metric="rmse_mean",
+                title="MOE baseline gate learning speed",
+            )
+            print(f"Saved MOE baseline sweep plot: {baseline_plot}")
+        if schnet_df.height > 0:
+            schnet_plot = moe_learning_speed_plot(
+                schnet_df,
+                output_dir / "moe_schnet_learning_speed.png",
+                x_col="size",
+                metric="rmse_mean",
+                title="MOE SchNet gate learning speed",
+            )
+            print(f"Saved MOE SchNet sweep plot: {schnet_plot}")
 
     adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
     anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None

@@ -9,8 +9,12 @@ import polars as pl
 
 from oasis.dataset import GatingDataset
 from oasis.exp import (
+    GatingMethodSpec,
     build_learning_curve_sweeps,
+    default_tabular_method_specs,
+    run_all_method_sweeps,
     run_data_fraction_sweep,
+    save_method_sweep_rows_csv,
     save_sweep_points_csv,
 )
 from oasis.graph import build_adsorption_graphs
@@ -98,6 +102,55 @@ class ExperimentTests(unittest.TestCase):
         self.assertIsNotNone(sweep_results["resid_df"])
         self.assertIsNotNone(sweep_results["linear_df"])
         self.assertEqual(sweep_results["ridge_df"]["n_train"].tolist(), [2, 3])
+
+    def test_run_all_method_sweeps_and_save_csv(self) -> None:
+        dataset, wide_df = _example_dataset()
+        tabular_methods = default_tabular_method_specs(
+            use_trim=False,
+            use_ridge=True,
+            use_kernel_ridge=False,
+            use_lasso=False,
+            use_elastic=False,
+            use_residual=True,
+            use_linearization=False,
+            n_repeats=1,
+        )
+        gating_methods = [
+            GatingMethodSpec(
+                name="moe_baseline",
+                model_factory=lambda: BaselineMLPGatedMoE(
+                    n_experts=2,
+                    hidden_dims=(8,),
+                ),
+                train_config=TrainConfig(
+                    batch_size=2,
+                    epochs=1,
+                    learning_rate=1e-2,
+                    checkpoint_dir=None,
+                    device="cpu",
+                ),
+                n_repeats=1,
+                seed=7,
+            )
+        ]
+        rows = run_all_method_sweeps(
+            wide_df=wide_df,
+            gating_dataset=dataset,
+            tabular_methods=tabular_methods,
+            gating_methods=gating_methods,
+            tabular_train_sizes=[2, 3],
+            gating_train_sizes=[2],
+        )
+        self.assertTrue(any(row.method == "ridge" for row in rows))
+        self.assertTrue(any(row.method == "residual" for row in rows))
+        self.assertTrue(any(row.method == "moe_baseline" for row in rows))
+
+        with TemporaryDirectory() as tmpdir:
+            csv_path = save_method_sweep_rows_csv(rows, Path(tmpdir) / "all_methods.csv")
+            self.assertTrue(csv_path.is_file())
+            df = pl.read_csv(csv_path)
+            self.assertIn("method", df.columns)
+            self.assertIn("rmse_mean", df.columns)
 
 
 if __name__ == "__main__":

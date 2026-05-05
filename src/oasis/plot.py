@@ -147,16 +147,18 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
 
 def _coerce_sweep_dataframe(
     sweep_data: Any,
-) -> pd.DataFrame:
+) -> Any:
     if isinstance(sweep_data, pd.DataFrame):
         return sweep_data.copy()
     if isinstance(sweep_data, (str, Path)):
         path = Path(sweep_data)
         if path.suffix.lower() == ".csv":
+            if pl is not None:
+                return pl.read_csv(path)
             return pd.read_csv(path)
         raise ValueError(f"Unsupported sweep file format: {path.suffix}")
     if pl is not None and isinstance(sweep_data, pl.DataFrame):
-        return sweep_data.to_pandas()
+        return sweep_data.clone()
     if isinstance(sweep_data, Sequence) and not isinstance(sweep_data, (str, bytes)):
         rows: list[Mapping[str, Any] | dict[str, Any]] = []
         for item in sweep_data:
@@ -164,6 +166,8 @@ def _coerce_sweep_dataframe(
                 rows.append(vars(item))
             else:
                 rows.append(dict(item))
+        if pl is not None:
+            return pl.DataFrame(rows)
         return pd.DataFrame(rows)
     raise TypeError("sweep_data must be a DataFrame, CSV path, or row sequence")
 
@@ -172,25 +176,42 @@ def moe_learning_speed_plot(
     sweep_data: Any,
     output_path: str | Path,
     *,
+    x_col: str = "train_size",
     metric: str = "val_rmse",
     title: str = "MOE learning speed",
 ) -> Path:
     df = _coerce_sweep_dataframe(sweep_data)
-    required_columns = {"train_size", metric}
+    required_columns = {x_col, metric}
     missing_columns = required_columns - set(df.columns)
     if missing_columns:
         raise ValueError(
             f"Sweep data is missing required columns: {sorted(missing_columns)}"
         )
 
-    df = df.sort_values("train_size").reset_index(drop=True)
-    x = pd.to_numeric(df["train_size"], errors="coerce")
-    y = pd.to_numeric(df[metric], errors="coerce")
-    valid = x.notna() & y.notna()
-    if not valid.any():
-        raise ValueError(f"No numeric values available for metric '{metric}'")
-    x = x[valid]
-    y = y[valid]
+    if pl is not None and isinstance(df, pl.DataFrame):
+        cleaned = (
+            df.select(
+                [
+                    pl.col(x_col).cast(pl.Float64, strict=False).alias(x_col),
+                    pl.col(metric).cast(pl.Float64, strict=False).alias(metric),
+                ]
+            )
+            .drop_nulls()
+            .sort(x_col)
+        )
+        if cleaned.height == 0:
+            raise ValueError(f"No numeric values available for metric '{metric}'")
+        x = cleaned[x_col].to_numpy()
+        y = cleaned[metric].to_numpy()
+    else:
+        df = df.sort_values(x_col).reset_index(drop=True)
+        x = pd.to_numeric(df[x_col], errors="coerce")
+        y = pd.to_numeric(df[metric], errors="coerce")
+        valid = x.notna() & y.notna()
+        if not valid.any():
+            raise ValueError(f"No numeric values available for metric '{metric}'")
+        x = x[valid].to_numpy()
+        y = y[valid].to_numpy()
 
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(x, y, marker="o", linewidth=2, markersize=6, color="#1f77b4")

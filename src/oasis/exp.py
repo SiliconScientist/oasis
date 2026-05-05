@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 import numpy as np
 import pandas as pd
@@ -38,22 +38,59 @@ class SweepPoint:
     val_rmse: float
 
 
+@dataclass(frozen=True)
+class MethodSweepRow:
+    method: str
+    sweep_axis: str
+    size: int
+    n_repeats: int
+    rmse_mean: float
+    rmse_std: float
+
+
+@dataclass(frozen=True)
+class TabularMethodSpec:
+    name: str
+    sweep_axis: Literal["train_size", "holdout_size"]
+    evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float]
+    n_repeats: int
+    seed: int
+
+
+@dataclass(frozen=True)
+class GatingMethodSpec:
+    name: str
+    model_factory: Callable[[], nn.Module]
+    train_config: TrainConfig
+    n_repeats: int
+    seed: int
+
+
 def _mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
+
+
+def _normalize_sizes(
+    sizes: Sequence[int],
+    *,
+    max_size: int,
+) -> list[int]:
+    normalized = sorted({size for size in sizes if 0 < size <= max_size})
+    if not normalized:
+        raise ValueError("No valid sweep sizes were provided")
+    return normalized
 
 
 def _train_size_sweep(
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
+    train_sizes: Sequence[int],
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     results = []
-    max_train = min(max_train, len(X) - 1)
-    for n_train in range(min_train, max_train + 1):
+    for n_train in _normalize_sizes(train_sizes, max_size=len(X) - 1):
         rmses = []
         for _ in range(n_repeats):
             idx = np.arange(len(X))
@@ -76,14 +113,12 @@ def _holdout_size_sweep(
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
     X: np.ndarray,
     y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
+    holdout_sizes: Sequence[int],
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
+    for n_hold in _normalize_sizes(holdout_sizes, max_size=len(X) - 1):
         rmses = []
         for _ in range(n_repeats):
             idx = np.arange(len(X))
@@ -102,6 +137,397 @@ def _holdout_size_sweep(
     return pd.DataFrame(results)
 
 
+def _build_subset_loader_from_indices(
+    dataset: GatingDataset,
+    indices: Sequence[int],
+    *,
+    batch_size: int,
+    shuffle: bool,
+) -> DataLoader[GatingBatch]:
+    return _build_subset_loader(
+        Subset(dataset, list(indices)),
+        batch_size=batch_size,
+        shuffle=shuffle,
+    )
+
+
+def run_gating_method_sweep(
+    dataset: GatingDataset,
+    *,
+    method: GatingMethodSpec,
+    train_sizes: Sequence[int],
+) -> list[MethodSweepRow]:
+    n_total = len(dataset)
+    if n_total < 2:
+        raise ValueError("Need at least 2 samples to run a gating method sweep")
+
+    rows: list[MethodSweepRow] = []
+    rng = np.random.default_rng(method.seed)
+    valid_sizes = _normalize_sizes(train_sizes, max_size=n_total - 1)
+    for train_size in valid_sizes:
+        rmses: list[float] = []
+        for repeat_idx in range(method.n_repeats):
+            indices = np.arange(n_total)
+            train_idx = rng.choice(indices, size=train_size, replace=False)
+            val_idx = np.setdiff1d(indices, train_idx, assume_unique=False)
+            train_loader = _build_subset_loader_from_indices(
+                dataset,
+                train_idx.tolist(),
+                batch_size=method.train_config.batch_size,
+                shuffle=True,
+            )
+            val_loader = _build_subset_loader_from_indices(
+                dataset,
+                val_idx.tolist(),
+                batch_size=method.train_config.batch_size,
+                shuffle=False,
+            )
+            model = method.model_factory()
+            train_gating_model(
+                model,
+                train_loader,
+                val_loader,
+                config=TrainConfig(
+                    batch_size=method.train_config.batch_size,
+                    epochs=method.train_config.epochs,
+                    learning_rate=method.train_config.learning_rate,
+                    weight_decay=method.train_config.weight_decay,
+                    val_fraction=method.train_config.val_fraction,
+                    random_seed=method.train_config.random_seed + repeat_idx,
+                    checkpoint_dir=None,
+                    device=method.train_config.device,
+                ),
+            )
+            metrics = evaluate_gating_model(
+                model,
+                val_loader,
+                device=method.train_config.device,
+            )
+            rmses.append(metrics.rmse)
+        rows.append(
+            MethodSweepRow(
+                method=method.name,
+                sweep_axis="train_size",
+                size=train_size,
+                n_repeats=method.n_repeats,
+                rmse_mean=float(np.mean(rmses)),
+                rmse_std=float(np.std(rmses)),
+            )
+        )
+    return rows
+
+
+def default_tabular_method_specs(
+    *,
+    use_trim: bool,
+    use_ridge: bool,
+    use_kernel_ridge: bool,
+    use_lasso: bool,
+    use_elastic: bool,
+    use_residual: bool,
+    use_linearization: bool,
+    n_repeats: int,
+) -> list[TabularMethodSpec]:
+    specs: list[TabularMethodSpec] = []
+    if use_ridge:
+        specs.append(
+            TabularMethodSpec(
+                name="ridge",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
+                    y_test,
+                    model_predict(
+                        lambda: Ridge(alpha=0.1),
+                        X_train,
+                        y_train,
+                        X_test,
+                    ),
+                ),
+                n_repeats=n_repeats,
+                seed=41,
+            )
+        )
+    if use_kernel_ridge:
+        specs.append(
+            TabularMethodSpec(
+                name="kernel_ridge",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
+                    y_test,
+                    model_predict(
+                        lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+                        X_train,
+                        y_train,
+                        X_test,
+                    ),
+                ),
+                n_repeats=n_repeats,
+                seed=2718,
+            )
+        )
+    if use_trim and use_ridge:
+        specs.append(
+            TabularMethodSpec(
+                name="ridge_trimmed",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: (
+                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
+                )(
+                    *trimmed_model_predict(
+                        lambda: Ridge(alpha=0.1),
+                        X_train,
+                        y_train,
+                        X_test,
+                        z_thresh=1.0,
+                    )
+                ),
+                n_repeats=n_repeats,
+                seed=42,
+            )
+        )
+    if use_lasso:
+        specs.append(
+            TabularMethodSpec(
+                name="lasso",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
+                    y_test,
+                    model_predict(
+                        lambda: Lasso(alpha=0.1, max_iter=10000),
+                        X_train,
+                        y_train,
+                        X_test,
+                    ),
+                ),
+                n_repeats=n_repeats,
+                seed=123,
+            )
+        )
+    if use_trim and use_lasso:
+        specs.append(
+            TabularMethodSpec(
+                name="lasso_trimmed",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: (
+                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
+                )(
+                    *trimmed_model_predict(
+                        lambda: Lasso(alpha=0.1, max_iter=10000),
+                        X_train,
+                        y_train,
+                        X_test,
+                        z_thresh=1.0,
+                    )
+                ),
+                n_repeats=n_repeats,
+                seed=124,
+            )
+        )
+    if use_elastic:
+        specs.append(
+            TabularMethodSpec(
+                name="elastic",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
+                    y_test,
+                    model_predict(
+                        lambda: ElasticNet(
+                            alpha=0.1,
+                            l1_ratio=0.5,
+                            max_iter=20000,
+                        ),
+                        X_train,
+                        y_train,
+                        X_test,
+                    ),
+                ),
+                n_repeats=n_repeats,
+                seed=321,
+            )
+        )
+    if use_trim and use_elastic:
+        specs.append(
+            TabularMethodSpec(
+                name="elastic_trimmed",
+                sweep_axis="train_size",
+                evaluator=lambda X_train, y_train, X_test, y_test: (
+                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
+                )(
+                    *trimmed_model_predict(
+                        lambda: ElasticNet(
+                            alpha=0.1,
+                            l1_ratio=0.5,
+                            max_iter=20000,
+                        ),
+                        X_train,
+                        y_train,
+                        X_test,
+                        z_thresh=1.0,
+                    )
+                ),
+                n_repeats=n_repeats,
+                seed=322,
+            )
+        )
+    if use_residual:
+        specs.append(
+            TabularMethodSpec(
+                name="residual",
+                sweep_axis="holdout_size",
+                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
+                    y_eval,
+                    residual_correction_predict(X_holdout, y_holdout, X_eval),
+                ),
+                n_repeats=n_repeats,
+                seed=999,
+            )
+        )
+    if use_trim and use_residual:
+        specs.append(
+            TabularMethodSpec(
+                name="residual_trimmed",
+                sweep_axis="holdout_size",
+                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
+                    y_eval,
+                    residual_correction_trimmed_predict(
+                        X_holdout,
+                        y_holdout,
+                        X_eval,
+                    ),
+                ),
+                n_repeats=n_repeats,
+                seed=77,
+            )
+        )
+    if use_linearization:
+        specs.append(
+            TabularMethodSpec(
+                name="linearization",
+                sweep_axis="holdout_size",
+                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
+                    y_eval,
+                    linearization_predict(X_holdout, y_holdout, X_eval),
+                ),
+                n_repeats=n_repeats,
+                seed=2024,
+            )
+        )
+    if use_trim and use_linearization:
+        specs.append(
+            TabularMethodSpec(
+                name="linearization_trimmed",
+                sweep_axis="holdout_size",
+                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
+                    y_eval,
+                    linearization_trimmed_predict(X_holdout, y_holdout, X_eval),
+                ),
+                n_repeats=n_repeats,
+                seed=2025,
+            )
+        )
+    return specs
+
+
+def run_tabular_method_sweeps(
+    df: pl.DataFrame,
+    *,
+    methods: Sequence[TabularMethodSpec],
+    train_sizes: Sequence[int],
+    holdout_sizes: Sequence[int] | None = None,
+) -> list[MethodSweepRow]:
+    feature_cols = _mlip_columns(df)
+    if not feature_cols:
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
+        )
+    if df.height <= 5:
+        raise ValueError("Not enough data to evaluate (need >5 samples).")
+    X = df.select(feature_cols).to_numpy()
+    y = df["reference_ads_eng"].to_numpy()
+    holdout_sizes = holdout_sizes if holdout_sizes is not None else train_sizes
+
+    rows: list[MethodSweepRow] = []
+    for method in methods:
+        if method.sweep_axis == "train_size":
+            results = _train_size_sweep(
+                method.evaluator,
+                X,
+                y,
+                train_sizes,
+                method.n_repeats,
+                np.random.default_rng(method.seed),
+            )
+            rows.extend(
+                MethodSweepRow(
+                    method=method.name,
+                    sweep_axis="train_size",
+                    size=int(row["n_train"]),
+                    n_repeats=method.n_repeats,
+                    rmse_mean=float(row["rmse_mean"]),
+                    rmse_std=float(row["rmse_std"]),
+                )
+                for row in results.to_dict("records")
+            )
+        else:
+            results = _holdout_size_sweep(
+                method.evaluator,
+                X,
+                y,
+                holdout_sizes,
+                method.n_repeats,
+                np.random.default_rng(method.seed),
+            )
+            rows.extend(
+                MethodSweepRow(
+                    method=method.name,
+                    sweep_axis="holdout_size",
+                    size=int(row["n_holdout"]),
+                    n_repeats=method.n_repeats,
+                    rmse_mean=float(row["rmse_mean"]),
+                    rmse_std=float(row["rmse_std"]),
+                )
+                for row in results.to_dict("records")
+            )
+    return rows
+
+
+def run_all_method_sweeps(
+    *,
+    wide_df: pl.DataFrame,
+    gating_dataset: GatingDataset,
+    tabular_methods: Sequence[TabularMethodSpec],
+    gating_methods: Sequence[GatingMethodSpec],
+    tabular_train_sizes: Sequence[int],
+    tabular_holdout_sizes: Sequence[int] | None = None,
+    gating_train_sizes: Sequence[int],
+) -> list[MethodSweepRow]:
+    rows = run_tabular_method_sweeps(
+        wide_df,
+        methods=tabular_methods,
+        train_sizes=tabular_train_sizes,
+        holdout_sizes=tabular_holdout_sizes,
+    )
+    for method in gating_methods:
+        rows.extend(
+            run_gating_method_sweep(
+                gating_dataset,
+                method=method,
+                train_sizes=gating_train_sizes,
+            )
+        )
+    return rows
+
+
+def save_method_sweep_rows_csv(
+    rows: Sequence[MethodSweepRow],
+    output_path: str | Path,
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame([asdict(row) for row in rows]).write_csv(output_path)
+    return output_path
+
+
 def build_learning_curve_sweeps(
     df: pl.DataFrame,
     *,
@@ -116,232 +542,50 @@ def build_learning_curve_sweeps(
     use_residual: bool,
     use_linearization: bool,
 ) -> dict[str, pd.DataFrame | None]:
-    feature_cols = _mlip_columns(df)
-    if not feature_cols:
-        raise ValueError(
-            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
-        )
-    if df.height <= 5:
-        raise ValueError("Not enough data to evaluate (need >5 samples).")
+    specs = default_tabular_method_specs(
+        use_trim=use_trim,
+        use_ridge=use_ridge,
+        use_kernel_ridge=use_kernel_ridge,
+        use_lasso=use_lasso,
+        use_elastic=use_elastic,
+        use_residual=use_residual,
+        use_linearization=use_linearization,
+        n_repeats=n_repeats,
+    )
+    rows = run_tabular_method_sweeps(
+        df,
+        methods=specs,
+        train_sizes=list(range(min_train, max_train + 1)),
+        holdout_sizes=list(range(min_train, max_train + 1)),
+    )
+    results_by_method = {row.method: [] for row in rows}
+    for row in rows:
+        results_by_method[row.method].append(row)
 
-    X = df.select(feature_cols).to_numpy()
-    y = df["reference_ads_eng"].to_numpy()
+    def _rows_to_df(method_name: str, axis_col: str) -> pd.DataFrame | None:
+        method_rows = results_by_method.get(method_name, [])
+        if not method_rows:
+            return None
+        return pd.DataFrame(
+            {
+                axis_col: [row.size for row in method_rows],
+                "rmse_mean": [row.rmse_mean for row in method_rows],
+                "rmse_std": [row.rmse_std for row in method_rows],
+            }
+        )
 
     return {
-        "ridge_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(lambda: Ridge(alpha=0.1), X_train, y_train, X_test),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(41),
-            )
-            if use_ridge
-            else None
-        ),
-        "kernel_ridge_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: KernelRidge(alpha=1.0, kernel="rbf"),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(2718),
-            )
-            if use_kernel_ridge
-            else None
-        ),
-        "ridge_trimmed_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: Ridge(alpha=0.1),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(42),
-            )
-            if use_trim and use_ridge
-            else None
-        ),
-        "lasso_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: Lasso(alpha=0.1, max_iter=10000),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(123),
-            )
-            if use_lasso
-            else None
-        ),
-        "lasso_trimmed_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: Lasso(alpha=0.1, max_iter=10000),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(124),
-            )
-            if use_trim and use_lasso
-            else None
-        ),
-        "elastic_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(321),
-            )
-            if use_elastic
-            else None
-        ),
-        "elastic_trimmed_df": (
-            _train_size_sweep(
-                lambda X_train, y_train, X_test, y_test: (
-                    lambda preds, keep_mask: rmse(y_test[keep_mask], preds)
-                )(
-                    *trimmed_model_predict(
-                        lambda: ElasticNet(
-                            alpha=0.1, l1_ratio=0.5, max_iter=20000
-                        ),
-                        X_train,
-                        y_train,
-                        X_test,
-                        z_thresh=1.0,
-                    )
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(322),
-            )
-            if use_trim and use_elastic
-            else None
-        ),
-        "resid_df": (
-            _holdout_size_sweep(
-                lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    residual_correction_predict(X_holdout, y_holdout, X_eval),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(999),
-            )
-            if use_residual
-            else None
-        ),
-        "resid_trimmed_df": (
-            _holdout_size_sweep(
-                lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    residual_correction_trimmed_predict(X_holdout, y_holdout, X_eval),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(77),
-            )
-            if use_trim and use_residual
-            else None
-        ),
-        "linear_df": (
-            _holdout_size_sweep(
-                lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    linearization_predict(X_holdout, y_holdout, X_eval),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(2024),
-            )
-            if use_linearization
-            else None
-        ),
-        "linear_trimmed_df": (
-            _holdout_size_sweep(
-                lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    linearization_trimmed_predict(X_holdout, y_holdout, X_eval),
-                ),
-                X,
-                y,
-                min_train,
-                max_train,
-                n_repeats,
-                np.random.default_rng(2025),
-            )
-            if use_trim and use_linearization
-            else None
-        ),
+        "ridge_df": _rows_to_df("ridge", "n_train"),
+        "kernel_ridge_df": _rows_to_df("kernel_ridge", "n_train"),
+        "ridge_trimmed_df": _rows_to_df("ridge_trimmed", "n_train"),
+        "lasso_df": _rows_to_df("lasso", "n_train"),
+        "lasso_trimmed_df": _rows_to_df("lasso_trimmed", "n_train"),
+        "elastic_df": _rows_to_df("elastic", "n_train"),
+        "elastic_trimmed_df": _rows_to_df("elastic_trimmed", "n_train"),
+        "resid_df": _rows_to_df("residual", "n_holdout"),
+        "resid_trimmed_df": _rows_to_df("residual_trimmed", "n_holdout"),
+        "linear_df": _rows_to_df("linearization", "n_holdout"),
+        "linear_trimmed_df": _rows_to_df("linearization_trimmed", "n_holdout"),
     }
 
 
