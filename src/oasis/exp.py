@@ -44,6 +44,15 @@ class MethodSweepRow:
 
 
 @dataclass(frozen=True)
+class SweepSplit:
+    train_idx: tuple[int, ...]
+    eval_idx: tuple[int, ...]
+    size: int
+    repeat: int
+    axis: Literal["train_size", "holdout_size"]
+
+
+@dataclass(frozen=True)
 class TabularMethodSpec:
     name: str
     sweep_axis: Literal["train_size", "holdout_size"]
@@ -80,20 +89,18 @@ def _train_size_sweep(
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
     X: np.ndarray,
     y: np.ndarray,
-    train_sizes: Sequence[int],
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
     results = []
-    for n_train in _normalize_sizes(train_sizes, max_size=len(X) - 1):
+    sizes = sorted({split.size for split in splits if split.axis == "train_size"})
+    for n_train in sizes:
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
-            rmses.append(
-                evaluator(X[train_idx], y[train_idx], X[test_idx], y[test_idx])
-            )
+        for split in splits:
+            if split.axis != "train_size" or split.size != n_train:
+                continue
+            train_idx = np.asarray(split.train_idx, dtype=int)
+            eval_idx = np.asarray(split.eval_idx, dtype=int)
+            rmses.append(evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx]))
         results.append(
             {
                 "n_train": n_train,
@@ -108,20 +115,18 @@ def _holdout_size_sweep(
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
     X: np.ndarray,
     y: np.ndarray,
-    holdout_sizes: Sequence[int],
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
     results = []
-    for n_hold in _normalize_sizes(holdout_sizes, max_size=len(X) - 1):
+    sizes = sorted({split.size for split in splits if split.axis == "holdout_size"})
+    for n_hold in sizes:
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
-            rmses.append(
-                evaluator(X[hold_idx], y[hold_idx], X[keep_idx], y[keep_idx])
-            )
+        for split in splits:
+            if split.axis != "holdout_size" or split.size != n_hold:
+                continue
+            hold_idx = np.asarray(split.train_idx, dtype=int)
+            eval_idx = np.asarray(split.eval_idx, dtype=int)
+            rmses.append(evaluator(X[hold_idx], y[hold_idx], X[eval_idx], y[eval_idx]))
         results.append(
             {
                 "n_holdout": n_hold,
@@ -130,6 +135,62 @@ def _holdout_size_sweep(
             }
         )
     return pd.DataFrame(results)
+
+
+def build_train_size_splits(
+    n_total: int,
+    *,
+    train_sizes: Sequence[int],
+    n_repeats: int,
+    seed: int,
+) -> list[SweepSplit]:
+    if n_total < 2:
+        raise ValueError("Need at least 2 samples to create train/eval splits")
+    rng = np.random.default_rng(seed)
+    splits: list[SweepSplit] = []
+    indices = np.arange(n_total)
+    for n_train in _normalize_sizes(train_sizes, max_size=n_total - 1):
+        for repeat in range(n_repeats):
+            train_idx = rng.choice(indices, size=n_train, replace=False)
+            eval_idx = np.setdiff1d(indices, train_idx, assume_unique=False)
+            splits.append(
+                SweepSplit(
+                    train_idx=tuple(int(i) for i in train_idx.tolist()),
+                    eval_idx=tuple(int(i) for i in eval_idx.tolist()),
+                    size=n_train,
+                    repeat=repeat,
+                    axis="train_size",
+                )
+            )
+    return splits
+
+
+def build_holdout_size_splits(
+    n_total: int,
+    *,
+    holdout_sizes: Sequence[int],
+    n_repeats: int,
+    seed: int,
+) -> list[SweepSplit]:
+    if n_total < 2:
+        raise ValueError("Need at least 2 samples to create holdout/eval splits")
+    rng = np.random.default_rng(seed)
+    splits: list[SweepSplit] = []
+    indices = np.arange(n_total)
+    for n_hold in _normalize_sizes(holdout_sizes, max_size=n_total - 1):
+        for repeat in range(n_repeats):
+            hold_idx = rng.choice(indices, size=n_hold, replace=False)
+            eval_idx = np.setdiff1d(indices, hold_idx, assume_unique=False)
+            splits.append(
+                SweepSplit(
+                    train_idx=tuple(int(i) for i in hold_idx.tolist()),
+                    eval_idx=tuple(int(i) for i in eval_idx.tolist()),
+                    size=n_hold,
+                    repeat=repeat,
+                    axis="holdout_size",
+                )
+            )
+    return splits
 
 
 def _build_subset_loader_from_indices(
@@ -157,23 +218,27 @@ def run_gating_method_sweep(
         raise ValueError("Need at least 2 samples to run a gating method sweep")
 
     rows: list[MethodSweepRow] = []
-    rng = np.random.default_rng(method.seed)
-    valid_sizes = _normalize_sizes(train_sizes, max_size=n_total - 1)
+    splits = build_train_size_splits(
+        n_total,
+        train_sizes=train_sizes,
+        n_repeats=method.n_repeats,
+        seed=method.seed,
+    )
+    valid_sizes = sorted({split.size for split in splits})
     for train_size in valid_sizes:
         rmses: list[float] = []
-        for repeat_idx in range(method.n_repeats):
-            indices = np.arange(n_total)
-            train_idx = rng.choice(indices, size=train_size, replace=False)
-            val_idx = np.setdiff1d(indices, train_idx, assume_unique=False)
+        for split in splits:
+            if split.size != train_size:
+                continue
             train_loader = _build_subset_loader_from_indices(
                 dataset,
-                train_idx.tolist(),
+                split.train_idx,
                 batch_size=method.train_config.batch_size,
                 shuffle=True,
             )
             val_loader = _build_subset_loader_from_indices(
                 dataset,
-                val_idx.tolist(),
+                split.eval_idx,
                 batch_size=method.train_config.batch_size,
                 shuffle=False,
             )
@@ -188,7 +253,7 @@ def run_gating_method_sweep(
                     learning_rate=method.train_config.learning_rate,
                     weight_decay=method.train_config.weight_decay,
                     val_fraction=method.train_config.val_fraction,
-                    random_seed=method.train_config.random_seed + repeat_idx,
+                    random_seed=method.train_config.random_seed + split.repeat,
                     checkpoint_dir=None,
                     device=method.train_config.device,
                 ),
@@ -274,13 +339,17 @@ def run_tabular_method_sweeps(
     rows: list[MethodSweepRow] = []
     for method in methods:
         if method.sweep_axis == "train_size":
+            splits = build_train_size_splits(
+                len(X),
+                train_sizes=train_sizes,
+                n_repeats=method.n_repeats,
+                seed=method.seed,
+            )
             results = _train_size_sweep(
                 method.evaluator,
                 X,
                 y,
-                train_sizes,
-                method.n_repeats,
-                np.random.default_rng(method.seed),
+                splits,
             )
             rows.extend(
                 MethodSweepRow(
@@ -294,13 +363,17 @@ def run_tabular_method_sweeps(
                 for row in results.to_dict("records")
             )
         else:
+            splits = build_holdout_size_splits(
+                len(X),
+                holdout_sizes=holdout_sizes,
+                n_repeats=method.n_repeats,
+                seed=method.seed,
+            )
             results = _holdout_size_sweep(
                 method.evaluator,
                 X,
                 y,
-                holdout_sizes,
-                method.n_repeats,
-                np.random.default_rng(method.seed),
+                splits,
             )
             rows.extend(
                 MethodSweepRow(

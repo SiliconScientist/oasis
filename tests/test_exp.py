@@ -10,7 +10,9 @@ import polars as pl
 from oasis.dataset import GatingDataset
 from oasis.exp import (
     GatingMethodSpec,
+    SweepSplit,
     build_learning_curve_sweeps,
+    build_train_size_splits,
     default_tabular_method_specs,
     run_all_method_sweeps,
     run_data_fraction_sweep,
@@ -54,6 +56,25 @@ def _example_dataset() -> tuple[GatingDataset, pl.DataFrame]:
 
 
 class ExperimentTests(unittest.TestCase):
+    def test_build_train_size_splits(self) -> None:
+        splits = build_train_size_splits(
+            6,
+            train_sizes=[2, 3],
+            n_repeats=2,
+            seed=13,
+        )
+        self.assertEqual(len(splits), 4)
+        self.assertTrue(all(isinstance(split, SweepSplit) for split in splits))
+        self.assertEqual([split.size for split in splits], [2, 2, 3, 3])
+        self.assertTrue(all(split.axis == "train_size" for split in splits))
+        self.assertTrue(all(len(split.train_idx) == split.size for split in splits))
+        self.assertTrue(
+            all(
+                len(set(split.train_idx).intersection(split.eval_idx)) == 0
+                for split in splits
+            )
+        )
+
     def test_data_fraction_sweep_and_csv(self) -> None:
         dataset, _ = _example_dataset()
         with TemporaryDirectory() as tmpdir:
