@@ -276,7 +276,7 @@ def learning_curve_plot(
 
         sweep_results = {
             "ridge_df": _method_df("ridge", "n_train"),
-            "resid_df": _method_df("residual", "n_holdout"),
+            "resid_df": _method_df("residual", "n_train"),
             "moe_baseline_df": _method_df("moe_baseline", "n_train"),
             "moe_schnet_df": _method_df("moe_schnet", "n_train"),
         }
@@ -303,14 +303,14 @@ def learning_curve_plot(
         )
     if resid_df is not None:
         ax.plot(
-            resid_df["n_holdout"],
+            resid_df["n_train"],
             resid_df["rmse_mean"],
             marker="^",
             color="tab:green",
             label="Residual mean",
         )
         ax.fill_between(
-            resid_df["n_holdout"],
+            resid_df["n_train"],
             resid_df["rmse_mean"] - resid_df["rmse_std"],
             resid_df["rmse_mean"] + resid_df["rmse_std"],
             color="tab:green",
@@ -349,7 +349,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="MOE SchNet +/- 1sd",
         )
-    ax.set_xlabel("Training / holdout size", fontsize=fontsize)
+    ax.set_xlabel("Training size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=fontsize)

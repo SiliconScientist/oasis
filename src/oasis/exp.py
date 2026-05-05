@@ -53,13 +53,13 @@ class SweepSplit:
     eval_idx: tuple[int, ...]
     size: int
     repeat: int
-    axis: Literal["train_size", "holdout_size"]
+    axis: Literal["train_size"]
 
 
 @dataclass(frozen=True)
 class TabularMethodSpec:
     name: str
-    sweep_axis: Literal["train_size", "holdout_size"]
+    sweep_axis: Literal["train_size"]
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float]
     n_repeats: int
     seed: int
@@ -115,36 +115,10 @@ def _train_size_sweep(
     return pd.DataFrame(results)
 
 
-def _holdout_size_sweep(
-    evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    results = []
-    sizes = sorted({split.size for split in splits if split.axis == "holdout_size"})
-    for n_hold in sizes:
-        rmses = []
-        for split in splits:
-            if split.axis != "holdout_size" or split.size != n_hold:
-                continue
-            hold_idx = np.asarray(split.train_idx, dtype=int)
-            eval_idx = np.asarray(split.eval_idx, dtype=int)
-            rmses.append(evaluator(X[hold_idx], y[hold_idx], X[eval_idx], y[eval_idx]))
-        results.append(
-            {
-                "n_holdout": n_hold,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
-
-
 def _limit_splits_by_repeats(
     splits: Sequence[SweepSplit],
     *,
-    axis: Literal["train_size", "holdout_size"],
+    axis: Literal["train_size"],
     n_repeats: int,
 ) -> list[SweepSplit]:
     return [
@@ -180,36 +154,6 @@ def build_train_size_splits(
                 )
             )
     return splits
-
-
-def build_holdout_size_splits(
-    n_total: int,
-    *,
-    holdout_sizes: Sequence[int],
-    n_repeats: int,
-    seed: int,
-) -> list[SweepSplit]:
-    if n_total < 2:
-        raise ValueError("Need at least 2 samples to create holdout/eval splits")
-    rng = np.random.default_rng(seed)
-    splits: list[SweepSplit] = []
-    indices = np.arange(n_total)
-    for n_hold in _normalize_sizes(holdout_sizes, max_size=n_total - 1):
-        for repeat in range(n_repeats):
-            hold_idx = rng.choice(indices, size=n_hold, replace=False)
-            eval_idx = np.setdiff1d(indices, hold_idx, assume_unique=False)
-            splits.append(
-                SweepSplit(
-                    train_idx=tuple(int(i) for i in hold_idx.tolist()),
-                    eval_idx=tuple(int(i) for i in eval_idx.tolist()),
-                    size=n_hold,
-                    repeat=repeat,
-                    axis="holdout_size",
-                )
-            )
-    return splits
-
-
 def run_gating_method_sweep(
     dataset: GatingDataset,
     *,
@@ -304,7 +248,7 @@ def default_tabular_method_specs(
         specs.append(
             TabularMethodSpec(
                 name="residual",
-                sweep_axis="holdout_size",
+                sweep_axis="train_size",
                 evaluator=residual_rmse,
                 n_repeats=n_repeats,
                 seed=999,
@@ -318,9 +262,7 @@ def run_tabular_method_sweeps(
     *,
     methods: Sequence[TabularMethodSpec],
     train_sizes: Sequence[int],
-    holdout_sizes: Sequence[int] | None = None,
     train_splits: Sequence[SweepSplit] | None = None,
-    holdout_splits: Sequence[SweepSplit] | None = None,
 ) -> list[MethodSweepRow]:
     feature_cols = _mlip_columns(df)
     if not feature_cols:
@@ -331,74 +273,39 @@ def run_tabular_method_sweeps(
         raise ValueError("Not enough data to evaluate (need >5 samples).")
     X = df.select(feature_cols).to_numpy()
     y = df["reference_ads_eng"].to_numpy()
-    holdout_sizes = holdout_sizes if holdout_sizes is not None else train_sizes
-
     rows: list[MethodSweepRow] = []
     for method in methods:
-        if method.sweep_axis == "train_size":
-            splits = (
-                _limit_splits_by_repeats(
-                    train_splits,
-                    axis="train_size",
-                    n_repeats=method.n_repeats,
-                )
-                if train_splits is not None
-                else build_train_size_splits(
-                    len(X),
-                    train_sizes=train_sizes,
-                    n_repeats=method.n_repeats,
-                    seed=method.seed,
-                )
+        splits = (
+            _limit_splits_by_repeats(
+                train_splits,
+                axis="train_size",
+                n_repeats=method.n_repeats,
             )
-            results = _train_size_sweep(
-                method.evaluator,
-                X,
-                y,
-                splits,
+            if train_splits is not None
+            else build_train_size_splits(
+                len(X),
+                train_sizes=train_sizes,
+                n_repeats=method.n_repeats,
+                seed=method.seed,
             )
-            rows.extend(
-                MethodSweepRow(
-                    method=method.name,
-                    sweep_axis="train_size",
-                    size=int(row["n_train"]),
-                    n_repeats=method.n_repeats,
-                    rmse_mean=float(row["rmse_mean"]),
-                    rmse_std=float(row["rmse_std"]),
-                )
-                for row in results.to_dict("records")
+        )
+        results = _train_size_sweep(
+            method.evaluator,
+            X,
+            y,
+            splits,
+        )
+        rows.extend(
+            MethodSweepRow(
+                method=method.name,
+                sweep_axis="train_size",
+                size=int(row["n_train"]),
+                n_repeats=method.n_repeats,
+                rmse_mean=float(row["rmse_mean"]),
+                rmse_std=float(row["rmse_std"]),
             )
-        else:
-            splits = (
-                _limit_splits_by_repeats(
-                    holdout_splits,
-                    axis="holdout_size",
-                    n_repeats=method.n_repeats,
-                )
-                if holdout_splits is not None
-                else build_holdout_size_splits(
-                    len(X),
-                    holdout_sizes=holdout_sizes,
-                    n_repeats=method.n_repeats,
-                    seed=method.seed,
-                )
-            )
-            results = _holdout_size_sweep(
-                method.evaluator,
-                X,
-                y,
-                splits,
-            )
-            rows.extend(
-                MethodSweepRow(
-                    method=method.name,
-                    sweep_axis="holdout_size",
-                    size=int(row["n_holdout"]),
-                    n_repeats=method.n_repeats,
-                    rmse_mean=float(row["rmse_mean"]),
-                    rmse_std=float(row["rmse_std"]),
-                )
-                for row in results.to_dict("records")
-            )
+            for row in results.to_dict("records")
+        )
     return rows
 
 
@@ -409,13 +316,11 @@ def run_all_method_sweeps(
     tabular_methods: Sequence[TabularMethodSpec],
     gating_methods: Sequence[GatingMethodSpec],
     tabular_train_sizes: Sequence[int],
-    tabular_holdout_sizes: Sequence[int] | None = None,
     gating_train_sizes: Sequence[int],
     shared_train_seed: int = 0,
 ) -> list[MethodSweepRow]:
-    train_size_methods = [m for m in tabular_methods if m.sweep_axis == "train_size"]
     max_train_repeats = max(
-        [m.n_repeats for m in train_size_methods] + [m.n_repeats for m in gating_methods],
+        [m.n_repeats for m in tabular_methods] + [m.n_repeats for m in gating_methods],
         default=0,
     )
     shared_train_splits = (
@@ -432,7 +337,6 @@ def run_all_method_sweeps(
         wide_df,
         methods=tabular_methods,
         train_sizes=tabular_train_sizes,
-        holdout_sizes=tabular_holdout_sizes,
         train_splits=shared_train_splits,
     )
     for method in gating_methods:
@@ -475,7 +379,6 @@ def build_learning_curve_sweeps(
         df,
         methods=specs,
         train_sizes=list(range(min_train, max_train + 1)),
-        holdout_sizes=list(range(min_train, max_train + 1)),
     )
     results_by_method = {row.method: [] for row in rows}
     for row in rows:
@@ -495,7 +398,7 @@ def build_learning_curve_sweeps(
 
     return {
         "ridge_df": _rows_to_df("ridge", "n_train"),
-        "resid_df": _rows_to_df("residual", "n_holdout"),
+        "resid_df": _rows_to_df("residual", "n_train"),
     }
 
 
