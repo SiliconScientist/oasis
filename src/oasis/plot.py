@@ -277,8 +277,8 @@ def learning_curve_plot(
             )
 
         sweep_results = {
-            "ridge_df": _method_df("ridge", "n_train"),
-            "resid_df": _method_df("residual", "n_train"),
+            "ridge_df": _method_df("ridge", "n_train") if use_ridge else None,
+            "resid_df": _method_df("residual", "n_train") if use_residual else None,
             "moe_baseline_df": _method_df("moe_baseline", "n_train"),
             "moe_schnet_df": _method_df("moe_schnet", "n_train"),
         }

@@ -86,27 +86,10 @@ def main() -> None:
             else list(range(2, 11))
         )
         available_train = len(gating_dataset) - 1
-        moe_interval_min = min(tabular_train_sizes)
-        moe_interval_max = min(max(tabular_train_sizes), available_train)
-        moe_size_fractions = (0.0, 0.25, 0.5, 0.75, 1.0)
-        moe_train_sizes = sorted(
-            {
-                max(
-                    1,
-                    min(
-                        available_train,
-                        int(
-                            round(
-                                moe_interval_min
-                                + (moe_interval_max - moe_interval_min) * fraction
-                            )
-                        ),
-                    ),
-                )
-                for fraction in moe_size_fractions
-            }
-        )
-        moe_repeats = max(1, min(5, (cfg.plot.n_repeats if cfg.plot else 30) // 5))
+        moe_train_sizes = [
+            size for size in tabular_train_sizes if 0 < size <= available_train
+        ]
+        moe_repeats = cfg.plot.n_repeats if cfg.plot else 30
         gating_methods: list[GatingMethodSpec] = []
         if plot_moe_baseline:
             gating_methods.append(
@@ -172,6 +155,10 @@ def main() -> None:
     method_sweeps = pl.read_csv(all_methods_csv) if all_methods_csv.is_file() else None
     if method_sweeps is not None:
         excluded_methods: list[str] = []
+        if cfg.plot and not cfg.plot.use_ridge:
+            excluded_methods.append("ridge")
+        if cfg.plot and not cfg.plot.use_residual:
+            excluded_methods.append("residual")
         if not plot_moe_baseline:
             excluded_methods.append("moe_baseline")
         if not plot_moe_schnet:
