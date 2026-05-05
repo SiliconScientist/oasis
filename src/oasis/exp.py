@@ -38,13 +38,13 @@ class SweepPoint:
 
 
 @dataclass(frozen=True)
-class MethodSweepRow:
+class MethodSweepRecord:
     method: str
     sweep_axis: str
     size: int
-    n_repeats: int
-    rmse_mean: float
-    rmse_std: float
+    repeat: int
+    split_id: str
+    rmse: float
 
 
 @dataclass(frozen=True)
@@ -94,25 +94,14 @@ def _train_size_sweep(
     X: np.ndarray,
     y: np.ndarray,
     splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    results = []
-    sizes = sorted({split.size for split in splits if split.axis == "train_size"})
-    for n_train in sizes:
-        rmses = []
-        for split in splits:
-            if split.axis != "train_size" or split.size != n_train:
-                continue
-            train_idx = np.asarray(split.train_idx, dtype=int)
-            eval_idx = np.asarray(split.eval_idx, dtype=int)
-            rmses.append(evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx]))
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+) -> list[tuple[SweepSplit, float]]:
+    results: list[tuple[SweepSplit, float]] = []
+    for split in splits:
+        train_idx = np.asarray(split.train_idx, dtype=int)
+        eval_idx = np.asarray(split.eval_idx, dtype=int)
+        rmse = evaluator(X[train_idx], y[train_idx], X[eval_idx], y[eval_idx])
+        results.append((split, rmse))
+    return results
 
 
 def _limit_splits_by_repeats(
@@ -160,12 +149,12 @@ def run_gating_method_sweep(
     method: GatingMethodSpec,
     train_sizes: Sequence[int],
     train_splits: Sequence[SweepSplit] | None = None,
-) -> list[MethodSweepRow]:
+) -> list[MethodSweepRecord]:
     n_total = len(dataset)
     if n_total < 2:
         raise ValueError("Need at least 2 samples to run a gating method sweep")
 
-    rows: list[MethodSweepRow] = []
+    rows: list[MethodSweepRecord] = []
     splits = (
         _limit_splits_by_repeats(
             train_splits,
@@ -180,48 +169,42 @@ def run_gating_method_sweep(
             seed=method.seed,
         )
     )
-    valid_sizes = sorted({split.size for split in splits})
-    for train_size in valid_sizes:
-        rmses: list[float] = []
-        for split in splits:
-            if split.size != train_size:
-                continue
-            train_loader, val_loader = build_gating_dataloaders_from_indices(
-                dataset,
+    for split in splits:
+        train_loader, val_loader = build_gating_dataloaders_from_indices(
+            dataset,
+            batch_size=method.train_config.batch_size,
+            train_indices=split.train_idx,
+            eval_indices=split.eval_idx,
+        )
+        model = method.model_factory()
+        train_gating_model(
+            model,
+            train_loader,
+            val_loader,
+            config=TrainConfig(
                 batch_size=method.train_config.batch_size,
-                train_indices=split.train_idx,
-                eval_indices=split.eval_idx,
-            )
-            model = method.model_factory()
-            train_gating_model(
-                model,
-                train_loader,
-                val_loader,
-                config=TrainConfig(
-                    batch_size=method.train_config.batch_size,
-                    epochs=method.train_config.epochs,
-                    learning_rate=method.train_config.learning_rate,
-                    weight_decay=method.train_config.weight_decay,
-                    val_fraction=method.train_config.val_fraction,
-                    random_seed=method.train_config.random_seed + split.repeat,
-                    checkpoint_dir=None,
-                    device=method.train_config.device,
-                ),
-            )
-            metrics = evaluate_gating_model(
-                model,
-                val_loader,
+                epochs=method.train_config.epochs,
+                learning_rate=method.train_config.learning_rate,
+                weight_decay=method.train_config.weight_decay,
+                val_fraction=method.train_config.val_fraction,
+                random_seed=method.train_config.random_seed + split.repeat,
+                checkpoint_dir=None,
                 device=method.train_config.device,
-            )
-            rmses.append(metrics.rmse)
+            ),
+        )
+        metrics = evaluate_gating_model(
+            model,
+            val_loader,
+            device=method.train_config.device,
+        )
         rows.append(
-            MethodSweepRow(
+            MethodSweepRecord(
                 method=method.name,
                 sweep_axis="train_size",
-                size=train_size,
-                n_repeats=method.n_repeats,
-                rmse_mean=float(np.mean(rmses)),
-                rmse_std=float(np.std(rmses)),
+                size=split.size,
+                repeat=split.repeat,
+                split_id=f"train_size:{split.size}:repeat:{split.repeat}",
+                rmse=metrics.rmse,
             )
         )
     return rows
@@ -263,7 +246,7 @@ def run_tabular_method_sweeps(
     methods: Sequence[TabularMethodSpec],
     train_sizes: Sequence[int],
     train_splits: Sequence[SweepSplit] | None = None,
-) -> list[MethodSweepRow]:
+) -> list[MethodSweepRecord]:
     feature_cols = _mlip_columns(df)
     if not feature_cols:
         raise ValueError(
@@ -273,7 +256,7 @@ def run_tabular_method_sweeps(
         raise ValueError("Not enough data to evaluate (need >5 samples).")
     X = df.select(feature_cols).to_numpy()
     y = df["reference_ads_eng"].to_numpy()
-    rows: list[MethodSweepRow] = []
+    rows: list[MethodSweepRecord] = []
     for method in methods:
         splits = (
             _limit_splits_by_repeats(
@@ -296,15 +279,15 @@ def run_tabular_method_sweeps(
             splits,
         )
         rows.extend(
-            MethodSweepRow(
+            MethodSweepRecord(
                 method=method.name,
                 sweep_axis="train_size",
-                size=int(row["n_train"]),
-                n_repeats=method.n_repeats,
-                rmse_mean=float(row["rmse_mean"]),
-                rmse_std=float(row["rmse_std"]),
+                size=split.size,
+                repeat=split.repeat,
+                split_id=f"train_size:{split.size}:repeat:{split.repeat}",
+                rmse=float(rmse),
             )
-            for row in results.to_dict("records")
+            for split, rmse in results
         )
     return rows
 
@@ -318,7 +301,7 @@ def run_all_method_sweeps(
     tabular_train_sizes: Sequence[int],
     gating_train_sizes: Sequence[int],
     shared_train_seed: int = 0,
-) -> list[MethodSweepRow]:
+) -> list[MethodSweepRecord]:
     max_train_repeats = max(
         [m.n_repeats for m in tabular_methods] + [m.n_repeats for m in gating_methods],
         default=0,
@@ -352,13 +335,46 @@ def run_all_method_sweeps(
 
 
 def save_method_sweep_rows_csv(
-    rows: Sequence[MethodSweepRow],
+    rows: Sequence[MethodSweepRecord],
     output_path: str | Path,
 ) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pl.DataFrame([asdict(row) for row in rows]).write_csv(output_path)
     return output_path
+
+
+def aggregate_method_sweep_records(
+    rows: Sequence[MethodSweepRecord] | pl.DataFrame,
+) -> pl.DataFrame:
+    if isinstance(rows, pl.DataFrame):
+        df = rows.clone()
+    else:
+        df = pl.DataFrame([asdict(row) for row in rows])
+    if df.height == 0:
+        return pl.DataFrame(
+            schema={
+                "method": pl.String,
+                "sweep_axis": pl.String,
+                "size": pl.Int64,
+                "n_repeats": pl.Int64,
+                "rmse_mean": pl.Float64,
+                "rmse_std": pl.Float64,
+            }
+        )
+    if "rmse" not in df.columns:
+        return df.sort(["method", "size"])
+    return (
+        df.group_by(["method", "sweep_axis", "size"])
+        .agg(
+            [
+                pl.len().alias("n_repeats"),
+                pl.col("rmse").mean().alias("rmse_mean"),
+                pl.col("rmse").std(ddof=0).fill_null(0.0).alias("rmse_std"),
+            ]
+        )
+        .sort(["method", "size"])
+    )
 
 
 def build_learning_curve_sweeps(
@@ -380,19 +396,17 @@ def build_learning_curve_sweeps(
         methods=specs,
         train_sizes=list(range(min_train, max_train + 1)),
     )
-    results_by_method = {row.method: [] for row in rows}
-    for row in rows:
-        results_by_method[row.method].append(row)
+    aggregated = aggregate_method_sweep_records(rows)
 
     def _rows_to_df(method_name: str, axis_col: str) -> pd.DataFrame | None:
-        method_rows = results_by_method.get(method_name, [])
-        if not method_rows:
+        method_rows = aggregated.filter(pl.col("method") == method_name).sort("size")
+        if method_rows.height == 0:
             return None
         return pd.DataFrame(
             {
-                axis_col: [row.size for row in method_rows],
-                "rmse_mean": [row.rmse_mean for row in method_rows],
-                "rmse_std": [row.rmse_std for row in method_rows],
+                axis_col: method_rows["size"].to_list(),
+                "rmse_mean": method_rows["rmse_mean"].to_list(),
+                "rmse_std": method_rows["rmse_std"].to_list(),
             }
         )
 

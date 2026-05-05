@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
-from oasis.exp import build_learning_curve_sweeps
+from oasis.exp import aggregate_method_sweep_records, build_learning_curve_sweeps
 
 try:
     import polars as pl
@@ -259,6 +259,8 @@ def learning_curve_plot(
             use_residual=use_residual,
         )
     else:
+        method_sweeps = aggregate_method_sweep_records(method_sweeps)
+
         def _method_df(
             method_name: str,
             axis_col: str,

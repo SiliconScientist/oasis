@@ -160,7 +160,9 @@ class ExperimentTests(unittest.TestCase):
             self.assertTrue(csv_path.is_file())
             df = pl.read_csv(csv_path)
             self.assertIn("method", df.columns)
-            self.assertIn("rmse_mean", df.columns)
+            self.assertIn("repeat", df.columns)
+            self.assertIn("split_id", df.columns)
+            self.assertIn("rmse", df.columns)
 
 
 if __name__ == "__main__":
