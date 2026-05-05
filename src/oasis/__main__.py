@@ -14,6 +14,7 @@ from oasis.exp import (
     default_tabular_method_specs,
     run_all_method_sweeps,
     save_method_sweep_rows_csv,
+    select_moe_train_sizes,
 )
 from oasis.graph import build_adsorption_graphs
 from oasis.io import find_result_files, load_corresponding_atoms, load_wide_predictions
@@ -86,9 +87,10 @@ def main() -> None:
             else list(range(2, 11))
         )
         available_train = len(gating_dataset) - 1
-        moe_train_sizes = [
-            size for size in tabular_train_sizes if 0 < size <= available_train
-        ]
+        moe_train_sizes = select_moe_train_sizes(
+            tabular_train_sizes,
+            available_train=available_train,
+        )
         moe_repeats = cfg.plot.n_repeats if cfg.plot else 30
         gating_methods: list[GatingMethodSpec] = []
         if plot_moe_baseline:

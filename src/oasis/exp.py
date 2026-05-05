@@ -95,6 +95,14 @@ def _normalize_sizes(
     return normalized
 
 
+def select_moe_train_sizes(
+    candidate_sizes: Sequence[int],
+    *,
+    available_train: int,
+) -> list[int]:
+    return [size for size in candidate_sizes if 2 <= size <= available_train]
+
+
 def _train_size_sweep(
     evaluator: Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float],
     X: np.ndarray,
