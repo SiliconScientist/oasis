@@ -8,16 +8,14 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import torch
-from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader, Subset
 
 from oasis.dataset import GatingBatch, GatingDataset, collate_gating_samples
 from oasis.evaluate import evaluate_gating_model
 from oasis.methods import (
-    model_predict,
-    residual_correction_predict,
-    rmse,
+    residual_rmse,
+    ridge_rmse,
 )
 from oasis.train import TrainConfig, TrainResult, split_gating_dataset, train_gating_model
 
@@ -289,15 +287,7 @@ def default_tabular_method_specs(
             TabularMethodSpec(
                 name="ridge",
                 sweep_axis="train_size",
-                evaluator=lambda X_train, y_train, X_test, y_test: rmse(
-                    y_test,
-                    model_predict(
-                        lambda: Ridge(alpha=0.1),
-                        X_train,
-                        y_train,
-                        X_test,
-                    ),
-                ),
+                evaluator=ridge_rmse,
                 n_repeats=n_repeats,
                 seed=41,
             )
@@ -307,10 +297,7 @@ def default_tabular_method_specs(
             TabularMethodSpec(
                 name="residual",
                 sweep_axis="holdout_size",
-                evaluator=lambda X_holdout, y_holdout, X_eval, y_eval: rmse(
-                    y_eval,
-                    residual_correction_predict(X_holdout, y_holdout, X_eval),
-                ),
+                evaluator=residual_rmse,
                 n_repeats=n_repeats,
                 seed=999,
             )
