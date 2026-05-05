@@ -7,8 +7,10 @@ import unittest
 
 from ase import Atoms
 import polars as pl
+import torch
 
 from oasis.dataset import GatingDataset
+from oasis.evaluate import evaluate_gating_model
 from oasis.graph import build_adsorption_graphs
 from oasis.model import BaselineMLPGatedMoE
 from oasis.train import (
@@ -127,6 +129,45 @@ class TrainingTests(unittest.TestCase):
             self.assertIsNotNone(result.latest_checkpoint_path)
             self.assertTrue(Path(result.best_checkpoint_path).is_file())
             self.assertTrue(Path(result.latest_checkpoint_path).is_file())
+
+    def test_training_and_evaluation_are_reproducible_for_fixed_seed(self) -> None:
+        dataset = _example_dataset()
+
+        def _run_once() -> tuple[list[tuple[float, float]], float]:
+            torch.manual_seed(23)
+            train_loader, val_loader = build_gating_dataloaders(
+                dataset,
+                batch_size=2,
+                val_fraction=0.25,
+                seed=7,
+            )
+            model = BaselineMLPGatedMoE(n_experts=2, hidden_dims=(8,))
+            result = train_gating_model(
+                model,
+                train_loader,
+                val_loader,
+                config=TrainConfig(
+                    batch_size=2,
+                    epochs=2,
+                    learning_rate=1e-2,
+                    val_fraction=0.25,
+                    random_seed=7,
+                    checkpoint_dir=None,
+                    device="cpu",
+                ),
+            )
+            metrics = evaluate_gating_model(model, val_loader, device="cpu")
+            history = [
+                (round(epoch.train_loss, 10), round(epoch.val_loss, 10))
+                for epoch in result.history
+            ]
+            return history, round(metrics.rmse, 10)
+
+        first_history, first_rmse = _run_once()
+        second_history, second_rmse = _run_once()
+
+        self.assertEqual(first_history, second_history)
+        self.assertEqual(first_rmse, second_rmse)
 
 
 if __name__ == "__main__":

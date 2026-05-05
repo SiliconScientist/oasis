@@ -8,6 +8,7 @@ from unittest.mock import patch
 from ase import Atoms
 import numpy as np
 import polars as pl
+import torch
 
 from oasis.dataset import GatingDataset
 from oasis.exp import (
@@ -75,6 +76,12 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(
             all(
                 len(set(split.train_idx).intersection(split.eval_idx)) == 0
+                for split in splits
+            )
+        )
+        self.assertTrue(
+            all(
+                sorted(split.train_idx + split.eval_idx) == list(range(6))
                 for split in splits
             )
         )
@@ -294,6 +301,110 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(
             sorted(gating_calls),
             sorted(expected_by_size[2] + expected_by_size[3]),
+        )
+
+    def test_all_methods_share_outer_split_ids(self) -> None:
+        dataset, wide_df = _example_dataset()
+        rows = run_all_method_sweeps(
+            wide_df=wide_df,
+            gating_dataset=dataset,
+            tabular_methods=default_tabular_method_specs(
+                use_ridge=True,
+                use_residual=True,
+                n_repeats=2,
+            ),
+            gating_methods=[
+                GatingMethodSpec(
+                    name="moe_baseline",
+                    model_factory=lambda: BaselineMLPGatedMoE(
+                        n_experts=2,
+                        hidden_dims=(8,),
+                    ),
+                    train_config=TrainConfig(
+                        batch_size=2,
+                        epochs=1,
+                        learning_rate=1e-2,
+                        checkpoint_dir=None,
+                        device="cpu",
+                    ),
+                    n_repeats=2,
+                    seed=7,
+                )
+            ],
+            tabular_train_sizes=[2, 3],
+            gating_train_sizes=[2, 3],
+            shared_train_seed=17,
+        )
+
+        split_to_methods: dict[str, set[str]] = {}
+        for row in rows:
+            split_to_methods.setdefault(row.split_id, set()).add(row.method)
+
+        self.assertEqual(
+            split_to_methods,
+            {
+                "train_size:2:repeat:0": {"ridge", "residual", "moe_baseline"},
+                "train_size:2:repeat:1": {"ridge", "residual", "moe_baseline"},
+                "train_size:3:repeat:0": {"ridge", "residual", "moe_baseline"},
+                "train_size:3:repeat:1": {"ridge", "residual", "moe_baseline"},
+            },
+        )
+
+    def test_moe_optimization_loader_excludes_outer_eval_indices(self) -> None:
+        dataset, wide_df = _example_dataset()
+        split = SweepSplit(
+            train_idx=(0, 1, 2),
+            eval_idx=(3, 4, 5),
+            size=3,
+            repeat=0,
+            axis="train_size",
+        )
+        observed_train_indices: list[tuple[int, ...]] = []
+
+        class _DummyMetrics:
+            rmse = 0.0
+
+        def _train_spy(model, train_loader, val_loader, *, config):
+            del model, val_loader, config
+            subset = train_loader.dataset
+            observed_train_indices.append(
+                tuple(sorted(int(i) for i in subset.indices))
+            )
+            return None
+
+        with (
+            patch("oasis.exp.train_gating_model", _train_spy),
+            patch("oasis.exp.evaluate_gating_model", lambda *args, **kwargs: _DummyMetrics()),
+        ):
+            run_single_split_comparison(
+                wide_df=wide_df,
+                gating_dataset=dataset,
+                tabular_methods=[],
+                gating_methods=[
+                    GatingMethodSpec(
+                        name="moe_baseline",
+                        model_factory=lambda: BaselineMLPGatedMoE(
+                            n_experts=2,
+                            hidden_dims=(8,),
+                        ),
+                        train_config=TrainConfig(
+                            batch_size=2,
+                            epochs=1,
+                            learning_rate=1e-2,
+                            checkpoint_dir=None,
+                            device="cpu",
+                        ),
+                        n_repeats=1,
+                        seed=7,
+                    )
+                ],
+                split=split,
+            )
+
+        self.assertEqual(observed_train_indices, [tuple(sorted(split.train_idx))])
+        self.assertEqual(
+            set(observed_train_indices[0]).intersection(split.eval_idx),
+            set(),
         )
 
     def test_run_single_split_comparison(self) -> None:
