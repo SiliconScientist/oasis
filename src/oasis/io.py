@@ -6,6 +6,17 @@ import polars as pl
 
 from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
 
+_INFERENCE_DETAIL_COLUMNS = (
+    "slab_conv",
+    "ads_conv",
+    "slab_move",
+    "ads_move",
+    "slab_seed",
+    "ads_seed",
+    "ads_eng_seed",
+    "adsorbate_migration",
+)
+
 
 def find_result_files(base_dir: Path) -> list[Path]:
     """
@@ -29,12 +40,14 @@ def find_result_files(base_dir: Path) -> list[Path]:
 def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
     """
     Build a wide table with:
-      reaction, adsorbate, reference_ads_eng, <mlip>_mlip_ads_eng_median, <mlip>_label, ...
+      reaction, adsorbate, reference_ads_eng, <mlip>_mlip_ads_eng_median,
+      <mlip>_label, <mlip>_<detail_flag>, ...
     """
     reference_df: pl.DataFrame | None = None
     wide_parts: list[pl.DataFrame] = []
     mlip_cols: list[str] = []
     label_cols: list[str] = []
+    detail_cols: list[str] = []
 
     for path in result_files:
         model_name = path.stem.replace("_result", "")
@@ -43,6 +56,10 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
             {
                 "reaction": reaction,
                 "adsorbate": extract_adsorbate(reaction),
+                **{
+                    detail_name: int(payload.get("details", {}).get(detail_name, 0))
+                    for detail_name in _INFERENCE_DETAIL_COLUMNS
+                },
                 **payload,
             }
             for reaction, payload in per_reaction.items()
@@ -56,6 +73,7 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
             "dft_ads_eng",
             "mlip_ads_eng_median",
             "label",
+            *_INFERENCE_DETAIL_COLUMNS,
         }
         missing = required.difference(set(df.columns))
         if missing:
@@ -63,13 +81,24 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
             raise ValueError(f"Missing required columns in {path}: {missing_cols}")
 
         part = df.select(
-            [reaction_col, "adsorbate", "dft_ads_eng", "mlip_ads_eng_median", "label"]
+            [
+                reaction_col,
+                "adsorbate",
+                "dft_ads_eng",
+                "mlip_ads_eng_median",
+                "label",
+                *_INFERENCE_DETAIL_COLUMNS,
+            ]
         ).rename(
             {
                 reaction_col: "reaction",
                 "dft_ads_eng": "reference_ads_eng",
                 "mlip_ads_eng_median": f"{model_name}_mlip_ads_eng_median",
                 "label": f"{model_name}_label",
+                **{
+                    detail_name: f"{model_name}_{detail_name}"
+                    for detail_name in _INFERENCE_DETAIL_COLUMNS
+                },
             }
         )
         part = part.drop_nulls(
@@ -108,7 +137,11 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
         label_col = f"{model_name}_label"
         mlip_cols.append(mlip_col)
         label_cols.append(label_col)
-        wide_parts.append(part.select(["reaction", mlip_col, label_col]))
+        model_detail_cols = [
+            f"{model_name}_{detail_name}" for detail_name in _INFERENCE_DETAIL_COLUMNS
+        ]
+        detail_cols.extend(model_detail_cols)
+        wide_parts.append(part.select(["reaction", mlip_col, label_col, *model_detail_cols]))
 
     if reference_df is None:
         raise RuntimeError("No MLIP result rows were loaded.")
@@ -118,6 +151,6 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
         wide_df = wide_df.join(part, on="reaction", how="inner")
 
     wide_df = wide_df.drop_nulls(
-        subset=["reference_ads_eng", *mlip_cols, *label_cols]
+        subset=["reference_ads_eng", *mlip_cols, *label_cols, *detail_cols]
     ).sort("reaction")
     return wide_df

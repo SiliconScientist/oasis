@@ -1,0 +1,73 @@
+# Example configuration aligned with src/oasis/config.py.
+# Replace paths and model specs for your environment.
+
+seed = 42
+dev_run = false
+train = true
+evaluate = true
+
+[ingest]
+source = "data/raw_vasp/systems"
+dataset_name = "example_dataset"
+
+[ingest.stoich]
+elements = ["C", "O", "H"]
+basis_species = ["CH4", "O2", "H2"]
+
+[ingest.stoich.basis_composition]
+CH4 = { C = 1, H = 4 }
+O2 = { O = 2 }
+H2 = { H = 2 }
+
+[mlip]
+dev_n = 2
+dev_run = false
+dataset = "data/datasets/example_adsorption.json"
+optimizer = "LBFGS"
+
+[mlip.models]
+enabled = ["mace", "mattersim"]
+
+[mlip.rootstock]
+root = "/path/to/rootstock"
+# python = "/path/to/rootstock/.venv/bin/python"
+
+[mlip.rootstock.models.mace]
+model = "mace"
+mlip_name = "mace-mh-1"
+checkpoint = "medium"
+# output_model = "optional-output-name"
+# model_version = "optional-version"
+
+[mlip.rootstock.models.mattersim]
+model = "mattersim"
+mlip_name = "mattersim-v1-5m"
+checkpoint = "models/mattersim/mattersim-v1.0.0-5M.pth"
+
+[plot]
+output_dir = "data/results/plots"
+min_train = 5
+max_train = 25
+n_repeats = 10
+trim = true
+use_ridge = true
+use_kernel_ridge = false
+use_lasso = false
+use_elastic_net = false
+use_residual = true
+use_linearization = false
+# adsorbate = "OH"
+# anomaly_label = "normal"
+# anomaly_label = "inference_anomaly"
+# anomaly_label = "!adsorbate_migration"
+# reaction_contains = ["Pt", "OH"]
+
+[analysis]
+run_adsorption_analysis = false
+# calculating_path = "data/mlips/example_run"
+# summary_workbook_path = "data/results/example/oasis_Benchmarking_Analysis.xlsx"
+# comparison_workbook_path = "data/results/example_control/oasis_Benchmarking_Analysis.xlsx"
+# comparison_plot_path = "data/results/plots/mae_comparison.png"
+base_dir = "data/mlips/example_run"
+out_dir = "data/mlips_by_prefix"
+prefixes = ["ol", "sa", "ss"]

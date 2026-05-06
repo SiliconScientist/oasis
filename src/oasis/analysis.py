@@ -15,6 +15,17 @@ from catbench.utils.analysis_utils import (
 from oasis.config import Config, get_config
 from oasis.plot import mae_comparison_plot
 
+_INFERENCE_ANOMALY_DETAILS = (
+    "slab_conv",
+    "ads_conv",
+    "slab_move",
+    "ads_move",
+    "slab_seed",
+    "ads_seed",
+    "ads_eng_seed",
+    "adsorbate_migration",
+)
+
 
 def _load_summary_dataframe(workbook_path: str | Path) -> pd.DataFrame:
     try:
@@ -234,14 +245,45 @@ def filter_wide_predictions(
 
     if anomaly_filter is not None:
         label_cols = [col for col in filtered_df.columns if col.endswith("_label")]
-        if not label_cols:
+        detail_cols = [
+            col
+            for col in filtered_df.columns
+            if any(
+                col.endswith(f"_{detail_name}")
+                for detail_name in _INFERENCE_ANOMALY_DETAILS
+            )
+        ]
+        if not label_cols and not detail_cols:
             raise ValueError(
                 f"Configured plot.anomaly_label='{anomaly_filter}', but no "
-                "label columns exist in the combined dataframe"
+                "label/detail columns exist in the combined dataframe"
             )
-        label_expr = pl.all_horizontal(
-            [pl.col(col) == anomaly_filter for col in label_cols]
+        exclude_mode = anomaly_filter.startswith(("!", "not:"))
+        anomaly_value = anomaly_filter[1:] if anomaly_filter.startswith("!") else (
+            anomaly_filter[4:] if anomaly_filter.startswith("not:") else anomaly_filter
         )
+        if not anomaly_value:
+            raise ValueError(
+                "plot.anomaly_label exclusion must specify a label, e.g. "
+                "'!adsorbate_migration' or 'not:adsorbate_migration'"
+            )
+        if anomaly_value == "inference_anomaly":
+            if not detail_cols:
+                raise ValueError(
+                    "Configured plot.anomaly_label for inference anomaly filtering, "
+                    "but no inference detail columns exist in the combined dataframe"
+                )
+            anomaly_expr = pl.any_horizontal([pl.col(col) > 0 for col in detail_cols])
+            label_expr = ~anomaly_expr if exclude_mode else anomaly_expr
+        else:
+            if exclude_mode:
+                label_expr = pl.all_horizontal(
+                    [pl.col(col) != anomaly_value for col in label_cols]
+                )
+            else:
+                label_expr = pl.all_horizontal(
+                    [pl.col(col) == anomaly_value for col in label_cols]
+                )
         filtered_df = filtered_df.filter(label_expr)
         if filtered_df.height == 0:
             raise ValueError(
