@@ -8,8 +8,15 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from oasis import plot
 from oasis.exp import SweepSplit, generate_sweep_splits
+from oasis.method import (
+    linearization_sweep,
+    linearization_sweep_trimmed,
+    residual_sweep,
+    residual_sweep_trimmed,
+    sweep_model,
+    sweep_model_trimmed,
+)
 
 
 class GenerateSweepSplitsTests(unittest.TestCase):
@@ -108,12 +115,12 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 return np.asarray(X).mean(axis=1)
 
         results = [
-            plot._sweep_model(lambda: DummyModel(), X, y, splits),
-            plot._sweep_model_trimmed(lambda: DummyModel(), X, y, splits),
-            plot._residual_sweep(X, y, splits),
-            plot._residual_sweep_trimmed(X, y, splits),
-            plot._linearization_sweep(X, y, splits),
-            plot._linearization_sweep_trimmed(X, y, splits),
+            sweep_model(lambda: DummyModel(), X, y, splits),
+            sweep_model_trimmed(lambda: DummyModel(), X, y, splits),
+            residual_sweep(X, y, splits),
+            residual_sweep_trimmed(X, y, splits),
+            linearization_sweep(X, y, splits),
+            linearization_sweep_trimmed(X, y, splits),
         ]
 
         for df in results:

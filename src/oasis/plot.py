@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
-from oasis.exp import SweepSplit, generate_sweep_splits
+from oasis.exp import generate_sweep_splits
+from oasis.method import (
+    linearization_sweep,
+    linearization_sweep_trimmed,
+    residual_sweep,
+    residual_sweep_trimmed,
+    sweep_model,
+    sweep_model_trimmed,
+)
 
 try:
     import polars as pl
@@ -15,8 +23,7 @@ except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
     pl = None
 
 from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
-from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import ElasticNet, Lasso, Ridge
 
 
 _MLIP_DISPLAY_NAMES = {
@@ -26,8 +33,6 @@ _MLIP_DISPLAY_NAMES = {
     "orb-v3-conservative-inf-omat": "ORB-v3\nconservative",
     "uma-s-1p1": "UMA-s-1p1",
 }
-
-_SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 
 
 def mae_comparison_plot(
@@ -152,196 +157,6 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
     return output_path
 
 
-def _trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
-    """
-    Compute per-sample mean after dropping MLIP predictions outside 1 std from row mean.
-    """
-    row_means = X_corrected.mean(axis=1)
-    row_stds = X_corrected.std(axis=1)
-    # Broadcast masks; keep all if std is zero or mask would be empty.
-    mask = np.abs(X_corrected - row_means[:, None]) <= row_stds[:, None]
-    empty_mask = mask.sum(axis=1) == 0
-    if empty_mask.any():
-        mask[empty_mask] = True
-    return (X_corrected * mask).sum(axis=1) / mask.sum(axis=1)
-
-
-def _sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
-    """Build the standard sweep result frame from per-size RMSE samples."""
-
-    rows = [
-        {
-            "n_train": n_train,
-            "rmse_mean": float(np.mean(rmses)),
-            "rmse_std": float(np.std(rmses)),
-        }
-        for n_train, rmses in sorted(rmses_by_size.items())
-    ]
-    return pd.DataFrame(rows, columns=_SWEEP_RESULT_COLUMNS)
-
-
-def _sweep_model(
-    model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    """Evaluate a supervised model across precomputed sweep splits."""
-
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        model = model_factory()
-        model.fit(X[split.train_idx], y[split.train_idx])
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
-def _sweep_model_trimmed(
-    model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    """
-    Fit the model, drop test samples with large contribution z-scores, and refit.
-    """
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        model = model_factory()
-        model.fit(X[split.train_idx], y[split.train_idx])
-
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-
-        # Compute contribution z-scores per sample
-        w = model.coef_
-        contrib = X_test * w
-        mu = contrib.mean()
-        sigma = contrib.std() if contrib.std() > 0 else 1.0
-        z = (contrib - mu) / sigma
-        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-        if keep_mask.sum() == 0:
-            keep_mask = np.ones(len(X_test), dtype=bool)
-
-        preds_eval = preds[keep_mask]
-        y_eval = y[split.test_idx][keep_mask]
-        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
-def _residual_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    """Evaluate residual correction across precomputed sweep splits."""
-
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        residuals = y_train[:, None] - X_train
-        mean_residuals = residuals.mean(axis=0)
-
-        X_corrected = X[split.test_idx] + mean_residuals
-        preds = X_corrected.mean(axis=1)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
-def _residual_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    """
-    Residual correction with per-sample outlier MLIP removal before averaging.
-    """
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        residuals = y_train[:, None] - X_train
-        mean_residuals = residuals.mean(axis=0)
-
-        X_corrected = X[split.test_idx] + mean_residuals
-        preds = _trimmed_mean_predictions(X_corrected)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
-def _linearization_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    """Evaluate linearization correction across precomputed sweep splits."""
-
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        Xh = np.asarray(X_train)
-        yh = np.asarray(y_train).reshape(-1, 1)
-
-        if Xh.ndim == 1:
-            mu_h = Xh.reshape(-1, 1)
-        else:
-            mu_h = Xh.mean(axis=1, keepdims=True)
-
-        lr = LinearRegression().fit(mu_h, yh)
-        a = float(lr.coef_.ravel()[0])
-        b = float(lr.intercept_.ravel()[0])
-
-        X_linearized = a * X + b
-        preds = X_linearized[split.test_idx].mean(axis=1)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
-def _linearization_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
-) -> pd.DataFrame:
-    """
-    Linearize against trimmed train means, then trim ensemble averaging.
-    """
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        Xh = np.asarray(X_train)
-        yh = np.asarray(y_train).reshape(-1, 1)
-
-        if Xh.ndim == 1:
-            mu_h = Xh.reshape(-1, 1)
-        else:
-            mu_h = _trimmed_mean_predictions(Xh).reshape(-1, 1)
-
-        lr = LinearRegression().fit(mu_h, yh)
-        a = float(lr.coef_.ravel()[0])
-        b = float(lr.intercept_.ravel()[0])
-
-        X_linearized = a * X + b
-        preds = _trimmed_mean_predictions(X_linearized[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return _sweep_results_frame(rmses_by_size)
-
-
 def learning_curve_plot(
     df: pl.DataFrame,
     output_path: str | Path,
@@ -392,12 +207,12 @@ def learning_curve_plot(
     )
 
     ridge_df = (
-        _sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
+        sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
         if use_ridge
         else None
     )
     kernel_ridge_df = (
-        _sweep_model(
+        sweep_model(
             lambda: KernelRidge(alpha=1.0, kernel="rbf"),
             X,
             y,
@@ -407,7 +222,7 @@ def learning_curve_plot(
         else None
     )
     ridge_trimmed_df = (
-        _sweep_model_trimmed(
+        sweep_model_trimmed(
             lambda: Ridge(alpha=0.1),
             X,
             y,
@@ -418,12 +233,12 @@ def learning_curve_plot(
         else None
     )
     lasso_df = (
-        _sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, shared_splits)
+        sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, shared_splits)
         if use_lasso
         else None
     )
     lasso_trimmed_df = (
-        _sweep_model_trimmed(
+        sweep_model_trimmed(
             lambda: Lasso(alpha=0.1, max_iter=10000),
             X,
             y,
@@ -434,7 +249,7 @@ def learning_curve_plot(
         else None
     )
     elastic_df = (
-        _sweep_model(
+        sweep_model(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
@@ -444,7 +259,7 @@ def learning_curve_plot(
         else None
     )
     elastic_trimmed_df = (
-        _sweep_model_trimmed(
+        sweep_model_trimmed(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
@@ -455,22 +270,22 @@ def learning_curve_plot(
         else None
     )
     resid_df = (
-        _residual_sweep(X, y, shared_splits)
+        residual_sweep(X, y, shared_splits)
         if use_residual
         else None
     )
     resid_trimmed_df = (
-        _residual_sweep_trimmed(X, y, shared_splits)
+        residual_sweep_trimmed(X, y, shared_splits)
         if use_trim and use_residual
         else None
     )
     linear_df = (
-        _linearization_sweep(X, y, shared_splits)
+        linearization_sweep(X, y, shared_splits)
         if use_linearization
         else None
     )
     linear_trimmed_df = (
-        _linearization_sweep_trimmed(X, y, shared_splits)
+        linearization_sweep_trimmed(X, y, shared_splits)
         if use_trim and use_linearization
         else None
     )
