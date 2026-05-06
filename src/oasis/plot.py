@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
-from oasis.exp import generate_sweep_splits
+from oasis.exp import SweepSplit, generate_sweep_splits
 
 try:
     import polars as pl
@@ -168,20 +168,19 @@ def _sweep_model(
     model_factory,
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        model = model_factory()
+        model.fit(X[split.train_idx], y[split.train_idx])
+        X_test = X[split.test_idx]
+        preds = model.predict(X_test)
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            model = model_factory()
-            model.fit(X[split.train_idx], y[split.train_idx])
-            X_test = X[split.test_idx]
-            preds = model.predict(X_test)
-            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -196,39 +195,37 @@ def _sweep_model_trimmed(
     model_factory,
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
     z_thresh: float = 1.0,
 ) -> pd.DataFrame:
     """
     Fit the model, drop test samples with large contribution z-scores, and refit.
     """
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        model = model_factory()
+        model.fit(X[split.train_idx], y[split.train_idx])
+
+        X_test = X[split.test_idx]
+        preds = model.predict(X_test)
+
+        # Compute contribution z-scores per sample
+        w = model.coef_
+        contrib = X_test * w
+        mu = contrib.mean()
+        sigma = contrib.std() if contrib.std() > 0 else 1.0
+        z = (contrib - mu) / sigma
+        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+        if keep_mask.sum() == 0:
+            keep_mask = np.ones(len(X_test), dtype=bool)
+
+        preds_eval = preds[keep_mask]
+        y_eval = y[split.test_idx][keep_mask]
+        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            model = model_factory()
-            model.fit(X[split.train_idx], y[split.train_idx])
-
-            X_test = X[split.test_idx]
-            preds = model.predict(X_test)
-
-            # Compute contribution z-scores per sample
-            w = model.coef_
-            contrib = X_test * w
-            mu = contrib.mean()
-            sigma = contrib.std() if contrib.std() > 0 else 1.0
-            z = (contrib - mu) / sigma
-            keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-            if keep_mask.sum() == 0:
-                keep_mask = np.ones(len(X_test), dtype=bool)
-
-            preds_eval = preds[keep_mask]
-            y_eval = y[split.test_idx][keep_mask]
-            rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
-
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -443,17 +440,42 @@ def learning_curve_plot(
     rng_linear = np.random.default_rng(2024)
     rng_resid_trimmed = np.random.default_rng(77)
     rng_linear_trimmed = np.random.default_rng(2025)
+    max_train_val = min(max_train_val, len(X) - 1)
+
+    ridge_splits = list(
+        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_ridge)
+    )
+    kernel_ridge_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_kernel_ridge
+        )
+    )
+    ridge_trimmed_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_ridge_trimmed
+        )
+    )
+    lasso_splits = list(
+        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_lasso)
+    )
+    lasso_trimmed_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_lasso_trimmed
+        )
+    )
+    elastic_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_elastic
+        )
+    )
+    elastic_trimmed_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_elastic_trimmed
+        )
+    )
 
     ridge_df = (
-        _sweep_model(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge,
-        )
+        _sweep_model(lambda: Ridge(alpha=0.1), X, y, ridge_splits)
         if use_ridge
         else None
     )
@@ -462,10 +484,7 @@ def learning_curve_plot(
             lambda: KernelRidge(alpha=1.0, kernel="rbf"),
             X,
             y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_kernel_ridge,
+            kernel_ridge_splits,
         )
         if use_kernel_ridge
         else None
@@ -475,25 +494,14 @@ def learning_curve_plot(
             lambda: Ridge(alpha=0.1),
             X,
             y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_ridge_trimmed,
+            ridge_trimmed_splits,
             z_thresh=1.0,
         )
         if use_trim and use_ridge
         else None
     )
     lasso_df = (
-        _sweep_model(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
-            X,
-            y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_lasso,
-        )
+        _sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, lasso_splits)
         if use_lasso
         else None
     )
@@ -502,10 +510,7 @@ def learning_curve_plot(
             lambda: Lasso(alpha=0.1, max_iter=10000),
             X,
             y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_lasso_trimmed,
+            lasso_trimmed_splits,
             z_thresh=1.0,
         )
         if use_trim and use_lasso
@@ -516,10 +521,7 @@ def learning_curve_plot(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_elastic,
+            elastic_splits,
         )
         if use_elastic
         else None
@@ -529,10 +531,7 @@ def learning_curve_plot(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            rng_elastic_trimmed,
+            elastic_trimmed_splits,
             z_thresh=1.0,
         )
         if use_trim and use_elastic
