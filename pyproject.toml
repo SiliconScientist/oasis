@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "oasis_SiliconScientist"
 version = "0.0.1"
@@ -6,8 +10,18 @@ description = "Refining ML interatomic potentials with sparse ab initio data in 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "ase",
+    "catbench",
+    "matplotlib",
+    "numpy",
+    "openpyxl",
+    "pandas",
+    "polars",
+    "pydantic",
+    "PyYAML",
     "rootstock",
     "scikit-learn",
+    "sympy",
     "tomli; python_version < '3.11'",
 ]
 classifiers = [
@@ -17,6 +31,20 @@ classifiers = [
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
+
 [project.urls]
 Homepage = "https://github.com/SiliconScientist/oasis"
 Issues = "https://github.com/SiliconScientist/oasis/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
