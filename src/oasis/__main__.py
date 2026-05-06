@@ -5,6 +5,7 @@ import sys
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
+from oasis.exp import run_learning_curve_experiments_from_config
 from oasis.io import find_result_files, load_wide_predictions
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
@@ -56,9 +57,10 @@ def main() -> None:
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
 
+    learning_curve_results = run_learning_curve_experiments_from_config(wide_df, cfg)
+
     learning_curve_plot(
-        cfg=cfg,
-        df=wide_df,
+        results=learning_curve_results,
         output_path=output_dir / "learning_curve.png",
     )
 

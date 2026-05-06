@@ -6,13 +6,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from oasis.config import Config
-from oasis.exp import run_learning_curve_experiments
-
-try:
-    import polars as pl
-except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
-    pl = None
+from oasis.exp import LearningCurveResults, prepare_parity_plot_data
 
 _MLIP_DISPLAY_NAMES = {
     "7net-omni": "7Net-Omni",
@@ -81,50 +75,31 @@ def mae_comparison_plot(
     return output_path
 
 
-def _mlip_columns(df: Any) -> list[str]:
-    return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
-
-
-def _column_to_numpy(df: Any, col: str) -> np.ndarray:
-    series = df[col]
-    if hasattr(series, "to_numpy"):
-        return series.to_numpy()
-    return np.asarray(series)
-
-
 def parity_plot(df: Any, output_path: str | Path) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
 
     Returns the path to the saved PNG.
     """
-    mlip_cols = _mlip_columns(df)
-    if not mlip_cols:
-        raise ValueError(
-            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
-        )
-    n_rows = len(df)
-    if n_rows == 0:
-        raise ValueError("No data available to plot.")
-
-    ref = _column_to_numpy(df, "reference_ads_eng")
+    plot_data = prepare_parity_plot_data(df)
+    ref = plot_data.reference
 
     fig, ax = plt.subplots(figsize=(7, 7))
-    cmap = plt.cm.get_cmap("tab10", len(mlip_cols))
+    cmap = plt.cm.get_cmap("tab10", len(plot_data.predictions))
 
-    for idx, col in enumerate(mlip_cols):
+    for idx, (label, preds) in enumerate(plot_data.predictions.items()):
         ax.scatter(
             ref,
-            _column_to_numpy(df, col),
+            preds,
             s=35,
             alpha=0.85,
-            label=col.removesuffix("_mlip_ads_eng_median"),
+            label=label,
             color=cmap(idx),
             edgecolor="black",
             linewidth=0.5,
         )
 
-    mlip_vals = np.concatenate([_column_to_numpy(df, c) for c in mlip_cols])
+    mlip_vals = np.concatenate(list(plot_data.predictions.values()))
     min_val = min(ref.min(), mlip_vals.min())
     max_val = max(ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
@@ -146,58 +121,10 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
 
 
 def learning_curve_plot(
-    df: pl.DataFrame,
+    results: LearningCurveResults,
     output_path: str | Path,
-    min_train: int | None = None,
-    max_train: int | None = None,
-    n_repeats: int = 50,
     fontsize: int = 8,
-    cfg: Config | None = None,
 ) -> Path:
-    """
-    Reproduce the ensemble RMSE sweeps from the notebook's final cell and plot the overlay.
-    """
-    feature_cols = _mlip_columns(df)
-    target_col = "reference_ads_eng"
-
-    use_trim = cfg.plot.trim if cfg else True
-    use_ridge = cfg.plot.use_ridge if cfg else True
-    use_kernel_ridge = cfg.plot.use_kernel_ridge if cfg else True
-    use_lasso = cfg.plot.use_lasso if cfg else True
-    use_elastic = cfg.plot.use_elastic_net if cfg else True
-    use_residual = cfg.plot.use_residual if cfg else True
-    use_linearization = cfg.plot.use_linearization if cfg else True
-    cfg_min_train = cfg.plot.min_train if cfg else 5
-    cfg_max_train = cfg.plot.max_train if cfg else 10
-    min_train_val = min_train if min_train is not None else cfg_min_train
-    max_train_val = max_train if max_train is not None else cfg_max_train
-
-    if not feature_cols:
-        raise ValueError(
-            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
-        )
-    if df.height <= 5:
-        raise ValueError("Not enough data to evaluate (need >5 samples).")
-
-    X = df.select(feature_cols).to_numpy()
-    y = df[target_col].to_numpy()
-
-    seed = cfg.seed if cfg and cfg.seed is not None else 42
-    results = run_learning_curve_experiments(
-        X,
-        y,
-        min_train=min_train_val,
-        max_train=max_train_val,
-        n_repeats=n_repeats,
-        seed=seed,
-        use_trim=use_trim,
-        use_ridge=use_ridge,
-        use_kernel_ridge=use_kernel_ridge,
-        use_lasso=use_lasso,
-        use_elastic=use_elastic,
-        use_residual=use_residual,
-        use_linearization=use_linearization,
-    )
     fig, ax = plt.subplots(figsize=(7, 4))
     if results.ridge_df is not None:
         ax.plot(
