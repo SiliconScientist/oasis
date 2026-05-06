@@ -8,7 +8,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from oasis.exp import generate_sweep_splits
+from oasis.exp import SweepSplit, generate_sweep_splits
 
 
 class GenerateSweepSplitsTests(unittest.TestCase):
@@ -26,18 +26,22 @@ class GenerateSweepSplitsTests(unittest.TestCase):
         )
 
         self.assertEqual(len(splits), 4)
+        self.assertTrue(all(isinstance(split, SweepSplit) for split in splits))
 
         expected_sizes = [2, 2, 3, 3]
-        observed_sizes = [n_train for n_train, _, _ in splits]
+        observed_sizes = [split.sweep_size for split in splits]
         self.assertEqual(observed_sizes, expected_sizes)
 
         full_idx = np.arange(6)
-        for n_train, train_idx, test_idx in splits:
-            self.assertEqual(len(train_idx), n_train)
-            self.assertEqual(len(test_idx), 6 - n_train)
-            self.assertEqual(len(np.intersect1d(train_idx, test_idx)), 0)
+        for split in splits:
+            self.assertEqual(len(split.train_idx), split.sweep_size)
+            self.assertEqual(len(split.test_idx), 6 - split.sweep_size)
+            self.assertEqual(
+                len(np.intersect1d(split.train_idx, split.test_idx)),
+                0,
+            )
             np.testing.assert_array_equal(
-                np.sort(np.concatenate([train_idx, test_idx])),
+                np.sort(np.concatenate([split.train_idx, split.test_idx])),
                 full_idx,
             )
 

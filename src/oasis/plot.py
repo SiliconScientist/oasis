@@ -176,14 +176,12 @@ def _sweep_model(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
             model = model_factory()
-            model.fit(X[train_idx], y[train_idx])
-            X_test = X[test_idx]
+            model.fit(X[split.train_idx], y[split.train_idx])
+            X_test = X[split.test_idx]
             preds = model.predict(X_test)
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
         results.append(
             {
                 "n_train": n_train,
@@ -210,13 +208,11 @@ def _sweep_model_trimmed(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
             model = model_factory()
-            model.fit(X[train_idx], y[train_idx])
+            model.fit(X[split.train_idx], y[split.train_idx])
 
-            X_test = X[test_idx]
+            X_test = X[split.test_idx]
             preds = model.predict(X_test)
 
             # Compute contribution z-scores per sample
@@ -230,7 +226,7 @@ def _sweep_model_trimmed(
                 keep_mask = np.ones(len(X_test), dtype=bool)
 
             preds_eval = preds[keep_mask]
-            y_eval = y[test_idx][keep_mask]
+            y_eval = y[split.test_idx][keep_mask]
             rmses.append(np.sqrt(mean_squared_error(y_eval, preds_eval)))
 
         results.append(
@@ -254,19 +250,17 @@ def _residual_sweep(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
-            X_train = X[train_idx]
-            y_train = y[train_idx]
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
+            X_train = X[split.train_idx]
+            y_train = y[split.train_idx]
 
             residuals = y_train[:, None] - X_train
             mean_residuals = residuals.mean(axis=0)
 
-            X_corrected = X[test_idx] + mean_residuals
+            X_corrected = X[split.test_idx] + mean_residuals
             preds = X_corrected.mean(axis=1)
 
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
 
         results.append(
             {
@@ -292,19 +286,17 @@ def _residual_sweep_trimmed(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
-            X_train = X[train_idx]
-            y_train = y[train_idx]
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
+            X_train = X[split.train_idx]
+            y_train = y[split.train_idx]
 
             residuals = y_train[:, None] - X_train
             mean_residuals = residuals.mean(axis=0)
 
-            X_corrected = X[test_idx] + mean_residuals
+            X_corrected = X[split.test_idx] + mean_residuals
             preds = _trimmed_mean_predictions(X_corrected)
 
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
 
         results.append(
             {
@@ -327,11 +319,9 @@ def _linearization_sweep(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
-            X_train = X[train_idx]
-            y_train = y[train_idx]
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
+            X_train = X[split.train_idx]
+            y_train = y[split.train_idx]
 
             Xh = np.asarray(X_train)
             yh = np.asarray(y_train).reshape(-1, 1)
@@ -346,9 +336,9 @@ def _linearization_sweep(
             b = float(lr.intercept_.ravel()[0])
 
             X_linearized = a * X + b
-            preds = X_linearized[test_idx].mean(axis=1)
+            preds = X_linearized[split.test_idx].mean(axis=1)
 
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
 
         results.append(
             {
@@ -374,11 +364,9 @@ def _linearization_sweep_trimmed(
     results = []
     for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _, train_idx, test_idx in generate_sweep_splits(
-            len(X), n_train, n_train, n_repeats, rng
-        ):
-            X_train = X[train_idx]
-            y_train = y[train_idx]
+        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
+            X_train = X[split.train_idx]
+            y_train = y[split.train_idx]
 
             Xh = np.asarray(X_train)
             yh = np.asarray(y_train).reshape(-1, 1)
@@ -393,9 +381,9 @@ def _linearization_sweep_trimmed(
             b = float(lr.intercept_.ravel()[0])
 
             X_linearized = a * X + b
-            preds = _trimmed_mean_predictions(X_linearized[test_idx])
+            preds = _trimmed_mean_predictions(X_linearized[split.test_idx])
 
-            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
 
         results.append(
             {
