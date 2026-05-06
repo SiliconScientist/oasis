@@ -1,22 +1,37 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from oasis.exp import SweepSplit, generate_sweep_splits
-from oasis.method import (
-    linearization_sweep,
-    linearization_sweep_trimmed,
-    residual_sweep,
-    residual_sweep_trimmed,
-    sweep_model,
-    sweep_model_trimmed,
+from oasis.exp import (
+    LearningCurveResults,
+    SweepSplit,
+    generate_sweep_splits,
+    prepare_parity_plot_data,
+    run_learning_curve_experiments_from_config,
 )
+from oasis.plot import learning_curve_plot
+
+try:
+    from oasis.method import (
+        linearization_sweep,
+        linearization_sweep_trimmed,
+        residual_sweep,
+        residual_sweep_trimmed,
+        sweep_model,
+        sweep_model_trimmed,
+    )
+
+    HAS_SKLEARN = True
+except ModuleNotFoundError:
+    HAS_SKLEARN = False
 
 
 class GenerateSweepSplitsTests(unittest.TestCase):
@@ -81,6 +96,7 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 
 class SweepOutputRegressionTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
         X = np.array(
             [
@@ -126,6 +142,75 @@ class SweepOutputRegressionTests(unittest.TestCase):
         for df in results:
             self.assertEqual(df["n_train"].tolist(), expected_counts)
             self.assertEqual(df.columns.tolist(), expected_columns)
+
+
+class BoundaryTests(unittest.TestCase):
+    def test_prepare_parity_plot_data_extracts_render_inputs(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9],
+            }
+        )
+
+        plot_data = prepare_parity_plot_data(df)
+
+        np.testing.assert_array_equal(plot_data.reference, np.array([1.0, 2.0]))
+        self.assertEqual(set(plot_data.predictions), {"ridge", "lasso"})
+        np.testing.assert_array_equal(
+            plot_data.predictions["ridge"],
+            np.array([1.1, 2.1]),
+        )
+
+    def test_run_learning_curve_experiments_from_config_uses_defaults_without_cfg(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+
+        if not HAS_SKLEARN:
+            self.skipTest("requires scikit-learn")
+
+        results = run_learning_curve_experiments_from_config(df, cfg=None)
+
+        self.assertIsInstance(results, LearningCurveResults)
+        self.assertIsNotNone(results.ridge_df)
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [5])
+
+    def test_learning_curve_plot_renders_from_results_only(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+        results = LearningCurveResults(
+            ridge_df=result_df,
+            kernel_ridge_df=None,
+            ridge_trimmed_df=None,
+            lasso_df=None,
+            lasso_trimmed_df=None,
+            elastic_df=None,
+            elastic_trimmed_df=None,
+            resid_df=None,
+            resid_trimmed_df=None,
+            linear_df=None,
+            linear_trimmed_df=None,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "learning_curve.png"
+            saved_path = learning_curve_plot(results, output_path=output_path)
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
 
 
 if __name__ == "__main__":

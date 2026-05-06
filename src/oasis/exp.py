@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from collections.abc import Iterator
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
-from oasis.config import Config
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import ElasticNet, Lasso, Ridge
+
+if TYPE_CHECKING:
+    from oasis.config import Config
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +186,8 @@ def run_learning_curve_experiments(
         sweep_model,
         sweep_model_trimmed,
     )
+    from sklearn.kernel_ridge import KernelRidge
+    from sklearn.linear_model import ElasticNet, Lasso, Ridge
 
     max_train = min(max_train, len(X) - 1)
     shared_splits = list(
