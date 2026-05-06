@@ -167,6 +167,8 @@ def _trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
 
 
 def _sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
+    """Build the standard sweep result frame from per-size RMSE samples."""
+
     rows = [
         {
             "n_train": n_train,
@@ -184,6 +186,8 @@ def _sweep_model(
     y: np.ndarray,
     splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    """Evaluate a supervised model across precomputed sweep splits."""
+
     rmses_by_size: dict[int, list[float]] = {}
     for split in splits:
         model = model_factory()
@@ -235,6 +239,8 @@ def _residual_sweep(
     y: np.ndarray,
     splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    """Evaluate residual correction across precomputed sweep splits."""
+
     rmses_by_size: dict[int, list[float]] = {}
     for split in splits:
         X_train = X[split.train_idx]
@@ -278,6 +284,8 @@ def _linearization_sweep(
     y: np.ndarray,
     splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    """Evaluate linearization correction across precomputed sweep splits."""
+
     rmses_by_size: dict[int, list[float]] = {}
     for split in splits:
         X_train = X[split.train_idx]

@@ -8,6 +8,8 @@ import numpy as np
 
 @dataclass(frozen=True, slots=True)
 class SweepSplit:
+    """One train/test split for a sweep size."""
+
     sweep_size: int
     train_idx: np.ndarray
     test_idx: np.ndarray
@@ -20,6 +22,8 @@ def generate_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
 ) -> Iterator[SweepSplit]:
+    """Yield repeated train/test splits for each sweep size in the range."""
+
     idx = np.arange(n_samples)
     max_train = min(max_train, n_samples - 1)
     for n_train in range(min_train, max_train + 1):
