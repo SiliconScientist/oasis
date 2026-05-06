@@ -417,69 +417,20 @@ def learning_curve_plot(
     X = df.select(feature_cols).to_numpy()
     y = df[target_col].to_numpy()
 
-    rng_ridge = np.random.default_rng(41)
-    rng_ridge_trimmed = np.random.default_rng(42)
-    rng_lasso = np.random.default_rng(123)
-    rng_lasso_trimmed = np.random.default_rng(124)
-    rng_elastic = np.random.default_rng(321)
-    rng_elastic_trimmed = np.random.default_rng(322)
-    rng_kernel_ridge = np.random.default_rng(2718)
-    rng_resid = np.random.default_rng(999)
-    rng_linear = np.random.default_rng(2024)
-    rng_resid_trimmed = np.random.default_rng(77)
-    rng_linear_trimmed = np.random.default_rng(2025)
     max_train_val = min(max_train_val, len(X) - 1)
-
-    ridge_splits = list(
-        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_ridge)
-    )
-    kernel_ridge_splits = list(
+    seed = cfg.seed if cfg and cfg.seed is not None else 42
+    shared_splits = list(
         generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_kernel_ridge
-        )
-    )
-    ridge_trimmed_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_ridge_trimmed
-        )
-    )
-    lasso_splits = list(
-        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_lasso)
-    )
-    lasso_trimmed_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_lasso_trimmed
-        )
-    )
-    elastic_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_elastic
-        )
-    )
-    elastic_trimmed_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_elastic_trimmed
-        )
-    )
-    resid_splits = list(
-        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_resid)
-    )
-    resid_trimmed_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_resid_trimmed
-        )
-    )
-    linear_splits = list(
-        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_linear)
-    )
-    linear_trimmed_splits = list(
-        generate_sweep_splits(
-            len(X), min_train_val, max_train_val, n_repeats, rng_linear_trimmed
+            len(X),
+            min_train_val,
+            max_train_val,
+            n_repeats,
+            np.random.default_rng(seed),
         )
     )
 
     ridge_df = (
-        _sweep_model(lambda: Ridge(alpha=0.1), X, y, ridge_splits)
+        _sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
         if use_ridge
         else None
     )
@@ -488,7 +439,7 @@ def learning_curve_plot(
             lambda: KernelRidge(alpha=1.0, kernel="rbf"),
             X,
             y,
-            kernel_ridge_splits,
+            shared_splits,
         )
         if use_kernel_ridge
         else None
@@ -498,14 +449,14 @@ def learning_curve_plot(
             lambda: Ridge(alpha=0.1),
             X,
             y,
-            ridge_trimmed_splits,
+            shared_splits,
             z_thresh=1.0,
         )
         if use_trim and use_ridge
         else None
     )
     lasso_df = (
-        _sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, lasso_splits)
+        _sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, shared_splits)
         if use_lasso
         else None
     )
@@ -514,7 +465,7 @@ def learning_curve_plot(
             lambda: Lasso(alpha=0.1, max_iter=10000),
             X,
             y,
-            lasso_trimmed_splits,
+            shared_splits,
             z_thresh=1.0,
         )
         if use_trim and use_lasso
@@ -525,7 +476,7 @@ def learning_curve_plot(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
-            elastic_splits,
+            shared_splits,
         )
         if use_elastic
         else None
@@ -535,29 +486,29 @@ def learning_curve_plot(
             lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
             X,
             y,
-            elastic_trimmed_splits,
+            shared_splits,
             z_thresh=1.0,
         )
         if use_trim and use_elastic
         else None
     )
     resid_df = (
-        _residual_sweep(X, y, resid_splits)
+        _residual_sweep(X, y, shared_splits)
         if use_residual
         else None
     )
     resid_trimmed_df = (
-        _residual_sweep_trimmed(X, y, resid_trimmed_splits)
+        _residual_sweep_trimmed(X, y, shared_splits)
         if use_trim and use_residual
         else None
     )
     linear_df = (
-        _linearization_sweep(X, y, linear_splits)
+        _linearization_sweep(X, y, shared_splits)
         if use_linearization
         else None
     )
     linear_trimmed_df = (
-        _linearization_sweep_trimmed(X, y, linear_trimmed_splits)
+        _linearization_sweep_trimmed(X, y, shared_splits)
         if use_trim and use_linearization
         else None
     )
