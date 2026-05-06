@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
+from oasis.exp import generate_sweep_splits
 
 try:
     import polars as pl
@@ -173,13 +174,11 @@ def _sweep_model(
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     results = []
-    max_train = min(max_train, len(X) - 1)
-    for n_train in range(min_train, max_train + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
             model = model_factory()
             model.fit(X[train_idx], y[train_idx])
             X_test = X[test_idx]
@@ -209,13 +208,11 @@ def _sweep_model_trimmed(
     Fit the model, drop test samples with large contribution z-scores, and refit.
     """
     results = []
-    max_train = min(max_train, len(X) - 1)
-    for n_train in range(min_train, max_train + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
             model = model_factory()
             model.fit(X[train_idx], y[train_idx])
 
@@ -249,34 +246,31 @@ def _sweep_model_trimmed(
 def _residual_sweep(
     X: np.ndarray,
     y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
+    min_train: int,
+    max_train: int,
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
+            X_train = X[train_idx]
+            y_train = y[train_idx]
 
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            residuals = y_hold[:, None] - X_hold
+            residuals = y_train[:, None] - X_train
             mean_residuals = residuals.mean(axis=0)
 
-            X_corrected = X[keep_idx] + mean_residuals
+            X_corrected = X[test_idx] + mean_residuals
             preds = X_corrected.mean(axis=1)
 
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
 
         results.append(
             {
-                "n_holdout": n_hold,
+                "n_train": n_train,
                 "rmse_mean": float(np.mean(rmses)),
                 "rmse_std": float(np.std(rmses)),
             }
@@ -287,8 +281,8 @@ def _residual_sweep(
 def _residual_sweep_trimmed(
     X: np.ndarray,
     y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
+    min_train: int,
+    max_train: int,
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
@@ -296,28 +290,25 @@ def _residual_sweep_trimmed(
     Residual correction with per-sample outlier MLIP removal before averaging.
     """
     results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
+            X_train = X[train_idx]
+            y_train = y[train_idx]
 
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            residuals = y_hold[:, None] - X_hold
+            residuals = y_train[:, None] - X_train
             mean_residuals = residuals.mean(axis=0)
 
-            X_corrected = X[keep_idx] + mean_residuals
+            X_corrected = X[test_idx] + mean_residuals
             preds = _trimmed_mean_predictions(X_corrected)
 
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
 
         results.append(
             {
-                "n_holdout": n_hold,
+                "n_train": n_train,
                 "rmse_mean": float(np.mean(rmses)),
                 "rmse_std": float(np.std(rmses)),
             }
@@ -328,25 +319,22 @@ def _residual_sweep_trimmed(
 def _linearization_sweep(
     X: np.ndarray,
     y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
+    min_train: int,
+    max_train: int,
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
+            X_train = X[train_idx]
+            y_train = y[train_idx]
 
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            Xh = np.asarray(X_hold)
-            yh = np.asarray(y_hold).reshape(-1, 1)
+            Xh = np.asarray(X_train)
+            yh = np.asarray(y_train).reshape(-1, 1)
 
             if Xh.ndim == 1:
                 mu_h = Xh.reshape(-1, 1)
@@ -358,13 +346,13 @@ def _linearization_sweep(
             b = float(lr.intercept_.ravel()[0])
 
             X_linearized = a * X + b
-            preds = X_linearized[keep_idx].mean(axis=1)
+            preds = X_linearized[test_idx].mean(axis=1)
 
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
 
         results.append(
             {
-                "n_holdout": n_hold,
+                "n_train": n_train,
                 "rmse_mean": float(np.mean(rmses)),
                 "rmse_std": float(np.std(rmses)),
             }
@@ -375,28 +363,25 @@ def _linearization_sweep(
 def _linearization_sweep_trimmed(
     X: np.ndarray,
     y: np.ndarray,
-    min_hold: int,
-    max_hold: int,
+    min_train: int,
+    max_train: int,
     n_repeats: int,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     """
-    Linearize against trimmed holdout means, then trim ensemble averaging.
+    Linearize against trimmed train means, then trim ensemble averaging.
     """
     results = []
-    max_hold = min(max_hold, len(X) - 1)
-    for n_hold in range(min_hold, max_hold + 1):
+    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
         rmses = []
-        for _ in range(n_repeats):
-            idx = np.arange(len(X))
-            hold_idx = rng.choice(idx, size=n_hold, replace=False)
-            keep_idx = np.setdiff1d(idx, hold_idx, assume_unique=False)
+        for _, train_idx, test_idx in generate_sweep_splits(
+            len(X), n_train, n_train, n_repeats, rng
+        ):
+            X_train = X[train_idx]
+            y_train = y[train_idx]
 
-            X_hold = X[hold_idx]
-            y_hold = y[hold_idx]
-
-            Xh = np.asarray(X_hold)
-            yh = np.asarray(y_hold).reshape(-1, 1)
+            Xh = np.asarray(X_train)
+            yh = np.asarray(y_train).reshape(-1, 1)
 
             if Xh.ndim == 1:
                 mu_h = Xh.reshape(-1, 1)
@@ -408,13 +393,13 @@ def _linearization_sweep_trimmed(
             b = float(lr.intercept_.ravel()[0])
 
             X_linearized = a * X + b
-            preds = _trimmed_mean_predictions(X_linearized[keep_idx])
+            preds = _trimmed_mean_predictions(X_linearized[test_idx])
 
-            rmses.append(np.sqrt(mean_squared_error(y[keep_idx], preds)))
+            rmses.append(np.sqrt(mean_squared_error(y[test_idx], preds)))
 
         results.append(
             {
-                "n_holdout": n_hold,
+                "n_train": n_train,
                 "rmse_mean": float(np.mean(rmses)),
                 "rmse_std": float(np.std(rmses)),
             }
@@ -688,14 +673,14 @@ def learning_curve_plot(
         )
     if resid_df is not None:
         ax.plot(
-            resid_df["n_holdout"],
+            resid_df["n_train"],
             resid_df["rmse_mean"],
             marker="^",
             color="tab:green",
             label="Residual mean",
         )
         ax.fill_between(
-            resid_df["n_holdout"],
+            resid_df["n_train"],
             resid_df["rmse_mean"] - resid_df["rmse_std"],
             resid_df["rmse_mean"] + resid_df["rmse_std"],
             color="tab:green",
@@ -704,14 +689,14 @@ def learning_curve_plot(
         )
     if resid_trimmed_df is not None:
         ax.plot(
-            resid_trimmed_df["n_holdout"],
+            resid_trimmed_df["n_train"],
             resid_trimmed_df["rmse_mean"],
             marker="P",
             color="tab:brown",
             label="Residual (trimmed) mean",
         )
         ax.fill_between(
-            resid_trimmed_df["n_holdout"],
+            resid_trimmed_df["n_train"],
             resid_trimmed_df["rmse_mean"] - resid_trimmed_df["rmse_std"],
             resid_trimmed_df["rmse_mean"] + resid_trimmed_df["rmse_std"],
             color="tab:brown",
@@ -720,14 +705,14 @@ def learning_curve_plot(
         )
     if linear_df is not None:
         ax.plot(
-            linear_df["n_holdout"],
+            linear_df["n_train"],
             linear_df["rmse_mean"],
             marker="v",
             color="tab:red",
             label="Linearization mean",
         )
         ax.fill_between(
-            linear_df["n_holdout"],
+            linear_df["n_train"],
             linear_df["rmse_mean"] - linear_df["rmse_std"],
             linear_df["rmse_mean"] + linear_df["rmse_std"],
             color="tab:red",
@@ -736,14 +721,14 @@ def learning_curve_plot(
         )
     if linear_trimmed_df is not None:
         ax.plot(
-            linear_trimmed_df["n_holdout"],
+            linear_trimmed_df["n_train"],
             linear_trimmed_df["rmse_mean"],
             marker="<",
             color="tab:pink",
             label="Linearization (trimmed) mean",
         )
         ax.fill_between(
-            linear_trimmed_df["n_holdout"],
+            linear_trimmed_df["n_train"],
             linear_trimmed_df["rmse_mean"] - linear_trimmed_df["rmse_std"],
             linear_trimmed_df["rmse_mean"] + linear_trimmed_df["rmse_std"],
             color="tab:pink",
@@ -766,7 +751,7 @@ def learning_curve_plot(
             alpha=0.2,
             label="Ridge (trim z-score) +/- 1sd",
         )
-    ax.set_xlabel("Training / holdout size", fontsize=fontsize)
+    ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=fontsize)
