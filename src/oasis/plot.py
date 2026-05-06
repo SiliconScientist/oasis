@@ -27,6 +27,8 @@ _MLIP_DISPLAY_NAMES = {
     "uma-s-1p1": "UMA-s-1p1",
 }
 
+_SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+
 
 def mae_comparison_plot(
     comparison_df: pd.DataFrame,
@@ -164,6 +166,18 @@ def _trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
     return (X_corrected * mask).sum(axis=1) / mask.sum(axis=1)
 
 
+def _sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
+    rows = [
+        {
+            "n_train": n_train,
+            "rmse_mean": float(np.mean(rmses)),
+            "rmse_std": float(np.std(rmses)),
+        }
+        for n_train, rmses in sorted(rmses_by_size.items())
+    ]
+    return pd.DataFrame(rows, columns=_SWEEP_RESULT_COLUMNS)
+
+
 def _sweep_model(
     model_factory,
     X: np.ndarray,
@@ -178,17 +192,7 @@ def _sweep_model(
         preds = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def _sweep_model_trimmed(
@@ -223,17 +227,7 @@ def _sweep_model_trimmed(
         y_eval = y[split.test_idx][keep_mask]
         rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def _residual_sweep(
@@ -253,17 +247,7 @@ def _residual_sweep(
         preds = X_corrected.mean(axis=1)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def _residual_sweep_trimmed(
@@ -286,17 +270,7 @@ def _residual_sweep_trimmed(
         preds = _trimmed_mean_predictions(X_corrected)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def _linearization_sweep(
@@ -325,17 +299,7 @@ def _linearization_sweep(
         preds = X_linearized[split.test_idx].mean(axis=1)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def _linearization_sweep_trimmed(
@@ -367,17 +331,7 @@ def _linearization_sweep_trimmed(
         preds = _trimmed_mean_predictions(X_linearized[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-
-    results = []
-    for n_train, rmses in rmses_by_size.items():
-        results.append(
-            {
-                "n_train": n_train,
-                "rmse_mean": float(np.mean(rmses)),
-                "rmse_std": float(np.std(rmses)),
-            }
-        )
-    return pd.DataFrame(results)
+    return _sweep_results_frame(rmses_by_size)
 
 
 def learning_curve_plot(
