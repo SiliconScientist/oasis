@@ -4,6 +4,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import ElasticNet, Lasso, Ridge
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +16,21 @@ class SweepSplit:
     sweep_size: int
     train_idx: np.ndarray
     test_idx: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class LearningCurveResults:
+    ridge_df: pd.DataFrame | None
+    kernel_ridge_df: pd.DataFrame | None
+    ridge_trimmed_df: pd.DataFrame | None
+    lasso_df: pd.DataFrame | None
+    lasso_trimmed_df: pd.DataFrame | None
+    elastic_df: pd.DataFrame | None
+    elastic_trimmed_df: pd.DataFrame | None
+    resid_df: pd.DataFrame | None
+    resid_trimmed_df: pd.DataFrame | None
+    linear_df: pd.DataFrame | None
+    linear_trimmed_df: pd.DataFrame | None
 
 
 def generate_sweep_splits(
@@ -35,3 +53,129 @@ def generate_sweep_splits(
                 train_idx=train_idx,
                 test_idx=test_idx,
             )
+
+
+def run_learning_curve_experiments(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    seed: int = 42,
+    use_trim: bool = True,
+    use_ridge: bool = True,
+    use_kernel_ridge: bool = True,
+    use_lasso: bool = True,
+    use_elastic: bool = True,
+    use_residual: bool = True,
+    use_linearization: bool = True,
+) -> LearningCurveResults:
+    from oasis.method import (
+        linearization_sweep,
+        linearization_sweep_trimmed,
+        residual_sweep,
+        residual_sweep_trimmed,
+        sweep_model,
+        sweep_model_trimmed,
+    )
+
+    max_train = min(max_train, len(X) - 1)
+    shared_splits = list(
+        generate_sweep_splits(
+            len(X),
+            min_train,
+            max_train,
+            n_repeats,
+            np.random.default_rng(seed),
+        )
+    )
+
+    return LearningCurveResults(
+        ridge_df=(
+            sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
+            if use_ridge
+            else None
+        ),
+        kernel_ridge_df=(
+            sweep_model(
+                lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+                X,
+                y,
+                shared_splits,
+            )
+            if use_kernel_ridge
+            else None
+        ),
+        ridge_trimmed_df=(
+            sweep_model_trimmed(
+                lambda: Ridge(alpha=0.1),
+                X,
+                y,
+                shared_splits,
+                z_thresh=1.0,
+            )
+            if use_trim and use_ridge
+            else None
+        ),
+        lasso_df=(
+            sweep_model(
+                lambda: Lasso(alpha=0.1, max_iter=10000),
+                X,
+                y,
+                shared_splits,
+            )
+            if use_lasso
+            else None
+        ),
+        lasso_trimmed_df=(
+            sweep_model_trimmed(
+                lambda: Lasso(alpha=0.1, max_iter=10000),
+                X,
+                y,
+                shared_splits,
+                z_thresh=1.0,
+            )
+            if use_trim and use_lasso
+            else None
+        ),
+        elastic_df=(
+            sweep_model(
+                lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+                X,
+                y,
+                shared_splits,
+            )
+            if use_elastic
+            else None
+        ),
+        elastic_trimmed_df=(
+            sweep_model_trimmed(
+                lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
+                X,
+                y,
+                shared_splits,
+                z_thresh=1.0,
+            )
+            if use_trim and use_elastic
+            else None
+        ),
+        resid_df=(
+            residual_sweep(X, y, shared_splits) if use_residual else None
+        ),
+        resid_trimmed_df=(
+            residual_sweep_trimmed(X, y, shared_splits)
+            if use_trim and use_residual
+            else None
+        ),
+        linear_df=(
+            linearization_sweep(X, y, shared_splits)
+            if use_linearization
+            else None
+        ),
+        linear_trimmed_df=(
+            linearization_sweep_trimmed(X, y, shared_splits)
+            if use_trim and use_linearization
+            else None
+        ),
+    )

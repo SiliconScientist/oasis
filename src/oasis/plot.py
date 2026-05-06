@@ -7,24 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from oasis.config import Config
-from oasis.exp import generate_sweep_splits
-from oasis.method import (
-    linearization_sweep,
-    linearization_sweep_trimmed,
-    residual_sweep,
-    residual_sweep_trimmed,
-    sweep_model,
-    sweep_model_trimmed,
-)
+from oasis.exp import run_learning_curve_experiments
 
 try:
     import polars as pl
 except ModuleNotFoundError:  # optional for parity plotting from pandas inputs
     pl = None
-
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import ElasticNet, Lasso, Ridge
-
 
 _MLIP_DISPLAY_NAMES = {
     "7net-omni": "7Net-Omni",
@@ -194,274 +182,195 @@ def learning_curve_plot(
     X = df.select(feature_cols).to_numpy()
     y = df[target_col].to_numpy()
 
-    max_train_val = min(max_train_val, len(X) - 1)
     seed = cfg.seed if cfg and cfg.seed is not None else 42
-    shared_splits = list(
-        generate_sweep_splits(
-            len(X),
-            min_train_val,
-            max_train_val,
-            n_repeats,
-            np.random.default_rng(seed),
-        )
-    )
-
-    ridge_df = (
-        sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
-        if use_ridge
-        else None
-    )
-    kernel_ridge_df = (
-        sweep_model(
-            lambda: KernelRidge(alpha=1.0, kernel="rbf"),
-            X,
-            y,
-            shared_splits,
-        )
-        if use_kernel_ridge
-        else None
-    )
-    ridge_trimmed_df = (
-        sweep_model_trimmed(
-            lambda: Ridge(alpha=0.1),
-            X,
-            y,
-            shared_splits,
-            z_thresh=1.0,
-        )
-        if use_trim and use_ridge
-        else None
-    )
-    lasso_df = (
-        sweep_model(lambda: Lasso(alpha=0.1, max_iter=10000), X, y, shared_splits)
-        if use_lasso
-        else None
-    )
-    lasso_trimmed_df = (
-        sweep_model_trimmed(
-            lambda: Lasso(alpha=0.1, max_iter=10000),
-            X,
-            y,
-            shared_splits,
-            z_thresh=1.0,
-        )
-        if use_trim and use_lasso
-        else None
-    )
-    elastic_df = (
-        sweep_model(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-            X,
-            y,
-            shared_splits,
-        )
-        if use_elastic
-        else None
-    )
-    elastic_trimmed_df = (
-        sweep_model_trimmed(
-            lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-            X,
-            y,
-            shared_splits,
-            z_thresh=1.0,
-        )
-        if use_trim and use_elastic
-        else None
-    )
-    resid_df = (
-        residual_sweep(X, y, shared_splits)
-        if use_residual
-        else None
-    )
-    resid_trimmed_df = (
-        residual_sweep_trimmed(X, y, shared_splits)
-        if use_trim and use_residual
-        else None
-    )
-    linear_df = (
-        linearization_sweep(X, y, shared_splits)
-        if use_linearization
-        else None
-    )
-    linear_trimmed_df = (
-        linearization_sweep_trimmed(X, y, shared_splits)
-        if use_trim and use_linearization
-        else None
+    results = run_learning_curve_experiments(
+        X,
+        y,
+        min_train=min_train_val,
+        max_train=max_train_val,
+        n_repeats=n_repeats,
+        seed=seed,
+        use_trim=use_trim,
+        use_ridge=use_ridge,
+        use_kernel_ridge=use_kernel_ridge,
+        use_lasso=use_lasso,
+        use_elastic=use_elastic,
+        use_residual=use_residual,
+        use_linearization=use_linearization,
     )
     fig, ax = plt.subplots(figsize=(7, 4))
-    if ridge_df is not None:
+    if results.ridge_df is not None:
         ax.plot(
-            ridge_df["n_train"],
-            ridge_df["rmse_mean"],
+            results.ridge_df["n_train"],
+            results.ridge_df["rmse_mean"],
             marker="o",
             color="tab:blue",
             label="Ridge (alpha=0.1) mean",
         )
         ax.fill_between(
-            ridge_df["n_train"],
-            ridge_df["rmse_mean"] - ridge_df["rmse_std"],
-            ridge_df["rmse_mean"] + ridge_df["rmse_std"],
+            results.ridge_df["n_train"],
+            results.ridge_df["rmse_mean"] - results.ridge_df["rmse_std"],
+            results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
             color="tab:blue",
             alpha=0.2,
             label="Ridge (alpha=0.1) +/- 1sd",
         )
-    if kernel_ridge_df is not None:
+    if results.kernel_ridge_df is not None:
         ax.plot(
-            kernel_ridge_df["n_train"],
-            kernel_ridge_df["rmse_mean"],
+            results.kernel_ridge_df["n_train"],
+            results.kernel_ridge_df["rmse_mean"],
             marker="X",
             color="tab:cyan",
             label="Kernel Ridge mean",
         )
         ax.fill_between(
-            kernel_ridge_df["n_train"],
-            kernel_ridge_df["rmse_mean"] - kernel_ridge_df["rmse_std"],
-            kernel_ridge_df["rmse_mean"] + kernel_ridge_df["rmse_std"],
+            results.kernel_ridge_df["n_train"],
+            results.kernel_ridge_df["rmse_mean"] - results.kernel_ridge_df["rmse_std"],
+            results.kernel_ridge_df["rmse_mean"] + results.kernel_ridge_df["rmse_std"],
             color="tab:cyan",
             alpha=0.2,
             label="Kernel Ridge +/- 1sd",
         )
-    if lasso_df is not None:
+    if results.lasso_df is not None:
         ax.plot(
-            lasso_df["n_train"],
-            lasso_df["rmse_mean"],
+            results.lasso_df["n_train"],
+            results.lasso_df["rmse_mean"],
             marker="s",
             color="tab:orange",
             label="Lasso mean",
         )
         ax.fill_between(
-            lasso_df["n_train"],
-            lasso_df["rmse_mean"] - lasso_df["rmse_std"],
-            lasso_df["rmse_mean"] + lasso_df["rmse_std"],
+            results.lasso_df["n_train"],
+            results.lasso_df["rmse_mean"] - results.lasso_df["rmse_std"],
+            results.lasso_df["rmse_mean"] + results.lasso_df["rmse_std"],
             color="tab:orange",
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
-    if lasso_trimmed_df is not None:
+    if results.lasso_trimmed_df is not None:
         ax.plot(
-            lasso_trimmed_df["n_train"],
-            lasso_trimmed_df["rmse_mean"],
+            results.lasso_trimmed_df["n_train"],
+            results.lasso_trimmed_df["rmse_mean"],
             marker="+",
             color="tab:orange",
             label="Lasso (trim residual) mean",
         )
         ax.fill_between(
-            lasso_trimmed_df["n_train"],
-            lasso_trimmed_df["rmse_mean"] - lasso_trimmed_df["rmse_std"],
-            lasso_trimmed_df["rmse_mean"] + lasso_trimmed_df["rmse_std"],
+            results.lasso_trimmed_df["n_train"],
+            results.lasso_trimmed_df["rmse_mean"] - results.lasso_trimmed_df["rmse_std"],
+            results.lasso_trimmed_df["rmse_mean"] + results.lasso_trimmed_df["rmse_std"],
             color="tab:orange",
             alpha=0.2,
             label="Lasso (trim residual) +/- 1sd",
         )
-    if elastic_df is not None:
+    if results.elastic_df is not None:
         ax.plot(
-            elastic_df["n_train"],
-            elastic_df["rmse_mean"],
+            results.elastic_df["n_train"],
+            results.elastic_df["rmse_mean"],
             marker="D",
             color="tab:purple",
             label="Elastic Net mean",
         )
         ax.fill_between(
-            elastic_df["n_train"],
-            elastic_df["rmse_mean"] - elastic_df["rmse_std"],
-            elastic_df["rmse_mean"] + elastic_df["rmse_std"],
+            results.elastic_df["n_train"],
+            results.elastic_df["rmse_mean"] - results.elastic_df["rmse_std"],
+            results.elastic_df["rmse_mean"] + results.elastic_df["rmse_std"],
             color="tab:purple",
             alpha=0.2,
             label="Elastic Net +/- 1sd",
         )
-    if elastic_trimmed_df is not None:
+    if results.elastic_trimmed_df is not None:
         ax.plot(
-            elastic_trimmed_df["n_train"],
-            elastic_trimmed_df["rmse_mean"],
+            results.elastic_trimmed_df["n_train"],
+            results.elastic_trimmed_df["rmse_mean"],
             marker="x",
             color="tab:purple",
             label="Elastic Net (trim residual) mean",
         )
         ax.fill_between(
-            elastic_trimmed_df["n_train"],
-            elastic_trimmed_df["rmse_mean"] - elastic_trimmed_df["rmse_std"],
-            elastic_trimmed_df["rmse_mean"] + elastic_trimmed_df["rmse_std"],
+            results.elastic_trimmed_df["n_train"],
+            results.elastic_trimmed_df["rmse_mean"] - results.elastic_trimmed_df["rmse_std"],
+            results.elastic_trimmed_df["rmse_mean"] + results.elastic_trimmed_df["rmse_std"],
             color="tab:purple",
             alpha=0.2,
             label="Elastic Net (trim residual) +/- 1sd",
         )
-    if resid_df is not None:
+    if results.resid_df is not None:
         ax.plot(
-            resid_df["n_train"],
-            resid_df["rmse_mean"],
+            results.resid_df["n_train"],
+            results.resid_df["rmse_mean"],
             marker="^",
             color="tab:green",
             label="Residual mean",
         )
         ax.fill_between(
-            resid_df["n_train"],
-            resid_df["rmse_mean"] - resid_df["rmse_std"],
-            resid_df["rmse_mean"] + resid_df["rmse_std"],
+            results.resid_df["n_train"],
+            results.resid_df["rmse_mean"] - results.resid_df["rmse_std"],
+            results.resid_df["rmse_mean"] + results.resid_df["rmse_std"],
             color="tab:green",
             alpha=0.2,
             label="Residual +/- 1sd",
         )
-    if resid_trimmed_df is not None:
+    if results.resid_trimmed_df is not None:
         ax.plot(
-            resid_trimmed_df["n_train"],
-            resid_trimmed_df["rmse_mean"],
+            results.resid_trimmed_df["n_train"],
+            results.resid_trimmed_df["rmse_mean"],
             marker="P",
             color="tab:brown",
             label="Residual (trimmed) mean",
         )
         ax.fill_between(
-            resid_trimmed_df["n_train"],
-            resid_trimmed_df["rmse_mean"] - resid_trimmed_df["rmse_std"],
-            resid_trimmed_df["rmse_mean"] + resid_trimmed_df["rmse_std"],
+            results.resid_trimmed_df["n_train"],
+            results.resid_trimmed_df["rmse_mean"] - results.resid_trimmed_df["rmse_std"],
+            results.resid_trimmed_df["rmse_mean"] + results.resid_trimmed_df["rmse_std"],
             color="tab:brown",
             alpha=0.2,
             label="Residual (trimmed) +/- 1sd",
         )
-    if linear_df is not None:
+    if results.linear_df is not None:
         ax.plot(
-            linear_df["n_train"],
-            linear_df["rmse_mean"],
+            results.linear_df["n_train"],
+            results.linear_df["rmse_mean"],
             marker="v",
             color="tab:red",
             label="Linearization mean",
         )
         ax.fill_between(
-            linear_df["n_train"],
-            linear_df["rmse_mean"] - linear_df["rmse_std"],
-            linear_df["rmse_mean"] + linear_df["rmse_std"],
+            results.linear_df["n_train"],
+            results.linear_df["rmse_mean"] - results.linear_df["rmse_std"],
+            results.linear_df["rmse_mean"] + results.linear_df["rmse_std"],
             color="tab:red",
             alpha=0.2,
             label="Linearization +/- 1sd",
         )
-    if linear_trimmed_df is not None:
+    if results.linear_trimmed_df is not None:
         ax.plot(
-            linear_trimmed_df["n_train"],
-            linear_trimmed_df["rmse_mean"],
+            results.linear_trimmed_df["n_train"],
+            results.linear_trimmed_df["rmse_mean"],
             marker="<",
             color="tab:pink",
             label="Linearization (trimmed) mean",
         )
         ax.fill_between(
-            linear_trimmed_df["n_train"],
-            linear_trimmed_df["rmse_mean"] - linear_trimmed_df["rmse_std"],
-            linear_trimmed_df["rmse_mean"] + linear_trimmed_df["rmse_std"],
+            results.linear_trimmed_df["n_train"],
+            results.linear_trimmed_df["rmse_mean"] - results.linear_trimmed_df["rmse_std"],
+            results.linear_trimmed_df["rmse_mean"] + results.linear_trimmed_df["rmse_std"],
             color="tab:pink",
             alpha=0.2,
             label="Linearization (trimmed) +/- 1sd",
         )
-    if ridge_trimmed_df is not None:
+    if results.ridge_trimmed_df is not None:
         ax.plot(
-            ridge_trimmed_df["n_train"],
-            ridge_trimmed_df["rmse_mean"],
+            results.ridge_trimmed_df["n_train"],
+            results.ridge_trimmed_df["rmse_mean"],
             marker="h",
             color="tab:olive",
             label="Ridge (trim z-score) mean",
         )
         ax.fill_between(
-            ridge_trimmed_df["n_train"],
-            ridge_trimmed_df["rmse_mean"] - ridge_trimmed_df["rmse_std"],
-            ridge_trimmed_df["rmse_mean"] + ridge_trimmed_df["rmse_std"],
+            results.ridge_trimmed_df["n_train"],
+            results.ridge_trimmed_df["rmse_mean"] - results.ridge_trimmed_df["rmse_std"],
+            results.ridge_trimmed_df["rmse_mean"] + results.ridge_trimmed_df["rmse_std"],
             color="tab:olive",
             alpha=0.2,
             label="Ridge (trim z-score) +/- 1sd",
