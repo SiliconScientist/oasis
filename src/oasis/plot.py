@@ -239,26 +239,23 @@ def _sweep_model_trimmed(
 def _residual_sweep(
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X_train = X[split.train_idx]
+        y_train = y[split.train_idx]
+
+        residuals = y_train[:, None] - X_train
+        mean_residuals = residuals.mean(axis=0)
+
+        X_corrected = X[split.test_idx] + mean_residuals
+        preds = X_corrected.mean(axis=1)
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            X_train = X[split.train_idx]
-            y_train = y[split.train_idx]
-
-            residuals = y_train[:, None] - X_train
-            mean_residuals = residuals.mean(axis=0)
-
-            X_corrected = X[split.test_idx] + mean_residuals
-            preds = X_corrected.mean(axis=1)
-
-            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
-
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -272,29 +269,26 @@ def _residual_sweep(
 def _residual_sweep_trimmed(
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
     """
     Residual correction with per-sample outlier MLIP removal before averaging.
     """
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X_train = X[split.train_idx]
+        y_train = y[split.train_idx]
+
+        residuals = y_train[:, None] - X_train
+        mean_residuals = residuals.mean(axis=0)
+
+        X_corrected = X[split.test_idx] + mean_residuals
+        preds = _trimmed_mean_predictions(X_corrected)
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            X_train = X[split.train_idx]
-            y_train = y[split.train_idx]
-
-            residuals = y_train[:, None] - X_train
-            mean_residuals = residuals.mean(axis=0)
-
-            X_corrected = X[split.test_idx] + mean_residuals
-            preds = _trimmed_mean_predictions(X_corrected)
-
-            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
-
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -308,35 +302,32 @@ def _residual_sweep_trimmed(
 def _linearization_sweep(
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X_train = X[split.train_idx]
+        y_train = y[split.train_idx]
+
+        Xh = np.asarray(X_train)
+        yh = np.asarray(y_train).reshape(-1, 1)
+
+        if Xh.ndim == 1:
+            mu_h = Xh.reshape(-1, 1)
+        else:
+            mu_h = Xh.mean(axis=1, keepdims=True)
+
+        lr = LinearRegression().fit(mu_h, yh)
+        a = float(lr.coef_.ravel()[0])
+        b = float(lr.intercept_.ravel()[0])
+
+        X_linearized = a * X + b
+        preds = X_linearized[split.test_idx].mean(axis=1)
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            X_train = X[split.train_idx]
-            y_train = y[split.train_idx]
-
-            Xh = np.asarray(X_train)
-            yh = np.asarray(y_train).reshape(-1, 1)
-
-            if Xh.ndim == 1:
-                mu_h = Xh.reshape(-1, 1)
-            else:
-                mu_h = Xh.mean(axis=1, keepdims=True)
-
-            lr = LinearRegression().fit(mu_h, yh)
-            a = float(lr.coef_.ravel()[0])
-            b = float(lr.intercept_.ravel()[0])
-
-            X_linearized = a * X + b
-            preds = X_linearized[split.test_idx].mean(axis=1)
-
-            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
-
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -350,38 +341,35 @@ def _linearization_sweep(
 def _linearization_sweep_trimmed(
     X: np.ndarray,
     y: np.ndarray,
-    min_train: int,
-    max_train: int,
-    n_repeats: int,
-    rng: np.random.Generator,
+    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
     """
     Linearize against trimmed train means, then trim ensemble averaging.
     """
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X_train = X[split.train_idx]
+        y_train = y[split.train_idx]
+
+        Xh = np.asarray(X_train)
+        yh = np.asarray(y_train).reshape(-1, 1)
+
+        if Xh.ndim == 1:
+            mu_h = Xh.reshape(-1, 1)
+        else:
+            mu_h = _trimmed_mean_predictions(Xh).reshape(-1, 1)
+
+        lr = LinearRegression().fit(mu_h, yh)
+        a = float(lr.coef_.ravel()[0])
+        b = float(lr.intercept_.ravel()[0])
+
+        X_linearized = a * X + b
+        preds = _trimmed_mean_predictions(X_linearized[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+
     results = []
-    for n_train in range(min_train, min(max_train, len(X) - 1) + 1):
-        rmses = []
-        for split in generate_sweep_splits(len(X), n_train, n_train, n_repeats, rng):
-            X_train = X[split.train_idx]
-            y_train = y[split.train_idx]
-
-            Xh = np.asarray(X_train)
-            yh = np.asarray(y_train).reshape(-1, 1)
-
-            if Xh.ndim == 1:
-                mu_h = Xh.reshape(-1, 1)
-            else:
-                mu_h = _trimmed_mean_predictions(Xh).reshape(-1, 1)
-
-            lr = LinearRegression().fit(mu_h, yh)
-            a = float(lr.coef_.ravel()[0])
-            b = float(lr.intercept_.ravel()[0])
-
-            X_linearized = a * X + b
-            preds = _trimmed_mean_predictions(X_linearized[split.test_idx])
-
-            rmses.append(np.sqrt(mean_squared_error(y[split.test_idx], preds)))
-
+    for n_train, rmses in rmses_by_size.items():
         results.append(
             {
                 "n_train": n_train,
@@ -473,6 +461,22 @@ def learning_curve_plot(
             len(X), min_train_val, max_train_val, n_repeats, rng_elastic_trimmed
         )
     )
+    resid_splits = list(
+        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_resid)
+    )
+    resid_trimmed_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_resid_trimmed
+        )
+    )
+    linear_splits = list(
+        generate_sweep_splits(len(X), min_train_val, max_train_val, n_repeats, rng_linear)
+    )
+    linear_trimmed_splits = list(
+        generate_sweep_splits(
+            len(X), min_train_val, max_train_val, n_repeats, rng_linear_trimmed
+        )
+    )
 
     ridge_df = (
         _sweep_model(lambda: Ridge(alpha=0.1), X, y, ridge_splits)
@@ -538,26 +542,22 @@ def learning_curve_plot(
         else None
     )
     resid_df = (
-        _residual_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_resid)
+        _residual_sweep(X, y, resid_splits)
         if use_residual
         else None
     )
     resid_trimmed_df = (
-        _residual_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_resid_trimmed
-        )
+        _residual_sweep_trimmed(X, y, resid_trimmed_splits)
         if use_trim and use_residual
         else None
     )
     linear_df = (
-        _linearization_sweep(X, y, min_train_val, max_train_val, n_repeats, rng_linear)
+        _linearization_sweep(X, y, linear_splits)
         if use_linearization
         else None
     )
     linear_trimmed_df = (
-        _linearization_sweep_trimmed(
-            X, y, min_train_val, max_train_val, n_repeats, rng_linear_trimmed
-        )
+        _linearization_sweep_trimmed(X, y, linear_trimmed_splits)
         if use_trim and use_linearization
         else None
     )
