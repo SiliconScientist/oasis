@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,6 +38,8 @@ from oasis.sweep import (
 )
 
 try:
+    import oasis.method as method_module
+
     from oasis.method import (
         ConfiguredSweepModelFamily,
         FactoryListHyperparameterSpec,
@@ -612,6 +615,97 @@ class SweepOutputRegressionTests(unittest.TestCase):
             pd.testing.assert_frame_equal(actual_df, expected_df)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_is_registered_as_validation_aware_selection_method(self) -> None:
+        ridge_registration = next(
+            registration
+            for registration in learning_curve_model_registry()
+            if registration.name == "ridge"
+        )
+        ridge_family = ridge_registration.family_factory()
+
+        self.assertEqual(
+            ridge_family.capabilities(),
+            SweepModelCapabilities(requires_validation=True),
+        )
+        self.assertEqual(
+            ridge_family.requirements(),
+            SweepFamilyRequirements(requires_inner_validation=True),
+        )
+        self.assertIsInstance(
+            ridge_family.spec.runner,
+            SupervisedModelSelectionSweepRunner,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_mixed_sweep_integration_keeps_expected_output_shape(self) -> None:
+        X, y = self._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=17,
+            use_trim=False,
+            enabled_model_names=["ridge", "weighted_linear"],
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertIsNotNone(results.weighted_linear_df)
+        self.assertEqual(
+            results.ridge_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
+        self.assertEqual(
+            results.weighted_linear_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_skips_undersized_budgets_predictably(self) -> None:
+        X, y = self._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=1,
+            max_train=3,
+            n_repeats=1,
+            seed=17,
+            use_trim=False,
+            enabled_model_names=["ridge"],
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3])
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_selection_is_deterministic_for_fixed_seed(self) -> None:
+        X, y = self._regression_dataset()
+        dataset = SweepDataset(X=X, y=y)
+
+        first = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=2,
+            seed=19,
+            use_trim=False,
+            enabled_model_names=["ridge"],
+        )
+        second = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=2,
+            seed=19,
+            use_trim=False,
+            enabled_model_names=["ridge"],
+        )
+
+        pd.testing.assert_frame_equal(first.ridge_df, second.ridge_df)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
         payload = self._train_test_payload(seed=19)
         runner_payload = payload.to_runner_payload()
@@ -1122,6 +1216,209 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsNotNone(specs["kernel_ridge"].hyperparameter_spec)
         self.assertIsNotNone(specs["lasso"].hyperparameter_spec)
         self.assertIsNotNone(specs["elastic"].hyperparameter_spec)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_lasso_selection_can_choose_different_hyperparameters_by_split(self) -> None:
+        class SpyLasso:
+            def __init__(self, alpha: float, max_iter: int = 10000) -> None:
+                del max_iter
+                self.alpha = alpha
+                self.coef_ = np.array([alpha], dtype=float)
+
+            def fit(self, X, y):
+                del X, y
+                return self
+
+            def predict(self, X):
+                signature = tuple(float(v) for v in np.ravel(X))
+                if signature == (2.0,):
+                    return np.full(len(X), self.alpha, dtype=float)
+                return np.full(len(X), 1.0 - self.alpha, dtype=float)
+
+        with patch.object(method_module, "Lasso", SpyLasso):
+            lasso_spec = {
+                name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
+            }["lasso"]
+            dataset = SweepDataset(
+                X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+                y=np.array([0.0, 0.0, 0.001, 0.99, 0.0]),
+            )
+            first_split = TrainValTestSweepRunnerInput(
+                dataset=dataset,
+                sweep_size=3,
+                train_idx=np.array([0, 1]),
+                val_idx=np.array([2]),
+                test_idx=np.array([4]),
+            )
+            second_split = TrainValTestSweepRunnerInput(
+                dataset=dataset,
+                sweep_size=3,
+                train_idx=np.array([0, 1]),
+                val_idx=np.array([3]),
+                test_idx=np.array([4]),
+            )
+
+            first_model = method_module._select_candidate_factory_by_validation(
+                first_split,
+                lasso_spec.hyperparameter_spec,
+            )()
+            second_model = method_module._select_candidate_factory_by_validation(
+                second_split,
+                lasso_spec.hyperparameter_spec,
+            )()
+
+        self.assertNotEqual(first_model.alpha, second_model.alpha)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_elastic_selection_can_choose_different_hyperparameters_by_split(self) -> None:
+        class SpyElasticNet:
+            def __init__(
+                self,
+                alpha: float,
+                l1_ratio: float,
+                max_iter: int = 20000,
+            ) -> None:
+                del max_iter
+                self.alpha = alpha
+                self.l1_ratio = l1_ratio
+                self.coef_ = np.array([alpha + l1_ratio], dtype=float)
+
+            def fit(self, X, y):
+                del X, y
+                return self
+
+            def predict(self, X):
+                signature = tuple(float(v) for v in np.ravel(X))
+                if signature == (2.0,):
+                    return np.full(len(X), self.alpha + self.l1_ratio, dtype=float)
+                return np.full(
+                    len(X),
+                    abs((self.alpha + self.l1_ratio) - 1.1),
+                    dtype=float,
+                )
+
+        with patch.object(method_module, "ElasticNet", SpyElasticNet):
+            elastic_spec = {
+                name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
+            }["elastic"]
+            dataset = SweepDataset(
+                X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+                y=np.array([0.0, 0.0, 0.201, 0.299, 0.0]),
+            )
+            first_split = TrainValTestSweepRunnerInput(
+                dataset=dataset,
+                sweep_size=3,
+                train_idx=np.array([0, 1]),
+                val_idx=np.array([2]),
+                test_idx=np.array([4]),
+            )
+            second_split = TrainValTestSweepRunnerInput(
+                dataset=dataset,
+                sweep_size=3,
+                train_idx=np.array([0, 1]),
+                val_idx=np.array([3]),
+                test_idx=np.array([4]),
+            )
+
+            first_model = method_module._select_candidate_factory_by_validation(
+                first_split,
+                elastic_spec.hyperparameter_spec,
+            )()
+            second_model = method_module._select_candidate_factory_by_validation(
+                second_split,
+                elastic_spec.hyperparameter_spec,
+            )()
+
+        self.assertNotEqual(
+            (first_model.alpha, first_model.l1_ratio),
+            (second_model.alpha, second_model.l1_ratio),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_lasso_and_elastic_skip_undersized_budgets_predictably(self) -> None:
+        X, y = SweepOutputRegressionTests._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=1,
+            max_train=3,
+            n_repeats=1,
+            seed=23,
+            use_trim=False,
+            enabled_model_names=["lasso", "elastic"],
+        )
+
+        self.assertEqual(results.lasso_df["n_train"].tolist(), [2, 3])
+        self.assertEqual(results.elastic_df["n_train"].tolist(), [2, 3])
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_train_test_baselines_remain_unaffected_by_lasso_and_elastic(self) -> None:
+        X, y = SweepOutputRegressionTests._regression_dataset()
+        dataset = SweepDataset(X=X, y=y)
+
+        baseline_only = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=29,
+            use_trim=False,
+            enabled_model_names=["weighted_linear"],
+        )
+        with_selection_families = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=29,
+            use_trim=False,
+            enabled_model_names=["weighted_linear", "lasso", "elastic"],
+        )
+
+        pd.testing.assert_frame_equal(
+            baseline_only.weighted_linear_df,
+            with_selection_families.weighted_linear_df,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_kernel_ridge_candidate_order_is_deterministic_and_bounded(self) -> None:
+        kernel_ridge_spec = {
+            name: spec for name, _, spec in sklearn_sweep_model_specs()
+        }["kernel_ridge"]
+
+        candidates = [
+            factory() for factory in kernel_ridge_spec.hyperparameter_spec.candidate_factories()
+        ]
+
+        self.assertEqual(len(candidates), 6)
+        self.assertEqual(
+            [(candidate.alpha, candidate.gamma) for candidate in candidates],
+            [
+                (0.1, 0.1),
+                (0.1, 1.0),
+                (1.0, 0.1),
+                (1.0, 1.0),
+                (10.0, 0.1),
+                (10.0, 1.0),
+            ],
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_kernel_ridge_skips_expected_small_budget_ranges(self) -> None:
+        X, y = SweepOutputRegressionTests._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=1,
+            max_train=3,
+            n_repeats=1,
+            seed=31,
+            use_trim=False,
+            enabled_model_names=["kernel_ridge"],
+        )
+
+        self.assertIsNotNone(results.kernel_ridge_df)
+        self.assertEqual(results.kernel_ridge_df["n_train"].tolist(), [2, 3])
 
     def test_validation_aware_supervised_runner_uses_train_val_test_path(self) -> None:
         class ValidationAwareLinearModel:
