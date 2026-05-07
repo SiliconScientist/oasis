@@ -106,6 +106,21 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 
 class SweepOutputRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _regression_dataset() -> tuple[np.ndarray, np.ndarray]:
+        X = np.array(
+            [
+                [1.0, 1.2, 0.8],
+                [1.8, 2.1, 1.9],
+                [2.7, 3.0, 2.9],
+                [3.9, 4.2, 3.8],
+                [5.1, 5.0, 4.9],
+                [6.2, 6.0, 5.8],
+            ]
+        )
+        y = np.array([1.1, 2.0, 2.9, 4.0, 5.0, 6.1])
+        return X, y
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_sklearn_methods_are_registered_from_specs(self) -> None:
         specs = tuple(
@@ -177,17 +192,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
-        X = np.array(
-            [
-                [1.0, 1.1, 0.9],
-                [2.0, 2.1, 1.9],
-                [3.0, 3.1, 2.9],
-                [4.0, 4.1, 3.9],
-                [5.0, 5.1, 4.9],
-                [6.0, 6.1, 5.9],
-            ]
-        )
-        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        X, y = self._regression_dataset()
         payload = SweepRunPayload(
             dataset=SweepDataset(X=X, y=y),
             split_collection=SweepSplitCollection(
@@ -227,6 +232,77 @@ class SweepOutputRegressionTests(unittest.TestCase):
         for df in results:
             self.assertEqual(df["n_train"].tolist(), expected_counts)
             self.assertEqual(df.columns.tolist(), expected_columns)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_registry_pipeline_matches_direct_method_outputs(self) -> None:
+        X, y = self._regression_dataset()
+        dataset = SweepDataset(X=X, y=y)
+        payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=SweepSplitCollection(
+                splits=tuple(
+                    generate_sweep_splits(
+                        n_samples=len(X),
+                        min_train=2,
+                        max_train=4,
+                        n_repeats=2,
+                        rng=np.random.default_rng(13),
+                    )
+                )
+            ),
+            use_trim=True,
+        )
+        sklearn_specs = {
+            name: spec for name, _, spec in sklearn_sweep_model_specs()
+        }
+
+        expected = {
+            "ridge_df": sweep_model(payload, sklearn_specs["ridge"].model_factory),
+            "kernel_ridge_df": sweep_model(
+                payload,
+                sklearn_specs["kernel_ridge"].model_factory,
+            ),
+            "ridge_trimmed_df": sweep_model_trimmed(
+                payload,
+                sklearn_specs["ridge"].model_factory,
+            ),
+            "lasso_df": sweep_model(payload, sklearn_specs["lasso"].model_factory),
+            "lasso_trimmed_df": sweep_model_trimmed(
+                payload,
+                sklearn_specs["lasso"].model_factory,
+            ),
+            "elastic_df": sweep_model(payload, sklearn_specs["elastic"].model_factory),
+            "elastic_trimmed_df": sweep_model_trimmed(
+                payload,
+                sklearn_specs["elastic"].model_factory,
+            ),
+            "resid_df": residual_sweep(payload),
+            "resid_trimmed_df": residual_sweep_trimmed(payload),
+            "linear_df": linearization_sweep(payload),
+            "linear_trimmed_df": linearization_sweep_trimmed(payload),
+        }
+
+        actual = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=2,
+            seed=13,
+            use_trim=True,
+            enabled_model_names=[
+                "ridge",
+                "kernel_ridge",
+                "lasso",
+                "elastic",
+                "residual",
+                "linearization",
+            ],
+        )
+
+        for field_name, expected_df in expected.items():
+            actual_df = getattr(actual, field_name)
+            self.assertIsNotNone(actual_df, field_name)
+            pd.testing.assert_frame_equal(actual_df, expected_df)
 
 
 class BoundaryTests(unittest.TestCase):
