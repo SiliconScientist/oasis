@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -29,8 +30,17 @@ class SweepDataset:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepFamilyRequirements:
+    min_train_size: int = 0
+    requires_inner_validation: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class SweepSplitCollection:
     splits: tuple[SweepSplit, ...]
+    planning_requirements: SweepFamilyRequirements = field(
+        default_factory=SweepFamilyRequirements
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +135,24 @@ class LearningCurveResults:
 class ParityPlotData:
     reference: np.ndarray
     predictions: Mapping[str, np.ndarray]
+
+
+def combine_sweep_family_requirements(
+    families: Sequence[Any],
+) -> SweepFamilyRequirements:
+    requirements = [
+        family.requirements()
+        for family in families
+        if hasattr(family, "requirements")
+    ]
+    if not requirements:
+        return SweepFamilyRequirements()
+    return SweepFamilyRequirements(
+        min_train_size=max(req.min_train_size for req in requirements),
+        requires_inner_validation=any(
+            req.requires_inner_validation for req in requirements
+        ),
+    )
 
 
 def generate_sweep_splits(
@@ -244,29 +272,31 @@ def run_learning_curve_experiments(
     enabled_model_names: Sequence[str] | None = None,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
+    families = model_families
+    if families is None:
+        from oasis.method import default_sweep_model_families
+
+        families = default_sweep_model_families(enabled_model_names)
+    family_requirements = combine_sweep_family_requirements(families)
+
     max_train = min(max_train, len(dataset.X) - 1)
     split_collection = SweepSplitCollection(
         splits=tuple(
             generate_sweep_splits(
                 len(dataset.X),
-                min_train,
+                max(min_train, family_requirements.min_train_size),
                 max_train,
                 n_repeats,
                 np.random.default_rng(seed),
             )
-        )
+        ),
+        planning_requirements=family_requirements,
     )
     payload = SweepRunPayload(
         dataset=dataset,
         split_collection=split_collection,
         use_trim=use_trim,
     )
-
-    families = model_families
-    if families is None:
-        from oasis.method import default_sweep_model_families
-
-        families = default_sweep_model_families(enabled_model_names)
 
     results = LearningCurveResults.empty()
     for family in families:

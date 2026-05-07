@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from oasis.exp import (
     LearningCurveResults,
     SweepDataset,
+    SweepFamilyRequirements,
     SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
@@ -190,6 +191,11 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ("ridge", "lasso", "residual"),
         )
 
+        built_in_requirements = [registration.family_factory().requirements() for registration in registry]
+        self.assertTrue(
+            all(requirement == SweepFamilyRequirements() for requirement in built_in_requirements)
+        )
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
         X, y = self._regression_dataset()
@@ -333,6 +339,9 @@ class BoundaryTests(unittest.TestCase):
                 self.field_name = field_name
                 self.calls = 0
 
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
             def run(self, payload):
                 self.calls += 1
                 self.last_payload = payload
@@ -364,6 +373,65 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(
             [split.sweep_size for split in ridge_family.last_payload.split_collection.splits],
             [2, 3, 4],
+        )
+
+    def test_run_learning_curve_experiments_honors_family_split_requirements(
+        self,
+    ) -> None:
+        X = np.array(
+            [
+                [1.0, 1.1],
+                [2.0, 2.1],
+                [3.0, 3.1],
+                [4.0, 4.1],
+                [5.0, 5.1],
+                [6.0, 6.1],
+                [7.0, 7.1],
+            ]
+        )
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = ValidationAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [4, 5],
+        )
+        self.assertEqual(
+            family.last_payload.split_collection.planning_requirements,
+            SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
         )
 
     def test_prepare_parity_plot_data_extracts_render_inputs(self) -> None:

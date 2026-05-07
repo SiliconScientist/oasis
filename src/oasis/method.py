@@ -3,11 +3,16 @@ from __future__ import annotations
 from collections.abc import Collection
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
-from oasis.exp import LearningCurveResults, SweepRunPayload
+from oasis.exp import (
+    LearningCurveResults,
+    SweepFamilyRequirements,
+    SweepRunPayload,
+)
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import ElasticNet, Lasso
 from sklearn.linear_model import Ridge
@@ -36,6 +41,8 @@ class LearningCurveModelRegistration:
 class SweepModelFamily(Protocol):
     """Contract for a model family runnable over a shared split sweep."""
 
+    def requirements(self) -> SweepFamilyRequirements: ...
+
     def run(self, payload: SweepRunPayload) -> LearningCurveResults: ...
 
 
@@ -58,6 +65,9 @@ class SweepFamilySpec:
     trimmed_result_field: str | None
     runner: SweepExperimentRunner
     trim_z_thresh: float = 1.0
+    requirements: SweepFamilyRequirements = field(
+        default_factory=SweepFamilyRequirements
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +113,9 @@ class FunctionalSweepRunner:
 @dataclass(frozen=True, slots=True)
 class ConfiguredSweepModelFamily:
     spec: SweepFamilySpec
+
+    def requirements(self) -> SweepFamilyRequirements:
+        return self.spec.requirements
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         results: dict[str, pd.DataFrame | None] = {
