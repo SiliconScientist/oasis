@@ -186,12 +186,7 @@ def run_learning_curve_experiments_from_frame(
     n_repeats: int,
     seed: int = 42,
     use_trim: bool = True,
-    use_ridge: bool = True,
-    use_kernel_ridge: bool = True,
-    use_lasso: bool = True,
-    use_elastic: bool = True,
-    use_residual: bool = True,
-    use_linearization: bool = True,
+    enabled_model_names: Sequence[str] | None = None,
 ) -> LearningCurveResults:
     feature_cols = mlip_columns(df)
     if not feature_cols:
@@ -216,12 +211,7 @@ def run_learning_curve_experiments_from_frame(
         n_repeats=n_repeats,
         seed=seed,
         use_trim=use_trim,
-        use_ridge=use_ridge,
-        use_kernel_ridge=use_kernel_ridge,
-        use_lasso=use_lasso,
-        use_elastic=use_elastic,
-        use_residual=use_residual,
-        use_linearization=use_linearization,
+        enabled_model_names=enabled_model_names,
     )
 
 
@@ -229,6 +219,8 @@ def run_learning_curve_experiments_from_config(
     df: Any,
     cfg: Config | None,
 ) -> LearningCurveResults:
+    from oasis.method import enabled_learning_curve_model_names_from_config
+
     plot_cfg = cfg.plot if cfg else None
     return run_learning_curve_experiments_from_frame(
         df,
@@ -237,12 +229,7 @@ def run_learning_curve_experiments_from_config(
         n_repeats=plot_cfg.n_repeats if plot_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         use_trim=plot_cfg.trim if plot_cfg else True,
-        use_ridge=plot_cfg.use_ridge if plot_cfg else True,
-        use_kernel_ridge=plot_cfg.use_kernel_ridge if plot_cfg else True,
-        use_lasso=plot_cfg.use_lasso if plot_cfg else True,
-        use_elastic=plot_cfg.use_elastic_net if plot_cfg else True,
-        use_residual=plot_cfg.use_residual if plot_cfg else True,
-        use_linearization=plot_cfg.use_linearization if plot_cfg else True,
+        enabled_model_names=enabled_learning_curve_model_names_from_config(plot_cfg),
     )
 
 
@@ -254,12 +241,7 @@ def run_learning_curve_experiments(
     n_repeats: int,
     seed: int = 42,
     use_trim: bool = True,
-    use_ridge: bool = True,
-    use_kernel_ridge: bool = True,
-    use_lasso: bool = True,
-    use_elastic: bool = True,
-    use_residual: bool = True,
-    use_linearization: bool = True,
+    enabled_model_names: Sequence[str] | None = None,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
     max_train = min(max_train, len(dataset.X) - 1)
@@ -284,14 +266,7 @@ def run_learning_curve_experiments(
     if families is None:
         from oasis.method import default_sweep_model_families
 
-        families = default_sweep_model_families(
-            use_ridge=use_ridge,
-            use_kernel_ridge=use_kernel_ridge,
-            use_lasso=use_lasso,
-            use_elastic=use_elastic,
-            use_residual=use_residual,
-            use_linearization=use_linearization,
-        )
+        families = default_sweep_model_families(enabled_model_names)
 
     results = LearningCurveResults.empty()
     for family in families:

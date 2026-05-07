@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
@@ -19,11 +20,17 @@ _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 
 @dataclass(frozen=True, slots=True)
 class SklearnSweepModelSpec:
-    enabled: bool
     result_field: str
     trimmed_result_field: str | None
     model_factory: Callable[[], object]
     trim_z_thresh: float = 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class LearningCurveModelRegistration:
+    name: str
+    config_attr: str
+    family_factory: Callable[[], SweepModelFamily]
 
 
 class SweepModelFamily(Protocol):
@@ -110,28 +117,55 @@ class ConfiguredSweepModelFamily:
 
 
 def default_sweep_model_families(
-    *,
-    use_ridge: bool = True,
-    use_kernel_ridge: bool = True,
-    use_lasso: bool = True,
-    use_elastic: bool = True,
-    use_residual: bool = True,
-    use_linearization: bool = True,
+    enabled_model_names: Collection[str] | None = None,
 ) -> tuple[SweepModelFamily, ...]:
-    families: list[SweepModelFamily] = []
-    families.extend(
-        sklearn_model_families(
-            sklearn_sweep_model_specs(
-                use_ridge=use_ridge,
-                use_kernel_ridge=use_kernel_ridge,
-                use_lasso=use_lasso,
-                use_elastic=use_elastic,
-            )
-        )
+    registrations = learning_curve_model_registry()
+    enabled_names = (
+        set(registration.name for registration in registrations)
+        if enabled_model_names is None
+        else set(enabled_model_names)
     )
-    if use_residual:
-        families.append(
-            ConfiguredSweepModelFamily(
+    return tuple(
+        registration.family_factory()
+        for registration in registrations
+        if registration.name in enabled_names
+    )
+
+
+def enabled_learning_curve_model_names_from_config(
+    plot_cfg: Any | None,
+) -> tuple[str, ...]:
+    registrations = learning_curve_model_registry()
+    if plot_cfg is None:
+        return tuple(registration.name for registration in registrations)
+    return tuple(
+        registration.name
+        for registration in registrations
+        if getattr(plot_cfg, registration.config_attr)
+    )
+
+
+def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...]:
+    sklearn_registrations = tuple(
+        LearningCurveModelRegistration(
+            name=name,
+            config_attr=config_attr,
+            family_factory=lambda spec=spec: ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field=spec.result_field,
+                    trimmed_result_field=spec.trimmed_result_field,
+                    runner=SupervisedModelSweepRunner(spec.model_factory),
+                    trim_z_thresh=spec.trim_z_thresh,
+                )
+            ),
+        )
+        for name, config_attr, spec in sklearn_sweep_model_specs()
+    )
+    return sklearn_registrations + (
+        LearningCurveModelRegistration(
+            name="residual",
+            config_attr="use_residual",
+            family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="resid_df",
                     trimmed_result_field="resid_trimmed_df",
@@ -140,11 +174,12 @@ def default_sweep_model_families(
                         trimmed_runner=residual_sweep_trimmed,
                     ),
                 )
-            )
-        )
-    if use_linearization:
-        families.append(
-            ConfiguredSweepModelFamily(
+            ),
+        ),
+        LearningCurveModelRegistration(
+            name="linearization",
+            config_attr="use_linearization",
+            family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="linear_df",
                     trimmed_result_field="linear_trimmed_df",
@@ -153,52 +188,59 @@ def default_sweep_model_families(
                         trimmed_runner=linearization_sweep_trimmed,
                     ),
                 )
-            )
-        )
-    return tuple(families)
+            ),
+        ),
+    )
 
 
 def sklearn_sweep_model_specs(
-    *,
-    use_ridge: bool = True,
-    use_kernel_ridge: bool = True,
-    use_lasso: bool = True,
-    use_elastic: bool = True,
-) -> tuple[SklearnSweepModelSpec, ...]:
+) -> tuple[tuple[str, str, SklearnSweepModelSpec], ...]:
     return (
-        SklearnSweepModelSpec(
-            enabled=use_ridge,
-            result_field="ridge_df",
-            trimmed_result_field="ridge_trimmed_df",
-            model_factory=lambda: Ridge(alpha=0.1),
+        (
+            "ridge",
+            "use_ridge",
+            SklearnSweepModelSpec(
+                result_field="ridge_df",
+                trimmed_result_field="ridge_trimmed_df",
+                model_factory=lambda: Ridge(alpha=0.1),
+            ),
         ),
-        SklearnSweepModelSpec(
-            enabled=use_kernel_ridge,
-            result_field="kernel_ridge_df",
-            trimmed_result_field=None,
-            model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+        (
+            "kernel_ridge",
+            "use_kernel_ridge",
+            SklearnSweepModelSpec(
+                result_field="kernel_ridge_df",
+                trimmed_result_field=None,
+                model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+            ),
         ),
-        SklearnSweepModelSpec(
-            enabled=use_lasso,
-            result_field="lasso_df",
-            trimmed_result_field="lasso_trimmed_df",
-            model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
+        (
+            "lasso",
+            "use_lasso",
+            SklearnSweepModelSpec(
+                result_field="lasso_df",
+                trimmed_result_field="lasso_trimmed_df",
+                model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
+            ),
         ),
-        SklearnSweepModelSpec(
-            enabled=use_elastic,
-            result_field="elastic_df",
-            trimmed_result_field="elastic_trimmed_df",
-            model_factory=lambda: ElasticNet(
-                alpha=0.1,
-                l1_ratio=0.5,
-                max_iter=20000,
+        (
+            "elastic",
+            "use_elastic_net",
+            SklearnSweepModelSpec(
+                result_field="elastic_df",
+                trimmed_result_field="elastic_trimmed_df",
+                model_factory=lambda: ElasticNet(
+                    alpha=0.1,
+                    l1_ratio=0.5,
+                    max_iter=20000,
+                ),
             ),
         ),
     )
 
 
 def sklearn_model_families(
-    specs: tuple[SklearnSweepModelSpec, ...],
+    specs: tuple[tuple[str, str, SklearnSweepModelSpec], ...],
 ) -> tuple[SweepModelFamily, ...]:
     return tuple(
         ConfiguredSweepModelFamily(
@@ -209,8 +251,7 @@ def sklearn_model_families(
                 trim_z_thresh=spec.trim_z_thresh,
             )
         )
-        for spec in specs
-        if spec.enabled
+        for _, _, spec in specs
     )
 
 

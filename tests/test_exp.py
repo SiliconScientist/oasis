@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -26,8 +27,10 @@ from oasis.plot import learning_curve_plot
 try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
+        enabled_learning_curve_model_names_from_config,
         linearization_sweep,
         linearization_sweep_trimmed,
+        learning_curve_model_registry,
         residual_sweep,
         residual_sweep_trimmed,
         sklearn_model_families,
@@ -105,11 +108,10 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 class SweepOutputRegressionTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_sklearn_methods_are_registered_from_specs(self) -> None:
-        specs = sklearn_sweep_model_specs(
-            use_ridge=True,
-            use_kernel_ridge=False,
-            use_lasso=True,
-            use_elastic=True,
+        specs = tuple(
+            spec
+            for spec in sklearn_sweep_model_specs()
+            if spec[0] in {"ridge", "lasso", "elastic"}
         )
 
         families = sklearn_model_families(specs)
@@ -130,14 +132,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
         from oasis.method import default_sweep_model_families
 
-        families = default_sweep_model_families(
-            use_ridge=False,
-            use_kernel_ridge=False,
-            use_lasso=False,
-            use_elastic=False,
-            use_residual=True,
-            use_linearization=True,
-        )
+        families = default_sweep_model_families(["residual", "linearization"])
 
         self.assertTrue(
             all(isinstance(family, ConfiguredSweepModelFamily) for family in families)
@@ -149,6 +144,35 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             [family.spec.trimmed_result_field for family in families],
             ["resid_trimmed_df", "linear_trimmed_df"],
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_registry_drives_enabled_model_assembly_from_config(self) -> None:
+        registry = learning_curve_model_registry()
+        self.assertEqual(
+            [registration.name for registration in registry],
+            [
+                "ridge",
+                "kernel_ridge",
+                "lasso",
+                "elastic",
+                "residual",
+                "linearization",
+            ],
+        )
+
+        plot_cfg = SimpleNamespace(
+            use_ridge=True,
+            use_kernel_ridge=False,
+            use_lasso=True,
+            use_elastic_net=False,
+            use_residual=True,
+            use_linearization=False,
+        )
+
+        self.assertEqual(
+            enabled_learning_curve_model_names_from_config(plot_cfg),
+            ("ridge", "lasso", "residual"),
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
