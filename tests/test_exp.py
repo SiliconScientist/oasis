@@ -305,6 +305,25 @@ class SweepOutputRegressionTests(unittest.TestCase):
         y = np.array([1.1, 2.0, 2.9, 4.0, 5.0, 6.1])
         return X, y
 
+    @staticmethod
+    def _train_test_payload(seed: int = 13) -> SweepRunPayload:
+        X, y = SweepOutputRegressionTests._regression_dataset()
+        return SweepRunPayload(
+            dataset=SweepDataset(X=X, y=y),
+            split_collection=SweepSplitCollection(
+                splits=tuple(
+                    generate_sweep_splits(
+                        n_samples=len(X),
+                        min_train=2,
+                        max_train=4,
+                        n_repeats=2,
+                        rng=np.random.default_rng(seed),
+                    )
+                )
+            ),
+            use_trim=True,
+        )
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_sklearn_methods_are_registered_from_specs(self) -> None:
         specs = tuple(
@@ -440,21 +459,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def test_registry_pipeline_matches_direct_method_outputs(self) -> None:
         X, y = self._regression_dataset()
         dataset = SweepDataset(X=X, y=y)
-        payload = SweepRunPayload(
-            dataset=dataset,
-            split_collection=SweepSplitCollection(
-                splits=tuple(
-                    generate_sweep_splits(
-                        n_samples=len(X),
-                        min_train=2,
-                        max_train=4,
-                        n_repeats=2,
-                        rng=np.random.default_rng(13),
-                    )
-                )
-            ),
-            use_trim=True,
-        )
+        payload = self._train_test_payload(seed=13)
         sklearn_specs = {
             name: spec for name, _, spec in sklearn_sweep_model_specs()
         }
@@ -507,6 +512,63 @@ class SweepOutputRegressionTests(unittest.TestCase):
             actual_df = getattr(actual, field_name)
             self.assertIsNotNone(actual_df, field_name)
             pd.testing.assert_frame_equal(actual_df, expected_df)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
+        payload = self._train_test_payload(seed=19)
+        runner_payload = payload.to_runner_payload()
+        ridge_spec = {
+            name: spec for name, _, spec in sklearn_sweep_model_specs()
+        }["ridge"]
+
+        self.assertTrue(
+            all(
+                isinstance(split, TrainTestSweepRunnerInput)
+                for split in runner_payload.splits
+            )
+        )
+
+        legacy = sweep_model(payload, ridge_spec.model_factory)
+        split_aware = sweep_model(runner_payload, ridge_spec.model_factory)
+
+        pd.testing.assert_frame_equal(split_aware, legacy)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_lasso_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
+        payload = self._train_test_payload(seed=19)
+        runner_payload = payload.to_runner_payload()
+        lasso_spec = {
+            name: spec for name, _, spec in sklearn_sweep_model_specs()
+        }["lasso"]
+
+        self.assertTrue(
+            all(
+                isinstance(split, TrainTestSweepRunnerInput)
+                for split in runner_payload.splits
+            )
+        )
+
+        legacy = sweep_model(payload, lasso_spec.model_factory)
+        split_aware = sweep_model(runner_payload, lasso_spec.model_factory)
+
+        pd.testing.assert_frame_equal(split_aware, legacy)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_residual_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
+        payload = self._train_test_payload(seed=19)
+        runner_payload = payload.to_runner_payload()
+
+        self.assertTrue(
+            all(
+                isinstance(split, TrainTestSweepRunnerInput)
+                for split in runner_payload.splits
+            )
+        )
+
+        legacy = residual_sweep(payload)
+        split_aware = residual_sweep(runner_payload)
+
+        pd.testing.assert_frame_equal(split_aware, legacy)
 
 
 class WeightedBaselineRegressionTests(unittest.TestCase):
