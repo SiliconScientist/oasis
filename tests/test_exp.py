@@ -38,6 +38,7 @@ try:
         sklearn_sweep_model_specs,
         sweep_model,
         sweep_model_trimmed,
+        weighted_combiner_sweep,
     )
 
     HAS_SKLEARN = True
@@ -174,6 +175,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "elastic",
                 "residual",
                 "linearization",
+                "weighted_combiner",
             ],
         )
 
@@ -184,11 +186,12 @@ class SweepOutputRegressionTests(unittest.TestCase):
             use_elastic_net=False,
             use_residual=True,
             use_linearization=False,
+            use_weighted_combiner=True,
         )
 
         self.assertEqual(
             enabled_learning_curve_model_names_from_config(plot_cfg),
-            ("ridge", "lasso", "residual"),
+            ("ridge", "lasso", "residual", "weighted_combiner"),
         )
 
         built_in_requirements = [registration.family_factory().requirements() for registration in registry]
@@ -233,6 +236,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
             residual_sweep_trimmed(payload),
             linearization_sweep(payload),
             linearization_sweep_trimmed(payload),
+            weighted_combiner_sweep(payload),
         ]
 
         for df in results:
@@ -286,6 +290,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
             "resid_trimmed_df": residual_sweep_trimmed(payload),
             "linear_df": linearization_sweep(payload),
             "linear_trimmed_df": linearization_sweep_trimmed(payload),
+            "weighted_combiner_df": weighted_combiner_sweep(payload),
         }
 
         actual = run_learning_curve_experiments(
@@ -302,6 +307,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "elastic",
                 "residual",
                 "linearization",
+                "weighted_combiner",
             ],
         )
 
@@ -366,6 +372,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertIs(results.linear_df, result_df)
         self.assertIsNone(results.kernel_ridge_df)
         self.assertIsNone(results.ridge_trimmed_df)
+        self.assertIsNone(results.weighted_combiner_df)
         self.assertEqual(ridge_family.calls, 1)
         self.assertEqual(linear_family.calls, 1)
         self.assertIsInstance(ridge_family.last_payload, SweepRunPayload)
@@ -492,6 +499,7 @@ class BoundaryTests(unittest.TestCase):
             resid_trimmed_df=None,
             linear_df=None,
             linear_trimmed_df=None,
+            weighted_combiner_df=result_df,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

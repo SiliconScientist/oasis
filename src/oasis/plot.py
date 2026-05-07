@@ -286,6 +286,24 @@ def learning_curve_plot(
             alpha=0.2,
             label="Linearization (trimmed) +/- 1sd",
         )
+    if results.weighted_combiner_df is not None:
+        ax.plot(
+            results.weighted_combiner_df["n_train"],
+            results.weighted_combiner_df["rmse_mean"],
+            marker="*",
+            color="tab:gray",
+            label="Weighted combiner mean",
+        )
+        ax.fill_between(
+            results.weighted_combiner_df["n_train"],
+            results.weighted_combiner_df["rmse_mean"]
+            - results.weighted_combiner_df["rmse_std"],
+            results.weighted_combiner_df["rmse_mean"]
+            + results.weighted_combiner_df["rmse_std"],
+            color="tab:gray",
+            alpha=0.2,
+            label="Weighted combiner +/- 1sd",
+        )
     if results.ridge_trimmed_df is not None:
         ax.plot(
             results.ridge_trimmed_df["n_train"],

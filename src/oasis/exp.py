@@ -63,6 +63,7 @@ class LearningCurveResults:
     resid_trimmed_df: pd.DataFrame | None = None
     linear_df: pd.DataFrame | None = None
     linear_trimmed_df: pd.DataFrame | None = None
+    weighted_combiner_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:
@@ -85,6 +86,7 @@ class LearningCurveResults:
             resid_trimmed_df=frames.get("resid_trimmed_df"),
             linear_df=frames.get("linear_df"),
             linear_trimmed_df=frames.get("linear_trimmed_df"),
+            weighted_combiner_df=frames.get("weighted_combiner_df"),
         )
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
@@ -127,6 +129,11 @@ class LearningCurveResults:
                 other.linear_trimmed_df
                 if other.linear_trimmed_df is not None
                 else self.linear_trimmed_df
+            ),
+            weighted_combiner_df=(
+                other.weighted_combiner_df
+                if other.weighted_combiner_df is not None
+                else self.weighted_combiner_df
             ),
         )
 

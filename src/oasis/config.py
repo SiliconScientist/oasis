@@ -73,6 +73,7 @@ class PlotConfig(BaseModel):
     use_elastic_net: bool
     use_residual: bool
     use_linearization: bool
+    use_weighted_combiner: bool = False
     adsorbate: Optional[str] = None
     anomaly_label: Optional[str] = None
     reaction_contains: Optional[List[str]] = None

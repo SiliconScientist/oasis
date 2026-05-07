@@ -111,6 +111,26 @@ class FunctionalSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
+class WeightedCombinerSweepRunner:
+    fit_intercept: bool = True
+
+    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+        return weighted_combiner_sweep(
+            payload,
+            fit_intercept=self.fit_intercept,
+        )
+
+    def run_trimmed(
+        self,
+        payload: SweepRunPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        del z_thresh
+        return self.run(payload)
+
+
+@dataclass(frozen=True, slots=True)
 class ConfiguredSweepModelFamily:
     spec: SweepFamilySpec
 
@@ -200,6 +220,17 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                         base_runner=linearization_sweep,
                         trimmed_runner=linearization_sweep_trimmed,
                     ),
+                )
+            ),
+        ),
+        LearningCurveModelRegistration(
+            name="weighted_combiner",
+            config_attr="use_weighted_combiner",
+            family_factory=lambda: ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="weighted_combiner_df",
+                    trimmed_result_field=None,
+                    runner=WeightedCombinerSweepRunner(fit_intercept=True),
                 )
             ),
         ),
@@ -453,6 +484,25 @@ def linearization_sweep_trimmed(
 
         X_linearized = a * X + b
         preds = trimmed_mean_predictions(X_linearized[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def weighted_combiner_sweep(
+    payload: SweepRunPayload,
+    *,
+    fit_intercept: bool = True,
+) -> pd.DataFrame:
+    """Fit unconstrained linear weights over MLIP columns for each sweep split."""
+
+    X = payload.dataset.X
+    y = payload.dataset.y
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in payload.split_collection.splits:
+        model = LinearRegression(fit_intercept=fit_intercept)
+        model.fit(X[split.train_idx], y[split.train_idx])
+        preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
