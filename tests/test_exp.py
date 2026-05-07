@@ -19,6 +19,7 @@ from oasis.exp import (
     SweepSplitCollection,
     SweepRunPayload,
     generate_sweep_splits,
+    generate_sweep_splits_with_validation,
     prepare_parity_plot_data,
     run_learning_curve_experiments,
     run_learning_curve_experiments_from_frame,
@@ -120,6 +121,146 @@ class GenerateSweepSplitsTests(unittest.TestCase):
         np.testing.assert_array_equal(split.train_idx, np.array([0, 1, 2]))
         np.testing.assert_array_equal(split.val_idx, np.array([3, 4]))
         np.testing.assert_array_equal(split.test_idx, np.array([5, 6]))
+
+
+class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
+    def test_generate_sweep_splits_with_validation_yields_disjoint_full_partitions(
+        self,
+    ) -> None:
+        rng = np.random.default_rng(123)
+
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=8,
+                min_train=2,
+                max_train=3,
+                n_val=2,
+                n_repeats=2,
+                rng=rng,
+            )
+        )
+
+        self.assertEqual(len(splits), 4)
+        self.assertTrue(all(isinstance(split, SweepSplit) for split in splits))
+        self.assertEqual([split.sweep_size for split in splits], [2, 2, 3, 3])
+
+        full_idx = np.arange(8)
+        for split in splits:
+            self.assertEqual(len(split.train_idx), split.sweep_size)
+            self.assertIsNotNone(split.val_idx)
+            self.assertEqual(len(split.val_idx), 2)
+            self.assertEqual(len(split.test_idx), 8 - split.sweep_size - 2)
+            self.assertEqual(
+                len(np.intersect1d(split.train_idx, split.val_idx)),
+                0,
+            )
+            self.assertEqual(
+                len(np.intersect1d(split.train_idx, split.test_idx)),
+                0,
+            )
+            self.assertEqual(
+                len(np.intersect1d(split.val_idx, split.test_idx)),
+                0,
+            )
+            np.testing.assert_array_equal(
+                np.sort(
+                    np.concatenate(
+                        [split.train_idx, split.val_idx, split.test_idx]
+                    )
+                ),
+                full_idx,
+            )
+
+    def test_same_seed_gives_same_validation_splits(self) -> None:
+        splits_a = list(
+            generate_sweep_splits_with_validation(
+                n_samples=9,
+                min_train=2,
+                max_train=4,
+                n_val=2,
+                n_repeats=3,
+                rng=np.random.default_rng(42),
+            )
+        )
+        splits_b = list(
+            generate_sweep_splits_with_validation(
+                n_samples=9,
+                min_train=2,
+                max_train=4,
+                n_val=2,
+                n_repeats=3,
+                rng=np.random.default_rng(42),
+            )
+        )
+
+        self.assertEqual(len(splits_a), len(splits_b))
+        for split_a, split_b in zip(splits_a, splits_b, strict=True):
+            self.assertEqual(split_a.sweep_size, split_b.sweep_size)
+            np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
+            np.testing.assert_array_equal(split_a.val_idx, split_b.val_idx)
+            np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+
+    def test_generate_sweep_splits_with_validation_clamps_max_train(self) -> None:
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=7,
+                min_train=4,
+                max_train=6,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+            )
+        )
+
+        self.assertEqual(len(splits), 2)
+        self.assertEqual([split.sweep_size for split in splits], [4, 4])
+        self.assertTrue(all(len(split.test_idx) == 1 for split in splits))
+
+    def test_generate_sweep_splits_with_validation_returns_no_splits_when_min_train_exceeds_capacity(
+        self,
+    ) -> None:
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=7,
+                min_train=5,
+                max_train=6,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+            )
+        )
+
+        self.assertEqual(splits, [])
+
+    def test_generate_sweep_splits_with_validation_rejects_invalid_validation_size(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, "n_val must be positive"):
+            list(
+                generate_sweep_splits_with_validation(
+                    n_samples=6,
+                    min_train=2,
+                    max_train=3,
+                    n_val=0,
+                    n_repeats=1,
+                    rng=np.random.default_rng(1),
+                )
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "n_val must be smaller than n_samples",
+        ):
+            list(
+                generate_sweep_splits_with_validation(
+                    n_samples=6,
+                    min_train=2,
+                    max_train=3,
+                    n_val=6,
+                    n_repeats=1,
+                    rng=np.random.default_rng(1),
+                )
+            )
 
 
 class SweepOutputRegressionTests(unittest.TestCase):

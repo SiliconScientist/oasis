@@ -180,6 +180,37 @@ def generate_sweep_splits(
             )
 
 
+def generate_sweep_splits_with_validation(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_val: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+) -> Iterator[SweepSplit]:
+    """Yield repeated train/val/test splits for each sweep size in the range."""
+
+    if n_val <= 0:
+        raise ValueError("n_val must be positive.")
+    if n_val >= n_samples:
+        raise ValueError("n_val must be smaller than n_samples.")
+
+    idx = np.arange(n_samples)
+    max_train = min(max_train, n_samples - n_val - 1)
+    for n_train in range(min_train, max_train + 1):
+        for _ in range(n_repeats):
+            train_idx = rng.choice(idx, size=n_train, replace=False)
+            remaining_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
+            val_idx = rng.choice(remaining_idx, size=n_val, replace=False)
+            test_idx = np.setdiff1d(remaining_idx, val_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=n_train,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                val_idx=val_idx,
+            )
+
+
 def mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
