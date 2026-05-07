@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from collections.abc import Mapping
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
 import pandas as pd
-from oasis.exp import SweepSplit
+from oasis.exp import LearningCurveResults, SweepRunPayload
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import ElasticNet, Lasso
 from sklearn.linear_model import Ridge
@@ -22,14 +20,7 @@ _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 class SweepModelFamily(Protocol):
     """Contract for a model family runnable over a shared split sweep."""
 
-    def run(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        splits: Sequence[SweepSplit],
-        *,
-        use_trim: bool,
-    ) -> Mapping[str, pd.DataFrame | None]: ...
+    def run(self, payload: SweepRunPayload) -> LearningCurveResults: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,52 +30,35 @@ class EstimatorSweepFamily:
     model_factory: Callable[[], object]
     trim_z_thresh: float = 1.0
 
-    def run(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        splits: Sequence[SweepSplit],
-        *,
-        use_trim: bool,
-    ) -> Mapping[str, pd.DataFrame | None]:
+    def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         results: dict[str, pd.DataFrame | None] = {
-            self.result_field: sweep_model(self.model_factory, X, y, splits),
+            self.result_field: sweep_model(payload, self.model_factory),
         }
-        if use_trim and self.trimmed_result_field is not None:
+        if payload.use_trim and self.trimmed_result_field is not None:
             results[self.trimmed_result_field] = sweep_model_trimmed(
+                payload,
                 self.model_factory,
-                X,
-                y,
-                splits,
                 z_thresh=self.trim_z_thresh,
             )
-        return results
+        return LearningCurveResults.from_mapping(results)
 
 
 @dataclass(frozen=True, slots=True)
 class SweepFunctionFamily:
     result_field: str
     trimmed_result_field: str
-    base_runner: Callable[[np.ndarray, np.ndarray, Sequence[SweepSplit]], pd.DataFrame]
-    trimmed_runner: Callable[
-        [np.ndarray, np.ndarray, Sequence[SweepSplit]],
-        pd.DataFrame,
-    ]
+    base_runner: Callable[[SweepRunPayload], pd.DataFrame]
+    trimmed_runner: Callable[[SweepRunPayload], pd.DataFrame]
 
-    def run(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        splits: Sequence[SweepSplit],
-        *,
-        use_trim: bool,
-    ) -> Mapping[str, pd.DataFrame | None]:
-        return {
-            self.result_field: self.base_runner(X, y, splits),
-            self.trimmed_result_field: (
-                self.trimmed_runner(X, y, splits) if use_trim else None
-            ),
-        }
+    def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        return LearningCurveResults.from_mapping(
+            {
+                self.result_field: self.base_runner(payload),
+                self.trimmed_result_field: (
+                    self.trimmed_runner(payload) if payload.use_trim else None
+                ),
+            }
+        )
 
 
 def default_sweep_model_families(
@@ -183,15 +157,15 @@ def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
 
 
 def sweep_model(
+    payload: SweepRunPayload,
     model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
 ) -> pd.DataFrame:
     """Evaluate a supervised model across precomputed sweep splits."""
 
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
         X_test = X[split.test_idx]
@@ -202,17 +176,17 @@ def sweep_model(
 
 
 def sweep_model_trimmed(
+    payload: SweepRunPayload,
     model_factory,
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
     z_thresh: float = 1.0,
 ) -> pd.DataFrame:
     """
     Fit the model, drop test samples with large contribution z-scores, and refit.
     """
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
 
@@ -237,14 +211,14 @@ def sweep_model_trimmed(
 
 
 def residual_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
+    payload: SweepRunPayload,
 ) -> pd.DataFrame:
     """Evaluate residual correction across precomputed sweep splits."""
 
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -259,15 +233,15 @@ def residual_sweep(
 
 
 def residual_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
+    payload: SweepRunPayload,
 ) -> pd.DataFrame:
     """
     Residual correction with per-sample outlier MLIP removal before averaging.
     """
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -282,14 +256,14 @@ def residual_sweep_trimmed(
 
 
 def linearization_sweep(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
+    payload: SweepRunPayload,
 ) -> pd.DataFrame:
     """Evaluate linearization correction across precomputed sweep splits."""
 
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -313,15 +287,15 @@ def linearization_sweep(
 
 
 def linearization_sweep_trimmed(
-    X: np.ndarray,
-    y: np.ndarray,
-    splits: Sequence[SweepSplit],
+    payload: SweepRunPayload,
 ) -> pd.DataFrame:
     """
     Linearize against trimmed train means, then trim ensemble averaging.
     """
+    X = payload.dataset.X
+    y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
+    for split in payload.split_collection.splits:
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 

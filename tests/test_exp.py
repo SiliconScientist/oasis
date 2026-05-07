@@ -12,7 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from oasis.exp import (
     LearningCurveResults,
+    SweepDataset,
     SweepSplit,
+    SweepSplitCollection,
+    SweepRunPayload,
     generate_sweep_splits,
     prepare_parity_plot_data,
     run_learning_curve_experiments,
@@ -110,14 +113,20 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ]
         )
         y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        splits = list(
-            generate_sweep_splits(
-                n_samples=len(X),
-                min_train=2,
-                max_train=4,
-                n_repeats=2,
-                rng=np.random.default_rng(7),
-            )
+        payload = SweepRunPayload(
+            dataset=SweepDataset(X=X, y=y),
+            split_collection=SweepSplitCollection(
+                splits=tuple(
+                    generate_sweep_splits(
+                        n_samples=len(X),
+                        min_train=2,
+                        max_train=4,
+                        n_repeats=2,
+                        rng=np.random.default_rng(7),
+                    )
+                )
+            ),
+            use_trim=True,
         )
         expected_counts = [2, 3, 4]
         expected_columns = ["n_train", "rmse_mean", "rmse_std"]
@@ -132,12 +141,12 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 return np.asarray(X).mean(axis=1)
 
         results = [
-            sweep_model(lambda: DummyModel(), X, y, splits),
-            sweep_model_trimmed(lambda: DummyModel(), X, y, splits),
-            residual_sweep(X, y, splits),
-            residual_sweep_trimmed(X, y, splits),
-            linearization_sweep(X, y, splits),
-            linearization_sweep_trimmed(X, y, splits),
+            sweep_model(payload, lambda: DummyModel()),
+            sweep_model_trimmed(payload, lambda: DummyModel()),
+            residual_sweep(payload),
+            residual_sweep_trimmed(payload),
+            linearization_sweep(payload),
+            linearization_sweep_trimmed(payload),
         ]
 
         for df in results:
@@ -173,18 +182,18 @@ class BoundaryTests(unittest.TestCase):
                 self.field_name = field_name
                 self.calls = 0
 
-            def run(self, X, y, splits, *, use_trim):
+            def run(self, payload):
                 self.calls += 1
-                self.last_use_trim = use_trim
-                self.last_split_sizes = [split.sweep_size for split in splits]
-                return {self.field_name: result_df}
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping(
+                    {self.field_name: result_df}
+                )
 
         ridge_family = StubFamily("ridge_df")
         linear_family = StubFamily("linear_df")
 
         results = run_learning_curve_experiments(
-            X,
-            y,
+            SweepDataset(X=X, y=y),
             min_train=2,
             max_train=4,
             n_repeats=1,
@@ -199,8 +208,12 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsNone(results.ridge_trimmed_df)
         self.assertEqual(ridge_family.calls, 1)
         self.assertEqual(linear_family.calls, 1)
-        self.assertFalse(ridge_family.last_use_trim)
-        self.assertEqual(ridge_family.last_split_sizes, [2, 3, 4])
+        self.assertIsInstance(ridge_family.last_payload, SweepRunPayload)
+        self.assertFalse(ridge_family.last_payload.use_trim)
+        self.assertEqual(
+            [split.sweep_size for split in ridge_family.last_payload.split_collection.splits],
+            [2, 3, 4],
+        )
 
     def test_prepare_parity_plot_data_extracts_render_inputs(self) -> None:
         df = pd.DataFrame(

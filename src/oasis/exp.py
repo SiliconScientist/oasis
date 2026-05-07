@@ -23,18 +23,40 @@ class SweepSplit:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepDataset:
+    X: np.ndarray
+    y: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class SweepSplitCollection:
+    splits: tuple[SweepSplit, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SweepRunPayload:
+    dataset: SweepDataset
+    split_collection: SweepSplitCollection
+    use_trim: bool
+
+
+@dataclass(frozen=True, slots=True)
 class LearningCurveResults:
-    ridge_df: pd.DataFrame | None
-    kernel_ridge_df: pd.DataFrame | None
-    ridge_trimmed_df: pd.DataFrame | None
-    lasso_df: pd.DataFrame | None
-    lasso_trimmed_df: pd.DataFrame | None
-    elastic_df: pd.DataFrame | None
-    elastic_trimmed_df: pd.DataFrame | None
-    resid_df: pd.DataFrame | None
-    resid_trimmed_df: pd.DataFrame | None
-    linear_df: pd.DataFrame | None
-    linear_trimmed_df: pd.DataFrame | None
+    ridge_df: pd.DataFrame | None = None
+    kernel_ridge_df: pd.DataFrame | None = None
+    ridge_trimmed_df: pd.DataFrame | None = None
+    lasso_df: pd.DataFrame | None = None
+    lasso_trimmed_df: pd.DataFrame | None = None
+    elastic_df: pd.DataFrame | None = None
+    elastic_trimmed_df: pd.DataFrame | None = None
+    resid_df: pd.DataFrame | None = None
+    resid_trimmed_df: pd.DataFrame | None = None
+    linear_df: pd.DataFrame | None = None
+    linear_trimmed_df: pd.DataFrame | None = None
+
+    @classmethod
+    def empty(cls) -> LearningCurveResults:
+        return cls()
 
     @classmethod
     def from_mapping(
@@ -53,6 +75,49 @@ class LearningCurveResults:
             resid_trimmed_df=frames.get("resid_trimmed_df"),
             linear_df=frames.get("linear_df"),
             linear_trimmed_df=frames.get("linear_trimmed_df"),
+        )
+
+    def merge(self, other: LearningCurveResults) -> LearningCurveResults:
+        return LearningCurveResults(
+            ridge_df=other.ridge_df if other.ridge_df is not None else self.ridge_df,
+            kernel_ridge_df=(
+                other.kernel_ridge_df
+                if other.kernel_ridge_df is not None
+                else self.kernel_ridge_df
+            ),
+            ridge_trimmed_df=(
+                other.ridge_trimmed_df
+                if other.ridge_trimmed_df is not None
+                else self.ridge_trimmed_df
+            ),
+            lasso_df=other.lasso_df if other.lasso_df is not None else self.lasso_df,
+            lasso_trimmed_df=(
+                other.lasso_trimmed_df
+                if other.lasso_trimmed_df is not None
+                else self.lasso_trimmed_df
+            ),
+            elastic_df=(
+                other.elastic_df if other.elastic_df is not None else self.elastic_df
+            ),
+            elastic_trimmed_df=(
+                other.elastic_trimmed_df
+                if other.elastic_trimmed_df is not None
+                else self.elastic_trimmed_df
+            ),
+            resid_df=other.resid_df if other.resid_df is not None else self.resid_df,
+            resid_trimmed_df=(
+                other.resid_trimmed_df
+                if other.resid_trimmed_df is not None
+                else self.resid_trimmed_df
+            ),
+            linear_df=(
+                other.linear_df if other.linear_df is not None else self.linear_df
+            ),
+            linear_trimmed_df=(
+                other.linear_trimmed_df
+                if other.linear_trimmed_df is not None
+                else self.linear_trimmed_df
+            ),
         )
 
 
@@ -145,8 +210,7 @@ def run_learning_curve_experiments_from_frame(
     y = column_to_numpy(df, "reference_ads_eng")
 
     return run_learning_curve_experiments(
-        X,
-        y,
+        SweepDataset(X=X, y=y),
         min_train=min_train,
         max_train=max_train,
         n_repeats=n_repeats,
@@ -183,8 +247,7 @@ def run_learning_curve_experiments_from_config(
 
 
 def run_learning_curve_experiments(
-    X: np.ndarray,
-    y: np.ndarray,
+    dataset: SweepDataset,
     *,
     min_train: int,
     max_train: int,
@@ -199,15 +262,22 @@ def run_learning_curve_experiments(
     use_linearization: bool = True,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
-    max_train = min(max_train, len(X) - 1)
-    shared_splits = list(
-        generate_sweep_splits(
-            len(X),
-            min_train,
-            max_train,
-            n_repeats,
-            np.random.default_rng(seed),
+    max_train = min(max_train, len(dataset.X) - 1)
+    split_collection = SweepSplitCollection(
+        splits=tuple(
+            generate_sweep_splits(
+                len(dataset.X),
+                min_train,
+                max_train,
+                n_repeats,
+                np.random.default_rng(seed),
+            )
         )
+    )
+    payload = SweepRunPayload(
+        dataset=dataset,
+        split_collection=split_collection,
+        use_trim=use_trim,
     )
 
     families = model_families
@@ -223,14 +293,7 @@ def run_learning_curve_experiments(
             use_linearization=use_linearization,
         )
 
-    frames: dict[str, pd.DataFrame | None] = {}
+    results = LearningCurveResults.empty()
     for family in families:
-        frames.update(
-            family.run(
-                X,
-                y,
-                shared_splits,
-                use_trim=use_trim,
-            )
-        )
-    return LearningCurveResults.from_mapping(frames)
+        results = results.merge(family.run(payload))
+    return results
