@@ -132,8 +132,8 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         splits = list(
             generate_sweep_splits_with_validation(
                 n_samples=8,
-                min_train=2,
-                max_train=3,
+                min_train=4,
+                max_train=5,
                 n_val=2,
                 n_repeats=2,
                 rng=rng,
@@ -142,14 +142,14 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
         self.assertEqual(len(splits), 4)
         self.assertTrue(all(isinstance(split, SweepSplit) for split in splits))
-        self.assertEqual([split.sweep_size for split in splits], [2, 2, 3, 3])
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5])
 
         full_idx = np.arange(8)
         for split in splits:
-            self.assertEqual(len(split.train_idx), split.sweep_size)
+            self.assertEqual(len(split.train_idx), split.sweep_size - 2)
             self.assertIsNotNone(split.val_idx)
             self.assertEqual(len(split.val_idx), 2)
-            self.assertEqual(len(split.test_idx), 8 - split.sweep_size - 2)
+            self.assertEqual(len(split.test_idx), 8 - split.sweep_size)
             self.assertEqual(
                 len(np.intersect1d(split.train_idx, split.val_idx)),
                 0,
@@ -169,6 +169,10 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                     )
                 ),
                 full_idx,
+            )
+            self.assertEqual(
+                len(split.train_idx) + len(split.val_idx),
+                split.sweep_size,
             )
 
     def test_same_seed_gives_same_validation_splits(self) -> None:
@@ -212,9 +216,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(len(splits), 2)
-        self.assertEqual([split.sweep_size for split in splits], [4, 4])
-        self.assertTrue(all(len(split.test_idx) == 1 for split in splits))
+        self.assertEqual(len(splits), 6)
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5, 6, 6])
+        self.assertEqual([len(split.test_idx) for split in splits], [3, 3, 2, 2, 1, 1])
 
     def test_generate_sweep_splits_with_validation_returns_no_splits_when_min_train_exceeds_capacity(
         self,
@@ -222,7 +226,7 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         splits = list(
             generate_sweep_splits_with_validation(
                 n_samples=7,
-                min_train=5,
+                min_train=7,
                 max_train=6,
                 n_val=2,
                 n_repeats=2,
@@ -231,6 +235,23 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(splits, [])
+
+    def test_generate_sweep_splits_with_validation_requires_outer_train_to_fit_validation(
+        self,
+    ) -> None:
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=7,
+                min_train=1,
+                max_train=3,
+                n_val=2,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [3])
+        self.assertTrue(all(len(split.train_idx) == 1 for split in splits))
 
     def test_generate_sweep_splits_with_validation_rejects_invalid_validation_size(
         self,
@@ -700,6 +721,17 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(
             [split.sweep_size for split in family.last_payload.split_collection.splits],
             [4, 5],
+        )
+        self.assertTrue(
+            all(split.val_idx is not None for split in family.last_payload.split_collection.splits)
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [3, 4],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [1, 1],
         )
         self.assertEqual(
             family.last_payload.split_collection.planning_requirements,

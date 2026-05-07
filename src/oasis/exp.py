@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from oasis.config import Config
 
 
+_INNER_VALIDATION_SIZE = 1
+
+
 @dataclass(frozen=True, slots=True)
 class SweepSplit:
     """One sweep split for a sweep size."""
@@ -188,7 +191,7 @@ def generate_sweep_splits_with_validation(
     n_repeats: int,
     rng: np.random.Generator,
 ) -> Iterator[SweepSplit]:
-    """Yield repeated train/val/test splits for each sweep size in the range."""
+    """Yield repeated outer train/test splits with inner train/val partitions."""
 
     if n_val <= 0:
         raise ValueError("n_val must be positive.")
@@ -196,19 +199,40 @@ def generate_sweep_splits_with_validation(
         raise ValueError("n_val must be smaller than n_samples.")
 
     idx = np.arange(n_samples)
-    max_train = min(max_train, n_samples - n_val - 1)
-    for n_train in range(min_train, max_train + 1):
+    max_train = min(max_train, n_samples - 1)
+    for n_train in range(max(min_train, n_val + 1), max_train + 1):
         for _ in range(n_repeats):
-            train_idx = rng.choice(idx, size=n_train, replace=False)
-            remaining_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
-            val_idx = rng.choice(remaining_idx, size=n_val, replace=False)
-            test_idx = np.setdiff1d(remaining_idx, val_idx, assume_unique=False)
+            outer_train_idx = rng.choice(idx, size=n_train, replace=False)
+            test_idx = np.setdiff1d(idx, outer_train_idx, assume_unique=False)
+            val_idx = rng.choice(outer_train_idx, size=n_val, replace=False)
+            train_idx = np.setdiff1d(outer_train_idx, val_idx, assume_unique=False)
             yield SweepSplit(
                 sweep_size=n_train,
                 train_idx=train_idx,
                 test_idx=test_idx,
                 val_idx=val_idx,
             )
+
+
+def generate_inner_validation_sweep_splits(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    n_val: int = _INNER_VALIDATION_SIZE,
+) -> Iterator[SweepSplit]:
+    """Yield sweep splits with one inner validation holdout per outer train split."""
+
+    yield from generate_sweep_splits_with_validation(
+        n_samples=n_samples,
+        min_train=min_train,
+        max_train=max_train,
+        n_val=n_val,
+        n_repeats=n_repeats,
+        rng=rng,
+    )
 
 
 def mlip_columns(df: Any) -> list[str]:
@@ -314,9 +338,12 @@ def run_learning_curve_experiments(
     family_requirements = combine_sweep_family_requirements(families)
 
     max_train = min(max_train, len(dataset.X) - 1)
+    split_generator = generate_sweep_splits
+    if family_requirements.requires_inner_validation:
+        split_generator = generate_inner_validation_sweep_splits
     split_collection = SweepSplitCollection(
         splits=tuple(
-            generate_sweep_splits(
+            split_generator(
                 len(dataset.X),
                 max(min_train, family_requirements.min_train_size),
                 max_train,
