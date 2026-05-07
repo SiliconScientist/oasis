@@ -17,6 +17,15 @@ from sklearn.metrics import mean_squared_error
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 
 
+@dataclass(frozen=True, slots=True)
+class SklearnSweepModelSpec:
+    enabled: bool
+    result_field: str
+    trimmed_result_field: str | None
+    model_factory: Callable[[], object]
+    trim_z_thresh: float = 1.0
+
+
 class SweepModelFamily(Protocol):
     """Contract for a model family runnable over a shared split sweep."""
 
@@ -24,21 +33,40 @@ class SweepModelFamily(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class EstimatorSweepFamily:
-    result_field: str
-    trimmed_result_field: str | None
+class SupervisedModelSweepRunner:
+    """Reusable adapter for supervised estimators over the shared sweep payload."""
+
     model_factory: Callable[[], object]
-    trim_z_thresh: float = 1.0
+
+    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+        return sweep_model(payload, self.model_factory)
+
+    def run_trimmed(
+        self,
+        payload: SweepRunPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        return sweep_model_trimmed(
+            payload,
+            self.model_factory,
+            z_thresh=z_thresh,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SklearnModelFamily:
+    spec: SklearnSweepModelSpec
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        runner = SupervisedModelSweepRunner(self.spec.model_factory)
         results: dict[str, pd.DataFrame | None] = {
-            self.result_field: sweep_model(payload, self.model_factory),
+            self.spec.result_field: runner.run(payload),
         }
-        if payload.use_trim and self.trimmed_result_field is not None:
-            results[self.trimmed_result_field] = sweep_model_trimmed(
+        if payload.use_trim and self.spec.trimmed_result_field is not None:
+            results[self.spec.trimmed_result_field] = runner.run_trimmed(
                 payload,
-                self.model_factory,
-                z_thresh=self.trim_z_thresh,
+                z_thresh=self.spec.trim_z_thresh,
             )
         return LearningCurveResults.from_mapping(results)
 
@@ -71,42 +99,16 @@ def default_sweep_model_families(
     use_linearization: bool = True,
 ) -> tuple[SweepModelFamily, ...]:
     families: list[SweepModelFamily] = []
-    if use_ridge:
-        families.append(
-            EstimatorSweepFamily(
-                result_field="ridge_df",
-                trimmed_result_field="ridge_trimmed_df",
-                model_factory=lambda: Ridge(alpha=0.1),
+    families.extend(
+        sklearn_model_families(
+            sklearn_sweep_model_specs(
+                use_ridge=use_ridge,
+                use_kernel_ridge=use_kernel_ridge,
+                use_lasso=use_lasso,
+                use_elastic=use_elastic,
             )
         )
-    if use_kernel_ridge:
-        families.append(
-            EstimatorSweepFamily(
-                result_field="kernel_ridge_df",
-                trimmed_result_field=None,
-                model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
-            )
-        )
-    if use_lasso:
-        families.append(
-            EstimatorSweepFamily(
-                result_field="lasso_df",
-                trimmed_result_field="lasso_trimmed_df",
-                model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
-            )
-        )
-    if use_elastic:
-        families.append(
-            EstimatorSweepFamily(
-                result_field="elastic_df",
-                trimmed_result_field="elastic_trimmed_df",
-                model_factory=lambda: ElasticNet(
-                    alpha=0.1,
-                    l1_ratio=0.5,
-                    max_iter=20000,
-                ),
-            )
-        )
+    )
     if use_residual:
         families.append(
             SweepFunctionFamily(
@@ -126,6 +128,51 @@ def default_sweep_model_families(
             )
         )
     return tuple(families)
+
+
+def sklearn_sweep_model_specs(
+    *,
+    use_ridge: bool = True,
+    use_kernel_ridge: bool = True,
+    use_lasso: bool = True,
+    use_elastic: bool = True,
+) -> tuple[SklearnSweepModelSpec, ...]:
+    return (
+        SklearnSweepModelSpec(
+            enabled=use_ridge,
+            result_field="ridge_df",
+            trimmed_result_field="ridge_trimmed_df",
+            model_factory=lambda: Ridge(alpha=0.1),
+        ),
+        SklearnSweepModelSpec(
+            enabled=use_kernel_ridge,
+            result_field="kernel_ridge_df",
+            trimmed_result_field=None,
+            model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+        ),
+        SklearnSweepModelSpec(
+            enabled=use_lasso,
+            result_field="lasso_df",
+            trimmed_result_field="lasso_trimmed_df",
+            model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
+        ),
+        SklearnSweepModelSpec(
+            enabled=use_elastic,
+            result_field="elastic_df",
+            trimmed_result_field="elastic_trimmed_df",
+            model_factory=lambda: ElasticNet(
+                alpha=0.1,
+                l1_ratio=0.5,
+                max_iter=20000,
+            ),
+        ),
+    )
+
+
+def sklearn_model_families(
+    specs: tuple[SklearnSweepModelSpec, ...],
+) -> tuple[SweepModelFamily, ...]:
+    return tuple(SklearnModelFamily(spec) for spec in specs if spec.enabled)
 
 
 def trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:

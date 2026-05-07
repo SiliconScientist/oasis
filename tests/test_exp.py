@@ -25,10 +25,13 @@ from oasis.plot import learning_curve_plot
 
 try:
     from oasis.method import (
+        SklearnModelFamily,
         linearization_sweep,
         linearization_sweep_trimmed,
         residual_sweep,
         residual_sweep_trimmed,
+        sklearn_model_families,
+        sklearn_sweep_model_specs,
         sweep_model,
         sweep_model_trimmed,
     )
@@ -100,6 +103,27 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 
 class SweepOutputRegressionTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_sklearn_methods_are_registered_from_specs(self) -> None:
+        specs = sklearn_sweep_model_specs(
+            use_ridge=True,
+            use_kernel_ridge=False,
+            use_lasso=True,
+            use_elastic=True,
+        )
+
+        families = sklearn_model_families(specs)
+
+        self.assertTrue(all(isinstance(family, SklearnModelFamily) for family in families))
+        self.assertEqual(
+            [family.spec.result_field for family in families],
+            ["ridge_df", "lasso_df", "elastic_df"],
+        )
+        self.assertEqual(
+            [family.spec.trimmed_result_field for family in families],
+            ["ridge_trimmed_df", "lasso_trimmed_df", "elastic_trimmed_df"],
+        )
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
         X = np.array(
