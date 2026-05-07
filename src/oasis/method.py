@@ -36,6 +36,7 @@ class SklearnSweepModelSpec:
     trimmed_result_field: str | None
     model_factory: Callable[[], object]
     hyperparameter_spec: HyperparameterSpec | None = None
+    selection_metadata_field: str | None = None
     selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
     trim_z_thresh: float = 1.0
 
@@ -46,15 +47,23 @@ class HyperparameterSpec(Protocol):
 
     def candidate_factories(self) -> tuple[Callable[[], object], ...]: ...
 
+    def selection_metadata(self, model: object) -> Mapping[str, Any]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class FactoryListHyperparameterSpec:
     factories: tuple[Callable[[], object], ...]
+    metadata_extractor: Callable[[object], Mapping[str, Any]] | None = None
 
     def candidate_factories(self) -> tuple[Callable[[], object], ...]:
         if not self.factories:
             raise ValueError("hyperparameter spec must declare at least one candidate")
         return self.factories
+
+    def selection_metadata(self, model: object) -> Mapping[str, Any]:
+        if self.metadata_extractor is None:
+            return {}
+        return self.metadata_extractor(model)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +71,7 @@ class GridHyperparameterSpec:
     estimator_factory: Callable[..., object]
     grid: Mapping[str, tuple[Any, ...]]
     fixed_params: Mapping[str, Any] = field(default_factory=dict)
+    metadata_keys: tuple[str, ...] | None = None
 
     def candidate_factories(self) -> tuple[Callable[[], object], ...]:
         items = tuple(self.grid.items())
@@ -75,6 +85,26 @@ class GridHyperparameterSpec:
             params.update(zip(keys, values, strict=True))
             candidate_factories.append(_estimator_factory_with_params(self.estimator_factory, params))
         return tuple(candidate_factories)
+
+    def selection_metadata(self, model: object) -> Mapping[str, Any]:
+        if hasattr(model, "get_params"):
+            params = model.get_params(deep=False)
+        else:
+            params = {
+                key: getattr(model, key)
+                for key in self._selected_metadata_keys()
+                if hasattr(model, key)
+            }
+        return {
+            key: params[key]
+            for key in self._selected_metadata_keys()
+            if key in params
+        }
+
+    def _selected_metadata_keys(self) -> tuple[str, ...]:
+        if self.metadata_keys is not None:
+            return self.metadata_keys
+        return tuple(self.grid.keys())
 
 
 @runtime_checkable
@@ -156,6 +186,14 @@ def _select_runner_call(
     return runner.run_trimmed if trimmed else runner.run
 
 
+def _normalize_runner_output(
+    output: pd.DataFrame | SweepRunnerArtifacts,
+) -> SweepRunnerArtifacts:
+    if isinstance(output, SweepRunnerArtifacts):
+        return output
+    return SweepRunnerArtifacts(metrics=output)
+
+
 @dataclass(frozen=True, slots=True)
 class LearningCurveModelRegistration:
     name: str
@@ -206,6 +244,7 @@ class SweepFamilySpec:
     result_field: str
     trimmed_result_field: str | None
     runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner
+    selection_metadata_field: str | None = None
     trim_z_thresh: float = 1.0
     capabilities: SweepModelCapabilities = field(
         default_factory=SweepModelCapabilities
@@ -341,6 +380,12 @@ class WeightedSimplexSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepRunnerArtifacts:
+    metrics: pd.DataFrame
+    selection_metadata: pd.DataFrame | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ConfiguredSweepModelFamily:
     spec: SweepFamilySpec
 
@@ -353,19 +398,25 @@ class ConfiguredSweepModelFamily:
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         runner_payload = payload.to_runner_payload()
         run = _select_runner_call(self.spec.runner, runner_payload, trimmed=False)
+        base_output = _normalize_runner_output(run(runner_payload))
         results: dict[str, pd.DataFrame | None] = {
-            self.spec.result_field: run(runner_payload),
+            self.spec.result_field: base_output.metrics,
         }
+        if self.spec.selection_metadata_field is not None:
+            results[self.spec.selection_metadata_field] = base_output.selection_metadata
         if payload.use_trim and self.spec.trimmed_result_field is not None:
             run_trimmed = _select_runner_call(
                 self.spec.runner,
                 runner_payload,
                 trimmed=True,
             )
-            results[self.spec.trimmed_result_field] = run_trimmed(
-                runner_payload,
-                z_thresh=self.spec.trim_z_thresh,
+            trimmed_output = _normalize_runner_output(
+                run_trimmed(
+                    runner_payload,
+                    z_thresh=self.spec.trim_z_thresh,
+                )
             )
+            results[self.spec.trimmed_result_field] = trimmed_output.metrics
         return LearningCurveResults.from_mapping(results)
 
 
@@ -417,6 +468,12 @@ def _sklearn_capabilities_for_spec(
     return SweepModelCapabilities(requires_validation=True)
 
 
+def _sklearn_selection_metadata_field_for_spec(
+    spec: SklearnSweepModelSpec,
+) -> str | None:
+    return spec.selection_metadata_field
+
+
 def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...]:
     sklearn_registrations = tuple(
         LearningCurveModelRegistration(
@@ -426,6 +483,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                 SweepFamilySpec(
                     result_field=spec.result_field,
                     trimmed_result_field=spec.trimmed_result_field,
+                    selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
                     runner=_sklearn_runner_for_spec(spec),
                     trim_z_thresh=spec.trim_z_thresh,
                     capabilities=_sklearn_capabilities_for_spec(spec),
@@ -488,6 +546,7 @@ def sklearn_sweep_model_specs(
                     estimator_factory=Ridge,
                     grid={"alpha": (0.01, 0.1, 1.0, 10.0)},
                 ),
+                selection_metadata_field="ridge_selection_df",
             ),
         ),
         (
@@ -504,7 +563,9 @@ def sklearn_sweep_model_specs(
                         "gamma": (0.1, 1.0),
                     },
                     fixed_params={"kernel": "rbf"},
+                    metadata_keys=("alpha", "gamma", "kernel"),
                 ),
+                selection_metadata_field="kernel_ridge_selection_df",
             ),
         ),
         (
@@ -519,6 +580,7 @@ def sklearn_sweep_model_specs(
                     grid={"alpha": (0.001, 0.01, 0.1, 1.0)},
                     fixed_params={"max_iter": 10000},
                 ),
+                selection_metadata_field="lasso_selection_df",
             ),
         ),
         (
@@ -539,7 +601,9 @@ def sklearn_sweep_model_specs(
                         "l1_ratio": (0.2, 0.5, 0.8),
                     },
                     fixed_params={"max_iter": 20000},
+                    metadata_keys=("alpha", "l1_ratio"),
                 ),
+                selection_metadata_field="elastic_selection_df",
             ),
         ),
     )
@@ -553,6 +617,7 @@ def sklearn_model_families(
             SweepFamilySpec(
                 result_field=spec.result_field,
                 trimmed_result_field=spec.trimmed_result_field,
+                selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
                 runner=_sklearn_runner_for_spec(spec),
                 trim_z_thresh=spec.trim_z_thresh,
                 capabilities=_sklearn_capabilities_for_spec(spec),
@@ -661,7 +726,7 @@ def _fit_selected_supervised_model(
     hyperparameter_spec: HyperparameterSpec,
     *,
     refit_policy: SelectionRefitPolicy,
-) -> object:
+) -> tuple[object, Mapping[str, Any]]:
     _validate_selection_refit_policy(refit_policy)
     candidate_factory = _select_candidate_factory_by_validation(
         split,
@@ -675,7 +740,33 @@ def _fit_selected_supervised_model(
     else:
         fit_idx = np.concatenate([split.train_idx, split.val_idx])
     model.fit(X[fit_idx], y[fit_idx])
-    return model
+    return model, hyperparameter_spec.selection_metadata(model)
+
+
+def _selection_metadata_frame(
+    metadata_by_size: dict[int, list[Mapping[str, Any]]],
+) -> pd.DataFrame:
+    rows = []
+    for n_train, records in sorted(metadata_by_size.items()):
+        row: dict[str, Any] = {"n_train": n_train}
+        keys = tuple(
+            sorted(
+                {
+                    key
+                    for record in records
+                    for key in record
+                }
+            )
+        )
+        for key in keys:
+            values = [record[key] for record in records if key in record]
+            unique_values = []
+            for value in values:
+                if value not in unique_values:
+                    unique_values.append(value)
+            row[key] = unique_values[0] if len(unique_values) == 1 else tuple(unique_values)
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def sweep_supervised_model_selection(
@@ -683,15 +774,16 @@ def sweep_supervised_model_selection(
     hyperparameter_spec: HyperparameterSpec,
     *,
     refit_policy: SelectionRefitPolicy = "train_plus_val",
-) -> pd.DataFrame:
+) -> SweepRunnerArtifacts:
     """Select on validation, optionally refit, then evaluate once on outer test."""
 
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
         y = split.dataset.y
-        model = _fit_selected_supervised_model(
+        model, metadata = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
             refit_policy=refit_policy,
@@ -699,7 +791,11 @@ def sweep_supervised_model_selection(
         preds = model.predict(split.dataset.X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        selection_metadata=_selection_metadata_frame(metadata_by_size),
+    )
 
 
 def sweep_model_trimmed(
@@ -790,7 +886,7 @@ def sweep_supervised_model_selection_trimmed(
     *,
     refit_policy: SelectionRefitPolicy = "train_plus_val",
     z_thresh: float = 1.0,
-) -> pd.DataFrame:
+) -> SweepRunnerArtifacts:
     """
     Validation-based model selection with test-time trimming by contribution z-score.
     """
@@ -798,10 +894,11 @@ def sweep_supervised_model_selection_trimmed(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
         X = split.dataset.X
         y = split.dataset.y
-        model = _fit_selected_supervised_model(
+        model, metadata = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
             refit_policy=refit_policy,
@@ -827,7 +924,11 @@ def sweep_supervised_model_selection_trimmed(
         y_eval = y[split.test_idx][keep_mask]
         rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        selection_metadata=_selection_metadata_frame(metadata_by_size),
+    )
 
 
 def sweep_model_with_hyperparameter_selection(
@@ -840,7 +941,7 @@ def sweep_model_with_hyperparameter_selection(
         payload,
         hyperparameter_spec,
         refit_policy=refit_policy,
-    )
+    ).metrics
 
 
 def sweep_model_with_hyperparameter_selection_trimmed(
@@ -855,7 +956,7 @@ def sweep_model_with_hyperparameter_selection_trimmed(
         hyperparameter_spec,
         refit_policy=refit_policy,
         z_thresh=z_thresh,
-    )
+    ).metrics
 
 
 def residual_sweep(

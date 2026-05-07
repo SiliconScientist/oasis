@@ -148,14 +148,18 @@ class LearningCurveResults:
     ridge_df: pd.DataFrame | None = None
     kernel_ridge_df: pd.DataFrame | None = None
     ridge_trimmed_df: pd.DataFrame | None = None
+    ridge_selection_df: pd.DataFrame | None = None
     lasso_df: pd.DataFrame | None = None
     lasso_trimmed_df: pd.DataFrame | None = None
+    lasso_selection_df: pd.DataFrame | None = None
     elastic_df: pd.DataFrame | None = None
     elastic_trimmed_df: pd.DataFrame | None = None
+    elastic_selection_df: pd.DataFrame | None = None
     resid_df: pd.DataFrame | None = None
     resid_trimmed_df: pd.DataFrame | None = None
     weighted_linear_df: pd.DataFrame | None = None
     weighted_simplex_df: pd.DataFrame | None = None
+    kernel_ridge_selection_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:
@@ -170,14 +174,18 @@ class LearningCurveResults:
             ridge_df=frames.get("ridge_df"),
             kernel_ridge_df=frames.get("kernel_ridge_df"),
             ridge_trimmed_df=frames.get("ridge_trimmed_df"),
+            ridge_selection_df=frames.get("ridge_selection_df"),
             lasso_df=frames.get("lasso_df"),
             lasso_trimmed_df=frames.get("lasso_trimmed_df"),
+            lasso_selection_df=frames.get("lasso_selection_df"),
             elastic_df=frames.get("elastic_df"),
             elastic_trimmed_df=frames.get("elastic_trimmed_df"),
+            elastic_selection_df=frames.get("elastic_selection_df"),
             resid_df=frames.get("resid_df"),
             resid_trimmed_df=frames.get("resid_trimmed_df"),
             weighted_linear_df=frames.get("weighted_linear_df"),
             weighted_simplex_df=frames.get("weighted_simplex_df"),
+            kernel_ridge_selection_df=frames.get("kernel_ridge_selection_df"),
         )
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
@@ -193,11 +201,21 @@ class LearningCurveResults:
                 if other.ridge_trimmed_df is not None
                 else self.ridge_trimmed_df
             ),
+            ridge_selection_df=(
+                other.ridge_selection_df
+                if other.ridge_selection_df is not None
+                else self.ridge_selection_df
+            ),
             lasso_df=other.lasso_df if other.lasso_df is not None else self.lasso_df,
             lasso_trimmed_df=(
                 other.lasso_trimmed_df
                 if other.lasso_trimmed_df is not None
                 else self.lasso_trimmed_df
+            ),
+            lasso_selection_df=(
+                other.lasso_selection_df
+                if other.lasso_selection_df is not None
+                else self.lasso_selection_df
             ),
             elastic_df=(
                 other.elastic_df if other.elastic_df is not None else self.elastic_df
@@ -206,6 +224,11 @@ class LearningCurveResults:
                 other.elastic_trimmed_df
                 if other.elastic_trimmed_df is not None
                 else self.elastic_trimmed_df
+            ),
+            elastic_selection_df=(
+                other.elastic_selection_df
+                if other.elastic_selection_df is not None
+                else self.elastic_selection_df
             ),
             resid_df=other.resid_df if other.resid_df is not None else self.resid_df,
             resid_trimmed_df=(
@@ -222,6 +245,11 @@ class LearningCurveResults:
                 other.weighted_simplex_df
                 if other.weighted_simplex_df is not None
                 else self.weighted_simplex_df
+            ),
+            kernel_ridge_selection_df=(
+                other.kernel_ridge_selection_df
+                if other.kernel_ridge_selection_df is not None
+                else self.kernel_ridge_selection_df
             ),
         )
 

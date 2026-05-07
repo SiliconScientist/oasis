@@ -706,6 +706,47 @@ class SweepOutputRegressionTests(unittest.TestCase):
         pd.testing.assert_frame_equal(first.ridge_df, second.ridge_df)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_selection_metadata_surfaces_without_changing_rmse_frames(self) -> None:
+        X, y = self._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=37,
+            use_trim=False,
+            enabled_model_names=["ridge", "kernel_ridge"],
+        )
+
+        self.assertEqual(
+            results.ridge_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertIsNotNone(results.ridge_selection_df)
+        self.assertEqual(
+            results.ridge_selection_df.columns.tolist(),
+            ["n_train", "alpha"],
+        )
+        self.assertEqual(
+            results.ridge_selection_df["n_train"].tolist(),
+            results.ridge_df["n_train"].tolist(),
+        )
+        self.assertTrue(
+            set(results.ridge_selection_df["alpha"]).issubset({0.01, 0.1, 1.0, 10.0})
+        )
+
+        self.assertIsNotNone(results.kernel_ridge_selection_df)
+        self.assertEqual(
+            results.kernel_ridge_selection_df.columns.tolist(),
+            ["n_train", "alpha", "gamma", "kernel"],
+        )
+        self.assertEqual(
+            results.kernel_ridge_selection_df["n_train"].tolist(),
+            results.kernel_ridge_df["n_train"].tolist(),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
         payload = self._train_test_payload(seed=19)
         runner_payload = payload.to_runner_payload()
@@ -953,7 +994,7 @@ class BoundaryTests(unittest.TestCase):
             [np.sqrt(10.0)],
             atol=1e-12,
         )
-        pd.testing.assert_frame_equal(result, runner_result)
+        pd.testing.assert_frame_equal(result, runner_result.metrics)
 
     def test_supervised_model_selection_uses_val_idx_not_test_idx(self) -> None:
         dataset = SweepDataset(
@@ -998,7 +1039,7 @@ class BoundaryTests(unittest.TestCase):
         )
 
         np.testing.assert_allclose(
-            result["rmse_mean"].to_numpy(),
+            result.metrics["rmse_mean"].to_numpy(),
             [100.0],
             atol=1e-12,
         )
@@ -1114,8 +1155,8 @@ class BoundaryTests(unittest.TestCase):
             refit_policy="train_only",
         )
 
-        np.testing.assert_allclose(first["rmse_mean"].to_numpy(), [0.0], atol=1e-12)
-        pd.testing.assert_frame_equal(first, second)
+        np.testing.assert_allclose(first.metrics["rmse_mean"].to_numpy(), [0.0], atol=1e-12)
+        pd.testing.assert_frame_equal(first.metrics, second.metrics)
 
     def test_supervised_model_selection_runner_supports_refit_policy(self) -> None:
         dataset = SweepDataset(
@@ -1162,16 +1203,16 @@ class BoundaryTests(unittest.TestCase):
         ).run_with_validation(payload)
 
         np.testing.assert_allclose(
-            train_only["rmse_mean"].to_numpy(),
+            train_only.metrics["rmse_mean"].to_numpy(),
             [np.sqrt(16.25)],
             atol=1e-12,
         )
         np.testing.assert_allclose(
-            refit_train_plus_val["rmse_mean"].to_numpy(),
+            refit_train_plus_val.metrics["rmse_mean"].to_numpy(),
             [np.sqrt(1.8125)],
             atol=1e-12,
         )
-        pd.testing.assert_frame_equal(refit_train_plus_val, runner_result)
+        pd.testing.assert_frame_equal(refit_train_plus_val.metrics, runner_result.metrics)
 
     def test_supervised_model_selection_runner_rejects_unknown_refit_policy(self) -> None:
         dataset = SweepDataset(
