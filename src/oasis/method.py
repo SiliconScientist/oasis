@@ -4,7 +4,7 @@ from collections.abc import Collection
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,8 @@ from oasis.exp import (
     SweepModelCapabilities,
     SweepRunnerPayload,
     SweepRunPayload,
+    TrainTestSweepRunnerInput,
+    TrainValTestSweepRunnerInput,
 )
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import ElasticNet, Lasso
@@ -33,12 +35,71 @@ class SklearnSweepModelSpec:
     trim_z_thresh: float = 1.0
 
 
+@runtime_checkable
+class ValidationAwareEstimator(Protocol):
+    """Estimator that selects on validation data before outer-test prediction."""
+
+    def fit(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+    ) -> None: ...
+
+    def predict(self, X: np.ndarray) -> np.ndarray: ...
+
+
 def _as_runner_payload(
     payload: SweepRunPayload | SweepRunnerPayload,
 ) -> SweepRunnerPayload:
     if isinstance(payload, SweepRunnerPayload):
         return payload
     return payload.to_runner_payload()
+
+
+def _payload_uses_validation(payload: SweepRunnerPayload) -> bool:
+    if payload.planning_requirements.requires_validation:
+        return True
+    return any(isinstance(split, TrainValTestSweepRunnerInput) for split in payload.splits)
+
+
+def _assert_train_test_payload(
+    payload: SweepRunnerPayload,
+) -> tuple[TrainTestSweepRunnerInput, ...]:
+    splits = payload.splits
+    if not all(isinstance(split, TrainTestSweepRunnerInput) for split in splits):
+        raise TypeError("expected train/test sweep payload")
+    return splits
+
+
+def _assert_train_val_test_payload(
+    payload: SweepRunnerPayload,
+) -> tuple[TrainValTestSweepRunnerInput, ...]:
+    splits = payload.splits
+    if not all(isinstance(split, TrainValTestSweepRunnerInput) for split in splits):
+        raise TypeError("expected train/val/test sweep payload")
+    return splits
+
+
+def _select_runner_call(
+    runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner,
+    payload: SweepRunnerPayload,
+    *,
+    trimmed: bool,
+) -> Callable[..., pd.DataFrame]:
+    uses_validation = _payload_uses_validation(payload)
+    if uses_validation:
+        if not isinstance(runner, ValidationAwareSweepExperimentRunner):
+            raise TypeError("runner does not support validation-aware sweep payloads")
+        return (
+            runner.run_trimmed_with_validation
+            if trimmed
+            else runner.run_with_validation
+        )
+    if not isinstance(runner, SweepExperimentRunner):
+        raise TypeError("runner does not support train/test sweep payloads")
+    return runner.run_trimmed if trimmed else runner.run
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +119,7 @@ class SweepModelFamily(Protocol):
     def run(self, payload: SweepRunPayload) -> LearningCurveResults: ...
 
 
+@runtime_checkable
 class SweepExperimentRunner(Protocol):
     """Common runner interface for sweep methods with optional trimmed output."""
 
@@ -71,11 +133,25 @@ class SweepExperimentRunner(Protocol):
     ) -> pd.DataFrame: ...
 
 
+@runtime_checkable
+class ValidationAwareSweepExperimentRunner(Protocol):
+    """Runner interface for methods that select on val and evaluate on outer test."""
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
+
+    def run_trimmed_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SweepFamilySpec:
     result_field: str
     trimmed_result_field: str | None
-    runner: SweepExperimentRunner
+    runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner
     trim_z_thresh: float = 1.0
     capabilities: SweepModelCapabilities = field(
         default_factory=SweepModelCapabilities
@@ -120,6 +196,28 @@ class FunctionalSweepRunner:
     ) -> pd.DataFrame:
         del z_thresh
         return self.trimmed_runner(payload)
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationAwareSupervisedModelSweepRunner:
+    """Adapter for estimators that tune on val before outer-test evaluation."""
+
+    model_factory: Callable[[], object]
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_model_with_validation(payload, self.model_factory)
+
+    def run_trimmed_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        return sweep_model_with_validation_trimmed(
+            payload,
+            self.model_factory,
+            z_thresh=z_thresh,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,11 +267,17 @@ class ConfiguredSweepModelFamily:
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         runner_payload = payload.to_runner_payload()
+        run = _select_runner_call(self.spec.runner, runner_payload, trimmed=False)
         results: dict[str, pd.DataFrame | None] = {
-            self.spec.result_field: self.spec.runner.run(runner_payload),
+            self.spec.result_field: run(runner_payload),
         }
         if payload.use_trim and self.spec.trimmed_result_field is not None:
-            results[self.spec.trimmed_result_field] = self.spec.runner.run_trimmed(
+            run_trimmed = _select_runner_call(
+                self.spec.runner,
+                runner_payload,
+                trimmed=True,
+            )
+            results[self.spec.trimmed_result_field] = run_trimmed(
                 runner_payload,
                 z_thresh=self.spec.trim_z_thresh,
             )
@@ -363,13 +467,38 @@ def sweep_model(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
         X_test = X[split.test_idx]
         preds = model.predict(X_test)
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def sweep_model_with_validation(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], ValidationAwareEstimator],
+) -> pd.DataFrame:
+    """Evaluate a validation-aware estimator across precomputed sweep splits."""
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X = split.dataset.X
+        y = split.dataset.y
+        model = model_factory()
+        model.fit(
+            X[split.train_idx],
+            y[split.train_idx],
+            X[split.val_idx],
+            y[split.val_idx],
+        )
+        preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
@@ -385,7 +514,7 @@ def sweep_model_trimmed(
     """
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         model = model_factory()
@@ -411,6 +540,52 @@ def sweep_model_trimmed(
     return sweep_results_frame(rmses_by_size)
 
 
+def sweep_model_with_validation_trimmed(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], ValidationAwareEstimator],
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    """
+    Validation-aware evaluation with test-time trimming by contribution z-score.
+    """
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X = split.dataset.X
+        y = split.dataset.y
+        model = model_factory()
+        model.fit(
+            X[split.train_idx],
+            y[split.train_idx],
+            X[split.val_idx],
+            y[split.val_idx],
+        )
+
+        X_test = X[split.test_idx]
+        preds = model.predict(X_test)
+
+        w = getattr(model, "coef_", None)
+        if w is None:
+            raise AttributeError(
+                "validation-aware trimmed sweep requires estimator.coef_"
+            )
+        contrib = X_test * np.asarray(w)
+        mu = contrib.mean()
+        sigma = contrib.std() if contrib.std() > 0 else 1.0
+        z = (contrib - mu) / sigma
+        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+        if keep_mask.sum() == 0:
+            keep_mask = np.ones(len(X_test), dtype=bool)
+
+        preds_eval = preds[keep_mask]
+        y_eval = y[split.test_idx][keep_mask]
+        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
 def residual_sweep(
     payload: SweepRunPayload | SweepRunnerPayload,
 ) -> pd.DataFrame:
@@ -418,7 +593,7 @@ def residual_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         X_train = X[split.train_idx]
@@ -442,7 +617,7 @@ def residual_sweep_trimmed(
     """
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         X_train = X[split.train_idx]
@@ -467,7 +642,7 @@ def weighted_linear_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         model = LinearRegression(fit_intercept=fit_intercept)
@@ -500,7 +675,7 @@ def weighted_simplex_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.splits:
+    for split in _assert_train_test_payload(payload):
         X = split.dataset.X
         y = split.dataset.y
         weights = _simplex_weights(

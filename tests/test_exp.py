@@ -38,6 +38,7 @@ try:
         ConfiguredSweepModelFamily,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
+        ValidationAwareSupervisedModelSweepRunner,
         enabled_learning_curve_model_names_from_config,
         learning_curve_model_registry,
         residual_sweep,
@@ -47,6 +48,7 @@ try:
         sweep_results_frame,
         sweep_model,
         sweep_model_trimmed,
+        sweep_model_with_validation,
         weighted_linear_sweep,
         weighted_simplex_sweep,
     )
@@ -683,6 +685,55 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_validation_aware_supervised_runner_uses_train_val_test_path(self) -> None:
+        class ValidationAwareLinearModel:
+            def fit(self, X_train, y_train, X_val, y_val) -> None:
+                del X_val, y_val
+                self.coef_, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
+
+            def predict(self, X):
+                return X @ self.coef_
+
+        dataset = SweepDataset(
+            X=np.array(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0],
+                    [2.0, 1.0],
+                    [1.0, 2.0],
+                    [2.0, 2.0],
+                ]
+            ),
+            y=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1, 2]),
+                    val_idx=np.array([3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        result = sweep_model_with_validation(
+            payload,
+            ValidationAwareLinearModel,
+        )
+        runner_result = ValidationAwareSupervisedModelSweepRunner(
+            ValidationAwareLinearModel
+        ).run_with_validation(payload)
+
+        self.assertEqual(
+            result.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(result["n_train"].tolist(), [4])
+        pd.testing.assert_frame_equal(result, runner_result)
+
     def test_configured_family_capabilities_round_trip_to_requirements(self) -> None:
         if not HAS_SKLEARN:
             self.skipTest("requires scikit-learn")
@@ -1039,7 +1090,22 @@ class BoundaryTests(unittest.TestCase):
                 }
                 return sweep_results_frame(rmses_by_size)
 
+            def run_with_validation(
+                self,
+                payload: SweepRunnerPayload,
+            ) -> pd.DataFrame:
+                return self.run(payload)
+
             def run_trimmed(
+                self,
+                payload: SweepRunnerPayload,
+                *,
+                z_thresh: float = 1.0,
+            ) -> pd.DataFrame:
+                del z_thresh
+                return self.run(payload)
+
+            def run_trimmed_with_validation(
                 self,
                 payload: SweepRunnerPayload,
                 *,
@@ -1102,6 +1168,46 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(len(baseline_runner.payloads), 1)
         self.assertEqual(len(validation_runner.payloads), 1)
 
+    def test_configured_family_rejects_validation_splits_for_train_test_runner(
+        self,
+    ) -> None:
+        family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                trimmed_result_field=None,
+                runner=SupervisedModelSweepRunner(lambda: None),
+                capabilities=SweepModelCapabilities(
+                    min_train_size=4,
+                    requires_validation=True,
+                ),
+            )
+        )
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                X=np.arange(21, dtype=float).reshape(7, 3),
+                y=np.arange(7, dtype=float),
+            ),
+            split_collection=SweepSplitCollection(
+                splits=tuple(
+                    generate_inner_validation_sweep_splits(
+                        n_samples=7,
+                        min_train=4,
+                        max_train=4,
+                        n_repeats=1,
+                        rng=np.random.default_rng(5),
+                    )
+                ),
+                planning_requirements=family.requirements(),
+            ),
+            use_trim=False,
+        )
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "runner does not support validation-aware sweep payloads",
+        ):
+            family.run(payload)
+
     def test_run_learning_curve_experiments_handles_skipped_validation_family_predictably(
         self,
     ) -> None:
@@ -1138,20 +1244,23 @@ class BoundaryTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.payloads: list[SweepRunnerPayload] = []
 
-            def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+            def run_with_validation(
+                self,
+                payload: SweepRunnerPayload,
+            ) -> pd.DataFrame:
                 self.payloads.append(payload)
                 if payload.splits != ():
                     raise AssertionError("expected skipped validation family to receive no splits")
                 return sweep_results_frame({})
 
-            def run_trimmed(
+            def run_trimmed_with_validation(
                 self,
                 payload: SweepRunnerPayload,
                 *,
                 z_thresh: float = 1.0,
             ) -> pd.DataFrame:
                 del z_thresh
-                return self.run(payload)
+                return self.run_with_validation(payload)
 
         X = np.arange(18, dtype=float).reshape(6, 3)
         y = np.arange(6, dtype=float)
@@ -1202,7 +1311,7 @@ class BoundaryTests(unittest.TestCase):
             self.skipTest("requires scikit-learn")
 
         class RecordingRunner:
-            def run(self, payload):
+            def run_with_validation(self, payload):
                 self.last_payload = payload
                 return pd.DataFrame(
                     {
@@ -1212,9 +1321,14 @@ class BoundaryTests(unittest.TestCase):
                     }
                 )
 
-            def run_trimmed(self, payload, *, z_thresh: float = 1.0):
+            def run_trimmed_with_validation(
+                self,
+                payload,
+                *,
+                z_thresh: float = 1.0,
+            ):
                 del z_thresh
-                return self.run(payload)
+                return self.run_with_validation(payload)
 
         family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
