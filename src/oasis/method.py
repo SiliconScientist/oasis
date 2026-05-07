@@ -11,6 +11,7 @@ import pandas as pd
 from oasis.exp import (
     LearningCurveResults,
     SweepFamilyRequirements,
+    SweepModelCapabilities,
     SweepRunnerPayload,
     SweepRunPayload,
 )
@@ -50,6 +51,8 @@ class LearningCurveModelRegistration:
 class SweepModelFamily(Protocol):
     """Contract for a model family runnable over a shared split sweep."""
 
+    def capabilities(self) -> SweepModelCapabilities: ...
+
     def requirements(self) -> SweepFamilyRequirements: ...
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults: ...
@@ -74,8 +77,8 @@ class SweepFamilySpec:
     trimmed_result_field: str | None
     runner: SweepExperimentRunner
     trim_z_thresh: float = 1.0
-    requirements: SweepFamilyRequirements = field(
-        default_factory=SweepFamilyRequirements
+    capabilities: SweepModelCapabilities = field(
+        default_factory=SweepModelCapabilities
     )
 
 
@@ -158,8 +161,11 @@ class WeightedSimplexSweepRunner:
 class ConfiguredSweepModelFamily:
     spec: SweepFamilySpec
 
+    def capabilities(self) -> SweepModelCapabilities:
+        return self.spec.capabilities
+
     def requirements(self) -> SweepFamilyRequirements:
-        return self.spec.requirements
+        return self.spec.capabilities.to_requirements()
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         runner_payload = payload.to_runner_payload()

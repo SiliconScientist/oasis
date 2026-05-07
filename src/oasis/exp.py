@@ -38,6 +38,22 @@ class SweepFamilyRequirements:
     min_train_size: int = 0
     requires_inner_validation: bool = False
 
+    @property
+    def requires_validation(self) -> bool:
+        return self.requires_inner_validation
+
+
+@dataclass(frozen=True, slots=True)
+class SweepModelCapabilities:
+    min_train_size: int = 0
+    requires_validation: bool = False
+
+    def to_requirements(self) -> SweepFamilyRequirements:
+        return SweepFamilyRequirements(
+            min_train_size=self.min_train_size,
+            requires_inner_validation=self.requires_validation,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class SweepSplitCollection:
@@ -207,17 +223,26 @@ class ParityPlotData:
 def combine_sweep_family_requirements(
     families: Sequence[Any],
 ) -> SweepFamilyRequirements:
-    requirements = [
-        family.requirements()
-        for family in families
-        if hasattr(family, "requirements")
-    ]
-    if not requirements:
+    capabilities = []
+    for family in families:
+        if hasattr(family, "capabilities"):
+            capabilities.append(family.capabilities())
+            continue
+        if hasattr(family, "requirements"):
+            capabilities.append(family.requirements())
+    if not capabilities:
         return SweepFamilyRequirements()
+
+    def requires_validation(capability: Any) -> bool:
+        if hasattr(capability, "requires_validation"):
+            return capability.requires_validation
+        return capability.requires_inner_validation
+
     return SweepFamilyRequirements(
-        min_train_size=max(req.min_train_size for req in requirements),
+        min_train_size=max(cap.min_train_size for cap in capabilities),
         requires_inner_validation=any(
-            req.requires_inner_validation for req in requirements
+            requires_validation(cap)
+            for cap in capabilities
         ),
     )
 

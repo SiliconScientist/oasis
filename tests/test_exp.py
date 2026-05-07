@@ -15,6 +15,7 @@ from oasis.exp import (
     LearningCurveResults,
     SweepDataset,
     SweepFamilyRequirements,
+    SweepModelCapabilities,
     SweepRunnerPayload,
     SweepSplit,
     SweepSplitCollection,
@@ -34,6 +35,7 @@ from oasis.plot import learning_curve_plot
 try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
+        SupervisedModelSweepRunner,
         SweepFamilySpec,
         enabled_learning_curve_model_names_from_config,
         learning_curve_model_registry,
@@ -411,6 +413,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertTrue(
             all(requirement == SweepFamilyRequirements() for requirement in built_in_requirements)
         )
+        built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
+        self.assertTrue(
+            all(capability == SweepModelCapabilities() for capability in built_in_capabilities)
+        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
@@ -675,6 +681,80 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_configured_family_capabilities_round_trip_to_requirements(self) -> None:
+        if not HAS_SKLEARN:
+            self.skipTest("requires scikit-learn")
+
+        family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                trimmed_result_field=None,
+                runner=SupervisedModelSweepRunner(lambda: None),
+                capabilities=SweepModelCapabilities(
+                    min_train_size=6,
+                    requires_validation=True,
+                ),
+            )
+        )
+
+        self.assertEqual(
+            family.capabilities(),
+            SweepModelCapabilities(
+                min_train_size=6,
+                requires_validation=True,
+            ),
+        )
+        self.assertEqual(
+            family.requirements(),
+            SweepFamilyRequirements(
+                min_train_size=6,
+                requires_inner_validation=True,
+            ),
+        )
+
+    def test_run_learning_curve_experiments_combines_capabilities_first(self) -> None:
+        X = np.arange(21, dtype=float).reshape(7, 3)
+        y = np.arange(7, dtype=float)
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class CapabilityAwareStubFamily:
+            def capabilities(self) -> SweepModelCapabilities:
+                return SweepModelCapabilities(
+                    min_train_size=4,
+                    requires_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = CapabilityAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            family.last_payload.split_collection.planning_requirements,
+            SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
+        )
+
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
         self,
     ) -> None:
@@ -873,9 +953,9 @@ class BoundaryTests(unittest.TestCase):
                 trimmed_result_field=None,
                 runner=RecordingRunner(),
                 trim_z_thresh=1.0,
-                requirements=SweepFamilyRequirements(
+                capabilities=SweepModelCapabilities(
                     min_train_size=4,
-                    requires_inner_validation=True,
+                    requires_validation=True,
                 ),
             )
         )
