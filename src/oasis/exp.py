@@ -35,7 +35,12 @@ def inner_validation_size_for_sweep(
     *,
     frac: float = _INNER_VALIDATION_FRACTION,
 ) -> int:
-    """Return the inner validation size for one outer-train budget."""
+    """Return the inner validation size for one outer-train budget.
+
+    This policy consumes part of the requested sweep budget for validation via
+    `max(1, floor(frac * sweep_size))`. The remainder stays available for inner
+    training; outer test samples are not involved in this calculation.
+    """
 
     if sweep_size <= 0:
         raise ValueError("sweep_size must be positive.")
@@ -82,6 +87,8 @@ def generate_sweep_splits_with_validation(
     `sweep_size` is the outer training budget. For each split, `test_idx` is the
     outer holdout used only for final evaluation, while `train_idx` and `val_idx`
     partition that outer training budget for fitting and model selection.
+    Selection-aware methods therefore see no information from `test_idx` while
+    choosing a candidate configuration.
     """
 
     if n_val <= 0:
@@ -119,6 +126,11 @@ def generate_inner_validation_sweep_splits(
     This is the validation-aware learning-curve path: the outer test split stays
     untouched during model selection, and validation is taken from within the
     requested training budget.
+
+    Sweep sizes that cannot support both validation and at least one inner-train
+    sample are skipped. For the current fraction-based policy, that means the
+    minimum valid selection-aware sweep size is usually 2, subject to any larger
+    family-specific `min_train_size` requirement.
     """
     max_train = min(max_train, n_samples - 1)
     for sweep_size in range(min_train, max_train + 1):
@@ -153,6 +165,13 @@ def build_sweep_split_collection(
     sweep range. Validation-aware families receive only sweep sizes large enough
     to support inner train/val partitioning while keeping `test_idx` as the
     outer evaluation holdout.
+
+    The minimum sweep size for a selection-based family is therefore the maximum
+    of:
+    - the caller's requested `min_train`
+    - the family's declared `min_train_size`
+    - the smallest sweep size that leaves at least one inner-train sample after
+      the validation policy carves out `val_idx`
     """
 
     requirements = requirements or SweepFamilyRequirements()

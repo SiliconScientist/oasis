@@ -32,6 +32,15 @@ SelectionRefitPolicy = Literal["train_only", "train_plus_val"]
 
 @dataclass(frozen=True, slots=True)
 class SklearnSweepModelSpec:
+    """Registered supervised model family configuration.
+
+    When `hyperparameter_spec` is present, the family runs through the generic
+    model-selection runner on train/val/test splits and therefore requires inner
+    validation. `selection_refit_policy` controls whether the chosen candidate is
+    refit on `train_idx` only or on `train_idx + val_idx` before the single outer
+    test evaluation.
+    """
+
     result_field: str
     trimmed_result_field: str | None
     model_factory: Callable[[], object]
@@ -43,7 +52,11 @@ class SklearnSweepModelSpec:
 
 @runtime_checkable
 class HyperparameterSpec(Protocol):
-    """Contract for candidate estimators used in validation-based selection."""
+    """Contract for candidate estimators used in validation-based selection.
+
+    Candidate ranking must be based on `val_idx` only. `test_idx` is reserved
+    for one final outer evaluation after selection and any optional refit.
+    """
 
     def candidate_factories(self) -> tuple[Callable[[], object], ...]: ...
 
@@ -315,7 +328,17 @@ class ValidationAwareSupervisedModelSweepRunner:
 
 @dataclass(frozen=True, slots=True)
 class SupervisedModelSelectionSweepRunner:
-    """Reusable runner for train/val/test supervised model selection."""
+    """Reusable runner for train/val/test supervised model selection.
+
+    The policy is:
+    - fit each candidate on `train_idx`
+    - score each candidate on `val_idx`
+    - pick the best validation candidate deterministically by candidate order
+      when scores tie
+    - optionally refit the chosen candidate on `train_idx + val_idx`, or keep
+      the train-only fit, depending on `refit_policy`
+    - evaluate once on the outer `test_idx`
+    """
 
     hyperparameter_spec: HyperparameterSpec
     refit_policy: SelectionRefitPolicy = "train_plus_val"
@@ -727,6 +750,8 @@ def _fit_selected_supervised_model(
     *,
     refit_policy: SelectionRefitPolicy,
 ) -> tuple[object, Mapping[str, Any]]:
+    """Return the selected model after applying the configured refit policy."""
+
     _validate_selection_refit_policy(refit_policy)
     candidate_factory = _select_candidate_factory_by_validation(
         split,
@@ -775,7 +800,14 @@ def sweep_supervised_model_selection(
     *,
     refit_policy: SelectionRefitPolicy = "train_plus_val",
 ) -> SweepRunnerArtifacts:
-    """Select on validation, optionally refit, then evaluate once on outer test."""
+    """Select on validation, optionally refit, then evaluate once on outer test.
+
+    This is the generic supervised model-selection path. It never uses
+    `test_idx` during candidate ranking. Final fitting follows `refit_policy`:
+    `train_only` keeps the fit performed on `train_idx`, while
+    `train_plus_val` refits the chosen candidate on the full outer training
+    budget `train_idx + val_idx` before outer-test evaluation.
+    """
 
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)

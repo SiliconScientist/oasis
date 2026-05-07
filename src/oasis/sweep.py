@@ -14,7 +14,10 @@ class SweepSplit:
 
     `test_idx` is always the outer evaluation holdout. When `val_idx` is present,
     it is carved out of the training budget and is intended only for model
-    selection inside that outer train split.
+    selection inside that outer train split. In other words, selection-aware
+    methods do not receive any extra samples beyond `sweep_size`: they must
+    partition that budget into inner-train and validation while leaving
+    `test_idx` untouched for final outer evaluation only.
     """
 
     sweep_size: int
@@ -36,7 +39,9 @@ class SweepFamilyRequirements:
     `min_train_size` refers to the outer training budget for a sweep point.
     `requires_inner_validation=True` means that budget must be partitioned into
     inner-train and validation subsets, while `test_idx` remains reserved for
-    outer evaluation only.
+    outer evaluation only. Selection-based families therefore skip sweep sizes
+    that are too small to support both validation and at least one inner-train
+    sample.
     """
 
     min_train_size: int = 0
@@ -49,7 +54,13 @@ class SweepFamilyRequirements:
 
 @dataclass(frozen=True, slots=True)
 class SweepModelCapabilities:
-    """Model-facing declaration of split needs for learning-curve sweeps."""
+    """Model-facing declaration of split needs for learning-curve sweeps.
+
+    `requires_validation=True` means the family expects train/val/test splits
+    rather than plain train/test splits. The outer test split stays evaluation
+    only; validation is always carved out of the requested outer training
+    budget.
+    """
 
     min_train_size: int = 0
     requires_validation: bool = False
@@ -98,7 +109,12 @@ class TrainTestSweepRunnerInput:
 
 @dataclass(frozen=True, slots=True)
 class TrainValTestSweepRunnerInput:
-    """Runner input for methods that use validation inside the outer train split."""
+    """Runner input for methods that use validation inside the outer train split.
+
+    `train_idx` and `val_idx` together make up the full outer training budget
+    for that sweep point. `test_idx` remains a held-out outer evaluation split
+    and must not be touched during candidate selection.
+    """
 
     dataset: SweepDataset
     sweep_size: int
@@ -145,6 +161,16 @@ def split_to_runner_input(
 
 @dataclass(frozen=True, slots=True)
 class LearningCurveResults:
+    """Learning-curve outputs.
+
+    The `*_df` fields keep the historical RMSE result shape unchanged:
+    `n_train`, `rmse_mean`, and `rmse_std`.
+
+    Selection-aware families may also populate `*_selection_df` metadata frames.
+    Those are optional companion outputs keyed by `n_train` that surface the
+    chosen hyperparameters for each sweep size without changing the RMSE frames.
+    """
+
     ridge_df: pd.DataFrame | None = None
     kernel_ridge_df: pd.DataFrame | None = None
     ridge_trimmed_df: pd.DataFrame | None = None
