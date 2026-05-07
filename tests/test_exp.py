@@ -16,6 +16,7 @@ from oasis.exp import (
     generate_inner_validation_sweep_splits,
     generate_sweep_splits,
     generate_sweep_splits_with_validation,
+    inner_validation_size_for_sweep,
     prepare_parity_plot_data,
     run_learning_curve_experiments,
     run_learning_curve_experiments_from_frame,
@@ -38,6 +39,10 @@ from oasis.sweep import (
 try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
+        FactoryListHyperparameterSpec,
+        GridHyperparameterSpec,
+        HyperparameterSelectionSweepRunner,
+        SupervisedModelSelectionSweepRunner,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
         ValidationAwareSupervisedModelSweepRunner,
@@ -49,6 +54,9 @@ try:
         sklearn_sweep_model_specs,
         sweep_results_frame,
         sweep_model,
+        sweep_model_with_hyperparameter_selection,
+        sweep_model_with_hyperparameter_selection_trimmed,
+        sweep_supervised_model_selection,
         sweep_model_trimmed,
         sweep_model_with_validation,
         weighted_linear_sweep,
@@ -137,6 +145,19 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
+    def test_inner_validation_size_for_sweep_uses_fraction_policy(self) -> None:
+        self.assertEqual(inner_validation_size_for_sweep(1), 1)
+        self.assertEqual(inner_validation_size_for_sweep(4), 1)
+        self.assertEqual(inner_validation_size_for_sweep(5), 1)
+        self.assertEqual(inner_validation_size_for_sweep(10), 2)
+
+    def test_inner_validation_size_for_sweep_rejects_invalid_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sweep_size must be positive"):
+            inner_validation_size_for_sweep(0)
+
+        with self.assertRaisesRegex(ValueError, "frac must be positive"):
+            inner_validation_size_for_sweep(5, frac=0.0)
+
     def test_generate_sweep_splits_with_validation_yields_disjoint_full_partitions(
         self,
     ) -> None:
@@ -281,6 +302,27 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 )
             )
 
+    def test_generate_inner_validation_sweep_splits_uses_fraction_policy(self) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=12,
+                min_train=4,
+                max_train=10,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual(
+            [len(split.val_idx) for split in splits],
+            [1, 1, 1, 1, 1, 1, 2],
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in splits],
+            [3, 4, 5, 6, 7, 8, 8],
+        )
+
         with self.assertRaisesRegex(
             ValueError,
             "n_val must be smaller than n_samples",
@@ -416,12 +458,30 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         built_in_requirements = [registration.family_factory().requirements() for registration in registry]
-        self.assertTrue(
-            all(requirement == SweepFamilyRequirements() for requirement in built_in_requirements)
+        self.assertEqual(
+            built_in_requirements,
+            [
+                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(),
+                SweepFamilyRequirements(),
+                SweepFamilyRequirements(),
+            ],
         )
         built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
-        self.assertTrue(
-            all(capability == SweepModelCapabilities() for capability in built_in_capabilities)
+        self.assertEqual(
+            built_in_capabilities,
+            [
+                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(),
+                SweepModelCapabilities(),
+                SweepModelCapabilities(),
+            ],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -475,26 +535,52 @@ class SweepOutputRegressionTests(unittest.TestCase):
         sklearn_specs = {
             name: spec for name, _, spec in sklearn_sweep_model_specs()
         }
+        validation_payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=build_sweep_split_collection(
+                len(dataset.X),
+                min_train=2,
+                max_train=4,
+                n_repeats=2,
+                seed=13,
+                requirements=SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                ),
+            ),
+            use_trim=True,
+        )
 
         expected = {
-            "ridge_df": sweep_model(payload, sklearn_specs["ridge"].model_factory),
-            "kernel_ridge_df": sweep_model(
-                payload,
-                sklearn_specs["kernel_ridge"].model_factory,
+            "ridge_df": sweep_model_with_hyperparameter_selection(
+                validation_payload,
+                sklearn_specs["ridge"].hyperparameter_spec,
             ),
-            "ridge_trimmed_df": sweep_model_trimmed(
-                payload,
-                sklearn_specs["ridge"].model_factory,
+            "kernel_ridge_df": sweep_model_with_hyperparameter_selection(
+                validation_payload,
+                sklearn_specs["kernel_ridge"].hyperparameter_spec,
             ),
-            "lasso_df": sweep_model(payload, sklearn_specs["lasso"].model_factory),
-            "lasso_trimmed_df": sweep_model_trimmed(
-                payload,
-                sklearn_specs["lasso"].model_factory,
+            "ridge_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
+                validation_payload,
+                sklearn_specs["ridge"].hyperparameter_spec,
+                z_thresh=sklearn_specs["ridge"].trim_z_thresh,
             ),
-            "elastic_df": sweep_model(payload, sklearn_specs["elastic"].model_factory),
-            "elastic_trimmed_df": sweep_model_trimmed(
-                payload,
-                sklearn_specs["elastic"].model_factory,
+            "lasso_df": sweep_model_with_hyperparameter_selection(
+                validation_payload,
+                sklearn_specs["lasso"].hyperparameter_spec,
+            ),
+            "lasso_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
+                validation_payload,
+                sklearn_specs["lasso"].hyperparameter_spec,
+                z_thresh=sklearn_specs["lasso"].trim_z_thresh,
+            ),
+            "elastic_df": sweep_model_with_hyperparameter_selection(
+                validation_payload,
+                sklearn_specs["elastic"].hyperparameter_spec,
+            ),
+            "elastic_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
+                validation_payload,
+                sklearn_specs["elastic"].hyperparameter_spec,
+                z_thresh=sklearn_specs["elastic"].trim_z_thresh,
             ),
             "resid_df": residual_sweep(payload),
             "resid_trimmed_df": residual_sweep_trimmed(payload),
@@ -687,6 +773,194 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_grid_hyperparameter_spec_expands_candidate_factories(self) -> None:
+        from sklearn.linear_model import Ridge
+
+        spec = GridHyperparameterSpec(
+            estimator_factory=Ridge,
+            grid={"alpha": (0.1, 1.0)},
+            fixed_params={"fit_intercept": False},
+        )
+
+        candidates = [factory() for factory in spec.candidate_factories()]
+
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual([candidate.alpha for candidate in candidates], [0.1, 1.0])
+        self.assertTrue(all(candidate.fit_intercept is False for candidate in candidates))
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_factory_list_hyperparameter_spec_returns_declared_candidates(self) -> None:
+        from sklearn.linear_model import Ridge
+
+        spec = FactoryListHyperparameterSpec(
+            factories=(
+                lambda: Ridge(alpha=0.1),
+                lambda: Ridge(alpha=1.0),
+            )
+        )
+
+        candidates = [factory() for factory in spec.candidate_factories()]
+
+        self.assertEqual([candidate.alpha for candidate in candidates], [0.1, 1.0])
+
+    def test_hyperparameter_selection_runner_picks_best_validation_candidate(self) -> None:
+        dataset = SweepDataset(
+            X=np.array(
+                [
+                    [1.0],
+                    [2.0],
+                    [3.0],
+                    [4.0],
+                    [5.0],
+                    [6.0],
+                ]
+            ),
+            y=np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1, 2]),
+                    val_idx=np.array([3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+                self.coef_ = np.array([self.constant], dtype=float)
+
+            def fit(self, X, y) -> ConstantPredictor:
+                del X, y
+                return self
+
+            def predict(self, X):
+                return np.full(len(X), self.constant, dtype=float)
+
+        spec = FactoryListHyperparameterSpec(
+            factories=(
+                lambda: ConstantPredictor(0.0),
+                lambda: ConstantPredictor(8.0),
+            )
+        )
+
+        result = sweep_model_with_hyperparameter_selection(payload, spec)
+        runner_result = HyperparameterSelectionSweepRunner(spec).run_with_validation(
+            payload
+        )
+
+        np.testing.assert_allclose(
+            result["rmse_mean"].to_numpy(),
+            [np.sqrt(10.0)],
+            atol=1e-12,
+        )
+        pd.testing.assert_frame_equal(result, runner_result)
+
+    def test_supervised_model_selection_runner_supports_refit_policy(self) -> None:
+        dataset = SweepDataset(
+            X=np.array([[0.0], [1.0], [2.0], [10.0], [4.0], [5.0]]),
+            y=np.array([0.0, 1.0, 2.0, 10.0, 4.0, 5.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        class MeanPredictor:
+            def fit(self, X, y):
+                del X
+                self.mean_ = float(np.mean(y))
+                self.coef_ = np.array([self.mean_], dtype=float)
+                return self
+
+            def predict(self, X):
+                return np.full(len(X), self.mean_, dtype=float)
+
+        spec = FactoryListHyperparameterSpec(factories=(MeanPredictor,))
+
+        train_only = sweep_supervised_model_selection(
+            payload,
+            spec,
+            refit_policy="train_only",
+        )
+        refit_train_plus_val = sweep_supervised_model_selection(
+            payload,
+            spec,
+            refit_policy="train_plus_val",
+        )
+        runner_result = SupervisedModelSelectionSweepRunner(
+            spec,
+            refit_policy="train_plus_val",
+        ).run_with_validation(payload)
+
+        np.testing.assert_allclose(
+            train_only["rmse_mean"].to_numpy(),
+            [np.sqrt(16.25)],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            refit_train_plus_val["rmse_mean"].to_numpy(),
+            [np.sqrt(1.8125)],
+            atol=1e-12,
+        )
+        pd.testing.assert_frame_equal(refit_train_plus_val, runner_result)
+
+    def test_supervised_model_selection_runner_rejects_unknown_refit_policy(self) -> None:
+        dataset = SweepDataset(
+            X=np.array([[0.0], [1.0], [2.0], [3.0]]),
+            y=np.array([0.0, 1.0, 2.0, 3.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([0]),
+                    val_idx=np.array([1, 2]),
+                    test_idx=np.array([3]),
+                ),
+            )
+        )
+
+        class ConstantPredictor:
+            def fit(self, X, y):
+                del X, y
+                self.coef_ = np.array([0.0], dtype=float)
+                return self
+
+            def predict(self, X):
+                return np.zeros(len(X), dtype=float)
+
+        spec = FactoryListHyperparameterSpec(factories=(ConstantPredictor,))
+
+        with self.assertRaisesRegex(ValueError, "unsupported selection refit policy"):
+            sweep_supervised_model_selection(
+                payload,
+                spec,
+                refit_policy="bad_policy",  # type: ignore[arg-type]
+            )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_sklearn_specs_declare_validation_search_spaces(self) -> None:
+        specs = {name: spec for name, _, spec in sklearn_sweep_model_specs()}
+
+        self.assertIsNotNone(specs["ridge"].hyperparameter_spec)
+        self.assertIsNotNone(specs["kernel_ridge"].hyperparameter_spec)
+        self.assertIsNotNone(specs["lasso"].hyperparameter_spec)
+        self.assertIsNotNone(specs["elastic"].hyperparameter_spec)
+
     def test_validation_aware_supervised_runner_uses_train_val_test_path(self) -> None:
         class ValidationAwareLinearModel:
             def fit(self, X_train, y_train, X_val, y_val) -> None:

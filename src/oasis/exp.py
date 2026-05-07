@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+import math
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -20,13 +21,27 @@ if TYPE_CHECKING:
     from oasis.config import Config
 
 
-_INNER_VALIDATION_SIZE = 1
+_INNER_VALIDATION_FRACTION = 0.2
 
 
 @dataclass(frozen=True, slots=True)
 class ParityPlotData:
     reference: np.ndarray
     predictions: Mapping[str, np.ndarray]
+
+
+def inner_validation_size_for_sweep(
+    sweep_size: int,
+    *,
+    frac: float = _INNER_VALIDATION_FRACTION,
+) -> int:
+    """Return the inner validation size for one outer-train budget."""
+
+    if sweep_size <= 0:
+        raise ValueError("sweep_size must be positive.")
+    if frac <= 0:
+        raise ValueError("frac must be positive.")
+    return max(1, math.floor(frac * sweep_size))
 
 def generate_sweep_splits(
     n_samples: int,
@@ -97,23 +112,30 @@ def generate_inner_validation_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
     *,
-    n_val: int = _INNER_VALIDATION_SIZE,
+    validation_fraction: float = _INNER_VALIDATION_FRACTION,
 ) -> Iterator[SweepSplit]:
-    """Yield sweep splits with one inner validation holdout per outer train split.
+    """Yield sweep splits with policy-sized inner validation holdouts.
 
     This is the validation-aware learning-curve path: the outer test split stays
     untouched during model selection, and validation is taken from within the
     requested training budget.
     """
-
-    yield from generate_sweep_splits_with_validation(
-        n_samples=n_samples,
-        min_train=min_train,
-        max_train=max_train,
-        n_val=n_val,
-        n_repeats=n_repeats,
-        rng=rng,
-    )
+    max_train = min(max_train, n_samples - 1)
+    for sweep_size in range(min_train, max_train + 1):
+        n_val = inner_validation_size_for_sweep(
+            sweep_size,
+            frac=validation_fraction,
+        )
+        if n_val >= sweep_size:
+            continue
+        yield from generate_sweep_splits_with_validation(
+            n_samples=n_samples,
+            min_train=sweep_size,
+            max_train=sweep_size,
+            n_val=n_val,
+            n_repeats=n_repeats,
+            rng=rng,
+        )
 
 
 def build_sweep_split_collection(

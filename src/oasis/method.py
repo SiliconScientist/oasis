@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Protocol, runtime_checkable
+from itertools import product
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -25,6 +27,7 @@ from sklearn.metrics import mean_squared_error
 
 
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+SelectionRefitPolicy = Literal["train_only", "train_plus_val"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +35,46 @@ class SklearnSweepModelSpec:
     result_field: str
     trimmed_result_field: str | None
     model_factory: Callable[[], object]
+    hyperparameter_spec: HyperparameterSpec | None = None
+    selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
     trim_z_thresh: float = 1.0
+
+
+@runtime_checkable
+class HyperparameterSpec(Protocol):
+    """Contract for candidate estimators used in validation-based selection."""
+
+    def candidate_factories(self) -> tuple[Callable[[], object], ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class FactoryListHyperparameterSpec:
+    factories: tuple[Callable[[], object], ...]
+
+    def candidate_factories(self) -> tuple[Callable[[], object], ...]:
+        if not self.factories:
+            raise ValueError("hyperparameter spec must declare at least one candidate")
+        return self.factories
+
+
+@dataclass(frozen=True, slots=True)
+class GridHyperparameterSpec:
+    estimator_factory: Callable[..., object]
+    grid: Mapping[str, tuple[Any, ...]]
+    fixed_params: Mapping[str, Any] = field(default_factory=dict)
+
+    def candidate_factories(self) -> tuple[Callable[[], object], ...]:
+        items = tuple(self.grid.items())
+        if not items:
+            return (lambda: self.estimator_factory(**self.fixed_params),)
+        candidate_factories = []
+        keys = tuple(key for key, _ in items)
+        value_sets = tuple(values for _, values in items)
+        for values in product(*value_sets):
+            params = dict(self.fixed_params)
+            params.update(zip(keys, values, strict=True))
+            candidate_factories.append(_estimator_factory_with_params(self.estimator_factory, params))
+        return tuple(candidate_factories)
 
 
 @runtime_checkable
@@ -56,6 +98,18 @@ def _as_runner_payload(
     if isinstance(payload, SweepRunnerPayload):
         return payload
     return payload.to_runner_payload()
+
+
+def _estimator_factory_with_params(
+    estimator_factory: Callable[..., object],
+    params: Mapping[str, Any],
+) -> Callable[[], object]:
+    return lambda: estimator_factory(**params)
+
+
+def _validate_selection_refit_policy(policy: SelectionRefitPolicy) -> None:
+    if policy not in ("train_only", "train_plus_val"):
+        raise ValueError(f"unsupported selection refit policy: {policy}")
 
 
 def _payload_uses_validation(payload: SweepRunnerPayload) -> bool:
@@ -221,6 +275,37 @@ class ValidationAwareSupervisedModelSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
+class SupervisedModelSelectionSweepRunner:
+    """Reusable runner for train/val/test supervised model selection."""
+
+    hyperparameter_spec: HyperparameterSpec
+    refit_policy: SelectionRefitPolicy = "train_plus_val"
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_supervised_model_selection(
+            payload,
+            self.hyperparameter_spec,
+            refit_policy=self.refit_policy,
+        )
+
+    def run_trimmed_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        return sweep_supervised_model_selection_trimmed(
+            payload,
+            self.hyperparameter_spec,
+            refit_policy=self.refit_policy,
+            z_thresh=z_thresh,
+        )
+
+
+HyperparameterSelectionSweepRunner = SupervisedModelSelectionSweepRunner
+
+
+@dataclass(frozen=True, slots=True)
 class WeightedLinearSweepRunner:
     fit_intercept: bool = True
 
@@ -313,6 +398,25 @@ def enabled_learning_curve_model_names_from_config(
     )
 
 
+def _sklearn_runner_for_spec(
+    spec: SklearnSweepModelSpec,
+) -> SweepExperimentRunner | ValidationAwareSweepExperimentRunner:
+    if spec.hyperparameter_spec is not None:
+        return SupervisedModelSelectionSweepRunner(
+            spec.hyperparameter_spec,
+            refit_policy=spec.selection_refit_policy,
+        )
+    return SupervisedModelSweepRunner(spec.model_factory)
+
+
+def _sklearn_capabilities_for_spec(
+    spec: SklearnSweepModelSpec,
+) -> SweepModelCapabilities:
+    if spec.hyperparameter_spec is None:
+        return SweepModelCapabilities()
+    return SweepModelCapabilities(requires_validation=True)
+
+
 def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...]:
     sklearn_registrations = tuple(
         LearningCurveModelRegistration(
@@ -322,8 +426,9 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                 SweepFamilySpec(
                     result_field=spec.result_field,
                     trimmed_result_field=spec.trimmed_result_field,
-                    runner=SupervisedModelSweepRunner(spec.model_factory),
+                    runner=_sklearn_runner_for_spec(spec),
                     trim_z_thresh=spec.trim_z_thresh,
+                    capabilities=_sklearn_capabilities_for_spec(spec),
                 )
             ),
         )
@@ -379,6 +484,10 @@ def sklearn_sweep_model_specs(
                 result_field="ridge_df",
                 trimmed_result_field="ridge_trimmed_df",
                 model_factory=lambda: Ridge(alpha=0.1),
+                hyperparameter_spec=GridHyperparameterSpec(
+                    estimator_factory=Ridge,
+                    grid={"alpha": (0.01, 0.1, 1.0, 10.0)},
+                ),
             ),
         ),
         (
@@ -388,6 +497,14 @@ def sklearn_sweep_model_specs(
                 result_field="kernel_ridge_df",
                 trimmed_result_field=None,
                 model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+                hyperparameter_spec=GridHyperparameterSpec(
+                    estimator_factory=KernelRidge,
+                    grid={
+                        "alpha": (0.1, 1.0, 10.0),
+                        "gamma": (0.1, 1.0),
+                    },
+                    fixed_params={"kernel": "rbf"},
+                ),
             ),
         ),
         (
@@ -397,6 +514,11 @@ def sklearn_sweep_model_specs(
                 result_field="lasso_df",
                 trimmed_result_field="lasso_trimmed_df",
                 model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
+                hyperparameter_spec=GridHyperparameterSpec(
+                    estimator_factory=Lasso,
+                    grid={"alpha": (0.001, 0.01, 0.1, 1.0)},
+                    fixed_params={"max_iter": 10000},
+                ),
             ),
         ),
         (
@@ -409,6 +531,14 @@ def sklearn_sweep_model_specs(
                     alpha=0.1,
                     l1_ratio=0.5,
                     max_iter=20000,
+                ),
+                hyperparameter_spec=GridHyperparameterSpec(
+                    estimator_factory=ElasticNet,
+                    grid={
+                        "alpha": (0.001, 0.01, 0.1),
+                        "l1_ratio": (0.2, 0.5, 0.8),
+                    },
+                    fixed_params={"max_iter": 20000},
                 ),
             ),
         ),
@@ -423,8 +553,9 @@ def sklearn_model_families(
             SweepFamilySpec(
                 result_field=spec.result_field,
                 trimmed_result_field=spec.trimmed_result_field,
-                runner=SupervisedModelSweepRunner(spec.model_factory),
+                runner=_sklearn_runner_for_spec(spec),
                 trim_z_thresh=spec.trim_z_thresh,
+                capabilities=_sklearn_capabilities_for_spec(spec),
             )
         )
         for _, _, spec in specs
@@ -499,6 +630,73 @@ def sweep_model_with_validation(
             y[split.val_idx],
         )
         preds = model.predict(X[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def _select_candidate_factory_by_validation(
+    split: TrainValTestSweepRunnerInput,
+    hyperparameter_spec: HyperparameterSpec,
+) -> Callable[[], object]:
+    X = split.dataset.X
+    y = split.dataset.y
+    best_candidate_factory = None
+    best_rmse = np.inf
+    for candidate_factory in hyperparameter_spec.candidate_factories():
+        model = candidate_factory()
+        model.fit(X[split.train_idx], y[split.train_idx])
+        val_preds = model.predict(X[split.val_idx])
+        val_rmse = np.sqrt(mean_squared_error(y[split.val_idx], val_preds))
+        if val_rmse < best_rmse:
+            best_rmse = val_rmse
+            best_candidate_factory = candidate_factory
+    if best_candidate_factory is None:
+        raise ValueError("hyperparameter spec did not yield any candidate estimators")
+    return best_candidate_factory
+
+
+def _fit_selected_supervised_model(
+    split: TrainValTestSweepRunnerInput,
+    hyperparameter_spec: HyperparameterSpec,
+    *,
+    refit_policy: SelectionRefitPolicy,
+) -> object:
+    _validate_selection_refit_policy(refit_policy)
+    candidate_factory = _select_candidate_factory_by_validation(
+        split,
+        hyperparameter_spec,
+    )
+    model = candidate_factory()
+    X = split.dataset.X
+    y = split.dataset.y
+    if refit_policy == "train_only":
+        fit_idx = split.train_idx
+    else:
+        fit_idx = np.concatenate([split.train_idx, split.val_idx])
+    model.fit(X[fit_idx], y[fit_idx])
+    return model
+
+
+def sweep_supervised_model_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    hyperparameter_spec: HyperparameterSpec,
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> pd.DataFrame:
+    """Select on validation, optionally refit, then evaluate once on outer test."""
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        y = split.dataset.y
+        model = _fit_selected_supervised_model(
+            split,
+            hyperparameter_spec,
+            refit_policy=refit_policy,
+        )
+        preds = model.predict(split.dataset.X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
@@ -584,6 +782,80 @@ def sweep_model_with_validation_trimmed(
         rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
+
+
+def sweep_supervised_model_selection_trimmed(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    hyperparameter_spec: HyperparameterSpec,
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    """
+    Validation-based model selection with test-time trimming by contribution z-score.
+    """
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in splits:
+        X = split.dataset.X
+        y = split.dataset.y
+        model = _fit_selected_supervised_model(
+            split,
+            hyperparameter_spec,
+            refit_policy=refit_policy,
+        )
+
+        X_test = X[split.test_idx]
+        preds = model.predict(X_test)
+
+        w = getattr(model, "coef_", None)
+        if w is None:
+            raise AttributeError(
+                "trimmed hyperparameter selection requires estimator.coef_"
+            )
+        contrib = X_test * np.asarray(w)
+        mu = contrib.mean()
+        sigma = contrib.std() if contrib.std() > 0 else 1.0
+        z = (contrib - mu) / sigma
+        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
+        if keep_mask.sum() == 0:
+            keep_mask = np.ones(len(X_test), dtype=bool)
+
+        preds_eval = preds[keep_mask]
+        y_eval = y[split.test_idx][keep_mask]
+        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def sweep_model_with_hyperparameter_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    hyperparameter_spec: HyperparameterSpec,
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> pd.DataFrame:
+    return sweep_supervised_model_selection(
+        payload,
+        hyperparameter_spec,
+        refit_policy=refit_policy,
+    )
+
+
+def sweep_model_with_hyperparameter_selection_trimmed(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    hyperparameter_spec: HyperparameterSpec,
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+    z_thresh: float = 1.0,
+) -> pd.DataFrame:
+    return sweep_supervised_model_selection_trimmed(
+        payload,
+        hyperparameter_spec,
+        refit_policy=refit_policy,
+        z_thresh=z_thresh,
+    )
 
 
 def residual_sweep(
