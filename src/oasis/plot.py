@@ -6,7 +6,8 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from oasis.exp import LearningCurveResults, prepare_parity_plot_data
+from oasis.exp import prepare_parity_plot_data
+from oasis.sweep import LearningCurveResults
 
 _MLIP_DISPLAY_NAMES = {
     "7net-omni": "7Net-Omni",

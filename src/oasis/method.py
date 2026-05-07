@@ -8,7 +8,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
-from oasis.exp import (
+from oasis.sweep import (
     LearningCurveResults,
     SweepFamilyRequirements,
     SweepModelCapabilities,

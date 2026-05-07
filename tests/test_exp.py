@@ -12,16 +12,6 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from oasis.exp import (
-    LearningCurveResults,
-    SweepDataset,
-    SweepFamilyRequirements,
-    SweepModelCapabilities,
-    SweepRunnerPayload,
-    SweepSplit,
-    SweepSplitCollection,
-    SweepRunPayload,
-    TrainTestSweepRunnerInput,
-    TrainValTestSweepRunnerInput,
     build_sweep_split_collection,
     generate_inner_validation_sweep_splits,
     generate_sweep_splits,
@@ -32,6 +22,18 @@ from oasis.exp import (
     run_learning_curve_experiments_from_config,
 )
 from oasis.plot import learning_curve_plot
+from oasis.sweep import (
+    LearningCurveResults,
+    SweepDataset,
+    SweepFamilyRequirements,
+    SweepModelCapabilities,
+    SweepRunnerPayload,
+    SweepSplit,
+    SweepSplitCollection,
+    SweepRunPayload,
+    TrainTestSweepRunnerInput,
+    TrainValTestSweepRunnerInput,
+)
 
 try:
     from oasis.method import (
