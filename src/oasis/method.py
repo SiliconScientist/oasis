@@ -111,11 +111,11 @@ class FunctionalSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
-class WeightedCombinerSweepRunner:
+class WeightedLinearSweepRunner:
     fit_intercept: bool = True
 
     def run(self, payload: SweepRunPayload) -> pd.DataFrame:
-        return weighted_combiner_sweep(
+        return weighted_linear_sweep(
             payload,
             fit_intercept=self.fit_intercept,
         )
@@ -131,9 +131,9 @@ class WeightedCombinerSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
-class NormalizedWeightedCombinerSweepRunner:
+class WeightedSimplexSweepRunner:
     def run(self, payload: SweepRunPayload) -> pd.DataFrame:
-        return normalized_weighted_combiner_sweep(payload)
+        return weighted_simplex_sweep(payload)
 
     def run_trimmed(
         self,
@@ -225,24 +225,24 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
             ),
         ),
         LearningCurveModelRegistration(
-            name="weighted_combiner",
-            config_attr="use_weighted_combiner",
+            name="weighted_linear",
+            config_attr="use_weighted_linear",
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
-                    result_field="weighted_combiner_df",
+                    result_field="weighted_linear_df",
                     trimmed_result_field=None,
-                    runner=WeightedCombinerSweepRunner(fit_intercept=True),
+                    runner=WeightedLinearSweepRunner(fit_intercept=True),
                 )
             ),
         ),
         LearningCurveModelRegistration(
-            name="normalized_weighted_combiner",
-            config_attr="use_normalized_weighted_combiner",
+            name="weighted_simplex",
+            config_attr="use_weighted_simplex",
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
-                    result_field="normalized_weighted_combiner_df",
+                    result_field="weighted_simplex_df",
                     trimmed_result_field=None,
-                    runner=NormalizedWeightedCombinerSweepRunner(),
+                    runner=WeightedSimplexSweepRunner(),
                 )
             ),
         ),
@@ -438,12 +438,12 @@ def residual_sweep_trimmed(
     return sweep_results_frame(rmses_by_size)
 
 
-def weighted_combiner_sweep(
+def weighted_linear_sweep(
     payload: SweepRunPayload,
     *,
     fit_intercept: bool = True,
 ) -> pd.DataFrame:
-    """Fit unconstrained linear weights over MLIP columns for each sweep split."""
+    """Fit an unconstrained linear combiner over MLIP columns on each sweep split."""
 
     X = payload.dataset.X
     y = payload.dataset.y
@@ -457,7 +457,7 @@ def weighted_combiner_sweep(
     return sweep_results_frame(rmses_by_size)
 
 
-def _normalized_nonnegative_weights(
+def _simplex_weights(
     X_train: np.ndarray,
     y_train: np.ndarray,
 ) -> np.ndarray:
@@ -470,18 +470,18 @@ def _normalized_nonnegative_weights(
     return weights / weight_sum
 
 
-def normalized_weighted_combiner_sweep(
+def weighted_simplex_sweep(
     payload: SweepRunPayload,
 ) -> pd.DataFrame:
     """
-    Fit nonnegative weights and renormalize them to sum to one on each sweep split.
+    Fit a simplex-style combiner with nonnegative weights that sum to one.
     """
 
     X = payload.dataset.X
     y = payload.dataset.y
     rmses_by_size: dict[int, list[float]] = {}
     for split in payload.split_collection.splits:
-        weights = _normalized_nonnegative_weights(
+        weights = _simplex_weights(
             X[split.train_idx],
             y[split.train_idx],
         )

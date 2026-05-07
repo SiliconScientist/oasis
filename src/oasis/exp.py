@@ -61,8 +61,8 @@ class LearningCurveResults:
     elastic_trimmed_df: pd.DataFrame | None = None
     resid_df: pd.DataFrame | None = None
     resid_trimmed_df: pd.DataFrame | None = None
-    weighted_combiner_df: pd.DataFrame | None = None
-    normalized_weighted_combiner_df: pd.DataFrame | None = None
+    weighted_linear_df: pd.DataFrame | None = None
+    weighted_simplex_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:
@@ -83,10 +83,8 @@ class LearningCurveResults:
             elastic_trimmed_df=frames.get("elastic_trimmed_df"),
             resid_df=frames.get("resid_df"),
             resid_trimmed_df=frames.get("resid_trimmed_df"),
-            weighted_combiner_df=frames.get("weighted_combiner_df"),
-            normalized_weighted_combiner_df=frames.get(
-                "normalized_weighted_combiner_df"
-            ),
+            weighted_linear_df=frames.get("weighted_linear_df"),
+            weighted_simplex_df=frames.get("weighted_simplex_df"),
         )
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
@@ -122,15 +120,15 @@ class LearningCurveResults:
                 if other.resid_trimmed_df is not None
                 else self.resid_trimmed_df
             ),
-            weighted_combiner_df=(
-                other.weighted_combiner_df
-                if other.weighted_combiner_df is not None
-                else self.weighted_combiner_df
+            weighted_linear_df=(
+                other.weighted_linear_df
+                if other.weighted_linear_df is not None
+                else self.weighted_linear_df
             ),
-            normalized_weighted_combiner_df=(
-                other.normalized_weighted_combiner_df
-                if other.normalized_weighted_combiner_df is not None
-                else self.normalized_weighted_combiner_df
+            weighted_simplex_df=(
+                other.weighted_simplex_df
+                if other.weighted_simplex_df is not None
+                else self.weighted_simplex_df
             ),
         )
 
