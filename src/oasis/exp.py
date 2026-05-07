@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -52,6 +52,67 @@ class SweepRunPayload:
     dataset: SweepDataset
     split_collection: SweepSplitCollection
     use_trim: bool
+
+    def to_runner_payload(self) -> SweepRunnerPayload:
+        return SweepRunnerPayload(
+            splits=tuple(
+                split_to_runner_input(self.dataset, split)
+                for split in self.split_collection.splits
+            ),
+            planning_requirements=self.split_collection.planning_requirements,
+            use_trim=self.use_trim,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainTestSweepRunnerInput:
+    dataset: SweepDataset
+    sweep_size: int
+    train_idx: np.ndarray
+    test_idx: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestSweepRunnerInput:
+    dataset: SweepDataset
+    sweep_size: int
+    train_idx: np.ndarray
+    val_idx: np.ndarray
+    test_idx: np.ndarray
+
+
+SweepRunnerInput: TypeAlias = (
+    TrainTestSweepRunnerInput | TrainValTestSweepRunnerInput
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SweepRunnerPayload:
+    splits: tuple[SweepRunnerInput, ...]
+    planning_requirements: SweepFamilyRequirements = field(
+        default_factory=SweepFamilyRequirements
+    )
+    use_trim: bool = False
+
+
+def split_to_runner_input(
+    dataset: SweepDataset,
+    split: SweepSplit,
+) -> SweepRunnerInput:
+    if split.val_idx is None:
+        return TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=split.sweep_size,
+            train_idx=split.train_idx,
+            test_idx=split.test_idx,
+        )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=split.sweep_size,
+        train_idx=split.train_idx,
+        val_idx=split.val_idx,
+        test_idx=split.test_idx,
+    )
 
 
 @dataclass(frozen=True, slots=True)

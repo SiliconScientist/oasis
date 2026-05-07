@@ -11,6 +11,7 @@ import pandas as pd
 from oasis.exp import (
     LearningCurveResults,
     SweepFamilyRequirements,
+    SweepRunnerPayload,
     SweepRunPayload,
 )
 from sklearn.kernel_ridge import KernelRidge
@@ -31,6 +32,14 @@ class SklearnSweepModelSpec:
     trim_z_thresh: float = 1.0
 
 
+def _as_runner_payload(
+    payload: SweepRunPayload | SweepRunnerPayload,
+) -> SweepRunnerPayload:
+    if isinstance(payload, SweepRunnerPayload):
+        return payload
+    return payload.to_runner_payload()
+
+
 @dataclass(frozen=True, slots=True)
 class LearningCurveModelRegistration:
     name: str
@@ -49,11 +58,11 @@ class SweepModelFamily(Protocol):
 class SweepExperimentRunner(Protocol):
     """Common runner interface for sweep methods with optional trimmed output."""
 
-    def run(self, payload: SweepRunPayload) -> pd.DataFrame: ...
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
 
     def run_trimmed(
         self,
-        payload: SweepRunPayload,
+        payload: SweepRunnerPayload,
         *,
         z_thresh: float = 1.0,
     ) -> pd.DataFrame: ...
@@ -76,12 +85,12 @@ class SupervisedModelSweepRunner:
 
     model_factory: Callable[[], object]
 
-    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return sweep_model(payload, self.model_factory)
 
     def run_trimmed(
         self,
-        payload: SweepRunPayload,
+        payload: SweepRunnerPayload,
         *,
         z_thresh: float = 1.0,
     ) -> pd.DataFrame:
@@ -94,15 +103,15 @@ class SupervisedModelSweepRunner:
 
 @dataclass(frozen=True, slots=True)
 class FunctionalSweepRunner:
-    base_runner: Callable[[SweepRunPayload], pd.DataFrame]
-    trimmed_runner: Callable[[SweepRunPayload], pd.DataFrame]
+    base_runner: Callable[[SweepRunnerPayload], pd.DataFrame]
+    trimmed_runner: Callable[[SweepRunnerPayload], pd.DataFrame]
 
-    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return self.base_runner(payload)
 
     def run_trimmed(
         self,
-        payload: SweepRunPayload,
+        payload: SweepRunnerPayload,
         *,
         z_thresh: float = 1.0,
     ) -> pd.DataFrame:
@@ -114,7 +123,7 @@ class FunctionalSweepRunner:
 class WeightedLinearSweepRunner:
     fit_intercept: bool = True
 
-    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return weighted_linear_sweep(
             payload,
             fit_intercept=self.fit_intercept,
@@ -122,7 +131,7 @@ class WeightedLinearSweepRunner:
 
     def run_trimmed(
         self,
-        payload: SweepRunPayload,
+        payload: SweepRunnerPayload,
         *,
         z_thresh: float = 1.0,
     ) -> pd.DataFrame:
@@ -132,12 +141,12 @@ class WeightedLinearSweepRunner:
 
 @dataclass(frozen=True, slots=True)
 class WeightedSimplexSweepRunner:
-    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return weighted_simplex_sweep(payload)
 
     def run_trimmed(
         self,
-        payload: SweepRunPayload,
+        payload: SweepRunnerPayload,
         *,
         z_thresh: float = 1.0,
     ) -> pd.DataFrame:
@@ -153,12 +162,13 @@ class ConfiguredSweepModelFamily:
         return self.spec.requirements
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        runner_payload = payload.to_runner_payload()
         results: dict[str, pd.DataFrame | None] = {
-            self.spec.result_field: self.spec.runner.run(payload),
+            self.spec.result_field: self.spec.runner.run(runner_payload),
         }
         if payload.use_trim and self.spec.trimmed_result_field is not None:
             results[self.spec.trimmed_result_field] = self.spec.runner.run_trimmed(
-                payload,
+                runner_payload,
                 z_thresh=self.spec.trim_z_thresh,
             )
         return LearningCurveResults.from_mapping(results)
@@ -340,15 +350,16 @@ def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
 
 
 def sweep_model(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
     model_factory,
 ) -> pd.DataFrame:
     """Evaluate a supervised model across precomputed sweep splits."""
 
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
         X_test = X[split.test_idx]
@@ -359,17 +370,18 @@ def sweep_model(
 
 
 def sweep_model_trimmed(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
     model_factory,
     z_thresh: float = 1.0,
 ) -> pd.DataFrame:
     """
     Fit the model, drop test samples with large contribution z-scores, and refit.
     """
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
 
@@ -394,14 +406,15 @@ def sweep_model_trimmed(
 
 
 def residual_sweep(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
 ) -> pd.DataFrame:
     """Evaluate residual correction across precomputed sweep splits."""
 
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -416,15 +429,16 @@ def residual_sweep(
 
 
 def residual_sweep_trimmed(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
 ) -> pd.DataFrame:
     """
     Residual correction with per-sample outlier MLIP removal before averaging.
     """
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -439,16 +453,17 @@ def residual_sweep_trimmed(
 
 
 def weighted_linear_sweep(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
     *,
     fit_intercept: bool = True,
 ) -> pd.DataFrame:
     """Fit an unconstrained linear combiner over MLIP columns on each sweep split."""
 
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         model = LinearRegression(fit_intercept=fit_intercept)
         model.fit(X[split.train_idx], y[split.train_idx])
         preds = model.predict(X[split.test_idx])
@@ -471,16 +486,17 @@ def _simplex_weights(
 
 
 def weighted_simplex_sweep(
-    payload: SweepRunPayload,
+    payload: SweepRunPayload | SweepRunnerPayload,
 ) -> pd.DataFrame:
     """
     Fit a simplex-style combiner with nonnegative weights that sum to one.
     """
 
-    X = payload.dataset.X
-    y = payload.dataset.y
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
+    for split in payload.splits:
+        X = split.dataset.X
+        y = split.dataset.y
         weights = _simplex_weights(
             X[split.train_idx],
             y[split.train_idx],

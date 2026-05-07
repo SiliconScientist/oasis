@@ -15,9 +15,13 @@ from oasis.exp import (
     LearningCurveResults,
     SweepDataset,
     SweepFamilyRequirements,
+    SweepRunnerPayload,
     SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
+    TrainTestSweepRunnerInput,
+    TrainValTestSweepRunnerInput,
+    generate_inner_validation_sweep_splits,
     generate_sweep_splits,
     generate_sweep_splits_with_validation,
     prepare_parity_plot_data,
@@ -30,6 +34,7 @@ from oasis.plot import learning_curve_plot
 try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
+        SweepFamilySpec,
         enabled_learning_curve_model_names_from_config,
         learning_curve_model_registry,
         residual_sweep,
@@ -608,6 +613,46 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            X=np.arange(18, dtype=float).reshape(6, 3),
+            y=np.arange(6, dtype=float),
+        )
+        payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=3,
+                        train_idx=np.array([0, 1, 2]),
+                        test_idx=np.array([3, 4, 5]),
+                    ),
+                    SweepSplit(
+                        sweep_size=4,
+                        train_idx=np.array([0, 1, 2]),
+                        val_idx=np.array([3]),
+                        test_idx=np.array([4, 5]),
+                    ),
+                )
+            ),
+            use_trim=True,
+        )
+
+        runner_payload = payload.to_runner_payload()
+
+        self.assertIsInstance(runner_payload, SweepRunnerPayload)
+        self.assertTrue(runner_payload.use_trim)
+        self.assertIsInstance(runner_payload.splits[0], TrainTestSweepRunnerInput)
+        self.assertIsInstance(runner_payload.splits[1], TrainValTestSweepRunnerInput)
+        self.assertIs(runner_payload.splits[0].dataset, dataset)
+        self.assertIs(runner_payload.splits[1].dataset, dataset)
+        np.testing.assert_array_equal(
+            runner_payload.splits[1].val_idx,
+            np.array([3]),
+        )
+
     def test_run_learning_curve_experiments_accepts_injected_model_families(
         self,
     ) -> None:
@@ -740,6 +785,68 @@ class BoundaryTests(unittest.TestCase):
                 requires_inner_validation=True,
             ),
         )
+
+    def test_configured_family_routes_runner_inputs_with_validation(self) -> None:
+        if not HAS_SKLEARN:
+            self.skipTest("requires scikit-learn")
+
+        class RecordingRunner:
+            def run(self, payload):
+                self.last_payload = payload
+                return pd.DataFrame(
+                    {
+                        "n_train": [3],
+                        "rmse_mean": [0.2],
+                        "rmse_std": [0.01],
+                    }
+                )
+
+            def run_trimmed(self, payload, *, z_thresh: float = 1.0):
+                del z_thresh
+                return self.run(payload)
+
+        family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                trimmed_result_field=None,
+                runner=RecordingRunner(),
+                trim_z_thresh=1.0,
+                requirements=SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                ),
+            )
+        )
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                X=np.arange(21, dtype=float).reshape(7, 3),
+                y=np.arange(7, dtype=float),
+            ),
+            split_collection=SweepSplitCollection(
+                splits=tuple(
+                    generate_inner_validation_sweep_splits(
+                        n_samples=7,
+                        min_train=4,
+                        max_train=4,
+                        n_repeats=1,
+                        rng=np.random.default_rng(5),
+                    )
+                ),
+                planning_requirements=family.requirements(),
+            ),
+            use_trim=False,
+        )
+
+        result = family.run(payload)
+
+        self.assertIsNotNone(result.ridge_df)
+        self.assertIsInstance(family.spec.runner.last_payload, SweepRunnerPayload)
+        self.assertEqual(len(family.spec.runner.last_payload.splits), 1)
+        split = family.spec.runner.last_payload.splits[0]
+        self.assertIsInstance(split, TrainValTestSweepRunnerInput)
+        self.assertEqual(len(split.train_idx), 3)
+        self.assertEqual(len(split.val_idx), 1)
+        self.assertEqual(len(split.test_idx), 3)
 
     def test_prepare_parity_plot_data_extracts_render_inputs(self) -> None:
         df = pd.DataFrame(
