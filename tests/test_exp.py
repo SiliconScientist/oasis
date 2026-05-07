@@ -22,6 +22,7 @@ from oasis.exp import (
     SweepRunPayload,
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
+    build_sweep_split_collection,
     generate_inner_validation_sweep_splits,
     generate_sweep_splits,
     generate_sweep_splits_with_validation,
@@ -43,6 +44,7 @@ try:
         residual_sweep_trimmed,
         sklearn_model_families,
         sklearn_sweep_model_specs,
+        sweep_results_frame,
         sweep_model,
         sweep_model_trimmed,
         weighted_linear_sweep,
@@ -927,6 +929,273 @@ class BoundaryTests(unittest.TestCase):
                 requires_inner_validation=True,
             ),
         )
+
+    def test_build_sweep_split_collection_skips_invalid_small_validation_sweeps(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=7,
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [4, 5],
+        )
+        self.assertTrue(all(split.val_idx is not None for split in split_collection.splits))
+
+    def test_validation_aware_family_does_not_constrain_baseline_sweep_sizes(
+        self,
+    ) -> None:
+        X = np.arange(21, dtype=float).reshape(7, 3)
+        y = np.arange(7, dtype=float)
+        baseline_result = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4, 5],
+                "rmse_mean": [0.5, 0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+        validation_result = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.35, 0.25],
+                "rmse_std": [0.03, 0.02],
+            }
+        )
+
+        class BaselineStubFamily:
+            def capabilities(self) -> SweepModelCapabilities:
+                return SweepModelCapabilities()
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": baseline_result})
+
+        class ValidationStubFamily:
+            def capabilities(self) -> SweepModelCapabilities:
+                return SweepModelCapabilities(
+                    min_train_size=4,
+                    requires_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping(
+                    {"weighted_linear_df": validation_result}
+                )
+
+        baseline_family = BaselineStubFamily()
+        validation_family = ValidationStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            model_families=[baseline_family, validation_family],
+        )
+
+        self.assertIs(results.ridge_df, baseline_result)
+        self.assertIs(results.weighted_linear_df, validation_result)
+        self.assertEqual(
+            [split.sweep_size for split in baseline_family.last_payload.split_collection.splits],
+            [2, 3, 4, 5],
+        )
+        self.assertTrue(
+            all(split.val_idx is None for split in baseline_family.last_payload.split_collection.splits)
+        )
+        self.assertEqual(
+            [split.sweep_size for split in validation_family.last_payload.split_collection.splits],
+            [4, 5],
+        )
+        self.assertTrue(
+            all(split.val_idx is not None for split in validation_family.last_payload.split_collection.splits)
+        )
+
+    def test_run_learning_curve_experiments_supports_mixed_runner_input_types(
+        self,
+    ) -> None:
+        class RecordingRunner:
+            def __init__(self, expected_split_type: type) -> None:
+                self.expected_split_type = expected_split_type
+                self.payloads: list[SweepRunnerPayload] = []
+
+            def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+                self.payloads.append(payload)
+                self._assert_payload(payload)
+                rmses_by_size = {
+                    split.sweep_size: [float(split.sweep_size) / 10.0]
+                    for split in payload.splits
+                }
+                return sweep_results_frame(rmses_by_size)
+
+            def run_trimmed(
+                self,
+                payload: SweepRunnerPayload,
+                *,
+                z_thresh: float = 1.0,
+            ) -> pd.DataFrame:
+                del z_thresh
+                return self.run(payload)
+
+            def _assert_payload(self, payload: SweepRunnerPayload) -> None:
+                if not payload.splits:
+                    raise AssertionError("expected non-empty payload.splits")
+                for split in payload.splits:
+                    if not isinstance(split, self.expected_split_type):
+                        raise AssertionError(
+                            f"expected {self.expected_split_type}, got {type(split)}"
+                        )
+
+        X = np.arange(21, dtype=float).reshape(7, 3)
+        y = np.arange(7, dtype=float)
+        baseline_runner = RecordingRunner(TrainTestSweepRunnerInput)
+        validation_runner = RecordingRunner(TrainValTestSweepRunnerInput)
+        baseline_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                trimmed_result_field=None,
+                runner=baseline_runner,
+            )
+        )
+        validation_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="weighted_linear_df",
+                trimmed_result_field=None,
+                runner=validation_runner,
+                capabilities=SweepModelCapabilities(
+                    min_train_size=4,
+                    requires_validation=True,
+                ),
+            )
+        )
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            model_families=[baseline_family, validation_family],
+        )
+
+        self.assertEqual(results.ridge_df.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"])
+        self.assertEqual(
+            results.ridge_df["n_train"].tolist(),
+            [2, 3, 4, 5],
+        )
+        self.assertEqual(
+            results.weighted_linear_df["n_train"].tolist(),
+            [4, 5],
+        )
+        self.assertEqual(len(baseline_runner.payloads), 1)
+        self.assertEqual(len(validation_runner.payloads), 1)
+
+    def test_run_learning_curve_experiments_handles_skipped_validation_family_predictably(
+        self,
+    ) -> None:
+        class BaselineRunner:
+            def __init__(self) -> None:
+                self.payloads: list[SweepRunnerPayload] = []
+
+            def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+                self.payloads.append(payload)
+                if not payload.splits:
+                    raise AssertionError("expected baseline family to receive splits")
+                for split in payload.splits:
+                    if not isinstance(split, TrainTestSweepRunnerInput):
+                        raise AssertionError(
+                            f"expected {TrainTestSweepRunnerInput}, got {type(split)}"
+                        )
+                return sweep_results_frame(
+                    {
+                        split.sweep_size: [float(split.sweep_size) / 10.0]
+                        for split in payload.splits
+                    }
+                )
+
+            def run_trimmed(
+                self,
+                payload: SweepRunnerPayload,
+                *,
+                z_thresh: float = 1.0,
+            ) -> pd.DataFrame:
+                del z_thresh
+                return self.run(payload)
+
+        class EmptyAwareValidationRunner:
+            def __init__(self) -> None:
+                self.payloads: list[SweepRunnerPayload] = []
+
+            def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+                self.payloads.append(payload)
+                if payload.splits != ():
+                    raise AssertionError("expected skipped validation family to receive no splits")
+                return sweep_results_frame({})
+
+            def run_trimmed(
+                self,
+                payload: SweepRunnerPayload,
+                *,
+                z_thresh: float = 1.0,
+            ) -> pd.DataFrame:
+                del z_thresh
+                return self.run(payload)
+
+        X = np.arange(18, dtype=float).reshape(6, 3)
+        y = np.arange(6, dtype=float)
+        baseline_runner = BaselineRunner()
+        baseline_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                trimmed_result_field=None,
+                runner=baseline_runner,
+            )
+        )
+        validation_runner = EmptyAwareValidationRunner()
+        skipped_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="weighted_linear_df",
+                trimmed_result_field=None,
+                runner=validation_runner,
+                capabilities=SweepModelCapabilities(
+                    min_train_size=7,
+                    requires_validation=True,
+                ),
+            )
+        )
+
+        results = run_learning_curve_experiments(
+            SweepDataset(X=X, y=y),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            model_families=[baseline_family, skipped_family],
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
+        self.assertIsNotNone(results.weighted_linear_df)
+        self.assertEqual(
+            results.weighted_linear_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertTrue(results.weighted_linear_df.empty)
+        self.assertEqual(len(baseline_runner.payloads), 1)
+        self.assertEqual(len(validation_runner.payloads), 1)
 
     def test_configured_family_routes_runner_inputs_with_validation(self) -> None:
         if not HAS_SKLEARN:

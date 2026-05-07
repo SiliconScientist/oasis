@@ -321,6 +321,35 @@ def generate_inner_validation_sweep_splits(
     )
 
 
+def build_sweep_split_collection(
+    n_samples: int,
+    *,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    seed: int,
+    requirements: SweepFamilyRequirements | None = None,
+) -> SweepSplitCollection:
+    requirements = requirements or SweepFamilyRequirements()
+    max_train = min(max_train, n_samples - 1)
+    split_generator = generate_sweep_splits
+    effective_min_train = max(min_train, requirements.min_train_size)
+    if requirements.requires_inner_validation:
+        split_generator = generate_inner_validation_sweep_splits
+    return SweepSplitCollection(
+        splits=tuple(
+            split_generator(
+                n_samples,
+                effective_min_train,
+                max_train,
+                n_repeats,
+                np.random.default_rng(seed),
+            )
+        ),
+        planning_requirements=requirements,
+    )
+
+
 def mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
@@ -421,31 +450,27 @@ def run_learning_curve_experiments(
         from oasis.method import default_sweep_model_families
 
         families = default_sweep_model_families(enabled_model_names)
-    family_requirements = combine_sweep_family_requirements(families)
-
-    max_train = min(max_train, len(dataset.X) - 1)
-    split_generator = generate_sweep_splits
-    if family_requirements.requires_inner_validation:
-        split_generator = generate_inner_validation_sweep_splits
-    split_collection = SweepSplitCollection(
-        splits=tuple(
-            split_generator(
-                len(dataset.X),
-                max(min_train, family_requirements.min_train_size),
-                max_train,
-                n_repeats,
-                np.random.default_rng(seed),
-            )
-        ),
-        planning_requirements=family_requirements,
-    )
-    payload = SweepRunPayload(
-        dataset=dataset,
-        split_collection=split_collection,
-        use_trim=use_trim,
-    )
 
     results = LearningCurveResults.empty()
     for family in families:
+        requirements = (
+            family.capabilities().to_requirements()
+            if hasattr(family, "capabilities")
+            else family.requirements()
+            if hasattr(family, "requirements")
+            else SweepFamilyRequirements()
+        )
+        payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=build_sweep_split_collection(
+                len(dataset.X),
+                min_train=min_train,
+                max_train=max_train,
+                n_repeats=n_repeats,
+                seed=seed,
+                requirements=requirements,
+            ),
+            use_trim=use_trim,
+        )
         results = results.merge(family.run(payload))
     return results
