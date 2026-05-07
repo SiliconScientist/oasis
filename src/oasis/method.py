@@ -32,6 +32,27 @@ class SweepModelFamily(Protocol):
     def run(self, payload: SweepRunPayload) -> LearningCurveResults: ...
 
 
+class SweepExperimentRunner(Protocol):
+    """Common runner interface for sweep methods with optional trimmed output."""
+
+    def run(self, payload: SweepRunPayload) -> pd.DataFrame: ...
+
+    def run_trimmed(
+        self,
+        payload: SweepRunPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SweepFamilySpec:
+    result_field: str
+    trimmed_result_field: str | None
+    runner: SweepExperimentRunner
+    trim_z_thresh: float = 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class SupervisedModelSweepRunner:
     """Reusable adapter for supervised estimators over the shared sweep payload."""
@@ -55,38 +76,37 @@ class SupervisedModelSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
-class SklearnModelFamily:
-    spec: SklearnSweepModelSpec
+class FunctionalSweepRunner:
+    base_runner: Callable[[SweepRunPayload], pd.DataFrame]
+    trimmed_runner: Callable[[SweepRunPayload], pd.DataFrame]
+
+    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+        return self.base_runner(payload)
+
+    def run_trimmed(
+        self,
+        payload: SweepRunPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        del z_thresh
+        return self.trimmed_runner(payload)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfiguredSweepModelFamily:
+    spec: SweepFamilySpec
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
-        runner = SupervisedModelSweepRunner(self.spec.model_factory)
         results: dict[str, pd.DataFrame | None] = {
-            self.spec.result_field: runner.run(payload),
+            self.spec.result_field: self.spec.runner.run(payload),
         }
         if payload.use_trim and self.spec.trimmed_result_field is not None:
-            results[self.spec.trimmed_result_field] = runner.run_trimmed(
+            results[self.spec.trimmed_result_field] = self.spec.runner.run_trimmed(
                 payload,
                 z_thresh=self.spec.trim_z_thresh,
             )
         return LearningCurveResults.from_mapping(results)
-
-
-@dataclass(frozen=True, slots=True)
-class SweepFunctionFamily:
-    result_field: str
-    trimmed_result_field: str
-    base_runner: Callable[[SweepRunPayload], pd.DataFrame]
-    trimmed_runner: Callable[[SweepRunPayload], pd.DataFrame]
-
-    def run(self, payload: SweepRunPayload) -> LearningCurveResults:
-        return LearningCurveResults.from_mapping(
-            {
-                self.result_field: self.base_runner(payload),
-                self.trimmed_result_field: (
-                    self.trimmed_runner(payload) if payload.use_trim else None
-                ),
-            }
-        )
 
 
 def default_sweep_model_families(
@@ -111,20 +131,28 @@ def default_sweep_model_families(
     )
     if use_residual:
         families.append(
-            SweepFunctionFamily(
-                result_field="resid_df",
-                trimmed_result_field="resid_trimmed_df",
-                base_runner=residual_sweep,
-                trimmed_runner=residual_sweep_trimmed,
+            ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="resid_df",
+                    trimmed_result_field="resid_trimmed_df",
+                    runner=FunctionalSweepRunner(
+                        base_runner=residual_sweep,
+                        trimmed_runner=residual_sweep_trimmed,
+                    ),
+                )
             )
         )
     if use_linearization:
         families.append(
-            SweepFunctionFamily(
-                result_field="linear_df",
-                trimmed_result_field="linear_trimmed_df",
-                base_runner=linearization_sweep,
-                trimmed_runner=linearization_sweep_trimmed,
+            ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="linear_df",
+                    trimmed_result_field="linear_trimmed_df",
+                    runner=FunctionalSweepRunner(
+                        base_runner=linearization_sweep,
+                        trimmed_runner=linearization_sweep_trimmed,
+                    ),
+                )
             )
         )
     return tuple(families)
@@ -172,7 +200,18 @@ def sklearn_sweep_model_specs(
 def sklearn_model_families(
     specs: tuple[SklearnSweepModelSpec, ...],
 ) -> tuple[SweepModelFamily, ...]:
-    return tuple(SklearnModelFamily(spec) for spec in specs if spec.enabled)
+    return tuple(
+        ConfiguredSweepModelFamily(
+            SweepFamilySpec(
+                result_field=spec.result_field,
+                trimmed_result_field=spec.trimmed_result_field,
+                runner=SupervisedModelSweepRunner(spec.model_factory),
+                trim_z_thresh=spec.trim_z_thresh,
+            )
+        )
+        for spec in specs
+        if spec.enabled
+    )
 
 
 def trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:

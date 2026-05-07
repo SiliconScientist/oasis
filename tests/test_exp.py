@@ -25,7 +25,7 @@ from oasis.plot import learning_curve_plot
 
 try:
     from oasis.method import (
-        SklearnModelFamily,
+        ConfiguredSweepModelFamily,
         linearization_sweep,
         linearization_sweep_trimmed,
         residual_sweep,
@@ -114,7 +114,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         families = sklearn_model_families(specs)
 
-        self.assertTrue(all(isinstance(family, SklearnModelFamily) for family in families))
+        self.assertTrue(
+            all(isinstance(family, ConfiguredSweepModelFamily) for family in families)
+        )
         self.assertEqual(
             [family.spec.result_field for family in families],
             ["ridge_df", "lasso_df", "elastic_df"],
@@ -122,6 +124,31 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             [family.spec.trimmed_result_field for family in families],
             ["ridge_trimmed_df", "lasso_trimmed_df", "elastic_trimmed_df"],
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
+        from oasis.method import default_sweep_model_families
+
+        families = default_sweep_model_families(
+            use_ridge=False,
+            use_kernel_ridge=False,
+            use_lasso=False,
+            use_elastic=False,
+            use_residual=True,
+            use_linearization=True,
+        )
+
+        self.assertTrue(
+            all(isinstance(family, ConfiguredSweepModelFamily) for family in families)
+        )
+        self.assertEqual(
+            [family.spec.result_field for family in families],
+            ["resid_df", "linear_df"],
+        )
+        self.assertEqual(
+            [family.spec.trimmed_result_field for family in families],
+            ["resid_trimmed_df", "linear_trimmed_df"],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
