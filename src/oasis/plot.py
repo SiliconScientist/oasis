@@ -254,38 +254,6 @@ def learning_curve_plot(
             alpha=0.2,
             label="Residual (trimmed) +/- 1sd",
         )
-    if results.linear_df is not None:
-        ax.plot(
-            results.linear_df["n_train"],
-            results.linear_df["rmse_mean"],
-            marker="v",
-            color="tab:red",
-            label="Linearization mean",
-        )
-        ax.fill_between(
-            results.linear_df["n_train"],
-            results.linear_df["rmse_mean"] - results.linear_df["rmse_std"],
-            results.linear_df["rmse_mean"] + results.linear_df["rmse_std"],
-            color="tab:red",
-            alpha=0.2,
-            label="Linearization +/- 1sd",
-        )
-    if results.linear_trimmed_df is not None:
-        ax.plot(
-            results.linear_trimmed_df["n_train"],
-            results.linear_trimmed_df["rmse_mean"],
-            marker="<",
-            color="tab:pink",
-            label="Linearization (trimmed) mean",
-        )
-        ax.fill_between(
-            results.linear_trimmed_df["n_train"],
-            results.linear_trimmed_df["rmse_mean"] - results.linear_trimmed_df["rmse_std"],
-            results.linear_trimmed_df["rmse_mean"] + results.linear_trimmed_df["rmse_std"],
-            color="tab:pink",
-            alpha=0.2,
-            label="Linearization (trimmed) +/- 1sd",
-        )
     if results.weighted_combiner_df is not None:
         ax.plot(
             results.weighted_combiner_df["n_train"],
@@ -303,6 +271,24 @@ def learning_curve_plot(
             color="tab:gray",
             alpha=0.2,
             label="Weighted combiner +/- 1sd",
+        )
+    if results.normalized_weighted_combiner_df is not None:
+        ax.plot(
+            results.normalized_weighted_combiner_df["n_train"],
+            results.normalized_weighted_combiner_df["rmse_mean"],
+            marker="8",
+            color="teal",
+            label="Normalized combiner mean",
+        )
+        ax.fill_between(
+            results.normalized_weighted_combiner_df["n_train"],
+            results.normalized_weighted_combiner_df["rmse_mean"]
+            - results.normalized_weighted_combiner_df["rmse_std"],
+            results.normalized_weighted_combiner_df["rmse_mean"]
+            + results.normalized_weighted_combiner_df["rmse_std"],
+            color="teal",
+            alpha=0.2,
+            label="Normalized combiner +/- 1sd",
         )
     if results.ridge_trimmed_df is not None:
         ax.plot(

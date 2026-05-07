@@ -29,9 +29,8 @@ try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
         enabled_learning_curve_model_names_from_config,
-        linearization_sweep,
-        linearization_sweep_trimmed,
         learning_curve_model_registry,
+        normalized_weighted_combiner_sweep,
         residual_sweep,
         residual_sweep_trimmed,
         sklearn_model_families,
@@ -149,18 +148,24 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
         from oasis.method import default_sweep_model_families
 
-        families = default_sweep_model_families(["residual", "linearization"])
+        families = default_sweep_model_families(
+            ["residual", "weighted_combiner", "normalized_weighted_combiner"]
+        )
 
         self.assertTrue(
             all(isinstance(family, ConfiguredSweepModelFamily) for family in families)
         )
         self.assertEqual(
             [family.spec.result_field for family in families],
-            ["resid_df", "linear_df"],
+            [
+                "resid_df",
+                "weighted_combiner_df",
+                "normalized_weighted_combiner_df",
+            ],
         )
         self.assertEqual(
             [family.spec.trimmed_result_field for family in families],
-            ["resid_trimmed_df", "linear_trimmed_df"],
+            ["resid_trimmed_df", None, None],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -174,8 +179,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "lasso",
                 "elastic",
                 "residual",
-                "linearization",
                 "weighted_combiner",
+                "normalized_weighted_combiner",
             ],
         )
 
@@ -185,13 +190,19 @@ class SweepOutputRegressionTests(unittest.TestCase):
             use_lasso=True,
             use_elastic_net=False,
             use_residual=True,
-            use_linearization=False,
             use_weighted_combiner=True,
+            use_normalized_weighted_combiner=True,
         )
 
         self.assertEqual(
             enabled_learning_curve_model_names_from_config(plot_cfg),
-            ("ridge", "lasso", "residual", "weighted_combiner"),
+            (
+                "ridge",
+                "lasso",
+                "residual",
+                "weighted_combiner",
+                "normalized_weighted_combiner",
+            ),
         )
 
         built_in_requirements = [registration.family_factory().requirements() for registration in registry]
@@ -234,9 +245,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
             sweep_model_trimmed(payload, lambda: DummyModel()),
             residual_sweep(payload),
             residual_sweep_trimmed(payload),
-            linearization_sweep(payload),
-            linearization_sweep_trimmed(payload),
             weighted_combiner_sweep(payload),
+            normalized_weighted_combiner_sweep(payload),
         ]
 
         for df in results:
@@ -288,9 +298,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ),
             "resid_df": residual_sweep(payload),
             "resid_trimmed_df": residual_sweep_trimmed(payload),
-            "linear_df": linearization_sweep(payload),
-            "linear_trimmed_df": linearization_sweep_trimmed(payload),
             "weighted_combiner_df": weighted_combiner_sweep(payload),
+            "normalized_weighted_combiner_df": normalized_weighted_combiner_sweep(
+                payload
+            ),
         }
 
         actual = run_learning_curve_experiments(
@@ -306,8 +317,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "lasso",
                 "elastic",
                 "residual",
-                "linearization",
                 "weighted_combiner",
+                "normalized_weighted_combiner",
             ],
         )
 
@@ -382,6 +393,43 @@ class WeightedCombinerRegressionTests(unittest.TestCase):
         np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
         np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
 
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_normalized_weighted_combiner_keeps_standard_result_shape(self) -> None:
+        result = normalized_weighted_combiner_sweep(self._fixed_payload())
+
+        self.assertEqual(
+            result.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(result["n_train"].tolist(), [4, 5])
+        self.assertEqual(len(result), 2)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_normalized_weighted_combiner_is_deterministic_for_fixed_splits(self) -> None:
+        payload = self._fixed_payload()
+
+        first = normalized_weighted_combiner_sweep(payload)
+        second = normalized_weighted_combiner_sweep(payload)
+
+        pd.testing.assert_frame_equal(first, second)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_normalized_weighted_combiner_exactly_recovers_convex_toy_target(
+        self,
+    ) -> None:
+        X, _ = self._toy_dataset()
+        y = 0.75 * X[:, 0] + 0.25 * X[:, 1]
+        payload = SweepRunPayload(
+            dataset=SweepDataset(X=X, y=y),
+            split_collection=self._fixed_payload().split_collection,
+            use_trim=False,
+        )
+
+        result = normalized_weighted_combiner_sweep(payload)
+
+        np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+
 
 class BoundaryTests(unittest.TestCase):
     def test_run_learning_curve_experiments_accepts_injected_model_families(
@@ -422,7 +470,7 @@ class BoundaryTests(unittest.TestCase):
                 )
 
         ridge_family = StubFamily("ridge_df")
-        linear_family = StubFamily("linear_df")
+        weighted_family = StubFamily("weighted_combiner_df")
 
         results = run_learning_curve_experiments(
             SweepDataset(X=X, y=y),
@@ -431,16 +479,15 @@ class BoundaryTests(unittest.TestCase):
             n_repeats=1,
             seed=9,
             use_trim=False,
-            model_families=[ridge_family, linear_family],
+            model_families=[ridge_family, weighted_family],
         )
 
         self.assertIs(results.ridge_df, result_df)
-        self.assertIs(results.linear_df, result_df)
+        self.assertIs(results.weighted_combiner_df, result_df)
         self.assertIsNone(results.kernel_ridge_df)
         self.assertIsNone(results.ridge_trimmed_df)
-        self.assertIsNone(results.weighted_combiner_df)
         self.assertEqual(ridge_family.calls, 1)
-        self.assertEqual(linear_family.calls, 1)
+        self.assertEqual(weighted_family.calls, 1)
         self.assertIsInstance(ridge_family.last_payload, SweepRunPayload)
         self.assertFalse(ridge_family.last_payload.use_trim)
         self.assertEqual(
@@ -563,9 +610,8 @@ class BoundaryTests(unittest.TestCase):
             elastic_trimmed_df=None,
             resid_df=None,
             resid_trimmed_df=None,
-            linear_df=None,
-            linear_trimmed_df=None,
             weighted_combiner_df=result_df,
+            normalized_weighted_combiner_df=None,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

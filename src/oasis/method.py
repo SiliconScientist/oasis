@@ -131,6 +131,21 @@ class WeightedCombinerSweepRunner:
 
 
 @dataclass(frozen=True, slots=True)
+class NormalizedWeightedCombinerSweepRunner:
+    def run(self, payload: SweepRunPayload) -> pd.DataFrame:
+        return normalized_weighted_combiner_sweep(payload)
+
+    def run_trimmed(
+        self,
+        payload: SweepRunPayload,
+        *,
+        z_thresh: float = 1.0,
+    ) -> pd.DataFrame:
+        del z_thresh
+        return self.run(payload)
+
+
+@dataclass(frozen=True, slots=True)
 class ConfiguredSweepModelFamily:
     spec: SweepFamilySpec
 
@@ -210,20 +225,6 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
             ),
         ),
         LearningCurveModelRegistration(
-            name="linearization",
-            config_attr="use_linearization",
-            family_factory=lambda: ConfiguredSweepModelFamily(
-                SweepFamilySpec(
-                    result_field="linear_df",
-                    trimmed_result_field="linear_trimmed_df",
-                    runner=FunctionalSweepRunner(
-                        base_runner=linearization_sweep,
-                        trimmed_runner=linearization_sweep_trimmed,
-                    ),
-                )
-            ),
-        ),
-        LearningCurveModelRegistration(
             name="weighted_combiner",
             config_attr="use_weighted_combiner",
             family_factory=lambda: ConfiguredSweepModelFamily(
@@ -231,6 +232,17 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                     result_field="weighted_combiner_df",
                     trimmed_result_field=None,
                     runner=WeightedCombinerSweepRunner(fit_intercept=True),
+                )
+            ),
+        ),
+        LearningCurveModelRegistration(
+            name="normalized_weighted_combiner",
+            config_attr="use_normalized_weighted_combiner",
+            family_factory=lambda: ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="normalized_weighted_combiner_df",
+                    trimmed_result_field=None,
+                    runner=NormalizedWeightedCombinerSweepRunner(),
                 )
             ),
         ),
@@ -426,69 +438,6 @@ def residual_sweep_trimmed(
     return sweep_results_frame(rmses_by_size)
 
 
-def linearization_sweep(
-    payload: SweepRunPayload,
-) -> pd.DataFrame:
-    """Evaluate linearization correction across precomputed sweep splits."""
-
-    X = payload.dataset.X
-    y = payload.dataset.y
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        Xh = np.asarray(X_train)
-        yh = np.asarray(y_train).reshape(-1, 1)
-
-        if Xh.ndim == 1:
-            mu_h = Xh.reshape(-1, 1)
-        else:
-            mu_h = Xh.mean(axis=1, keepdims=True)
-
-        lr = LinearRegression().fit(mu_h, yh)
-        a = float(lr.coef_.ravel()[0])
-        b = float(lr.intercept_.ravel()[0])
-
-        X_linearized = a * X + b
-        preds = X_linearized[split.test_idx].mean(axis=1)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
-
-
-def linearization_sweep_trimmed(
-    payload: SweepRunPayload,
-) -> pd.DataFrame:
-    """
-    Linearize against trimmed train means, then trim ensemble averaging.
-    """
-    X = payload.dataset.X
-    y = payload.dataset.y
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in payload.split_collection.splits:
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        Xh = np.asarray(X_train)
-        yh = np.asarray(y_train).reshape(-1, 1)
-
-        if Xh.ndim == 1:
-            mu_h = Xh.reshape(-1, 1)
-        else:
-            mu_h = trimmed_mean_predictions(Xh).reshape(-1, 1)
-
-        lr = LinearRegression().fit(mu_h, yh)
-        a = float(lr.coef_.ravel()[0])
-        b = float(lr.intercept_.ravel()[0])
-
-        X_linearized = a * X + b
-        preds = trimmed_mean_predictions(X_linearized[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
-
-
 def weighted_combiner_sweep(
     payload: SweepRunPayload,
     *,
@@ -503,6 +452,40 @@ def weighted_combiner_sweep(
         model = LinearRegression(fit_intercept=fit_intercept)
         model.fit(X[split.train_idx], y[split.train_idx])
         preds = model.predict(X[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def _normalized_nonnegative_weights(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+) -> np.ndarray:
+    model = LinearRegression(fit_intercept=False, positive=True)
+    model.fit(X_train, y_train)
+    weights = np.clip(np.asarray(model.coef_, dtype=float), 0.0, None)
+    weight_sum = float(weights.sum())
+    if weight_sum <= 0.0:
+        return np.full(X_train.shape[1], 1.0 / X_train.shape[1], dtype=float)
+    return weights / weight_sum
+
+
+def normalized_weighted_combiner_sweep(
+    payload: SweepRunPayload,
+) -> pd.DataFrame:
+    """
+    Fit nonnegative weights and renormalize them to sum to one on each sweep split.
+    """
+
+    X = payload.dataset.X
+    y = payload.dataset.y
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in payload.split_collection.splits:
+        weights = _normalized_nonnegative_weights(
+            X[split.train_idx],
+            y[split.train_idx],
+        )
+        preds = X[split.test_idx] @ weights
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
