@@ -71,6 +71,7 @@ class GenerateSweepSplitsTests(unittest.TestCase):
         for split in splits:
             self.assertEqual(len(split.train_idx), split.sweep_size)
             self.assertEqual(len(split.test_idx), 6 - split.sweep_size)
+            self.assertIsNone(split.val_idx)
             self.assertEqual(
                 len(np.intersect1d(split.train_idx, split.test_idx)),
                 0,
@@ -105,6 +106,20 @@ class GenerateSweepSplitsTests(unittest.TestCase):
             self.assertEqual(split_a.sweep_size, split_b.sweep_size)
             np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
             np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+            self.assertIsNone(split_a.val_idx)
+            self.assertIsNone(split_b.val_idx)
+
+    def test_sweep_split_accepts_optional_validation_indices(self) -> None:
+        split = SweepSplit(
+            sweep_size=3,
+            train_idx=np.array([0, 1, 2]),
+            test_idx=np.array([5, 6]),
+            val_idx=np.array([3, 4]),
+        )
+
+        np.testing.assert_array_equal(split.train_idx, np.array([0, 1, 2]))
+        np.testing.assert_array_equal(split.val_idx, np.array([3, 4]))
+        np.testing.assert_array_equal(split.test_idx, np.array([5, 6]))
 
 
 class SweepOutputRegressionTests(unittest.TestCase):

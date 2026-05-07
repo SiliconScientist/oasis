@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class SweepSplit:
-    """One train/test split for a sweep size."""
+    """One sweep split for a sweep size."""
 
     sweep_size: int
     train_idx: np.ndarray
     test_idx: np.ndarray
+    val_idx: np.ndarray | None = None
 
 
 @dataclass(frozen=True, slots=True)
