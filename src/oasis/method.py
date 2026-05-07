@@ -1,15 +1,157 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from collections.abc import Mapping
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
 from oasis.exp import SweepSplit
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import ElasticNet, Lasso
+from sklearn.linear_model import Ridge
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
 
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+
+
+class SweepModelFamily(Protocol):
+    """Contract for a model family runnable over a shared split sweep."""
+
+    def run(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        splits: Sequence[SweepSplit],
+        *,
+        use_trim: bool,
+    ) -> Mapping[str, pd.DataFrame | None]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class EstimatorSweepFamily:
+    result_field: str
+    trimmed_result_field: str | None
+    model_factory: Callable[[], object]
+    trim_z_thresh: float = 1.0
+
+    def run(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        splits: Sequence[SweepSplit],
+        *,
+        use_trim: bool,
+    ) -> Mapping[str, pd.DataFrame | None]:
+        results: dict[str, pd.DataFrame | None] = {
+            self.result_field: sweep_model(self.model_factory, X, y, splits),
+        }
+        if use_trim and self.trimmed_result_field is not None:
+            results[self.trimmed_result_field] = sweep_model_trimmed(
+                self.model_factory,
+                X,
+                y,
+                splits,
+                z_thresh=self.trim_z_thresh,
+            )
+        return results
+
+
+@dataclass(frozen=True, slots=True)
+class SweepFunctionFamily:
+    result_field: str
+    trimmed_result_field: str
+    base_runner: Callable[[np.ndarray, np.ndarray, Sequence[SweepSplit]], pd.DataFrame]
+    trimmed_runner: Callable[
+        [np.ndarray, np.ndarray, Sequence[SweepSplit]],
+        pd.DataFrame,
+    ]
+
+    def run(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        splits: Sequence[SweepSplit],
+        *,
+        use_trim: bool,
+    ) -> Mapping[str, pd.DataFrame | None]:
+        return {
+            self.result_field: self.base_runner(X, y, splits),
+            self.trimmed_result_field: (
+                self.trimmed_runner(X, y, splits) if use_trim else None
+            ),
+        }
+
+
+def default_sweep_model_families(
+    *,
+    use_ridge: bool = True,
+    use_kernel_ridge: bool = True,
+    use_lasso: bool = True,
+    use_elastic: bool = True,
+    use_residual: bool = True,
+    use_linearization: bool = True,
+) -> tuple[SweepModelFamily, ...]:
+    families: list[SweepModelFamily] = []
+    if use_ridge:
+        families.append(
+            EstimatorSweepFamily(
+                result_field="ridge_df",
+                trimmed_result_field="ridge_trimmed_df",
+                model_factory=lambda: Ridge(alpha=0.1),
+            )
+        )
+    if use_kernel_ridge:
+        families.append(
+            EstimatorSweepFamily(
+                result_field="kernel_ridge_df",
+                trimmed_result_field=None,
+                model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+            )
+        )
+    if use_lasso:
+        families.append(
+            EstimatorSweepFamily(
+                result_field="lasso_df",
+                trimmed_result_field="lasso_trimmed_df",
+                model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
+            )
+        )
+    if use_elastic:
+        families.append(
+            EstimatorSweepFamily(
+                result_field="elastic_df",
+                trimmed_result_field="elastic_trimmed_df",
+                model_factory=lambda: ElasticNet(
+                    alpha=0.1,
+                    l1_ratio=0.5,
+                    max_iter=20000,
+                ),
+            )
+        )
+    if use_residual:
+        families.append(
+            SweepFunctionFamily(
+                result_field="resid_df",
+                trimmed_result_field="resid_trimmed_df",
+                base_runner=residual_sweep,
+                trimmed_runner=residual_sweep_trimmed,
+            )
+        )
+    if use_linearization:
+        families.append(
+            SweepFunctionFamily(
+                result_field="linear_df",
+                trimmed_result_field="linear_trimmed_df",
+                base_runner=linearization_sweep,
+                trimmed_runner=linearization_sweep_trimmed,
+            )
+        )
+    return tuple(families)
 
 
 def trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:

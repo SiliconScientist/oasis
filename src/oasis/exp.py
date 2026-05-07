@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,25 @@ class LearningCurveResults:
     resid_trimmed_df: pd.DataFrame | None
     linear_df: pd.DataFrame | None
     linear_trimmed_df: pd.DataFrame | None
+
+    @classmethod
+    def from_mapping(
+        cls,
+        frames: Mapping[str, pd.DataFrame | None],
+    ) -> LearningCurveResults:
+        return cls(
+            ridge_df=frames.get("ridge_df"),
+            kernel_ridge_df=frames.get("kernel_ridge_df"),
+            ridge_trimmed_df=frames.get("ridge_trimmed_df"),
+            lasso_df=frames.get("lasso_df"),
+            lasso_trimmed_df=frames.get("lasso_trimmed_df"),
+            elastic_df=frames.get("elastic_df"),
+            elastic_trimmed_df=frames.get("elastic_trimmed_df"),
+            resid_df=frames.get("resid_df"),
+            resid_trimmed_df=frames.get("resid_trimmed_df"),
+            linear_df=frames.get("linear_df"),
+            linear_trimmed_df=frames.get("linear_trimmed_df"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,18 +197,8 @@ def run_learning_curve_experiments(
     use_elastic: bool = True,
     use_residual: bool = True,
     use_linearization: bool = True,
+    model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
-    from oasis.method import (
-        linearization_sweep,
-        linearization_sweep_trimmed,
-        residual_sweep,
-        residual_sweep_trimmed,
-        sweep_model,
-        sweep_model_trimmed,
-    )
-    from sklearn.kernel_ridge import KernelRidge
-    from sklearn.linear_model import ElasticNet, Lasso, Ridge
-
     max_train = min(max_train, len(X) - 1)
     shared_splits = list(
         generate_sweep_splits(
@@ -200,91 +210,27 @@ def run_learning_curve_experiments(
         )
     )
 
-    return LearningCurveResults(
-        ridge_df=(
-            sweep_model(lambda: Ridge(alpha=0.1), X, y, shared_splits)
-            if use_ridge
-            else None
-        ),
-        kernel_ridge_df=(
-            sweep_model(
-                lambda: KernelRidge(alpha=1.0, kernel="rbf"),
+    families = model_families
+    if families is None:
+        from oasis.method import default_sweep_model_families
+
+        families = default_sweep_model_families(
+            use_ridge=use_ridge,
+            use_kernel_ridge=use_kernel_ridge,
+            use_lasso=use_lasso,
+            use_elastic=use_elastic,
+            use_residual=use_residual,
+            use_linearization=use_linearization,
+        )
+
+    frames: dict[str, pd.DataFrame | None] = {}
+    for family in families:
+        frames.update(
+            family.run(
                 X,
                 y,
                 shared_splits,
+                use_trim=use_trim,
             )
-            if use_kernel_ridge
-            else None
-        ),
-        ridge_trimmed_df=(
-            sweep_model_trimmed(
-                lambda: Ridge(alpha=0.1),
-                X,
-                y,
-                shared_splits,
-                z_thresh=1.0,
-            )
-            if use_trim and use_ridge
-            else None
-        ),
-        lasso_df=(
-            sweep_model(
-                lambda: Lasso(alpha=0.1, max_iter=10000),
-                X,
-                y,
-                shared_splits,
-            )
-            if use_lasso
-            else None
-        ),
-        lasso_trimmed_df=(
-            sweep_model_trimmed(
-                lambda: Lasso(alpha=0.1, max_iter=10000),
-                X,
-                y,
-                shared_splits,
-                z_thresh=1.0,
-            )
-            if use_trim and use_lasso
-            else None
-        ),
-        elastic_df=(
-            sweep_model(
-                lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-                X,
-                y,
-                shared_splits,
-            )
-            if use_elastic
-            else None
-        ),
-        elastic_trimmed_df=(
-            sweep_model_trimmed(
-                lambda: ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=20000),
-                X,
-                y,
-                shared_splits,
-                z_thresh=1.0,
-            )
-            if use_trim and use_elastic
-            else None
-        ),
-        resid_df=(
-            residual_sweep(X, y, shared_splits) if use_residual else None
-        ),
-        resid_trimmed_df=(
-            residual_sweep_trimmed(X, y, shared_splits)
-            if use_trim and use_residual
-            else None
-        ),
-        linear_df=(
-            linearization_sweep(X, y, shared_splits)
-            if use_linearization
-            else None
-        ),
-        linear_trimmed_df=(
-            linearization_sweep_trimmed(X, y, shared_splits)
-            if use_trim and use_linearization
-            else None
-        ),
-    )
+        )
+    return LearningCurveResults.from_mapping(frames)

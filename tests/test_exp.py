@@ -15,6 +15,7 @@ from oasis.exp import (
     SweepSplit,
     generate_sweep_splits,
     prepare_parity_plot_data,
+    run_learning_curve_experiments,
     run_learning_curve_experiments_from_config,
 )
 from oasis.plot import learning_curve_plot
@@ -145,6 +146,62 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_run_learning_curve_experiments_accepts_injected_model_families(
+        self,
+    ) -> None:
+        X = np.array(
+            [
+                [1.0, 1.1],
+                [2.0, 2.1],
+                [3.0, 3.1],
+                [4.0, 4.1],
+                [5.0, 5.1],
+                [6.0, 6.1],
+            ]
+        )
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+
+        class StubFamily:
+            def __init__(self, field_name: str) -> None:
+                self.field_name = field_name
+                self.calls = 0
+
+            def run(self, X, y, splits, *, use_trim):
+                self.calls += 1
+                self.last_use_trim = use_trim
+                self.last_split_sizes = [split.sweep_size for split in splits]
+                return {self.field_name: result_df}
+
+        ridge_family = StubFamily("ridge_df")
+        linear_family = StubFamily("linear_df")
+
+        results = run_learning_curve_experiments(
+            X,
+            y,
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=9,
+            use_trim=False,
+            model_families=[ridge_family, linear_family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertIs(results.linear_df, result_df)
+        self.assertIsNone(results.kernel_ridge_df)
+        self.assertIsNone(results.ridge_trimmed_df)
+        self.assertEqual(ridge_family.calls, 1)
+        self.assertEqual(linear_family.calls, 1)
+        self.assertFalse(ridge_family.last_use_trim)
+        self.assertEqual(ridge_family.last_split_sizes, [2, 3, 4])
+
     def test_prepare_parity_plot_data_extracts_render_inputs(self) -> None:
         df = pd.DataFrame(
             {
