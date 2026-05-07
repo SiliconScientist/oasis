@@ -317,6 +317,72 @@ class SweepOutputRegressionTests(unittest.TestCase):
             pd.testing.assert_frame_equal(actual_df, expected_df)
 
 
+class WeightedCombinerRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _toy_dataset() -> tuple[np.ndarray, np.ndarray]:
+        X = np.array(
+            [
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [2.0, 1.0],
+                [3.0, 2.0],
+                [4.0, 3.0],
+            ]
+        )
+        y = 1.5 * X[:, 0] - 0.5 * X[:, 1] + 2.0
+        return X, y
+
+    @staticmethod
+    def _fixed_payload() -> SweepRunPayload:
+        X, y = WeightedCombinerRegressionTests._toy_dataset()
+        return SweepRunPayload(
+            dataset=SweepDataset(X=X, y=y),
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=4,
+                        train_idx=np.array([0, 1, 2, 3]),
+                        test_idx=np.array([4, 5]),
+                    ),
+                    SweepSplit(
+                        sweep_size=5,
+                        train_idx=np.array([0, 1, 2, 4, 5]),
+                        test_idx=np.array([3]),
+                    ),
+                )
+            ),
+            use_trim=False,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_combiner_keeps_standard_result_shape(self) -> None:
+        result = weighted_combiner_sweep(self._fixed_payload())
+
+        self.assertEqual(
+            result.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(result["n_train"].tolist(), [4, 5])
+        self.assertEqual(len(result), 2)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_combiner_is_deterministic_for_fixed_splits(self) -> None:
+        payload = self._fixed_payload()
+
+        first = weighted_combiner_sweep(payload)
+        second = weighted_combiner_sweep(payload)
+
+        pd.testing.assert_frame_equal(first, second)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_combiner_has_near_zero_error_on_noiseless_toy_data(self) -> None:
+        result = weighted_combiner_sweep(self._fixed_payload())
+
+        np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+
+
 class BoundaryTests(unittest.TestCase):
     def test_run_learning_curve_experiments_accepts_injected_model_families(
         self,
