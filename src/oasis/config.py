@@ -62,6 +62,13 @@ class AnalysisConfig(BaseModel):
 
 
 class PlotConfig(BaseModel):
+    """Plot and learning-curve configuration.
+
+    `min_train` and `max_train` define the outer training-budget sweep. Methods
+    that require validation may spend part of that budget on inner validation,
+    while the test split remains reserved for outer evaluation only.
+    """
+
     output_dir: Path
     min_train: int
     max_train: int

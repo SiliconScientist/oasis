@@ -19,7 +19,12 @@ _INNER_VALIDATION_SIZE = 1
 
 @dataclass(frozen=True, slots=True)
 class SweepSplit:
-    """One sweep split for a sweep size."""
+    """One sweep split for a sweep size.
+
+    `test_idx` is always the outer evaluation holdout. When `val_idx` is present,
+    it is carved out of the training budget and is intended only for model
+    selection inside that outer train split.
+    """
 
     sweep_size: int
     train_idx: np.ndarray
@@ -35,6 +40,14 @@ class SweepDataset:
 
 @dataclass(frozen=True, slots=True)
 class SweepFamilyRequirements:
+    """Split-planning requirements for a model family.
+
+    `min_train_size` refers to the outer training budget for a sweep point.
+    `requires_inner_validation=True` means that budget must be partitioned into
+    inner-train and validation subsets, while `test_idx` remains reserved for
+    outer evaluation only.
+    """
+
     min_train_size: int = 0
     requires_inner_validation: bool = False
 
@@ -45,6 +58,8 @@ class SweepFamilyRequirements:
 
 @dataclass(frozen=True, slots=True)
 class SweepModelCapabilities:
+    """Model-facing declaration of split needs for learning-curve sweeps."""
+
     min_train_size: int = 0
     requires_validation: bool = False
 
@@ -82,6 +97,8 @@ class SweepRunPayload:
 
 @dataclass(frozen=True, slots=True)
 class TrainTestSweepRunnerInput:
+    """Runner input for methods that train on the full outer train split."""
+
     dataset: SweepDataset
     sweep_size: int
     train_idx: np.ndarray
@@ -90,6 +107,8 @@ class TrainTestSweepRunnerInput:
 
 @dataclass(frozen=True, slots=True)
 class TrainValTestSweepRunnerInput:
+    """Runner input for methods that use validation inside the outer train split."""
+
     dataset: SweepDataset
     sweep_size: int
     train_idx: np.ndarray
@@ -115,6 +134,8 @@ def split_to_runner_input(
     dataset: SweepDataset,
     split: SweepSplit,
 ) -> SweepRunnerInput:
+    """Convert a stored split into the runner-facing train/test or train/val/test form."""
+
     if split.val_idx is None:
         return TrainTestSweepRunnerInput(
             dataset=dataset,
@@ -254,7 +275,11 @@ def generate_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
 ) -> Iterator[SweepSplit]:
-    """Yield repeated train/test splits for each sweep size in the range."""
+    """Yield repeated outer train/test splits for each sweep size in the range.
+
+    These splits do not include inner validation. The entire `train_idx` budget
+    is available for fitting, and `test_idx` is reserved for outer evaluation.
+    """
 
     idx = np.arange(n_samples)
     max_train = min(max_train, n_samples - 1)
@@ -277,7 +302,12 @@ def generate_sweep_splits_with_validation(
     n_repeats: int,
     rng: np.random.Generator,
 ) -> Iterator[SweepSplit]:
-    """Yield repeated outer train/test splits with inner train/val partitions."""
+    """Yield repeated outer train/test splits with inner train/val partitions.
+
+    `sweep_size` is the outer training budget. For each split, `test_idx` is the
+    outer holdout used only for final evaluation, while `train_idx` and `val_idx`
+    partition that outer training budget for fitting and model selection.
+    """
 
     if n_val <= 0:
         raise ValueError("n_val must be positive.")
@@ -309,7 +339,12 @@ def generate_inner_validation_sweep_splits(
     *,
     n_val: int = _INNER_VALIDATION_SIZE,
 ) -> Iterator[SweepSplit]:
-    """Yield sweep splits with one inner validation holdout per outer train split."""
+    """Yield sweep splits with one inner validation holdout per outer train split.
+
+    This is the validation-aware learning-curve path: the outer test split stays
+    untouched during model selection, and validation is taken from within the
+    requested training budget.
+    """
 
     yield from generate_sweep_splits_with_validation(
         n_samples=n_samples,
@@ -330,6 +365,14 @@ def build_sweep_split_collection(
     seed: int,
     requirements: SweepFamilyRequirements | None = None,
 ) -> SweepSplitCollection:
+    """Build the split collection for one family under its split requirements.
+
+    Train/test-only families receive outer train/test splits across the requested
+    sweep range. Validation-aware families receive only sweep sizes large enough
+    to support inner train/val partitioning while keeping `test_idx` as the
+    outer evaluation holdout.
+    """
+
     requirements = requirements or SweepFamilyRequirements()
     max_train = min(max_train, n_samples - 1)
     split_generator = generate_sweep_splits
