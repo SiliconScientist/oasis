@@ -56,6 +56,8 @@ def generate_sweep_splits(
     max_train: int,
     n_repeats: int,
     rng: np.random.Generator,
+    *,
+    min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield repeated outer train/test splits for each sweep size in the range.
 
@@ -63,8 +65,11 @@ def generate_sweep_splits(
     is available for fitting, and `test_idx` is reserved for outer evaluation.
     """
 
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
     idx = np.arange(n_samples)
-    max_train = min(max_train, n_samples - 1)
+    max_train = min(max_train, n_samples - min_test_size)
     for n_train in range(min_train, max_train + 1):
         for _ in range(n_repeats):
             train_idx = rng.choice(idx, size=n_train, replace=False)
@@ -83,6 +88,8 @@ def generate_sweep_splits_with_validation(
     n_val: int,
     n_repeats: int,
     rng: np.random.Generator,
+    *,
+    min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield repeated outer train/test splits with inner train/val partitions.
 
@@ -97,9 +104,11 @@ def generate_sweep_splits_with_validation(
         raise ValueError("n_val must be positive.")
     if n_val >= n_samples:
         raise ValueError("n_val must be smaller than n_samples.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
 
     idx = np.arange(n_samples)
-    max_train = min(max_train, n_samples - 1)
+    max_train = min(max_train, n_samples - min_test_size)
     for n_train in range(max(min_train, n_val + 1), max_train + 1):
         for _ in range(n_repeats):
             outer_train_idx = rng.choice(idx, size=n_train, replace=False)
@@ -123,6 +132,7 @@ def generate_inner_validation_sweep_splits(
     *,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield sweep splits with policy-sized inner validation holdouts.
 
@@ -135,7 +145,10 @@ def generate_inner_validation_sweep_splits(
     minimum valid selection-aware sweep size is usually 2, subject to any larger
     family-specific `min_train_size` requirement.
     """
-    max_train = min(max_train, n_samples - 1)
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
+    max_train = min(max_train, n_samples - min_test_size)
     for sweep_size in range(min_train, max_train + 1):
         n_val = inner_validation_size_for_sweep(
             sweep_size,
@@ -151,6 +164,7 @@ def generate_inner_validation_sweep_splits(
             n_val=n_val,
             n_repeats=n_repeats,
             rng=rng,
+            min_test_size=min_test_size,
         )
 
 
@@ -162,6 +176,7 @@ def build_sweep_split_collection(
     n_repeats: int,
     seed: int,
     requirements: SweepFamilyRequirements | None = None,
+    min_test_size: int = 1,
 ) -> SweepSplitCollection:
     """Build the split collection for one family under its split requirements.
 
@@ -179,7 +194,7 @@ def build_sweep_split_collection(
     """
 
     requirements = requirements or SweepFamilyRequirements()
-    max_train = min(max_train, n_samples - 1)
+    max_train = min(max_train, n_samples - min_test_size)
     split_generator = generate_sweep_splits
     effective_min_train = max(min_train, requirements.min_train_size)
     if requirements.requires_inner_validation:
@@ -192,6 +207,7 @@ def build_sweep_split_collection(
                 max_train,
                 n_repeats,
                 np.random.default_rng(seed),
+                min_test_size=min_test_size,
             )
         ),
         planning_requirements=requirements,

@@ -112,6 +112,49 @@ class GenerateSweepSplitsTests(unittest.TestCase):
             self.assertIsNone(split_a.val_idx)
             self.assertIsNone(split_b.val_idx)
 
+    def test_generate_sweep_splits_skips_points_when_test_too_small(self) -> None:
+        splits = list(
+            generate_sweep_splits(
+                n_samples=7,
+                min_train=4,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                min_test_size=2,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5])
+        self.assertEqual([len(split.test_idx) for split in splits], [3, 3, 2, 2])
+
+    def test_same_seed_gives_same_splits_with_test_size_guard(self) -> None:
+        splits_a = list(
+            generate_sweep_splits(
+                n_samples=7,
+                min_train=4,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                min_test_size=2,
+            )
+        )
+        splits_b = list(
+            generate_sweep_splits(
+                n_samples=7,
+                min_train=4,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                min_test_size=2,
+            )
+        )
+
+        self.assertEqual(len(splits_a), len(splits_b))
+        for split_a, split_b in zip(splits_a, splits_b, strict=True):
+            self.assertEqual(split_a.sweep_size, split_b.sweep_size)
+            np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
+            np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+
     def test_sweep_split_accepts_optional_validation_indices(self) -> None:
         split = SweepSplit(
             sweep_size=3,
@@ -299,6 +342,55 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5, 6, 6])
         self.assertEqual([len(split.test_idx) for split in splits], [3, 3, 2, 2, 1, 1])
 
+    def test_generate_sweep_splits_with_validation_skips_points_when_test_too_small(
+        self,
+    ) -> None:
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=8,
+                min_train=4,
+                max_train=6,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                min_test_size=3,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5])
+        self.assertEqual([len(split.test_idx) for split in splits], [4, 4, 3, 3])
+
+    def test_same_seed_gives_same_validation_splits_with_test_size_guard(self) -> None:
+        splits_a = list(
+            generate_sweep_splits_with_validation(
+                n_samples=8,
+                min_train=4,
+                max_train=6,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                min_test_size=3,
+            )
+        )
+        splits_b = list(
+            generate_sweep_splits_with_validation(
+                n_samples=8,
+                min_train=4,
+                max_train=6,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                min_test_size=3,
+            )
+        )
+
+        self.assertEqual(len(splits_a), len(splits_b))
+        for split_a, split_b in zip(splits_a, splits_b, strict=True):
+            self.assertEqual(split_a.sweep_size, split_b.sweep_size)
+            np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
+            np.testing.assert_array_equal(split_a.val_idx, split_b.val_idx)
+            np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+
     def test_generate_sweep_splits_with_validation_returns_no_splits_when_min_train_exceeds_capacity(
         self,
     ) -> None:
@@ -385,6 +477,31 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2])
         self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8])
 
+    def test_generate_inner_validation_sweep_splits_keeps_outer_test_disjoint(self) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=8,
+                min_train=4,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                min_test_size=3,
+            )
+        )
+
+        full_idx = np.arange(8)
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 5, 5])
+        for split in splits:
+            self.assertIsNotNone(split.val_idx)
+            self.assertGreaterEqual(len(split.test_idx), 3)
+            self.assertEqual(len(np.intersect1d(split.train_idx, split.test_idx)), 0)
+            self.assertEqual(len(np.intersect1d(split.val_idx, split.test_idx)), 0)
+            self.assertEqual(len(np.intersect1d(split.train_idx, split.val_idx)), 0)
+            np.testing.assert_array_equal(
+                np.sort(np.concatenate([split.train_idx, split.val_idx, split.test_idx])),
+                full_idx,
+            )
+
         with self.assertRaisesRegex(
             ValueError,
             "n_val must be smaller than n_samples",
@@ -399,6 +516,19 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                     rng=np.random.default_rng(1),
                 )
             )
+
+    def test_build_sweep_split_collection_honors_min_test_size(self) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=7,
+            min_train=4,
+            max_train=6,
+            n_repeats=1,
+            seed=3,
+            min_test_size=2,
+        )
+
+        self.assertEqual([split.sweep_size for split in split_collection.splits], [4, 5])
+        self.assertEqual([len(split.test_idx) for split in split_collection.splits], [3, 2])
 
 
 
