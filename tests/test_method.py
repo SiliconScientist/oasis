@@ -126,17 +126,25 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         model_cfg = SimpleNamespace(
-            use_ridge=True,
-            use_kernel_ridge=False,
-            use_lasso=True,
-            use_elastic_net=False,
-            use_residual=True,
-            use_weighted_linear=True,
-            use_weighted_simplex=True,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=True,
+                        use_elastic_net=False,
+                        use_residual=True,
+                        use_weighted_linear=True,
+                        use_weighted_simplex=True,
+                    )
+                )
+            )
         )
 
         self.assertEqual(
-            enabled_learning_curve_model_names_from_config(model_cfg),
+            enabled_learning_curve_model_names_from_config(
+                model_cfg.experiment.learning_curve.models
+            ),
             (
                 "ridge",
                 "lasso",

@@ -210,8 +210,12 @@ def _normalize_runner_output(
 @dataclass(frozen=True, slots=True)
 class LearningCurveModelRegistration:
     name: str
-    config_attr: str
+    is_enabled: Callable[[Any], bool]
     family_factory: Callable[[], SweepModelFamily]
+
+
+def _config_flag_enabled(config_key: str) -> Callable[[Any], bool]:
+    return lambda config_section: bool(getattr(config_section, config_key, False))
 
 
 class SweepModelFamily(Protocol):
@@ -468,7 +472,7 @@ def enabled_learning_curve_model_names_from_config(
     return tuple(
         registration.name
         for registration in registrations
-        if getattr(model_cfg, registration.config_attr)
+        if registration.is_enabled(model_cfg)
     )
 
 
@@ -501,7 +505,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
     sklearn_registrations = tuple(
         LearningCurveModelRegistration(
             name=name,
-            config_attr=config_attr,
+            is_enabled=_config_flag_enabled(config_key),
             family_factory=lambda spec=spec: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field=spec.result_field,
@@ -513,12 +517,12 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                 )
             ),
         )
-        for name, config_attr, spec in sklearn_sweep_model_specs()
+        for name, config_key, spec in sklearn_sweep_model_specs()
     )
     return sklearn_registrations + (
         LearningCurveModelRegistration(
             name="residual",
-            config_attr="use_residual",
+            is_enabled=_config_flag_enabled("use_residual"),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="resid_df",
@@ -532,7 +536,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
         ),
         LearningCurveModelRegistration(
             name="weighted_linear",
-            config_attr="use_weighted_linear",
+            is_enabled=_config_flag_enabled("use_weighted_linear"),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_linear_df",
@@ -543,7 +547,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
         ),
         LearningCurveModelRegistration(
             name="weighted_simplex",
-            config_attr="use_weighted_simplex",
+            is_enabled=_config_flag_enabled("use_weighted_simplex"),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_simplex_df",
