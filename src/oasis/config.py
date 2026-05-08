@@ -61,8 +61,31 @@ class AnalysisConfig(BaseModel):
     prefixes: List[str]
 
 
+class MoETrainingConfig(BaseModel):
+    pass
+
+
+class MoEConfig(BaseModel):
+    enabled: bool = False
+    gate_type: Optional[str] = None
+    gating_mode: Optional[str] = None
+    hidden_dims: List[int] = Field(default_factory=list)
+    training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
+
+
+class LearningCurveModelsConfig(BaseModel):
+    use_ridge: bool
+    use_kernel_ridge: bool
+    use_lasso: bool
+    use_elastic_net: bool
+    use_residual: bool
+    use_weighted_linear: bool = False
+    use_weighted_simplex: bool = False
+    moe: MoEConfig = Field(default_factory=MoEConfig)
+
+
 class PlotConfig(BaseModel):
-    """Plot and learning-curve configuration.
+    """Plot configuration.
 
     `min_train` and `max_train` define the outer training-budget sweep. Methods
     that require validation may spend part of that budget on inner validation,
@@ -74,13 +97,6 @@ class PlotConfig(BaseModel):
     max_train: int
     n_repeats: int
     trim: bool
-    use_ridge: bool
-    use_kernel_ridge: bool
-    use_lasso: bool
-    use_elastic_net: bool
-    use_residual: bool
-    use_weighted_linear: bool = False
-    use_weighted_simplex: bool = False
     adsorbate: Optional[str] = None
     anomaly_label: Optional[str] = None
     reaction_contains: Optional[List[str]] = None
@@ -95,6 +111,7 @@ class Config(BaseModel):
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
     plot: Optional[PlotConfig] = None
+    learning_curve_models: Optional[LearningCurveModelsConfig] = None
 
     def init_paths(self):
         catbench_folder = (

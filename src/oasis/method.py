@@ -460,15 +460,15 @@ def default_sweep_model_families(
 
 
 def enabled_learning_curve_model_names_from_config(
-    plot_cfg: Any | None,
+    model_cfg: Any | None,
 ) -> tuple[str, ...]:
     registrations = learning_curve_model_registry()
-    if plot_cfg is None:
+    if model_cfg is None:
         return tuple(registration.name for registration in registrations)
     return tuple(
         registration.name
         for registration in registrations
-        if getattr(plot_cfg, registration.config_attr)
+        if getattr(model_cfg, registration.config_attr)
     )
 
 

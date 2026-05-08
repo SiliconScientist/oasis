@@ -125,7 +125,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ],
         )
 
-        plot_cfg = SimpleNamespace(
+        model_cfg = SimpleNamespace(
             use_ridge=True,
             use_kernel_ridge=False,
             use_lasso=True,
@@ -136,7 +136,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            enabled_learning_curve_model_names_from_config(plot_cfg),
+            enabled_learning_curve_model_names_from_config(model_cfg),
             (
                 "ridge",
                 "lasso",

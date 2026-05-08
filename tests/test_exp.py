@@ -1221,6 +1221,8 @@ class ExpIntegrationTests(unittest.TestCase):
                 max_train=4,
                 n_repeats=2,
                 trim=False,
+            ),
+            learning_curve_models=SimpleNamespace(
                 use_ridge=True,
                 use_kernel_ridge=False,
                 use_lasso=False,

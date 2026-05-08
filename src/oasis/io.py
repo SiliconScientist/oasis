@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
 from oasis.ingest.site_constraints import extract_adsorbed_atom
 
 if TYPE_CHECKING:
@@ -50,6 +49,8 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
       reaction, adsorbate, reference_ads_eng, <mlip>_mlip_ads_eng_median,
       <mlip>_label, <mlip>_<detail_flag>, ...
     """
+    from oasis.analysis import detect_anomalies_from_result_json, extract_adsorbate
+
     reference_df: pl.DataFrame | None = None
     wide_parts: list[pl.DataFrame] = []
     mlip_cols: list[str] = []

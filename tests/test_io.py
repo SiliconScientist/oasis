@@ -38,8 +38,8 @@ class LoadSampleAtomsForWideDfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_path = Path(tmp_dir) / "dataset.json"
             dataset_path.write_text(json.dumps(dataset), encoding="utf-8")
-            cfg = Config.model_validate(
-                {
+            cfg = Config(
+                **{
                     "ingest": {
                         "source": "data/raw_vasp/systems",
                         "dataset_name": "test",
@@ -72,8 +72,8 @@ class LoadSampleAtomsForWideDfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_path = Path(tmp_dir) / "dataset.json"
             dataset_path.write_text(json.dumps(dataset), encoding="utf-8")
-            cfg = Config.model_validate(
-                {
+            cfg = Config(
+                **{
                     "ingest": {
                         "source": "data/raw_vasp/systems",
                         "dataset_name": "test",
