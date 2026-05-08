@@ -121,6 +121,7 @@ class SweepDataset:
     mlip_features: np.ndarray
     targets: np.ndarray
     sample_ids: np.ndarray | None = None
+    graph_view: GraphDatasetView | None = None
     auxiliary_views: Mapping[str, Any] | None = None
 
     @property
@@ -142,13 +143,42 @@ class SweepDataset:
             )
 
         if self.auxiliary_views is None:
-            return
+            auxiliary_views = None
+        else:
+            auxiliary_views = dict(self.auxiliary_views)
+            object.__setattr__(self, "auxiliary_views", auxiliary_views)
 
-        for view_name, view in self.auxiliary_views.items():
+        for view_name, view in (auxiliary_views or {}).items():
             if len(view) != self.n_samples:
                 raise ValueError(
                     f"auxiliary view '{view_name}' must have the same length as mlip_features."
                 )
+
+        graph_view = self.graph_view
+        if graph_view is None:
+            return
+
+        dataset_sample_ids = tuple(self.sample_ids.tolist())
+        if len(dataset_sample_ids) != len(set(dataset_sample_ids)):
+            raise ValueError(
+                "dataset sample_ids must be unique when graph_view is provided."
+            )
+
+        graph_sample_ids = graph_view.sample_ids
+        if set(graph_sample_ids) != set(dataset_sample_ids):
+            raise ValueError(
+                "graph_view sample_ids must match dataset sample_ids."
+            )
+
+    @property
+    def has_graphs(self) -> bool:
+        return self.graph_view is not None
+
+    @property
+    def graphs(self) -> GraphDatasetView:
+        if self.graph_view is None:
+            raise ValueError("graph_view is not available for this dataset.")
+        return self.graph_view
 
     @property
     def X(self) -> np.ndarray:

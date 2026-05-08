@@ -170,6 +170,57 @@ class SweepDatasetTests(unittest.TestCase):
         np.testing.assert_array_equal(dataset.sample_ids, sample_ids)
         self.assertIs(dataset.auxiliary_views["graphs"], view)
 
+    def test_sweep_dataset_accepts_aligned_graph_view(self) -> None:
+        sample_ids = np.array(["s0", "s1"])
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+            )
+        )
+
+        dataset = SweepDataset(
+            mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+            targets=np.arange(2, dtype=float),
+            sample_ids=sample_ids,
+            graph_view=graph_view,
+        )
+
+        self.assertTrue(dataset.has_graphs)
+        self.assertIs(dataset.graphs, graph_view)
+
+    def test_sweep_dataset_rejects_duplicate_graph_ids(self) -> None:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "sample_ids must be unique"):
+            SweepDataset(
+                mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+                targets=np.arange(2, dtype=float),
+                sample_ids=np.array(["s0", "s0"]),
+                graph_view=graph_view,
+            )
+
 
 class SweepPayloadTests(unittest.TestCase):
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
