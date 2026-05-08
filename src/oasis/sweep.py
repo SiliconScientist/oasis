@@ -1,11 +1,101 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
 import numpy as np
 import pandas as pd
+
+
+SampleId: TypeAlias = Hashable
+
+
+@dataclass(frozen=True, slots=True)
+class GraphRecord:
+    sample_id: SampleId
+    node_features: np.ndarray
+    edge_index: np.ndarray
+    edge_features: np.ndarray | None = None
+    graph_features: np.ndarray | None = None
+
+    @property
+    def n_nodes(self) -> int:
+        return int(self.node_features.shape[0])
+
+    @property
+    def n_edges(self) -> int:
+        return int(self.edge_index.shape[1])
+
+    def __post_init__(self) -> None:
+        if self.sample_id is None:
+            raise ValueError("sample_id is required.")
+
+        if self.node_features.ndim != 2:
+            raise ValueError("node_features must be a 2D array.")
+
+        if self.edge_index.ndim != 2 or self.edge_index.shape[0] != 2:
+            raise ValueError("edge_index must have shape (2, n_edges).")
+        if not np.issubdtype(self.edge_index.dtype, np.integer):
+            raise ValueError("edge_index must contain integer node indices.")
+        if np.any(self.edge_index < 0):
+            raise ValueError("edge_index cannot contain negative node indices.")
+        if self.edge_index.size and np.any(self.edge_index >= self.n_nodes):
+            raise ValueError("edge_index cannot reference nodes outside node_features.")
+
+        edge_features = self.edge_features
+        if edge_features is not None:
+            if edge_features.ndim not in (1, 2):
+                raise ValueError("edge_features must be a 1D or 2D array.")
+            if len(edge_features) != self.n_edges:
+                raise ValueError(
+                    "edge_features must have the same number of rows as edge_index columns."
+                )
+
+        graph_features = self.graph_features
+        if graph_features is not None and graph_features.ndim != 1:
+            raise ValueError("graph_features must be a 1D array.")
+
+
+@dataclass(frozen=True, slots=True)
+class GraphDatasetView:
+    records_by_sample_id: Mapping[SampleId, GraphRecord]
+
+    def __post_init__(self) -> None:
+        normalized_records = dict(self.records_by_sample_id)
+        for sample_id, record in normalized_records.items():
+            if sample_id != record.sample_id:
+                raise ValueError(
+                    "records_by_sample_id keys must match each record's sample_id."
+                )
+        object.__setattr__(self, "records_by_sample_id", normalized_records)
+
+    @classmethod
+    def from_records(
+        cls,
+        records: Sequence[GraphRecord],
+    ) -> GraphDatasetView:
+        records_by_sample_id: dict[SampleId, GraphRecord] = {}
+        for record in records:
+            if record.sample_id in records_by_sample_id:
+                raise ValueError(
+                    f"duplicate graph record for sample_id={record.sample_id!r}."
+                )
+            records_by_sample_id[record.sample_id] = record
+        return cls(records_by_sample_id=records_by_sample_id)
+
+    def __len__(self) -> int:
+        return len(self.records_by_sample_id)
+
+    def __getitem__(self, sample_id: SampleId) -> GraphRecord:
+        return self.records_by_sample_id[sample_id]
+
+    def get(self, sample_id: SampleId) -> GraphRecord | None:
+        return self.records_by_sample_id.get(sample_id)
+
+    @property
+    def sample_ids(self) -> tuple[SampleId, ...]:
+        return tuple(self.records_by_sample_id)
 
 
 @dataclass(frozen=True, slots=True)

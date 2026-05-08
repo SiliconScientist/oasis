@@ -5,6 +5,8 @@ import unittest
 import numpy as np
 
 from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
     SweepDataset,
     SweepRunnerPayload,
     SweepSplit,
@@ -13,6 +15,102 @@ from oasis.sweep import (
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
+
+
+class GraphRecordTests(unittest.TestCase):
+    def test_graph_record_accepts_valid_shapes(self) -> None:
+        record = GraphRecord(
+            sample_id="s0",
+            node_features=np.arange(6, dtype=float).reshape(3, 2),
+            edge_index=np.array([[0, 1, 2], [1, 2, 0]], dtype=np.int64),
+            edge_features=np.arange(3, dtype=float),
+            graph_features=np.array([1.0, 2.0]),
+        )
+
+        self.assertEqual(record.sample_id, "s0")
+        self.assertEqual(record.n_nodes, 3)
+        self.assertEqual(record.n_edges, 3)
+
+    def test_graph_record_requires_sample_id(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sample_id is required"):
+            GraphRecord(
+                sample_id=None,
+                node_features=np.arange(6, dtype=float).reshape(3, 2),
+                edge_index=np.array([[0], [1]], dtype=np.int64),
+            )
+
+    def test_graph_record_rejects_malformed_shapes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "node_features must be a 2D array"):
+            GraphRecord(
+                sample_id="s0",
+                node_features=np.arange(3, dtype=float),
+                edge_index=np.array([[0], [0]], dtype=np.int64),
+            )
+
+        with self.assertRaisesRegex(ValueError, "edge_index must have shape"):
+            GraphRecord(
+                sample_id="s0",
+                node_features=np.arange(6, dtype=float).reshape(3, 2),
+                edge_index=np.array([[0, 1, 2]], dtype=np.int64),
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "edge_features must have the same number of rows",
+        ):
+            GraphRecord(
+                sample_id="s0",
+                node_features=np.arange(6, dtype=float).reshape(3, 2),
+                edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                edge_features=np.arange(3, dtype=float),
+            )
+
+
+class GraphDatasetViewTests(unittest.TestCase):
+    def test_graph_dataset_view_supports_lookup_by_sample_id(self) -> None:
+        record_a = GraphRecord(
+            sample_id="s0",
+            node_features=np.arange(4, dtype=float).reshape(2, 2),
+            edge_index=np.array([[0], [1]], dtype=np.int64),
+        )
+        record_b = GraphRecord(
+            sample_id="s1",
+            node_features=np.arange(6, dtype=float).reshape(3, 2),
+            edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+        )
+
+        view = GraphDatasetView.from_records((record_a, record_b))
+
+        self.assertEqual(len(view), 2)
+        self.assertEqual(view.sample_ids, ("s0", "s1"))
+        self.assertIs(view["s0"], record_a)
+        self.assertIs(view.get("s1"), record_b)
+        self.assertIsNone(view.get("missing"))
+
+    def test_graph_dataset_view_rejects_duplicate_sample_ids(self) -> None:
+        record_a = GraphRecord(
+            sample_id="s0",
+            node_features=np.arange(4, dtype=float).reshape(2, 2),
+            edge_index=np.array([[0], [1]], dtype=np.int64),
+        )
+        record_b = GraphRecord(
+            sample_id="s0",
+            node_features=np.arange(6, dtype=float).reshape(3, 2),
+            edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicate graph record"):
+            GraphDatasetView.from_records((record_a, record_b))
+
+    def test_graph_dataset_view_rejects_mismatched_mapping_keys(self) -> None:
+        record = GraphRecord(
+            sample_id="s0",
+            node_features=np.arange(4, dtype=float).reshape(2, 2),
+            edge_index=np.array([[0], [1]], dtype=np.int64),
+        )
+
+        with self.assertRaisesRegex(ValueError, "keys must match"):
+            GraphDatasetView(records_by_sample_id={"other": record})
 
 
 class SweepDatasetTests(unittest.TestCase):
