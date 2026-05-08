@@ -179,22 +179,6 @@ def learning_curve_plot(
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
-    if results.lasso_trimmed_df is not None:
-        ax.plot(
-            results.lasso_trimmed_df["n_train"],
-            results.lasso_trimmed_df["rmse_mean"],
-            marker="+",
-            color="tab:orange",
-            label="Lasso (trim residual) mean",
-        )
-        ax.fill_between(
-            results.lasso_trimmed_df["n_train"],
-            results.lasso_trimmed_df["rmse_mean"] - results.lasso_trimmed_df["rmse_std"],
-            results.lasso_trimmed_df["rmse_mean"] + results.lasso_trimmed_df["rmse_std"],
-            color="tab:orange",
-            alpha=0.2,
-            label="Lasso (trim residual) +/- 1sd",
-        )
     if results.elastic_df is not None:
         ax.plot(
             results.elastic_df["n_train"],
@@ -211,22 +195,6 @@ def learning_curve_plot(
             alpha=0.2,
             label="Elastic Net +/- 1sd",
         )
-    if results.elastic_trimmed_df is not None:
-        ax.plot(
-            results.elastic_trimmed_df["n_train"],
-            results.elastic_trimmed_df["rmse_mean"],
-            marker="x",
-            color="tab:purple",
-            label="Elastic Net (trim residual) mean",
-        )
-        ax.fill_between(
-            results.elastic_trimmed_df["n_train"],
-            results.elastic_trimmed_df["rmse_mean"] - results.elastic_trimmed_df["rmse_std"],
-            results.elastic_trimmed_df["rmse_mean"] + results.elastic_trimmed_df["rmse_std"],
-            color="tab:purple",
-            alpha=0.2,
-            label="Elastic Net (trim residual) +/- 1sd",
-        )
     if results.resid_df is not None:
         ax.plot(
             results.resid_df["n_train"],
@@ -242,22 +210,6 @@ def learning_curve_plot(
             color="tab:green",
             alpha=0.2,
             label="Residual +/- 1sd",
-        )
-    if results.resid_trimmed_df is not None:
-        ax.plot(
-            results.resid_trimmed_df["n_train"],
-            results.resid_trimmed_df["rmse_mean"],
-            marker="P",
-            color="tab:brown",
-            label="Residual (trimmed) mean",
-        )
-        ax.fill_between(
-            results.resid_trimmed_df["n_train"],
-            results.resid_trimmed_df["rmse_mean"] - results.resid_trimmed_df["rmse_std"],
-            results.resid_trimmed_df["rmse_mean"] + results.resid_trimmed_df["rmse_std"],
-            color="tab:brown",
-            alpha=0.2,
-            label="Residual (trimmed) +/- 1sd",
         )
     if results.weighted_linear_df is not None:
         ax.plot(
@@ -294,22 +246,6 @@ def learning_curve_plot(
             color="teal",
             alpha=0.2,
             label="Weighted simplex +/- 1sd",
-        )
-    if results.ridge_trimmed_df is not None:
-        ax.plot(
-            results.ridge_trimmed_df["n_train"],
-            results.ridge_trimmed_df["rmse_mean"],
-            marker="h",
-            color="tab:olive",
-            label="Ridge (trim z-score) mean",
-        )
-        ax.fill_between(
-            results.ridge_trimmed_df["n_train"],
-            results.ridge_trimmed_df["rmse_mean"] - results.ridge_trimmed_df["rmse_std"],
-            results.ridge_trimmed_df["rmse_mean"] + results.ridge_trimmed_df["rmse_std"],
-            color="tab:olive",
-            alpha=0.2,
-            label="Ridge (trim z-score) +/- 1sd",
         )
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)

@@ -37,7 +37,6 @@ def regression_train_test_payload(seed: int = 13) -> SweepRunPayload:
                 )
             )
         ),
-        use_trim=True,
     )
 
 
@@ -74,5 +73,4 @@ def weighted_fixed_payload() -> SweepRunPayload:
                 ),
             )
         ),
-        use_trim=False,
     )

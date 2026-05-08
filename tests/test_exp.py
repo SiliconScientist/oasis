@@ -573,7 +573,6 @@ class ExpIntegrationTests(unittest.TestCase):
                 max_train=4,
                 n_repeats=1,
                 seed=17,
-                use_trim=False,
             )
 
         self.assertIsNotNone(results.ridge_df)
@@ -755,7 +754,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=5,
-            use_trim=False,
             model_families=[family],
         )
 
@@ -799,7 +797,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=5,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             model_families=[family],
         )
 
@@ -858,18 +855,15 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=9,
-            use_trim=False,
             model_families=[ridge_family, weighted_family],
         )
 
         self.assertIs(results.ridge_df, result_df)
         self.assertIs(results.weighted_linear_df, result_df)
         self.assertIsNone(results.kernel_ridge_df)
-        self.assertIsNone(results.ridge_trimmed_df)
         self.assertEqual(ridge_family.calls, 1)
         self.assertEqual(weighted_family.calls, 1)
         self.assertIsInstance(ridge_family.last_payload, SweepRunPayload)
-        self.assertFalse(ridge_family.last_payload.use_trim)
         self.assertEqual(
             [split.sweep_size for split in ridge_family.last_payload.split_collection.splits],
             [2, 3, 4],
@@ -917,7 +911,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=5,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             model_families=[family],
         )
 
@@ -1121,7 +1114,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=5,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             model_families=[baseline_family, validation_family],
         )
 
@@ -1172,7 +1164,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=6,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             validation_fraction=0.2,
             min_val_size=2,
             min_test_size=2,
@@ -1250,7 +1241,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=6,
             n_repeats=1,
             seed=7,
-            use_trim=False,
             validation_fraction=0.2,
             min_val_size=2,
             min_test_size=3,
@@ -1307,24 +1297,6 @@ class ExpIntegrationTests(unittest.TestCase):
             ) -> pd.DataFrame:
                 return self.run(payload)
 
-            def run_trimmed(
-                self,
-                payload: SweepRunnerPayload,
-                *,
-                z_thresh: float = 1.0,
-            ) -> pd.DataFrame:
-                del z_thresh
-                return self.run(payload)
-
-            def run_trimmed_with_validation(
-                self,
-                payload: SweepRunnerPayload,
-                *,
-                z_thresh: float = 1.0,
-            ) -> pd.DataFrame:
-                del z_thresh
-                return self.run(payload)
-
             def _assert_payload(self, payload: SweepRunnerPayload) -> None:
                 if not payload.splits:
                     raise AssertionError("expected non-empty payload.splits")
@@ -1341,14 +1313,12 @@ class ExpIntegrationTests(unittest.TestCase):
         baseline_family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="ridge_df",
-                trimmed_result_field=None,
                 runner=baseline_runner,
             )
         )
         validation_family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="weighted_linear_df",
-                trimmed_result_field=None,
                 runner=validation_runner,
                 capabilities=SweepModelCapabilities(
                     min_train_size=4,
@@ -1363,7 +1333,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=5,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             model_families=[baseline_family, validation_family],
         )
 
@@ -1385,7 +1354,6 @@ class ExpIntegrationTests(unittest.TestCase):
         family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="ridge_df",
-                trimmed_result_field=None,
                 runner=SupervisedModelSweepRunner(lambda: None),
                 capabilities=SweepModelCapabilities(
                     min_train_size=4,
@@ -1410,7 +1378,6 @@ class ExpIntegrationTests(unittest.TestCase):
                 ),
                 planning_requirements=family.requirements(),
             ),
-            use_trim=False,
         )
 
         with self.assertRaisesRegex(
@@ -1442,15 +1409,6 @@ class ExpIntegrationTests(unittest.TestCase):
                     }
                 )
 
-            def run_trimmed(
-                self,
-                payload: SweepRunnerPayload,
-                *,
-                z_thresh: float = 1.0,
-            ) -> pd.DataFrame:
-                del z_thresh
-                return self.run(payload)
-
         class EmptyAwareValidationRunner:
             def __init__(self) -> None:
                 self.payloads: list[SweepRunnerPayload] = []
@@ -1464,22 +1422,12 @@ class ExpIntegrationTests(unittest.TestCase):
                     raise AssertionError("expected skipped validation family to receive no splits")
                 return sweep_results_frame({})
 
-            def run_trimmed_with_validation(
-                self,
-                payload: SweepRunnerPayload,
-                *,
-                z_thresh: float = 1.0,
-            ) -> pd.DataFrame:
-                del z_thresh
-                return self.run_with_validation(payload)
-
         X = np.arange(18, dtype=float).reshape(6, 3)
         y = np.arange(6, dtype=float)
         baseline_runner = BaselineRunner()
         baseline_family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="ridge_df",
-                trimmed_result_field=None,
                 runner=baseline_runner,
             )
         )
@@ -1487,7 +1435,6 @@ class ExpIntegrationTests(unittest.TestCase):
         skipped_family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="weighted_linear_df",
-                trimmed_result_field=None,
                 runner=validation_runner,
                 capabilities=SweepModelCapabilities(
                     min_train_size=7,
@@ -1502,7 +1449,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             model_families=[baseline_family, skipped_family],
         )
 
@@ -1533,20 +1479,10 @@ class ExpIntegrationTests(unittest.TestCase):
                     raise AssertionError("expected no valid validation-aware sweep sizes")
                 return sweep_results_frame({})
 
-            def run_trimmed_with_validation(
-                self,
-                payload: SweepRunnerPayload,
-                *,
-                z_thresh: float = 1.0,
-            ) -> pd.DataFrame:
-                del z_thresh
-                return self.run_with_validation(payload)
-
         validation_runner = EmptyAwareValidationRunner()
         skipped_family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="weighted_linear_df",
-                trimmed_result_field=None,
                 runner=validation_runner,
                 capabilities=SweepModelCapabilities(
                     min_train_size=5,
@@ -1564,7 +1500,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=3,
-            use_trim=False,
             validation_fraction=0.2,
             min_val_size=2,
             min_test_size=3,
@@ -1595,21 +1530,10 @@ class ExpIntegrationTests(unittest.TestCase):
                     }
                 )
 
-            def run_trimmed_with_validation(
-                self,
-                payload,
-                *,
-                z_thresh: float = 1.0,
-            ):
-                del z_thresh
-                return self.run_with_validation(payload)
-
         family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="ridge_df",
-                trimmed_result_field=None,
                 runner=RecordingRunner(),
-                trim_z_thresh=1.0,
                 capabilities=SweepModelCapabilities(
                     min_train_size=4,
                     requires_validation=True,
@@ -1633,7 +1557,6 @@ class ExpIntegrationTests(unittest.TestCase):
                 ),
                 planning_requirements=family.requirements(),
             ),
-            use_trim=False,
         )
 
         result = family.run(payload)
@@ -1709,7 +1632,6 @@ class ExpIntegrationTests(unittest.TestCase):
                     min_train=2,
                     max_train=4,
                     n_repeats=2,
-                    trim=False,
                     models=None,
                 )
             ),
@@ -1744,7 +1666,6 @@ class ExpIntegrationTests(unittest.TestCase):
                     min_train=2,
                     max_train=4,
                     n_repeats=2,
-                    trim=False,
                     models=SimpleNamespace(
                         use_ridge=False,
                         use_kernel_ridge=False,
@@ -1788,7 +1709,6 @@ class ExpIntegrationTests(unittest.TestCase):
             max_train=4,
             n_repeats=2,
             seed=17,
-            use_trim=False,
             enabled_model_names=[
                 "weighted_linear",
                 "weighted_simplex",
@@ -1825,7 +1745,6 @@ class ExpIntegrationTests(unittest.TestCase):
                     min_train=2,
                     max_train=4,
                     n_repeats=2,
-                    trim=False,
                     models=SimpleNamespace(
                         use_ridge=True,
                         use_kernel_ridge=False,
@@ -1884,7 +1803,6 @@ class ExpIntegrationTests(unittest.TestCase):
                     min_train=2,
                     max_train=6,
                     n_repeats=1,
-                    trim=False,
                     validation_fraction=0.2,
                     min_val_size=2,
                     min_test_size=2,

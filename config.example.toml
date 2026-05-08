@@ -54,7 +54,6 @@ validation_fraction = 0.2
 min_val_size = 1
 min_test_size = 1
 n_repeats = 10
-trim = true
 
 [plot.filters]
 # adsorbate = "OH"

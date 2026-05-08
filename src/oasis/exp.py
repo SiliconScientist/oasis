@@ -269,7 +269,6 @@ def run_learning_curve_experiments_from_frame(
     max_train: int,
     n_repeats: int,
     seed: int = 42,
-    use_trim: bool = True,
     enabled_model_names: Sequence[str] | None = None,
     graph_view: GraphDatasetView | None = None,
     validation_fraction: float = 0.2,
@@ -295,7 +294,6 @@ def run_learning_curve_experiments_from_frame(
         max_train=max_train,
         n_repeats=n_repeats,
         seed=seed,
-        use_trim=use_trim,
         enabled_model_names=enabled_model_names,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
@@ -349,7 +347,6 @@ def run_learning_curve_experiments_from_config(
         max_train=experiment_cfg.max_train if experiment_cfg else 10,
         n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
-        use_trim=experiment_cfg.trim if experiment_cfg else True,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
         validation_fraction=(
             getattr(experiment_cfg, "validation_fraction", 0.2)
@@ -371,7 +368,6 @@ def run_learning_curve_experiments(
     max_train: int,
     n_repeats: int,
     seed: int = 42,
-    use_trim: bool = True,
     enabled_model_names: Sequence[str] | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
@@ -406,7 +402,6 @@ def run_learning_curve_experiments(
                 min_val_size=min_val_size,
                 min_test_size=min_test_size,
             ),
-            use_trim=use_trim,
         )
         results = results.merge(family.run(payload))
     return results

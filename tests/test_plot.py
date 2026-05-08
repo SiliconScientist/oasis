@@ -22,13 +22,9 @@ class PlotTests(unittest.TestCase):
         results = LearningCurveResults(
             ridge_df=result_df,
             kernel_ridge_df=None,
-            ridge_trimmed_df=None,
             lasso_df=None,
-            lasso_trimmed_df=None,
             elastic_df=None,
-            elastic_trimmed_df=None,
             resid_df=None,
-            resid_trimmed_df=None,
             weighted_linear_df=result_df,
             weighted_simplex_df=None,
         )

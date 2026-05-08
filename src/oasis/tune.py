@@ -171,19 +171,6 @@ class SupervisedModelSelectionSweepRunner:
             refit_policy=self.refit_policy,
         )
 
-    def run_trimmed_with_validation(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        return sweep_supervised_model_selection_trimmed(
-            payload,
-            self.hyperparameter_spec,
-            refit_policy=self.refit_policy,
-            z_thresh=z_thresh,
-        )
-
 
 HyperparameterSelectionSweepRunner = SupervisedModelSelectionSweepRunner
 
@@ -243,22 +230,6 @@ class OptunaModelSelectionSweepRunner:
             timeout_s=self.timeout_s,
             study_factory=self.study_factory,
             refit_policy=self.refit_policy,
-        )
-
-    def run_trimmed_with_validation(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> SweepRunnerArtifacts:
-        return sweep_optuna_model_selection_trimmed(
-            payload,
-            self.tuning_spec,
-            n_trials=self.n_trials,
-            timeout_s=self.timeout_s,
-            study_factory=self.study_factory,
-            refit_policy=self.refit_policy,
-            z_thresh=z_thresh,
         )
 
     def run_artifacts_with_validation(
@@ -578,110 +549,6 @@ def sweep_optuna_model_selection(
     )
 
 
-def sweep_optuna_model_selection_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    tuning_spec: TrialTuningSpec,
-    *,
-    n_trials: int,
-    timeout_s: int | None = None,
-    study_factory: Callable[[TrainValTestSweepRunnerInput], Any] = (
-        _default_optuna_study_factory
-    ),
-    refit_policy: SelectionRefitPolicy = "train_plus_val",
-    z_thresh: float = 1.0,
-) -> SweepRunnerArtifacts:
-    """Optuna-backed selection with test-time trimming by contribution z-score."""
-
-    payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
-    rmses_by_size: dict[int, list[float]] = {}
-    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
-    for split in splits:
-        X = split.dataset.mlip_features
-        y = split.dataset.targets
-        model, metadata = _fit_optuna_selected_model(
-            split,
-            tuning_spec,
-            n_trials=n_trials,
-            timeout_s=timeout_s,
-            study_factory=study_factory,
-            refit_policy=refit_policy,
-        )
-
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-
-        w = getattr(model, "coef_", None)
-        if w is None:
-            raise AttributeError("trimmed optuna selection requires estimator.coef_")
-        contrib = X_test * np.asarray(w)
-        mu = contrib.mean()
-        sigma = contrib.std() if contrib.std() > 0 else 1.0
-        z = (contrib - mu) / sigma
-        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-        if keep_mask.sum() == 0:
-            keep_mask = np.ones(len(X_test), dtype=bool)
-
-        preds_eval = preds[keep_mask]
-        y_eval = y[split.test_idx][keep_mask]
-        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
-    return SweepRunnerArtifacts(
-        metrics=_sweep_results_frame(rmses_by_size),
-        selection_metadata=_selection_metadata_frame(metadata_by_size),
-    )
-
-
-def sweep_supervised_model_selection_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    hyperparameter_spec: HyperparameterSpec,
-    *,
-    refit_policy: SelectionRefitPolicy = "train_plus_val",
-    z_thresh: float = 1.0,
-) -> SweepRunnerArtifacts:
-    """Validation-based model selection with test-time trimming by contribution z-score."""
-
-    payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
-    rmses_by_size: dict[int, list[float]] = {}
-    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
-    for split in splits:
-        X = split.dataset.mlip_features
-        y = split.dataset.targets
-        model, metadata = _fit_selected_supervised_model(
-            split,
-            hyperparameter_spec,
-            refit_policy=refit_policy,
-        )
-
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-
-        w = getattr(model, "coef_", None)
-        if w is None:
-            raise AttributeError(
-                "trimmed hyperparameter selection requires estimator.coef_"
-            )
-        contrib = X_test * np.asarray(w)
-        mu = contrib.mean()
-        sigma = contrib.std() if contrib.std() > 0 else 1.0
-        z = (contrib - mu) / sigma
-        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-        if keep_mask.sum() == 0:
-            keep_mask = np.ones(len(X_test), dtype=bool)
-
-        preds_eval = preds[keep_mask]
-        y_eval = y[split.test_idx][keep_mask]
-        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
-    return SweepRunnerArtifacts(
-        metrics=_sweep_results_frame(rmses_by_size),
-        selection_metadata=_selection_metadata_frame(metadata_by_size),
-    )
-
-
 def sweep_model_with_hyperparameter_selection(
     payload: SweepRunPayload | SweepRunnerPayload,
     hyperparameter_spec: HyperparameterSpec,
@@ -692,21 +559,6 @@ def sweep_model_with_hyperparameter_selection(
         payload,
         hyperparameter_spec,
         refit_policy=refit_policy,
-    ).metrics
-
-
-def sweep_model_with_hyperparameter_selection_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    hyperparameter_spec: HyperparameterSpec,
-    *,
-    refit_policy: SelectionRefitPolicy = "train_plus_val",
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    return sweep_supervised_model_selection_trimmed(
-        payload,
-        hyperparameter_spec,
-        refit_policy=refit_policy,
-        z_thresh=z_thresh,
     ).metrics
 
 
@@ -743,29 +595,6 @@ def sweep_model_with_optuna_selection(
         timeout_s=timeout_s,
         study_factory=study_factory,
         refit_policy=refit_policy,
-    ).metrics
-
-
-def sweep_model_with_optuna_selection_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    tuning_spec: TrialTuningSpec,
-    *,
-    n_trials: int,
-    timeout_s: int | None = None,
-    study_factory: Callable[[TrainValTestSweepRunnerInput], Any] = (
-        _default_optuna_study_factory
-    ),
-    refit_policy: SelectionRefitPolicy = "train_plus_val",
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    return sweep_optuna_model_selection_trimmed(
-        payload,
-        tuning_spec,
-        n_trials=n_trials,
-        timeout_s=timeout_s,
-        study_factory=study_factory,
-        refit_policy=refit_policy,
-        z_thresh=z_thresh,
     ).metrics
 
 

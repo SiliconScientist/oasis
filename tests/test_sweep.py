@@ -322,13 +322,11 @@ class SweepPayloadTests(unittest.TestCase):
                     ),
                 )
             ),
-            use_trim=True,
         )
 
         runner_payload = payload.to_runner_payload()
 
         self.assertIsInstance(runner_payload, SweepRunnerPayload)
-        self.assertTrue(runner_payload.use_trim)
         self.assertIsInstance(runner_payload.splits[0], TrainTestSweepRunnerInput)
         self.assertIsInstance(runner_payload.splits[1], TrainValTestSweepRunnerInput)
         self.assertIs(runner_payload.splits[0].dataset, dataset)

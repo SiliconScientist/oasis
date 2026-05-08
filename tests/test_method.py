@@ -30,9 +30,7 @@ from oasis.tune import (
     SupervisedModelSelectionSweepRunner,
     TrialTuningSpec,
     sweep_model_with_hyperparameter_selection,
-    sweep_model_with_hyperparameter_selection_trimmed,
     sweep_model_with_optuna_selection,
-    sweep_model_with_optuna_selection_trimmed,
 )
 from tests.support import regression_dataset, regression_train_test_payload, weighted_fixed_payload, weighted_toy_dataset
 
@@ -51,11 +49,9 @@ try:
         learned_family_registration,
         learning_curve_model_registry,
         residual_sweep,
-        residual_sweep_trimmed,
         sklearn_model_families,
         sklearn_sweep_model_specs,
         sweep_model,
-        sweep_model_trimmed,
         sweep_model_with_validation,
         weighted_linear_sweep,
         weighted_simplex_sweep,
@@ -87,10 +83,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             [family.spec.result_field for family in families],
             ["ridge_df", "lasso_df", "elastic_df"],
         )
-        self.assertEqual(
-            [family.spec.trimmed_result_field for family in families],
-            ["ridge_trimmed_df", "lasso_trimmed_df", "elastic_trimmed_df"],
-        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
@@ -110,10 +102,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "weighted_linear_df",
                 "weighted_simplex_df",
             ],
-        )
-        self.assertEqual(
-            [family.spec.trimmed_result_field for family in families],
-            ["resid_trimmed_df", None, None],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -362,7 +350,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
                     requires_inner_validation=True
                 ),
             ),
-            use_trim=False,
         )
         result = family.run(payload)
 
@@ -393,7 +380,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=11,
-            use_trim=False,
             model_families=default_sweep_model_families(),
         )
 
@@ -421,7 +407,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
                     )
                 )
             ),
-            use_trim=True,
         )
         expected_counts = [2, 3, 4]
         expected_columns = ["n_train", "rmse_mean", "rmse_std"]
@@ -437,9 +422,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         results = [
             sweep_model(payload, lambda: DummyModel()),
-            sweep_model_trimmed(payload, lambda: DummyModel()),
             residual_sweep(payload),
-            residual_sweep_trimmed(payload),
             weighted_linear_sweep(payload),
             weighted_simplex_sweep(payload),
         ]
@@ -468,7 +451,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
                     requires_inner_validation=True,
                 ),
             ),
-            use_trim=True,
         )
 
         expected = {
@@ -482,33 +464,15 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 validation_payload,
                 sklearn_specs["kernel_ridge"].hyperparameter_spec,
             ),
-            "ridge_trimmed_df": sweep_model_with_optuna_selection_trimmed(
-                validation_payload,
-                sklearn_specs["ridge"].trial_tuning_spec,
-                n_trials=sklearn_specs["ridge"].optuna_n_trials,
-                study_factory=sklearn_specs["ridge"].optuna_study_factory,
-                z_thresh=sklearn_specs["ridge"].trim_z_thresh,
-            ),
             "lasso_df": sweep_model_with_hyperparameter_selection(
                 validation_payload,
                 sklearn_specs["lasso"].hyperparameter_spec,
-            ),
-            "lasso_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
-                validation_payload,
-                sklearn_specs["lasso"].hyperparameter_spec,
-                z_thresh=sklearn_specs["lasso"].trim_z_thresh,
             ),
             "elastic_df": sweep_model_with_hyperparameter_selection(
                 validation_payload,
                 sklearn_specs["elastic"].hyperparameter_spec,
             ),
-            "elastic_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
-                validation_payload,
-                sklearn_specs["elastic"].hyperparameter_spec,
-                z_thresh=sklearn_specs["elastic"].trim_z_thresh,
-            ),
             "resid_df": residual_sweep(payload),
-            "resid_trimmed_df": residual_sweep_trimmed(payload),
             "weighted_linear_df": weighted_linear_sweep(payload),
             "weighted_simplex_df": weighted_simplex_sweep(payload),
         }
@@ -519,7 +483,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=2,
             seed=13,
-            use_trim=True,
             enabled_model_names=[
                 "ridge",
                 "kernel_ridge",
@@ -568,7 +531,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=17,
-            use_trim=False,
             enabled_model_names=["ridge", "weighted_linear"],
         )
 
@@ -594,7 +556,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=3,
             n_repeats=1,
             seed=17,
-            use_trim=False,
             enabled_model_names=["ridge"],
         )
 
@@ -612,7 +573,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=2,
             seed=19,
-            use_trim=False,
             enabled_model_names=["ridge"],
         )
         second = run_learning_curve_experiments(
@@ -621,7 +581,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=2,
             seed=19,
-            use_trim=False,
             enabled_model_names=["ridge"],
         )
 
@@ -637,7 +596,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=37,
-            use_trim=False,
             enabled_model_names=["ridge", "kernel_ridge"],
         )
 
@@ -802,7 +760,6 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         payload = SweepRunPayload(
             dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=self._fixed_payload().split_collection,
-            use_trim=False,
         )
 
         result = weighted_simplex_sweep(payload)
@@ -817,7 +774,6 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         base_payload = SweepRunPayload(
             dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=split_collection,
-            use_trim=False,
         )
         payload_with_auxiliary_views = SweepRunPayload(
             dataset=SweepDataset(
@@ -831,7 +787,6 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
                 },
             ),
             split_collection=split_collection,
-            use_trim=False,
         )
 
         baseline_result = weighted_linear_sweep(base_payload)
@@ -982,7 +937,6 @@ class BoundaryTests(unittest.TestCase):
             max_train=3,
             n_repeats=1,
             seed=23,
-            use_trim=False,
             enabled_model_names=["lasso", "elastic"],
         )
 
@@ -1000,7 +954,6 @@ class BoundaryTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=29,
-            use_trim=False,
             enabled_model_names=["weighted_linear"],
         )
         with_selection_families = run_learning_curve_experiments(
@@ -1009,7 +962,6 @@ class BoundaryTests(unittest.TestCase):
             max_train=4,
             n_repeats=1,
             seed=29,
-            use_trim=False,
             enabled_model_names=["weighted_linear", "lasso", "elastic"],
         )
 
@@ -1051,7 +1003,6 @@ class BoundaryTests(unittest.TestCase):
             max_train=3,
             n_repeats=1,
             seed=31,
-            use_trim=False,
             enabled_model_names=["kernel_ridge"],
         )
 
@@ -1114,7 +1065,6 @@ class BoundaryTests(unittest.TestCase):
         family = ConfiguredSweepModelFamily(
             spec=SweepFamilySpec(
                 result_field="ridge_df",
-                trimmed_result_field=None,
                 runner=SupervisedModelSweepRunner(lambda: None),
                 capabilities=SweepModelCapabilities(
                     min_train_size=6,

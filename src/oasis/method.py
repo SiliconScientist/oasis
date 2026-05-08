@@ -30,11 +30,8 @@ from oasis.tune import (
     ValidationAwareEstimator,
     _select_candidate_factory_by_validation,
     sweep_model_with_hyperparameter_selection,
-    sweep_model_with_hyperparameter_selection_trimmed,
     sweep_model_with_optuna_selection,
-    sweep_model_with_optuna_selection_trimmed,
     sweep_supervised_model_selection,
-    sweep_supervised_model_selection_trimmed,
 )
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
@@ -56,7 +53,6 @@ class SklearnSweepModelSpec:
     """
 
     result_field: str
-    trimmed_result_field: str | None
     model_factory: Callable[[], object]
     hyperparameter_spec: HyperparameterSpec | None = None
     trial_tuning_spec: TrialTuningSpec | None = None
@@ -65,7 +61,6 @@ class SklearnSweepModelSpec:
     optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
     selection_metadata_field: str | None = None
     selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
-    trim_z_thresh: float = 1.0
 
 
 def _ridge_optuna_study_factory(split: TrainValTestSweepRunnerInput) -> Any:
@@ -165,21 +160,15 @@ def _assert_train_val_test_payload(
 def _select_runner_call(
     runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner,
     payload: SweepRunnerPayload,
-    *,
-    trimmed: bool,
-) -> Callable[..., pd.DataFrame]:
+) -> Callable[..., pd.DataFrame | SweepRunnerArtifacts]:
     uses_validation = _payload_uses_validation(payload)
     if uses_validation:
         if not isinstance(runner, ValidationAwareSweepExperimentRunner):
             raise TypeError("runner does not support validation-aware sweep payloads")
-        return (
-            runner.run_trimmed_with_validation
-            if trimmed
-            else runner.run_with_validation
-        )
+        return runner.run_with_validation
     if not isinstance(runner, SweepExperimentRunner):
         raise TypeError("runner does not support train/test sweep payloads")
-    return runner.run_trimmed if trimmed else runner.run
+    return runner.run
 
 
 def _normalize_runner_output(
@@ -217,13 +206,11 @@ class LearnedFamilyRegistrationSpec:
     capabilities: SweepModelCapabilities
     family_factory: Callable[[], SweepModelFamily] | None = None
     result_field: str | None = None
-    trimmed_result_field: str | None = None
     trial_tuning_spec: TrialTuningSpec | None = None
     optuna_n_trials: int | None = None
     optuna_timeout_s: int | None = None
     optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
     selection_metadata_field: str | None = None
-    trim_z_thresh: float = 1.0
     config_key: str | None = None
     is_enabled: Callable[[Any], bool] | None = None
     default_enabled: bool = True
@@ -290,13 +277,11 @@ def _configured_trial_tuned_family_for_learned_family_spec(
     return ConfiguredSweepModelFamily(
         SweepFamilySpec(
             result_field=spec.result_field,
-            trimmed_result_field=spec.trimmed_result_field,
             runner=OptunaModelSelectionSweepRunner(
                 spec.trial_tuning_spec,
                 **runner_kwargs,
             ),
             selection_metadata_field=spec.selection_metadata_field,
-            trim_z_thresh=spec.trim_z_thresh,
             capabilities=spec.capabilities,
         )
     )
@@ -325,17 +310,9 @@ class SweepModelFamily(Protocol):
 
 @runtime_checkable
 class SweepExperimentRunner(Protocol):
-    """Common runner interface for sweep methods with optional trimmed output."""
+    """Common runner interface for train/test sweep methods."""
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
-
-    def run_trimmed(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame: ...
-
 
 @runtime_checkable
 class ValidationAwareSweepExperimentRunner(Protocol):
@@ -343,21 +320,12 @@ class ValidationAwareSweepExperimentRunner(Protocol):
 
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
 
-    def run_trimmed_with_validation(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame: ...
-
 
 @dataclass(frozen=True, slots=True)
 class SweepFamilySpec:
     result_field: str
-    trimmed_result_field: str | None
     runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner
     selection_metadata_field: str | None = None
-    trim_z_thresh: float = 1.0
     capabilities: SweepModelCapabilities = field(
         default_factory=SweepModelCapabilities
     )
@@ -372,35 +340,13 @@ class SupervisedModelSweepRunner:
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return sweep_model(payload, self.model_factory)
 
-    def run_trimmed(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        return sweep_model_trimmed(
-            payload,
-            self.model_factory,
-            z_thresh=z_thresh,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class FunctionalSweepRunner:
     base_runner: Callable[[SweepRunnerPayload], pd.DataFrame]
-    trimmed_runner: Callable[[SweepRunnerPayload], pd.DataFrame]
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return self.base_runner(payload)
-
-    def run_trimmed(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        del z_thresh
-        return self.trimmed_runner(payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,18 +357,6 @@ class ValidationAwareSupervisedModelSweepRunner:
 
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return sweep_model_with_validation(payload, self.model_factory)
-
-    def run_trimmed_with_validation(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        return sweep_model_with_validation_trimmed(
-            payload,
-            self.model_factory,
-            z_thresh=z_thresh,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,29 +369,11 @@ class WeightedLinearSweepRunner:
             fit_intercept=self.fit_intercept,
         )
 
-    def run_trimmed(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        del z_thresh
-        return self.run(payload)
-
 
 @dataclass(frozen=True, slots=True)
 class WeightedSimplexSweepRunner:
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return weighted_simplex_sweep(payload)
-
-    def run_trimmed(
-        self,
-        payload: SweepRunnerPayload,
-        *,
-        z_thresh: float = 1.0,
-    ) -> pd.DataFrame:
-        del z_thresh
-        return self.run(payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,26 +388,13 @@ class ConfiguredSweepModelFamily:
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         runner_payload = payload.to_runner_payload()
-        run = _select_runner_call(self.spec.runner, runner_payload, trimmed=False)
+        run = _select_runner_call(self.spec.runner, runner_payload)
         base_output = _normalize_runner_output(run(runner_payload))
         results: dict[str, pd.DataFrame | None] = {
             self.spec.result_field: base_output.metrics,
         }
         if self.spec.selection_metadata_field is not None:
             results[self.spec.selection_metadata_field] = base_output.selection_metadata
-        if payload.use_trim and self.spec.trimmed_result_field is not None:
-            run_trimmed = _select_runner_call(
-                self.spec.runner,
-                runner_payload,
-                trimmed=True,
-            )
-            trimmed_output = _normalize_runner_output(
-                run_trimmed(
-                    runner_payload,
-                    z_thresh=self.spec.trim_z_thresh,
-                )
-            )
-            results[self.spec.trimmed_result_field] = trimmed_output.metrics
         return LearningCurveResults.from_mapping(results)
 
 
@@ -599,10 +502,8 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
             family_factory=lambda spec=spec: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field=spec.result_field,
-                    trimmed_result_field=spec.trimmed_result_field,
                     selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
                     runner=_sklearn_runner_for_spec(spec),
-                    trim_z_thresh=spec.trim_z_thresh,
                     capabilities=_sklearn_capabilities_for_spec(spec),
                 )
             ),
@@ -625,11 +526,7 @@ def learned_family_registration_specs(
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="resid_df",
-                    trimmed_result_field="resid_trimmed_df",
-                    runner=FunctionalSweepRunner(
-                        base_runner=residual_sweep,
-                        trimmed_runner=residual_sweep_trimmed,
-                    ),
+                    runner=FunctionalSweepRunner(base_runner=residual_sweep),
                 )
             ),
         ),
@@ -640,7 +537,6 @@ def learned_family_registration_specs(
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_linear_df",
-                    trimmed_result_field=None,
                     runner=WeightedLinearSweepRunner(fit_intercept=True),
                 )
             ),
@@ -652,7 +548,6 @@ def learned_family_registration_specs(
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_simplex_df",
-                    trimmed_result_field=None,
                     runner=WeightedSimplexSweepRunner(),
                 )
             ),
@@ -684,7 +579,6 @@ def sklearn_sweep_model_specs(
             "use_ridge",
             SklearnSweepModelSpec(
                 result_field="ridge_df",
-                trimmed_result_field="ridge_trimmed_df",
                 model_factory=lambda: Ridge(alpha=0.1),
                 trial_tuning_spec=RidgeOptunaTrialTuningSpec(),
                 optuna_n_trials=4,
@@ -697,7 +591,6 @@ def sklearn_sweep_model_specs(
             "use_kernel_ridge",
             SklearnSweepModelSpec(
                 result_field="kernel_ridge_df",
-                trimmed_result_field=None,
                 model_factory=lambda: KernelRidge(alpha=1.0, kernel="rbf"),
                 hyperparameter_spec=GridHyperparameterSpec(
                     estimator_factory=KernelRidge,
@@ -716,7 +609,6 @@ def sklearn_sweep_model_specs(
             "use_lasso",
             SklearnSweepModelSpec(
                 result_field="lasso_df",
-                trimmed_result_field="lasso_trimmed_df",
                 model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
                 hyperparameter_spec=GridHyperparameterSpec(
                     estimator_factory=Lasso,
@@ -731,7 +623,6 @@ def sklearn_sweep_model_specs(
             "use_elastic_net",
             SklearnSweepModelSpec(
                 result_field="elastic_df",
-                trimmed_result_field="elastic_trimmed_df",
                 model_factory=lambda: ElasticNet(
                     alpha=0.1,
                     l1_ratio=0.5,
@@ -759,29 +650,13 @@ def sklearn_model_families(
         ConfiguredSweepModelFamily(
             SweepFamilySpec(
                 result_field=spec.result_field,
-                trimmed_result_field=spec.trimmed_result_field,
                 selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
                 runner=_sklearn_runner_for_spec(spec),
-                trim_z_thresh=spec.trim_z_thresh,
                 capabilities=_sklearn_capabilities_for_spec(spec),
             )
         )
         for _, _, spec in specs
     )
-
-
-def trimmed_mean_predictions(X_corrected: np.ndarray) -> np.ndarray:
-    """
-    Compute per-sample mean after dropping MLIP predictions outside 1 std from row mean.
-    """
-    row_means = X_corrected.mean(axis=1)
-    row_stds = X_corrected.std(axis=1)
-    # Broadcast masks; keep all if std is zero or mask would be empty.
-    mask = np.abs(X_corrected - row_means[:, None]) <= row_stds[:, None]
-    empty_mask = mask.sum(axis=1) == 0
-    if empty_mask.any():
-        mask[empty_mask] = True
-    return (X_corrected * mask).sum(axis=1) / mask.sum(axis=1)
 
 
 def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
@@ -843,88 +718,6 @@ def sweep_model_with_validation(
     return sweep_results_frame(rmses_by_size)
 
 
-def sweep_model_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    model_factory,
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    """
-    Fit the model, drop test samples with large contribution z-scores, and refit.
-    """
-    payload = _as_runner_payload(payload)
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in _assert_train_test_payload(payload):
-        X = split.dataset.mlip_features
-        y = split.dataset.targets
-        model = model_factory()
-        model.fit(X[split.train_idx], y[split.train_idx])
-
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-
-        # Compute contribution z-scores per sample
-        w = model.coef_
-        contrib = X_test * w
-        mu = contrib.mean()
-        sigma = contrib.std() if contrib.std() > 0 else 1.0
-        z = (contrib - mu) / sigma
-        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-        if keep_mask.sum() == 0:
-            keep_mask = np.ones(len(X_test), dtype=bool)
-
-        preds_eval = preds[keep_mask]
-        y_eval = y[split.test_idx][keep_mask]
-        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
-
-
-def sweep_model_with_validation_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-    model_factory: Callable[[], ValidationAwareEstimator],
-    z_thresh: float = 1.0,
-) -> pd.DataFrame:
-    """
-    Validation-aware evaluation with test-time trimming by contribution z-score.
-    """
-
-    payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in splits:
-        X = split.dataset.mlip_features
-        y = split.dataset.targets
-        model = model_factory()
-        model.fit(
-            X[split.train_idx],
-            y[split.train_idx],
-            X[split.val_idx],
-            y[split.val_idx],
-        )
-
-        X_test = X[split.test_idx]
-        preds = model.predict(X_test)
-
-        w = getattr(model, "coef_", None)
-        if w is None:
-            raise AttributeError(
-                "validation-aware trimmed sweep requires estimator.coef_"
-            )
-        contrib = X_test * np.asarray(w)
-        mu = contrib.mean()
-        sigma = contrib.std() if contrib.std() > 0 else 1.0
-        z = (contrib - mu) / sigma
-        keep_mask = (np.abs(z) <= z_thresh).all(axis=1)
-        if keep_mask.sum() == 0:
-            keep_mask = np.ones(len(X_test), dtype=bool)
-
-        preds_eval = preds[keep_mask]
-        y_eval = y[split.test_idx][keep_mask]
-        rmse = np.sqrt(mean_squared_error(y_eval, preds_eval))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
-
-
 def residual_sweep(
     payload: SweepRunPayload | SweepRunnerPayload,
 ) -> pd.DataFrame:
@@ -943,30 +736,6 @@ def residual_sweep(
 
         X_corrected = X[split.test_idx] + mean_residuals
         preds = X_corrected.mean(axis=1)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
-        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
-
-
-def residual_sweep_trimmed(
-    payload: SweepRunPayload | SweepRunnerPayload,
-) -> pd.DataFrame:
-    """
-    Residual correction with per-sample outlier MLIP removal before averaging.
-    """
-    payload = _as_runner_payload(payload)
-    rmses_by_size: dict[int, list[float]] = {}
-    for split in _assert_train_test_payload(payload):
-        X = split.dataset.mlip_features
-        y = split.dataset.targets
-        X_train = X[split.train_idx]
-        y_train = y[split.train_idx]
-
-        residuals = y_train[:, None] - X_train
-        mean_residuals = residuals.mean(axis=0)
-
-        X_corrected = X[split.test_idx] + mean_residuals
-        preds = trimmed_mean_predictions(X_corrected)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
     return sweep_results_frame(rmses_by_size)
