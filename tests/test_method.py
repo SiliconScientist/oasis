@@ -558,6 +558,40 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
         np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
 
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_linear_ignores_unrelated_auxiliary_views(self) -> None:
+        X, y = self._toy_dataset()
+        split_collection = self._fixed_payload().split_collection
+        base_payload = SweepRunPayload(
+            dataset=SweepDataset(mlip_features=X, targets=y),
+            split_collection=split_collection,
+            use_trim=False,
+        )
+        payload_with_auxiliary_views = SweepRunPayload(
+            dataset=SweepDataset(
+                mlip_features=X,
+                targets=y,
+                auxiliary_views={
+                    "graphs": np.array(
+                        [{"edges": 1}, {"edges": 2}, {"edges": 3}, {"edges": 4}, {"edges": 5}, {"edges": 6}],
+                        dtype=object,
+                    )
+                },
+            ),
+            split_collection=split_collection,
+            use_trim=False,
+        )
+
+        baseline_result = weighted_linear_sweep(base_payload)
+        result_with_auxiliary_views = weighted_linear_sweep(
+            payload_with_auxiliary_views
+        )
+
+        pd.testing.assert_frame_equal(
+            baseline_result,
+            result_with_auxiliary_views,
+        )
+
 
 class BoundaryTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
