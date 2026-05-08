@@ -908,6 +908,61 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_sweep_dataset_defaults_sample_ids_to_row_indices(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+            targets=np.arange(4, dtype=float),
+        )
+
+        np.testing.assert_array_equal(dataset.sample_ids, np.arange(4))
+        self.assertIsNone(dataset.auxiliary_views)
+
+    def test_sweep_dataset_rejects_mismatched_target_length(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "targets must have the same length as mlip_features",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+                targets=np.arange(3, dtype=float),
+            )
+
+    def test_sweep_dataset_rejects_mismatched_sample_id_length(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "sample_ids must have the same length as mlip_features",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+                targets=np.arange(4, dtype=float),
+                sample_ids=np.array(["a", "b", "c"]),
+            )
+
+    def test_sweep_dataset_rejects_mismatched_auxiliary_view_length(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "auxiliary view 'graphs' must have the same length as mlip_features",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+                targets=np.arange(4, dtype=float),
+                auxiliary_views={"graphs": np.arange(3, dtype=float)},
+            )
+
+    def test_sweep_dataset_accepts_aligned_auxiliary_views(self) -> None:
+        sample_ids = np.array(["s0", "s1", "s2", "s3"])
+        view = np.array([{"nodes": 1}, {"nodes": 2}, {"nodes": 3}, {"nodes": 4}])
+
+        dataset = SweepDataset(
+            mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+            targets=np.arange(4, dtype=float),
+            sample_ids=sample_ids,
+            auxiliary_views={"graphs": view},
+        )
+
+        np.testing.assert_array_equal(dataset.sample_ids, sample_ids)
+        self.assertIs(dataset.auxiliary_views["graphs"], view)
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_grid_hyperparameter_spec_expands_candidate_factories(self) -> None:
         from sklearn.linear_model import Ridge

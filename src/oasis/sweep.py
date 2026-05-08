@@ -30,6 +30,32 @@ class SweepSplit:
 class SweepDataset:
     mlip_features: np.ndarray
     targets: np.ndarray
+    sample_ids: np.ndarray | None = None
+    auxiliary_views: Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        n_samples = len(self.mlip_features)
+        if len(self.targets) != n_samples:
+            raise ValueError(
+                "targets must have the same length as mlip_features."
+            )
+
+        sample_ids = self.sample_ids
+        if sample_ids is None:
+            object.__setattr__(self, "sample_ids", np.arange(n_samples))
+        elif len(sample_ids) != n_samples:
+            raise ValueError(
+                "sample_ids must have the same length as mlip_features."
+            )
+
+        if self.auxiliary_views is None:
+            return
+
+        for view_name, view in self.auxiliary_views.items():
+            if len(view) != n_samples:
+                raise ValueError(
+                    f"auxiliary view '{view_name}' must have the same length as mlip_features."
+                )
 
     @property
     def X(self) -> np.ndarray:
