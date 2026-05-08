@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from ase.neighborlist import natural_cutoffs, neighbor_list
 
 from oasis.exp import column_to_numpy, mlip_columns
 from oasis.sweep import (
@@ -14,6 +17,32 @@ from oasis.sweep import (
     _format_sample_id_list,
 )
 from oasis.sweep import SweepDataset
+
+if TYPE_CHECKING:
+    from ase import Atoms
+
+
+@dataclass(frozen=True, slots=True)
+class AtomsToGraphPolicy:
+    """Canonical policy for converting ASE Atoms into GraphRecord objects.
+
+    Policy:
+    - preserve the input atom order as node order
+    - use atomic numbers as the sole node feature
+    - build directed edges from ASE's neighbor list with natural covalent cutoffs
+    - store one edge feature per edge: the interatomic distance
+    - omit graph-level features unless a caller defines a different policy later
+    """
+
+    cutoff_multiplier: float = 1.25
+    include_self_interactions: bool = False
+
+    def __post_init__(self) -> None:
+        if self.cutoff_multiplier <= 0:
+            raise ValueError("cutoff_multiplier must be positive.")
+
+
+DEFAULT_ATOMS_TO_GRAPH_POLICY = AtomsToGraphPolicy()
 
 
 def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
@@ -28,6 +57,63 @@ def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
 
     records = tuple(_graph_record_from_mapping(item) for item in payload)
     return GraphDatasetView.from_records(records)
+
+
+def atoms_to_graph_record(
+    atoms: Atoms,
+    *,
+    sample_id: Any,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphRecord:
+    """Convert one ASE Atoms object into a canonical GraphRecord."""
+
+    node_features = np.asarray(atoms.numbers, dtype=float).reshape(-1, 1)
+    cutoffs = natural_cutoffs(atoms, mult=policy.cutoff_multiplier)
+    edge_sources, edge_targets, edge_distances = neighbor_list(
+        "ijd",
+        atoms,
+        cutoffs,
+        self_interaction=policy.include_self_interactions,
+    )
+
+    if len(edge_sources):
+        order = np.lexsort((edge_distances, edge_targets, edge_sources))
+        edge_index = np.vstack(
+            (
+                np.asarray(edge_sources[order], dtype=np.int64),
+                np.asarray(edge_targets[order], dtype=np.int64),
+            )
+        )
+        edge_features = np.asarray(edge_distances[order], dtype=float).reshape(-1, 1)
+    else:
+        edge_index = np.empty((2, 0), dtype=np.int64)
+        edge_features = np.empty((0, 1), dtype=float)
+
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=node_features,
+        edge_index=edge_index,
+        edge_features=edge_features,
+    )
+
+
+def atoms_to_graph_dataset_view(
+    sample_ids: Sequence[Any],
+    atoms_list: Sequence[Atoms],
+    *,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphDatasetView:
+    """Convert aligned sample IDs and ASE Atoms objects into a GraphDatasetView."""
+
+    if len(sample_ids) != len(atoms_list):
+        raise ValueError("sample_ids and atoms_list must have the same length.")
+
+    return GraphDatasetView.from_records(
+        tuple(
+            atoms_to_graph_record(atoms, sample_id=sample_id, policy=policy)
+            for sample_id, atoms in zip(sample_ids, atoms_list, strict=True)
+        )
+    )
 
 
 def build_graph_sweep_dataset(

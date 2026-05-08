@@ -6,9 +6,15 @@ import tempfile
 import unittest
 from unittest.mock import PropertyMock, patch
 
+from ase import Atoms
 import numpy as np
 
-from oasis.graphs import build_graph_sweep_dataset, load_graph_dataset_view
+from oasis.graphs import (
+    atoms_to_graph_dataset_view,
+    atoms_to_graph_record,
+    build_graph_sweep_dataset,
+    load_graph_dataset_view,
+)
 from oasis.sweep import GraphDatasetView, GraphRecord
 
 
@@ -84,6 +90,100 @@ def _load_from_payload(payload: object):
         path = Path(tmp_dir) / "graphs.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
         return load_graph_dataset_view(path)
+
+
+class AtomsToGraphConversionTests(unittest.TestCase):
+    def test_atoms_to_graph_record_uses_atomic_numbers_and_sorted_directed_edges(
+        self,
+    ) -> None:
+        atoms = Atoms(
+            "OHH",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [0.96, 0.0, 0.0],
+                [0.0, 0.96, 0.0],
+            ],
+        )
+
+        record = atoms_to_graph_record(atoms, sample_id="water")
+
+        np.testing.assert_array_equal(
+            record.node_features,
+            np.array([[8.0], [1.0], [1.0]]),
+        )
+        np.testing.assert_array_equal(
+            record.edge_index,
+            np.array([[0, 0, 1, 2], [1, 2, 0, 0]], dtype=np.int64),
+        )
+        np.testing.assert_allclose(
+            record.edge_features,
+            np.full((4, 1), 0.96),
+        )
+        self.assertIsNone(record.graph_features)
+
+    def test_atoms_to_graph_record_handles_structures_with_no_edges(self) -> None:
+        atoms = Atoms(
+            "He2",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+            ],
+        )
+
+        record = atoms_to_graph_record(atoms, sample_id="isolated")
+
+        self.assertEqual(record.edge_index.shape, (2, 0))
+        self.assertEqual(record.edge_features.shape, (0, 1))
+
+    def test_atoms_to_graph_record_uses_periodic_minimum_image_distances(self) -> None:
+        atoms = Atoms(
+            "H2",
+            positions=[
+                [0.0, 0.0, 0.0],
+                [0.95, 0.0, 0.0],
+            ],
+            cell=[1.0, 1.0, 1.0],
+            pbc=[True, False, False],
+        )
+
+        record = atoms_to_graph_record(atoms, sample_id="periodic")
+
+        np.testing.assert_array_equal(
+            record.edge_index,
+            np.array([[0, 1], [1, 0]], dtype=np.int64),
+        )
+        np.testing.assert_allclose(record.edge_features, np.full((2, 1), 0.05))
+
+    def test_atoms_to_graph_dataset_view_preserves_input_order(self) -> None:
+        atoms_list = [
+            Atoms("H", positions=[[0.0, 0.0, 0.0]]),
+            Atoms("He", positions=[[1.0, 0.0, 0.0]]),
+        ]
+
+        view = atoms_to_graph_dataset_view(["rxn-b", "rxn-a"], atoms_list)
+
+        self.assertEqual(view.sample_ids, ("rxn-b", "rxn-a"))
+        np.testing.assert_array_equal(
+            view["rxn-b"].node_features,
+            np.array([[1.0]]),
+        )
+        np.testing.assert_array_equal(
+            view["rxn-a"].node_features,
+            np.array([[2.0]]),
+        )
+
+    def test_atoms_to_graph_dataset_view_rejects_length_mismatch(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "sample_ids and atoms_list must have the same length",
+        ):
+            atoms_to_graph_dataset_view(
+                ["rxn-a"],
+                [
+                    Atoms("H", positions=[[0.0, 0.0, 0.0]]),
+                    Atoms("He", positions=[[1.0, 0.0, 0.0]]),
+                ],
+            )
 
 
 class BuildGraphSweepDatasetTests(unittest.TestCase):
