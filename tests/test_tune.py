@@ -562,34 +562,47 @@ class TuneTests(unittest.TestCase):
 
                 def objective(trial):
                     objective_signatures.append((train_signature, val_signature))
-                    preds = np.full(len(y_val), trial.value, dtype=float)
+                    preds = np.full(len(y_val), trial.params["constant"], dtype=float)
                     return float(np.sqrt(np.mean((y_val - preds) ** 2)))
 
                 return objective
 
             def fit_selected_model(self, split, best_trial, *, refit_policy):
                 del split, refit_policy
-                return SpyModel(float(best_trial.value))
+                return SpyModel(float(best_trial.params["constant"]))
 
             def trial_metadata(self, best_trial, model):
-                return {"value": float(best_trial.value), "selected": float(model.constant)}
+                return {
+                    "value": float(best_trial.params["constant"]),
+                    "selected": float(model.constant),
+                }
 
         class FakeTrial:
-            def __init__(self, value: float) -> None:
-                self.value = value
+            def __init__(self, constant: float) -> None:
+                self.params = {"constant": constant}
+                self.value: float | None = None
+
+        class FakeSampler:
+            pass
+
+        class FakePruner:
+            pass
 
         class FakeStudy:
             def __init__(self, trials):
                 self.trials = tuple(trials)
                 self.best_trial = None
+                self.sampler = FakeSampler()
+                self.pruner = FakePruner()
 
             def optimize(self, objective, *, n_trials, timeout):
                 del timeout
                 best_value = np.inf
                 for trial in self.trials[:n_trials]:
-                    value = objective(trial)
-                    if value < best_value:
-                        best_value = value
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
                         self.best_trial = trial
 
         study_factory = lambda split: FakeStudy((FakeTrial(0.0), FakeTrial(3.0)))  # noqa: E731
@@ -607,7 +620,32 @@ class TuneTests(unittest.TestCase):
             [((0.0, 1.0), (2.0, 3.0)), ((0.0, 1.0), (2.0, 3.0))],
         )
         self.assertEqual(test_predict_signatures, [(40.0, 50.0)])
-        self.assertEqual(artifacts.selection_metadata["value"].tolist(), [3.0])
+        self.assertEqual(
+            artifacts.metrics.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(
+            artifacts.selection_metadata.columns.tolist(),
+            [
+                "n_train",
+                "best_validation_score",
+                "constant",
+                "pruner",
+                "sampler",
+                "selected",
+                "trial_count",
+                "value",
+            ],
+        )
+        self.assertEqual(artifacts.selection_metadata["n_train"].tolist(), [4])
+        self.assertEqual(artifacts.selection_metadata["constant"].tolist(), [3.0])
+        self.assertEqual(
+            artifacts.selection_metadata["best_validation_score"].tolist(),
+            [np.sqrt(0.5)],
+        )
+        self.assertEqual(artifacts.selection_metadata["trial_count"].tolist(), [2])
+        self.assertEqual(artifacts.selection_metadata["sampler"].tolist(), ["FakeSampler"])
+        self.assertEqual(artifacts.selection_metadata["pruner"].tolist(), ["FakePruner"])
 
     def test_optuna_runner_uses_outer_test_once_after_selection(self) -> None:
         dataset = SweepDataset(
@@ -629,7 +667,8 @@ class TuneTests(unittest.TestCase):
 
         class FakeTrial:
             def __init__(self, value: float) -> None:
-                self.value = value
+                self.params = {"value": value}
+                self.value: float | None = None
 
         class FakeStudy:
             def __init__(self, trials):
@@ -640,10 +679,11 @@ class TuneTests(unittest.TestCase):
                 del timeout
                 best_value = np.inf
                 for trial in self.trials[:n_trials]:
-                    events.append(("objective", trial.value))
-                    value = objective(trial)
-                    if value < best_value:
-                        best_value = value
+                    events.append(("objective", trial.params["value"]))
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
                         self.best_trial = trial
 
         class PredictSpyModel:
@@ -659,18 +699,21 @@ class TuneTests(unittest.TestCase):
                 y_val = split.dataset.targets[split.val_idx]
 
                 def objective(trial):
-                    preds = np.full(len(y_val), trial.value, dtype=float)
+                    preds = np.full(len(y_val), trial.params["value"], dtype=float)
                     return float(np.sqrt(np.mean((y_val - preds) ** 2)))
 
                 return objective
 
             def fit_selected_model(self, split, best_trial, *, refit_policy):
                 del split, refit_policy
-                events.append(("refit", float(best_trial.value)))
-                return PredictSpyModel(float(best_trial.value))
+                events.append(("refit", float(best_trial.params["value"])))
+                return PredictSpyModel(float(best_trial.params["value"]))
 
             def trial_metadata(self, best_trial, model):
-                return {"value": float(best_trial.value), "selected": float(model.value)}
+                return {
+                    "value": float(best_trial.params["value"]),
+                    "selected": float(model.value),
+                }
 
         study_factory = lambda split: FakeStudy((FakeTrial(0.0), FakeTrial(3.0)))  # noqa: E731
 
@@ -691,6 +734,7 @@ class TuneTests(unittest.TestCase):
             ],
         )
         np.testing.assert_allclose(result["rmse_mean"].to_numpy(), [np.sqrt(2.5)], atol=1e-12)
+        self.assertEqual(result.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"])
 
     def test_optuna_runner_is_deterministic_for_seeded_study_factory(self) -> None:
         dataset = SweepDataset(
@@ -714,6 +758,12 @@ class TuneTests(unittest.TestCase):
                 self.name = name
                 self.val_constant = val_constant
                 self.test_constant = test_constant
+                self.value: float | None = None
+                self.params = {
+                    "name": name,
+                    "val_constant": val_constant,
+                    "test_constant": test_constant,
+                }
 
         class FakeStudy:
             def __init__(self, trials):
@@ -724,9 +774,10 @@ class TuneTests(unittest.TestCase):
                 del timeout
                 best_value = np.inf
                 for trial in self.trials[:n_trials]:
-                    value = objective(trial)
-                    if value < best_value:
-                        best_value = value
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
                         self.best_trial = trial
 
         class PredictConstantModel:
@@ -785,3 +836,4 @@ class TuneTests(unittest.TestCase):
 
         pd.testing.assert_frame_equal(first.metrics, second.metrics)
         pd.testing.assert_frame_equal(first.selection_metadata, second.selection_metadata)
+        self.assertEqual(first.selection_metadata["n_train"].tolist(), [4])

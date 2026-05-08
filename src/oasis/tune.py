@@ -393,14 +393,14 @@ def _optimize_study_best_trial(
     n_trials: int,
     timeout_s: int | None,
     study_factory: Callable[[TrainValTestSweepRunnerInput], Any],
-) -> Any:
+) -> tuple[Any, Any]:
     study = study_factory(split)
     objective = tuning_spec.build_trial_objective(split)
     study.optimize(objective, n_trials=n_trials, timeout=timeout_s)
     best_trial = getattr(study, "best_trial", None)
     if best_trial is None:
         raise ValueError("optuna study did not produce a best trial")
-    return best_trial
+    return study, best_trial
 
 
 def _fit_optuna_selected_model(
@@ -413,7 +413,7 @@ def _fit_optuna_selected_model(
     refit_policy: SelectionRefitPolicy,
 ) -> tuple[object, Mapping[str, Any]]:
     _validate_selection_refit_policy(refit_policy)
-    best_trial = _optimize_study_best_trial(
+    study, best_trial = _optimize_study_best_trial(
         split,
         tuning_spec,
         n_trials=n_trials,
@@ -425,7 +425,37 @@ def _fit_optuna_selected_model(
         best_trial,
         refit_policy=refit_policy,
     )
-    return model, tuning_spec.trial_metadata(best_trial, model)
+    return model, _optuna_selection_metadata(
+        study,
+        best_trial,
+        model,
+        tuning_spec,
+    )
+
+
+def _optuna_selection_metadata(
+    study: Any,
+    best_trial: Any,
+    model: object,
+    tuning_spec: TrialTuningSpec,
+) -> Mapping[str, Any]:
+    metadata = dict(tuning_spec.trial_metadata(best_trial, model))
+    params = getattr(best_trial, "params", None)
+    if isinstance(params, Mapping):
+        metadata.update(params)
+    best_value = getattr(best_trial, "value", None)
+    if best_value is not None:
+        metadata.setdefault("best_validation_score", float(best_value))
+    trials = getattr(study, "trials", None)
+    if trials is not None:
+        metadata.setdefault("trial_count", len(trials))
+    sampler = getattr(study, "sampler", None)
+    if sampler is not None:
+        metadata.setdefault("sampler", type(sampler).__name__)
+    pruner = getattr(study, "pruner", None)
+    if pruner is not None:
+        metadata.setdefault("pruner", type(pruner).__name__)
+    return metadata
 
 
 def sweep_supervised_model_selection(
