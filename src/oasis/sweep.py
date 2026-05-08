@@ -35,6 +35,7 @@ class GraphRecord:
     sample_id: SampleId
     node_features: np.ndarray
     edge_index: np.ndarray
+    node_positions: np.ndarray | None = None
     edge_features: np.ndarray | None = None
     graph_features: np.ndarray | None = None
 
@@ -52,6 +53,15 @@ class GraphRecord:
 
         if self.node_features.ndim != 2:
             raise ValueError("node_features must be a 2D array.")
+
+        node_positions = self.node_positions
+        if node_positions is not None:
+            if node_positions.ndim != 2 or node_positions.shape[1] != 3:
+                raise ValueError("node_positions must have shape (n_nodes, 3).")
+            if len(node_positions) != self.n_nodes:
+                raise ValueError(
+                    "node_positions must have the same number of rows as node_features."
+                )
 
         if self.edge_index.ndim != 2 or self.edge_index.shape[0] != 2:
             raise ValueError("edge_index must have shape (2, n_edges).")

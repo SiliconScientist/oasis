@@ -28,6 +28,7 @@ class AtomsToGraphPolicy:
 
     Policy:
     - preserve the input atom order as node order
+    - store Cartesian coordinates as `node_positions`
     - use atomic numbers as the sole node feature
     - build directed edges from ASE's neighbor list with natural covalent cutoffs
     - store one edge feature per edge: the interatomic distance
@@ -87,6 +88,7 @@ def atoms_to_graph_record(
     """Convert one ASE Atoms object into a canonical GraphRecord."""
 
     node_features = np.asarray(atoms.numbers, dtype=float).reshape(-1, 1)
+    node_positions = np.asarray(atoms.positions, dtype=float)
     cutoffs = natural_cutoffs(atoms, mult=policy.cutoff_multiplier)
     edge_sources, edge_targets, edge_distances = neighbor_list(
         "ijd",
@@ -112,6 +114,7 @@ def atoms_to_graph_record(
         sample_id=sample_id,
         node_features=node_features,
         edge_index=edge_index,
+        node_positions=node_positions,
         edge_features=edge_features,
     )
 
@@ -226,6 +229,7 @@ def _graph_record_from_mapping(payload: Any) -> GraphRecord:
         sample_id=payload["sample_id"],
         node_features=np.asarray(payload["node_features"], dtype=float),
         edge_index=np.asarray(payload["edge_index"], dtype=np.int64),
+        node_positions=_optional_array(payload.get("node_positions"), dtype=float),
         edge_features=_optional_array(payload.get("edge_features"), dtype=float),
         graph_features=_optional_array(payload.get("graph_features"), dtype=float),
     )
@@ -237,6 +241,8 @@ def _graph_record_to_mapping(record: GraphRecord) -> dict[str, Any]:
         "node_features": record.node_features.tolist(),
         "edge_index": record.edge_index.tolist(),
     }
+    if record.node_positions is not None:
+        payload["node_positions"] = record.node_positions.tolist()
     if record.edge_features is not None:
         payload["edge_features"] = record.edge_features.tolist()
     if record.graph_features is not None:

@@ -27,6 +27,7 @@ class LoadGraphDatasetViewTests(unittest.TestCase):
                 "sample_id": "s0",
                 "node_features": [[0.0, 1.0], [1.0, 0.0]],
                 "edge_index": [[0], [1]],
+                "node_positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
                 "edge_features": [[0.5, 1.5]],
                 "graph_features": [2.0, 3.0],
             },
@@ -113,6 +114,16 @@ class AtomsToGraphConversionTests(unittest.TestCase):
             record.node_features,
             np.array([[8.0], [1.0], [1.0]]),
         )
+        np.testing.assert_allclose(
+            record.node_positions,
+            np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.96, 0.0, 0.0],
+                    [0.0, 0.96, 0.0],
+                ]
+            ),
+        )
         np.testing.assert_array_equal(
             record.edge_index,
             np.array([[0, 0, 1, 2], [1, 2, 0, 0]], dtype=np.int64),
@@ -198,6 +209,7 @@ class AtomsToGraphConversionTests(unittest.TestCase):
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["sample_id"], "rxn-a")
         self.assertEqual(payload[0]["node_features"], [[1.0], [1.0]])
+        self.assertEqual(payload[0]["node_positions"], [[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])
         self.assertEqual(payload[0]["edge_index"], [[0, 1], [1, 0]])
         self.assertEqual(payload[0]["edge_features"], [[0.74], [0.74]])
         self.assertNotIn("graph_features", payload[0])
@@ -221,6 +233,10 @@ class AtomsToGraphConversionTests(unittest.TestCase):
         np.testing.assert_array_equal(
             reloaded["rxn-b"].node_features,
             view["rxn-b"].node_features,
+        )
+        np.testing.assert_array_equal(
+            reloaded["rxn-a"].node_positions,
+            view["rxn-a"].node_positions,
         )
         np.testing.assert_array_equal(
             reloaded["rxn-a"].edge_index,

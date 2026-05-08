@@ -23,6 +23,7 @@ class GraphRecordTests(unittest.TestCase):
             sample_id="s0",
             node_features=np.arange(6, dtype=float).reshape(3, 2),
             edge_index=np.array([[0, 1, 2], [1, 2, 0]], dtype=np.int64),
+            node_positions=np.arange(9, dtype=float).reshape(3, 3),
             edge_features=np.arange(3, dtype=float),
             graph_features=np.array([1.0, 2.0]),
         )
@@ -52,6 +53,25 @@ class GraphRecordTests(unittest.TestCase):
                 sample_id="s0",
                 node_features=np.arange(6, dtype=float).reshape(3, 2),
                 edge_index=np.array([[0, 1, 2]], dtype=np.int64),
+            )
+
+        with self.assertRaisesRegex(ValueError, "node_positions must have shape"):
+            GraphRecord(
+                sample_id="s0",
+                node_features=np.arange(6, dtype=float).reshape(3, 2),
+                edge_index=np.array([[0], [1]], dtype=np.int64),
+                node_positions=np.arange(6, dtype=float).reshape(3, 2),
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "node_positions must have the same number of rows",
+        ):
+            GraphRecord(
+                sample_id="s0",
+                node_features=np.arange(6, dtype=float).reshape(3, 2),
+                edge_index=np.array([[0], [1]], dtype=np.int64),
+                node_positions=np.arange(12, dtype=float).reshape(4, 3),
             )
 
         with self.assertRaisesRegex(
