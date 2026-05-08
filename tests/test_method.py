@@ -227,7 +227,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         validation_payload = SweepRunPayload(
             dataset=dataset,
             split_collection=build_sweep_split_collection(
-                len(dataset.mlip_features),
+                dataset.n_samples,
                 min_train=2,
                 max_train=4,
                 n_repeats=2,

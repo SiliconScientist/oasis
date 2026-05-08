@@ -23,12 +23,13 @@ def regression_dataset() -> tuple[np.ndarray, np.ndarray]:
 
 def regression_train_test_payload(seed: int = 13) -> SweepRunPayload:
     X, y = regression_dataset()
+    dataset = SweepDataset(mlip_features=X, targets=y)
     return SweepRunPayload(
-        dataset=SweepDataset(mlip_features=X, targets=y),
+        dataset=dataset,
         split_collection=SweepSplitCollection(
             splits=tuple(
                 generate_sweep_splits(
-                    n_samples=len(X),
+                    n_samples=dataset.n_samples,
                     min_train=2,
                     max_train=4,
                     n_repeats=2,

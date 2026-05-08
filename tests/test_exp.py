@@ -317,6 +317,54 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
 
 class ExpIntegrationTests(unittest.TestCase):
+    def test_run_learning_curve_experiments_plans_splits_from_dataset_sample_count(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array(
+                [{"row": 0}, {"row": 1}, {"row": 2}, {"row": 3}, {"row": 4}],
+                dtype=object,
+            ),
+            targets=np.arange(5, dtype=float),
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.3, 0.2, 0.1],
+                "rmse_std": [0.03, 0.02, 0.01],
+            }
+        )
+
+        class RecordingFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = RecordingFamily()
+
+        results = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=5,
+            use_trim=False,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(dataset.n_samples, 5)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [2, 3, 4],
+        )
+        self.assertTrue(
+            all(split.val_idx is None for split in family.last_payload.split_collection.splits)
+        )
+
     def test_run_learning_curve_experiments_combines_capabilities_first(self) -> None:
         X = np.arange(21, dtype=float).reshape(7, 3)
         y = np.arange(7, dtype=float)

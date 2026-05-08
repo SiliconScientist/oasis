@@ -307,7 +307,7 @@ def run_learning_curve_experiments(
         payload = SweepRunPayload(
             dataset=dataset,
             split_collection=build_sweep_split_collection(
-                len(dataset.mlip_features),
+                dataset.n_samples,
                 min_train=min_train,
                 max_train=max_train,
                 n_repeats=n_repeats,

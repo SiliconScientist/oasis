@@ -22,6 +22,7 @@ class SweepDatasetTests(unittest.TestCase):
             targets=np.arange(4, dtype=float),
         )
 
+        self.assertEqual(dataset.n_samples, 4)
         np.testing.assert_array_equal(dataset.sample_ids, np.arange(4))
         self.assertIsNone(dataset.auxiliary_views)
 
@@ -70,6 +71,7 @@ class SweepDatasetTests(unittest.TestCase):
 
         np.testing.assert_array_equal(dataset.sample_ids, sample_ids)
         self.assertIs(dataset.auxiliary_views["graphs"], view)
+
 
 class SweepPayloadTests(unittest.TestCase):
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
