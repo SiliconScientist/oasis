@@ -1022,6 +1022,55 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(len(split.train_idx), 1)
         self.assertEqual(len(split.test_idx), 3)
 
+    def test_build_sweep_split_collection_skips_undersized_points_deterministically(
+        self,
+    ) -> None:
+        split_collection_a = build_sweep_split_collection(
+            n_samples=8,
+            min_train=1,
+            max_train=7,
+            n_repeats=2,
+            seed=11,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=3,
+        )
+        split_collection_b = build_sweep_split_collection(
+            n_samples=8,
+            min_train=1,
+            max_train=7,
+            n_repeats=2,
+            seed=11,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=3,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection_a.splits],
+            [3, 3, 4, 4, 5, 5],
+        )
+        self.assertEqual(
+            [split.sweep_size for split in split_collection_b.splits],
+            [3, 3, 4, 4, 5, 5],
+        )
+        for split_a, split_b in zip(
+            split_collection_a.splits,
+            split_collection_b.splits,
+            strict=True,
+        ):
+            np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
+            np.testing.assert_array_equal(split_a.val_idx, split_b.val_idx)
+            np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+
     def test_validation_aware_family_does_not_constrain_baseline_sweep_sizes(
         self,
     ) -> None:
@@ -1143,6 +1192,97 @@ class ExpIntegrationTests(unittest.TestCase):
             [len(split.test_idx) for split in family.last_payload.split_collection.splits],
             [3, 2],
         )
+
+    def test_run_learning_curve_experiments_mixed_families_preserve_outer_test_isolation_under_guards(
+        self,
+    ) -> None:
+        X = np.arange(24, dtype=float).reshape(8, 3)
+        y = np.arange(8, dtype=float)
+        baseline_result = pd.DataFrame(
+            {"n_train": [2, 3, 4, 5], "rmse_mean": [0.5] * 4, "rmse_std": [0.05] * 4}
+        )
+        guarded_result = pd.DataFrame(
+            {"n_train": [3, 4, 5], "rmse_mean": [0.4] * 3, "rmse_std": [0.04] * 3}
+        )
+        heavy_result = pd.DataFrame(
+            {"n_train": [5], "rmse_mean": [0.3], "rmse_std": [0.03]}
+        )
+
+        class BaselineFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": baseline_result})
+
+        class GuardedValidationFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=0,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping(
+                    {"weighted_linear_df": guarded_result}
+                )
+
+        class HeavyValidationFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=5,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"weighted_simplex_df": heavy_result})
+
+        baseline_family = BaselineFamily()
+        guarded_family = GuardedValidationFamily()
+        heavy_family = HeavyValidationFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=6,
+            n_repeats=1,
+            seed=7,
+            use_trim=False,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=3,
+            model_families=[baseline_family, guarded_family, heavy_family],
+        )
+
+        self.assertIs(results.ridge_df, baseline_result)
+        self.assertIs(results.weighted_linear_df, guarded_result)
+        self.assertIs(results.weighted_simplex_df, heavy_result)
+        self.assertEqual(
+            [split.sweep_size for split in baseline_family.last_payload.split_collection.splits],
+            [2, 3, 4, 5],
+        )
+        self.assertEqual(
+            [split.sweep_size for split in guarded_family.last_payload.split_collection.splits],
+            [3, 4, 5],
+        )
+        self.assertEqual(
+            [split.sweep_size for split in heavy_family.last_payload.split_collection.splits],
+            [5],
+        )
+        for payload in (
+            baseline_family.last_payload,
+            guarded_family.last_payload,
+            heavy_family.last_payload,
+        ):
+            for split in payload.split_collection.splits:
+                self.assertGreaterEqual(len(split.test_idx), 3)
+                self.assertEqual(len(np.intersect1d(split.train_idx, split.test_idx)), 0)
+                if split.val_idx is not None:
+                    self.assertEqual(len(np.intersect1d(split.val_idx, split.test_idx)), 0)
+                    self.assertEqual(len(np.intersect1d(split.train_idx, split.val_idx)), 0)
 
     def test_run_learning_curve_experiments_supports_mixed_runner_input_types(
         self,
@@ -1376,6 +1516,69 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertTrue(results.weighted_linear_df.empty)
         self.assertEqual(len(baseline_runner.payloads), 1)
         self.assertEqual(len(validation_runner.payloads), 1)
+
+    def test_run_learning_curve_experiments_returns_empty_result_for_only_skipped_validation_family(
+        self,
+    ) -> None:
+        class EmptyAwareValidationRunner:
+            def __init__(self) -> None:
+                self.payloads: list[SweepRunnerPayload] = []
+
+            def run_with_validation(
+                self,
+                payload: SweepRunnerPayload,
+            ) -> pd.DataFrame:
+                self.payloads.append(payload)
+                if payload.splits != ():
+                    raise AssertionError("expected no valid validation-aware sweep sizes")
+                return sweep_results_frame({})
+
+            def run_trimmed_with_validation(
+                self,
+                payload: SweepRunnerPayload,
+                *,
+                z_thresh: float = 1.0,
+            ) -> pd.DataFrame:
+                del z_thresh
+                return self.run_with_validation(payload)
+
+        validation_runner = EmptyAwareValidationRunner()
+        skipped_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="weighted_linear_df",
+                trimmed_result_field=None,
+                runner=validation_runner,
+                capabilities=SweepModelCapabilities(
+                    min_train_size=5,
+                    requires_validation=True,
+                ),
+            )
+        )
+
+        results = run_learning_curve_experiments(
+            SweepDataset(
+                mlip_features=np.arange(18, dtype=float).reshape(6, 3),
+                targets=np.arange(6, dtype=float),
+            ),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=3,
+            model_families=[skipped_family],
+        )
+
+        self.assertIsNotNone(results.weighted_linear_df)
+        self.assertTrue(results.weighted_linear_df.empty)
+        self.assertEqual(
+            results.weighted_linear_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(len(validation_runner.payloads), 1)
+        self.assertEqual(validation_runner.payloads[0].splits, ())
 
     def test_configured_family_routes_runner_inputs_with_validation(self) -> None:
         if not HAS_SKLEARN:
