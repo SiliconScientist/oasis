@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
@@ -111,6 +112,35 @@ class ValidationAwareEstimator(Protocol):
     def predict(self, X: np.ndarray) -> np.ndarray: ...
 
 
+@runtime_checkable
+class TrialTuningSpec(Protocol):
+    """Contract for validation-based trial tuning over one sweep split.
+
+    Implementations define how one split is converted into a trial objective,
+    how the chosen trial is refit for the final outer-test evaluation, and
+    which metadata should be reported for the selected trial.
+    """
+
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]: ...
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> object: ...
+
+    def trial_metadata(
+        self,
+        best_trial: Any,
+        model: object,
+    ) -> Mapping[str, Any]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SweepRunnerArtifacts:
     metrics: pd.DataFrame
@@ -156,6 +186,34 @@ class SupervisedModelSelectionSweepRunner:
 
 
 HyperparameterSelectionSweepRunner = SupervisedModelSelectionSweepRunner
+
+
+@dataclass(frozen=True, slots=True)
+class TrialModelSelectionSweepRunner:
+    """Reusable runner for train/val/test trial-based model selection."""
+
+    tuning_spec: TrialTuningSpec
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]]
+    refit_policy: SelectionRefitPolicy = "train_plus_val"
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_model_with_trial_tuning(
+            payload,
+            self.tuning_spec,
+            self.trial_factory,
+            refit_policy=self.refit_policy,
+        )
+
+    def run_artifacts_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+    ) -> SweepRunnerArtifacts:
+        return sweep_trial_model_selection(
+            payload,
+            self.tuning_spec,
+            self.trial_factory,
+            refit_policy=self.refit_policy,
+        )
 
 
 def _as_runner_payload(
@@ -250,6 +308,41 @@ def _selection_metadata_frame(
     return pd.DataFrame(rows)
 
 
+def _select_best_trial_by_validation(
+    split: TrainValTestSweepRunnerInput,
+    tuning_spec: TrialTuningSpec,
+    trials: Iterable[Any],
+) -> Any:
+    objective = tuning_spec.build_trial_objective(split)
+    best_trial = None
+    best_value = np.inf
+    for trial in trials:
+        objective_value = objective(trial)
+        if objective_value < best_value:
+            best_value = objective_value
+            best_trial = trial
+    if best_trial is None:
+        raise ValueError("trial tuning did not yield any candidate trials")
+    return best_trial
+
+
+def _fit_trial_selected_model(
+    split: TrainValTestSweepRunnerInput,
+    tuning_spec: TrialTuningSpec,
+    trials: Iterable[Any],
+    *,
+    refit_policy: SelectionRefitPolicy,
+) -> tuple[object, Mapping[str, Any]]:
+    _validate_selection_refit_policy(refit_policy)
+    best_trial = _select_best_trial_by_validation(split, tuning_spec, trials)
+    model = tuning_spec.fit_selected_model(
+        split,
+        best_trial,
+        refit_policy=refit_policy,
+    )
+    return model, tuning_spec.trial_metadata(best_trial, model)
+
+
 def sweep_supervised_model_selection(
     payload: SweepRunPayload | SweepRunnerPayload,
     hyperparameter_spec: HyperparameterSpec,
@@ -274,6 +367,37 @@ def sweep_supervised_model_selection(
         model, metadata = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
+            refit_policy=refit_policy,
+        )
+        preds = model.predict(split.dataset.mlip_features[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+    return SweepRunnerArtifacts(
+        metrics=_sweep_results_frame(rmses_by_size),
+        selection_metadata=_selection_metadata_frame(metadata_by_size),
+    )
+
+
+def sweep_trial_model_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: TrialTuningSpec,
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]],
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> SweepRunnerArtifacts:
+    """Select the best trial on validation, refit, then evaluate once on test."""
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    for split in splits:
+        y = split.dataset.targets
+        model, metadata = _fit_trial_selected_model(
+            split,
+            tuning_spec,
+            trial_factory(split),
             refit_policy=refit_policy,
         )
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
@@ -360,6 +484,21 @@ def sweep_model_with_hyperparameter_selection_trimmed(
         hyperparameter_spec,
         refit_policy=refit_policy,
         z_thresh=z_thresh,
+    ).metrics
+
+
+def sweep_model_with_trial_tuning(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: TrialTuningSpec,
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]],
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> pd.DataFrame:
+    return sweep_trial_model_selection(
+        payload,
+        tuning_spec,
+        trial_factory,
+        refit_policy=refit_policy,
     ).metrics
 
 

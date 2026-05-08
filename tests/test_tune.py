@@ -13,8 +13,12 @@ try:
         GridHyperparameterSpec,
         HyperparameterSelectionSweepRunner,
         SupervisedModelSelectionSweepRunner,
+        TrialModelSelectionSweepRunner,
+        TrialTuningSpec,
         sweep_model_with_hyperparameter_selection,
+        sweep_model_with_trial_tuning,
         sweep_supervised_model_selection,
+        sweep_trial_model_selection,
     )
 
     HAS_SKLEARN = True
@@ -365,3 +369,150 @@ class TuneTests(unittest.TestCase):
                 spec,
                 refit_policy="bad_policy",  # type: ignore[arg-type]
             )
+
+    def test_trial_tuning_spec_runtime_protocol_and_runner_pick_best_trial(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 1.0, 3.0, 4.0, 5.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+        seen_values: list[float] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+            def predict(self, X):
+                return np.full(len(X), self.constant, dtype=float)
+
+        class FakeTrialTuningSpec:
+            def build_trial_objective(self, split):
+                y_val = split.dataset.targets[split.val_idx]
+
+                def objective(trial):
+                    seen_values.append(float(trial["constant"]))
+                    preds = np.full(len(y_val), trial["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial["constant"]))
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial["constant"]),
+                    "selected_constant": float(model.constant),
+                }
+
+        spec = FakeTrialTuningSpec()
+        self.assertIsInstance(spec, TrialTuningSpec)
+        trial_factory = lambda split: (  # noqa: E731
+            {"constant": 0.0},
+            {"constant": 3.0},
+        )
+
+        artifacts = sweep_trial_model_selection(payload, spec, trial_factory)
+        runner_artifacts = TrialModelSelectionSweepRunner(
+            spec,
+            trial_factory,
+        ).run_artifacts_with_validation(payload)
+        result = sweep_model_with_trial_tuning(payload, spec, trial_factory)
+
+        self.assertEqual(seen_values, [0.0, 3.0, 0.0, 3.0, 0.0, 3.0])
+        np.testing.assert_allclose(
+            artifacts.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(2.5)],
+            atol=1e-12,
+        )
+        self.assertEqual(
+            artifacts.selection_metadata.columns.tolist(),
+            ["n_train", "constant", "selected_constant"],
+        )
+        self.assertEqual(artifacts.selection_metadata["constant"].tolist(), [3.0])
+        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
+        pd.testing.assert_frame_equal(artifacts.selection_metadata, runner_artifacts.selection_metadata)
+        pd.testing.assert_frame_equal(artifacts.metrics, result)
+
+    def test_trial_tuning_spec_refit_policy_is_passed_into_refit_step(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [10.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 10.0, 4.0, 5.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        class MeanPredictor:
+            def __init__(self, mean_: float) -> None:
+                self.mean_ = mean_
+
+            def predict(self, X):
+                return np.full(len(X), self.mean_, dtype=float)
+
+        class FakeTrialTuningSpec:
+            def build_trial_objective(self, split):
+                def objective(trial):
+                    return float(trial["score"])
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del best_trial
+                if refit_policy == "train_only":
+                    fit_idx = split.train_idx
+                else:
+                    fit_idx = np.concatenate([split.train_idx, split.val_idx])
+                mean_ = float(np.mean(split.dataset.targets[fit_idx]))
+                return MeanPredictor(mean_)
+
+            def trial_metadata(self, best_trial, model):
+                return {"score": float(best_trial["score"]), "mean": float(model.mean_)}
+
+        spec = FakeTrialTuningSpec()
+        trial_factory = lambda split: ({"score": 1.0},)  # noqa: E731
+
+        train_only = sweep_trial_model_selection(
+            payload,
+            spec,
+            trial_factory,
+            refit_policy="train_only",
+        )
+        train_plus_val = sweep_trial_model_selection(
+            payload,
+            spec,
+            trial_factory,
+            refit_policy="train_plus_val",
+        )
+
+        np.testing.assert_allclose(
+            train_only.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(16.25)],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            train_plus_val.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(1.8125)],
+            atol=1e-12,
+        )
+        self.assertEqual(train_only.selection_metadata["mean"].tolist(), [0.5])
+        self.assertEqual(train_plus_val.selection_metadata["mean"].tolist(), [3.25])
