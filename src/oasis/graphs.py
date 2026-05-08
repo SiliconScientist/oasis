@@ -59,6 +59,25 @@ def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
     return GraphDatasetView.from_records(records)
 
 
+def dump_graph_dataset_view(graph_view: GraphDatasetView) -> list[dict[str, Any]]:
+    """Convert a graph dataset view into JSON-serializable graph artifacts."""
+
+    return [_graph_record_to_mapping(graph_view[sample_id]) for sample_id in graph_view.sample_ids]
+
+
+def save_graph_dataset_view(
+    graph_view: GraphDatasetView,
+    path: str | Path,
+) -> Path:
+    """Write graph artifacts as a JSON list of graph records."""
+
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_path.open("w", encoding="utf-8") as f:
+        json.dump(dump_graph_dataset_view(graph_view), f, indent=2)
+    return resolved_path
+
+
 def atoms_to_graph_record(
     atoms: Atoms,
     *,
@@ -205,14 +224,27 @@ def _graph_record_from_mapping(payload: Any) -> GraphRecord:
 
     return GraphRecord(
         sample_id=payload["sample_id"],
-        node_features=np.asarray(payload["node_features"]),
-        edge_index=np.asarray(payload["edge_index"]),
-        edge_features=_optional_array(payload.get("edge_features")),
-        graph_features=_optional_array(payload.get("graph_features")),
+        node_features=np.asarray(payload["node_features"], dtype=float),
+        edge_index=np.asarray(payload["edge_index"], dtype=np.int64),
+        edge_features=_optional_array(payload.get("edge_features"), dtype=float),
+        graph_features=_optional_array(payload.get("graph_features"), dtype=float),
     )
 
 
-def _optional_array(value: Any) -> np.ndarray | None:
+def _graph_record_to_mapping(record: GraphRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "sample_id": record.sample_id,
+        "node_features": record.node_features.tolist(),
+        "edge_index": record.edge_index.tolist(),
+    }
+    if record.edge_features is not None:
+        payload["edge_features"] = record.edge_features.tolist()
+    if record.graph_features is not None:
+        payload["graph_features"] = record.graph_features.tolist()
+    return payload
+
+
+def _optional_array(value: Any, *, dtype: Any | None = None) -> np.ndarray | None:
     if value is None:
         return None
-    return np.asarray(value)
+    return np.asarray(value, dtype=dtype)

@@ -13,7 +13,9 @@ from oasis.graphs import (
     atoms_to_graph_dataset_view,
     atoms_to_graph_record,
     build_graph_sweep_dataset,
+    dump_graph_dataset_view,
     load_graph_dataset_view,
+    save_graph_dataset_view,
 )
 from oasis.sweep import GraphDatasetView, GraphRecord
 
@@ -184,6 +186,46 @@ class AtomsToGraphConversionTests(unittest.TestCase):
                     Atoms("He", positions=[[1.0, 0.0, 0.0]]),
                 ],
             )
+
+    def test_dump_graph_dataset_view_emits_graph_record_artifacts(self) -> None:
+        view = atoms_to_graph_dataset_view(
+            ["rxn-a"],
+            [Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])],
+        )
+
+        payload = dump_graph_dataset_view(view)
+
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["sample_id"], "rxn-a")
+        self.assertEqual(payload[0]["node_features"], [[1.0], [1.0]])
+        self.assertEqual(payload[0]["edge_index"], [[0, 1], [1, 0]])
+        self.assertEqual(payload[0]["edge_features"], [[0.74], [0.74]])
+        self.assertNotIn("graph_features", payload[0])
+
+    def test_save_graph_dataset_view_round_trips_atoms_graph_artifacts(self) -> None:
+        view = atoms_to_graph_dataset_view(
+            ["rxn-b", "rxn-a"],
+            [
+                Atoms("H", positions=[[0.0, 0.0, 0.0]]),
+                Atoms("He", positions=[[1.0, 0.0, 0.0]]),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "graphs.json"
+            saved_path = save_graph_dataset_view(view, path)
+            reloaded = load_graph_dataset_view(saved_path)
+
+        self.assertEqual(saved_path, path)
+        self.assertEqual(reloaded.sample_ids, ("rxn-b", "rxn-a"))
+        np.testing.assert_array_equal(
+            reloaded["rxn-b"].node_features,
+            view["rxn-b"].node_features,
+        )
+        np.testing.assert_array_equal(
+            reloaded["rxn-a"].edge_index,
+            view["rxn-a"].edge_index,
+        )
 
 
 class BuildGraphSweepDatasetTests(unittest.TestCase):
