@@ -176,6 +176,8 @@ def build_sweep_split_collection(
     n_repeats: int,
     seed: int,
     requirements: SweepFamilyRequirements | None = None,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
     min_test_size: int = 1,
 ) -> SweepSplitCollection:
     """Build the split collection for one family under its split requirements.
@@ -195,21 +197,34 @@ def build_sweep_split_collection(
 
     requirements = requirements or SweepFamilyRequirements()
     max_train = min(max_train, n_samples - min_test_size)
-    split_generator = generate_sweep_splits
     effective_min_train = max(min_train, requirements.min_train_size)
+    rng = np.random.default_rng(seed)
     if requirements.requires_inner_validation:
-        split_generator = generate_inner_validation_sweep_splits
-    return SweepSplitCollection(
-        splits=tuple(
-            split_generator(
+        splits = tuple(
+            generate_inner_validation_sweep_splits(
                 n_samples,
                 effective_min_train,
                 max_train,
                 n_repeats,
-                np.random.default_rng(seed),
+                rng,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
                 min_test_size=min_test_size,
             )
-        ),
+        )
+    else:
+        splits = tuple(
+            generate_sweep_splits(
+                n_samples,
+                effective_min_train,
+                max_train,
+                n_repeats,
+                rng,
+                min_test_size=min_test_size,
+            )
+        )
+    return SweepSplitCollection(
+        splits=splits,
         planning_requirements=requirements,
     )
 
@@ -253,6 +268,10 @@ def run_learning_curve_experiments_from_frame(
     use_trim: bool = True,
     enabled_model_names: Sequence[str] | None = None,
     graph_view: GraphDatasetView | None = None,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_test_size: int = 1,
+    model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
     feature_cols = mlip_columns(df)
     if not feature_cols:
@@ -274,6 +293,10 @@ def run_learning_curve_experiments_from_frame(
         seed=seed,
         use_trim=use_trim,
         enabled_model_names=enabled_model_names,
+        validation_fraction=validation_fraction,
+        min_val_size=min_val_size,
+        min_test_size=min_test_size,
+        model_families=model_families,
     )
 
 
@@ -309,6 +332,8 @@ def build_sweep_dataset_from_frame(
 def run_learning_curve_experiments_from_config(
     df: Any,
     cfg: Config | None,
+    *,
+    model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
     from oasis.method import enabled_learning_curve_model_names_from_config
 
@@ -322,6 +347,16 @@ def run_learning_curve_experiments_from_config(
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         use_trim=experiment_cfg.trim if experiment_cfg else True,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
+        validation_fraction=(
+            getattr(experiment_cfg, "validation_fraction", 0.2)
+            if experiment_cfg
+            else 0.2
+        ),
+        min_val_size=getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1,
+        min_test_size=(
+            getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
+        ),
+        model_families=model_families,
     )
 
 
@@ -334,6 +369,9 @@ def run_learning_curve_experiments(
     seed: int = 42,
     use_trim: bool = True,
     enabled_model_names: Sequence[str] | None = None,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
     families = model_families
@@ -360,6 +398,9 @@ def run_learning_curve_experiments(
                 n_repeats=n_repeats,
                 seed=seed,
                 requirements=requirements,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_test_size=min_test_size,
             ),
             use_trim=use_trim,
         )

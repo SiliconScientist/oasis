@@ -1037,6 +1037,57 @@ class ExpIntegrationTests(unittest.TestCase):
             all(split.val_idx is not None for split in validation_family.last_payload.split_collection.splits)
         )
 
+    def test_run_learning_curve_experiments_honors_split_policy_knobs(self) -> None:
+        X = np.arange(21, dtype=float).reshape(7, 3)
+        y = np.arange(7, dtype=float)
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = ValidationAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=6,
+            n_repeats=1,
+            seed=3,
+            use_trim=False,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=2,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [4, 5],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [2, 2],
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in family.last_payload.split_collection.splits],
+            [3, 2],
+        )
+
     def test_run_learning_curve_experiments_supports_mixed_runner_input_types(
         self,
     ) -> None:
@@ -1536,3 +1587,69 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(results.weighted_simplex_df)
         self.assertIsNone(results.lasso_df)
         self.assertIsNone(results.resid_df)
+
+    def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = ValidationAwareStubFamily()
+        cfg = SimpleNamespace(
+            seed=23,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=6,
+                    n_repeats=1,
+                    trim=False,
+                    validation_fraction=0.2,
+                    min_val_size=2,
+                    min_test_size=2,
+                    models=None,
+                )
+            ),
+        )
+
+        results = run_learning_curve_experiments_from_config(
+            df,
+            cfg=cfg,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [4, 5],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [2, 2],
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in family.last_payload.split_collection.splits],
+            [3, 2],
+        )
