@@ -212,10 +212,63 @@ class LearningCurveModelRegistration:
     name: str
     is_enabled: Callable[[Any], bool]
     family_factory: Callable[[], SweepModelFamily]
+    default_enabled: bool = True
 
 
 def _config_flag_enabled(config_key: str) -> Callable[[Any], bool]:
     return lambda config_section: bool(getattr(config_section, config_key, False))
+
+
+@dataclass(frozen=True, slots=True)
+class LearnedFamilyRegistrationSpec:
+    name: str
+    capabilities: SweepModelCapabilities
+    family_factory: Callable[[], SweepModelFamily]
+    config_key: str | None = None
+    is_enabled: Callable[[Any], bool] | None = None
+    default_enabled: bool = True
+
+
+def _moe_enabled(config_section: Any) -> bool:
+    return bool(getattr(getattr(config_section, "moe", None), "enabled", False))
+
+
+def _is_enabled_for_learned_family_spec(
+    spec: LearnedFamilyRegistrationSpec,
+) -> Callable[[Any], bool]:
+    if spec.is_enabled is not None:
+        return spec.is_enabled
+    if spec.config_key is not None:
+        return _config_flag_enabled(spec.config_key)
+    raise ValueError(
+        f"learned family registration '{spec.name}' must define config_key or is_enabled"
+    )
+
+
+def _family_factory_for_learned_family_spec(
+    spec: LearnedFamilyRegistrationSpec,
+) -> Callable[[], SweepModelFamily]:
+    def build_family() -> SweepModelFamily:
+        family = spec.family_factory()
+        if family.capabilities() != spec.capabilities:
+            raise ValueError(
+                f"learned family registration '{spec.name}' declared capabilities "
+                f"{spec.capabilities!r} but factory produced {family.capabilities()!r}"
+            )
+        return family
+
+    return build_family
+
+
+def learned_family_registration(
+    spec: LearnedFamilyRegistrationSpec,
+) -> LearningCurveModelRegistration:
+    return LearningCurveModelRegistration(
+        name=spec.name,
+        is_enabled=_is_enabled_for_learned_family_spec(spec),
+        family_factory=_family_factory_for_learned_family_spec(spec),
+        default_enabled=spec.default_enabled,
+    )
 
 
 class SweepModelFamily(Protocol):
@@ -447,12 +500,36 @@ class ConfiguredSweepModelFamily:
         return LearningCurveResults.from_mapping(results)
 
 
+@dataclass(frozen=True, slots=True)
+class PlaceholderLearnedSweepModelFamily:
+    name: str
+    declared_capabilities: SweepModelCapabilities = field(
+        default_factory=SweepModelCapabilities
+    )
+
+    def capabilities(self) -> SweepModelCapabilities:
+        return self.declared_capabilities
+
+    def requirements(self) -> SweepFamilyRequirements:
+        return self.declared_capabilities.to_requirements()
+
+    def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        del payload
+        raise NotImplementedError(
+            f"learning-curve family '{self.name}' is registered but not implemented"
+        )
+
+
 def default_sweep_model_families(
     enabled_model_names: Collection[str] | None = None,
 ) -> tuple[SweepModelFamily, ...]:
     registrations = learning_curve_model_registry()
     enabled_names = (
-        set(registration.name for registration in registrations)
+        set(
+            registration.name
+            for registration in registrations
+            if registration.default_enabled
+        )
         if enabled_model_names is None
         else set(enabled_model_names)
     )
@@ -468,7 +545,11 @@ def enabled_learning_curve_model_names_from_config(
 ) -> tuple[str, ...]:
     registrations = learning_curve_model_registry()
     if model_cfg is None:
-        return tuple(registration.name for registration in registrations)
+        return tuple(
+            registration.name
+            for registration in registrations
+            if registration.default_enabled
+        )
     return tuple(
         registration.name
         for registration in registrations
@@ -519,10 +600,19 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
         )
         for name, config_key, spec in sklearn_sweep_model_specs()
     )
-    return sklearn_registrations + (
-        LearningCurveModelRegistration(
+    return sklearn_registrations + tuple(
+        learned_family_registration(spec)
+        for spec in learned_family_registration_specs()
+    )
+
+
+def learned_family_registration_specs(
+) -> tuple[LearnedFamilyRegistrationSpec, ...]:
+    return (
+        LearnedFamilyRegistrationSpec(
             name="residual",
-            is_enabled=_config_flag_enabled("use_residual"),
+            config_key="use_residual",
+            capabilities=SweepModelCapabilities(),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="resid_df",
@@ -534,9 +624,10 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                 )
             ),
         ),
-        LearningCurveModelRegistration(
+        LearnedFamilyRegistrationSpec(
             name="weighted_linear",
-            is_enabled=_config_flag_enabled("use_weighted_linear"),
+            config_key="use_weighted_linear",
+            capabilities=SweepModelCapabilities(),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_linear_df",
@@ -545,9 +636,10 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                 )
             ),
         ),
-        LearningCurveModelRegistration(
+        LearnedFamilyRegistrationSpec(
             name="weighted_simplex",
-            is_enabled=_config_flag_enabled("use_weighted_simplex"),
+            config_key="use_weighted_simplex",
+            capabilities=SweepModelCapabilities(),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_simplex_df",
@@ -555,6 +647,18 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                     runner=WeightedSimplexSweepRunner(),
                 )
             ),
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="moe",
+            is_enabled=_moe_enabled,
+            capabilities=SweepModelCapabilities(requires_validation=True),
+            family_factory=lambda: PlaceholderLearnedSweepModelFamily(
+                name="moe",
+                declared_capabilities=SweepModelCapabilities(
+                    requires_validation=True
+                ),
+            ),
+            default_enabled=False,
         ),
     )
 

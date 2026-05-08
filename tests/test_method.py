@@ -34,11 +34,14 @@ try:
         FactoryListHyperparameterSpec,
         GridHyperparameterSpec,
         HyperparameterSelectionSweepRunner,
+        LearnedFamilyRegistrationSpec,
+        PlaceholderLearnedSweepModelFamily,
         SupervisedModelSelectionSweepRunner,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
         ValidationAwareSupervisedModelSweepRunner,
         enabled_learning_curve_model_names_from_config,
+        learned_family_registration,
         learning_curve_model_registry,
         residual_sweep,
         residual_sweep_trimmed,
@@ -122,6 +125,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "residual",
                 "weighted_linear",
                 "weighted_simplex",
+                "moe",
             ],
         )
 
@@ -154,6 +158,19 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ),
         )
 
+        self.assertEqual(
+            enabled_learning_curve_model_names_from_config(None),
+            (
+                "ridge",
+                "kernel_ridge",
+                "lasso",
+                "elastic",
+                "residual",
+                "weighted_linear",
+                "weighted_simplex",
+            ),
+        )
+
         built_in_requirements = [registration.family_factory().requirements() for registration in registry]
         self.assertEqual(
             built_in_requirements,
@@ -165,6 +182,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(),
+                SweepFamilyRequirements(requires_inner_validation=True),
             ],
         )
         built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
@@ -178,7 +196,63 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
+                SweepModelCapabilities(requires_validation=True),
             ],
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_learned_family_registration_supports_stub_non_sklearn_family(self) -> None:
+        class StubLearnedFamily:
+            def capabilities(self) -> SweepModelCapabilities:
+                return SweepModelCapabilities(requires_validation=True)
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(requires_inner_validation=True)
+
+            def run(self, payload) -> LearningCurveResults:
+                del payload
+                return LearningCurveResults.empty()
+
+        registration = learned_family_registration(
+            LearnedFamilyRegistrationSpec(
+                name="stub_learned",
+                config_key="use_stub_learned",
+                capabilities=SweepModelCapabilities(requires_validation=True),
+                family_factory=StubLearnedFamily,
+            )
+        )
+
+        self.assertEqual(registration.name, "stub_learned")
+        self.assertTrue(registration.is_enabled(SimpleNamespace(use_stub_learned=True)))
+        self.assertFalse(registration.is_enabled(SimpleNamespace(use_stub_learned=False)))
+
+        family = registration.family_factory()
+        self.assertEqual(
+            family.capabilities(),
+            SweepModelCapabilities(requires_validation=True),
+        )
+        self.assertEqual(
+            family.requirements(),
+            SweepFamilyRequirements(requires_inner_validation=True),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_placeholder_moe_registration_instantiates_cleanly(self) -> None:
+        registry = {
+            registration.name: registration
+            for registration in learning_curve_model_registry()
+        }
+
+        moe_family = registry["moe"].family_factory()
+
+        self.assertIsInstance(moe_family, PlaceholderLearnedSweepModelFamily)
+        self.assertEqual(
+            moe_family.capabilities(),
+            SweepModelCapabilities(requires_validation=True),
+        )
+        self.assertEqual(
+            moe_family.requirements(),
+            SweepFamilyRequirements(requires_inner_validation=True),
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
