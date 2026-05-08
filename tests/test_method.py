@@ -25,9 +25,12 @@ from oasis.sweep import (
     TrainValTestSweepRunnerInput,
 )
 from oasis.tune import (
+    OptunaModelSelectionSweepRunner,
     SupervisedModelSelectionSweepRunner,
     sweep_model_with_hyperparameter_selection,
     sweep_model_with_hyperparameter_selection_trimmed,
+    sweep_model_with_optuna_selection,
+    sweep_model_with_optuna_selection_trimmed,
 )
 from tests.support import regression_dataset, regression_train_test_payload, weighted_fixed_payload, weighted_toy_dataset
 
@@ -343,17 +346,21 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         expected = {
-            "ridge_df": sweep_model_with_hyperparameter_selection(
+            "ridge_df": sweep_model_with_optuna_selection(
                 validation_payload,
-                sklearn_specs["ridge"].hyperparameter_spec,
+                sklearn_specs["ridge"].trial_tuning_spec,
+                n_trials=sklearn_specs["ridge"].optuna_n_trials,
+                study_factory=sklearn_specs["ridge"].optuna_study_factory,
             ),
             "kernel_ridge_df": sweep_model_with_hyperparameter_selection(
                 validation_payload,
                 sklearn_specs["kernel_ridge"].hyperparameter_spec,
             ),
-            "ridge_trimmed_df": sweep_model_with_hyperparameter_selection_trimmed(
+            "ridge_trimmed_df": sweep_model_with_optuna_selection_trimmed(
                 validation_payload,
-                sklearn_specs["ridge"].hyperparameter_spec,
+                sklearn_specs["ridge"].trial_tuning_spec,
+                n_trials=sklearn_specs["ridge"].optuna_n_trials,
+                study_factory=sklearn_specs["ridge"].optuna_study_factory,
                 z_thresh=sklearn_specs["ridge"].trim_z_thresh,
             ),
             "lasso_df": sweep_model_with_hyperparameter_selection(
@@ -422,7 +429,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertIsInstance(
             ridge_family.spec.runner,
-            SupervisedModelSelectionSweepRunner,
+            OptunaModelSelectionSweepRunner,
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -515,7 +522,14 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertIsNotNone(results.ridge_selection_df)
         self.assertEqual(
             results.ridge_selection_df.columns.tolist(),
-            ["n_train", "alpha"],
+            [
+                "n_train",
+                "alpha",
+                "best_validation_score",
+                "pruner",
+                "sampler",
+                "trial_count",
+            ],
         )
         self.assertEqual(
             results.ridge_selection_df["n_train"].tolist(),
@@ -523,6 +537,15 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertTrue(
             set(results.ridge_selection_df["alpha"]).issubset({0.01, 0.1, 1.0, 10.0})
+        )
+        self.assertEqual(set(results.ridge_selection_df["sampler"]), {"GridSampler"})
+        self.assertEqual(len(set(results.ridge_selection_df["pruner"])), 1)
+
+        self.assertTrue(
+            all(
+                count == 4
+                for count in results.ridge_selection_df["trial_count"].tolist()
+            )
         )
 
         self.assertIsNotNone(results.kernel_ridge_selection_df)
@@ -701,7 +724,7 @@ class BoundaryTests(unittest.TestCase):
     def test_sklearn_specs_declare_validation_search_spaces(self) -> None:
         specs = {name: spec for name, _, spec in sklearn_sweep_model_specs()}
 
-        self.assertIsNotNone(specs["ridge"].hyperparameter_spec)
+        self.assertIsNotNone(specs["ridge"].trial_tuning_spec)
         self.assertIsNotNone(specs["kernel_ridge"].hyperparameter_spec)
         self.assertIsNotNone(specs["lasso"].hyperparameter_spec)
         self.assertIsNotNone(specs["elastic"].hyperparameter_spec)

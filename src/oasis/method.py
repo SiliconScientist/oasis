@@ -22,13 +22,17 @@ from oasis.tune import (
     GridHyperparameterSpec,
     HyperparameterSelectionSweepRunner,
     HyperparameterSpec,
+    OptunaModelSelectionSweepRunner,
     SelectionRefitPolicy,
     SupervisedModelSelectionSweepRunner,
     SweepRunnerArtifacts,
+    TrialTuningSpec,
     ValidationAwareEstimator,
     _select_candidate_factory_by_validation,
     sweep_model_with_hyperparameter_selection,
     sweep_model_with_hyperparameter_selection_trimmed,
+    sweep_model_with_optuna_selection,
+    sweep_model_with_optuna_selection_trimmed,
     sweep_supervised_model_selection,
     sweep_supervised_model_selection_trimmed,
 )
@@ -55,9 +59,75 @@ class SklearnSweepModelSpec:
     trimmed_result_field: str | None
     model_factory: Callable[[], object]
     hyperparameter_spec: HyperparameterSpec | None = None
+    trial_tuning_spec: TrialTuningSpec | None = None
+    optuna_n_trials: int | None = None
+    optuna_timeout_s: int | None = None
+    optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
     selection_metadata_field: str | None = None
     selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
     trim_z_thresh: float = 1.0
+
+
+def _ridge_optuna_study_factory(split: TrainValTestSweepRunnerInput) -> Any:
+    del split
+    import optuna
+
+    return optuna.create_study(
+        direction="minimize",
+        sampler=optuna.samplers.GridSampler(
+            search_space={"alpha": [0.01, 0.1, 1.0, 10.0]},
+            seed=0,
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RidgeOptunaTrialTuningSpec:
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]:
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
+
+        def objective(trial: Any) -> float:
+            alpha = float(
+                trial.suggest_categorical("alpha", [0.01, 0.1, 1.0, 10.0])
+            )
+            model = Ridge(alpha=alpha)
+            model.fit(X[split.train_idx], y[split.train_idx])
+            val_preds = model.predict(X[split.val_idx])
+            return float(
+                np.sqrt(mean_squared_error(y[split.val_idx], val_preds))
+            )
+
+        return objective
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> object:
+        alpha = float(best_trial.params["alpha"])
+        model = Ridge(alpha=alpha)
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
+        if refit_policy == "train_only":
+            fit_idx = split.train_idx
+        else:
+            fit_idx = np.concatenate([split.train_idx, split.val_idx])
+        model.fit(X[fit_idx], y[fit_idx])
+        return model
+
+    def trial_metadata(
+        self,
+        best_trial: Any,
+        model: object,
+    ) -> dict[str, Any]:
+        del model
+        return {"alpha": float(best_trial.params["alpha"])}
 
 
 def _as_runner_payload(
@@ -426,6 +496,20 @@ def enabled_learning_curve_model_names_from_config(
 def _sklearn_runner_for_spec(
     spec: SklearnSweepModelSpec,
 ) -> SweepExperimentRunner | ValidationAwareSweepExperimentRunner:
+    if spec.trial_tuning_spec is not None:
+        if spec.optuna_n_trials is None:
+            raise ValueError("optuna-backed sklearn spec must declare optuna_n_trials")
+        runner_kwargs = {
+            "n_trials": spec.optuna_n_trials,
+            "timeout_s": spec.optuna_timeout_s,
+            "refit_policy": spec.selection_refit_policy,
+        }
+        if spec.optuna_study_factory is not None:
+            runner_kwargs["study_factory"] = spec.optuna_study_factory
+        return OptunaModelSelectionSweepRunner(
+            spec.trial_tuning_spec,
+            **runner_kwargs,
+        )
     if spec.hyperparameter_spec is not None:
         return SupervisedModelSelectionSweepRunner(
             spec.hyperparameter_spec,
@@ -437,7 +521,7 @@ def _sklearn_runner_for_spec(
 def _sklearn_capabilities_for_spec(
     spec: SklearnSweepModelSpec,
 ) -> SweepModelCapabilities:
-    if spec.hyperparameter_spec is None:
+    if spec.hyperparameter_spec is None and spec.trial_tuning_spec is None:
         return SweepModelCapabilities()
     return SweepModelCapabilities(requires_validation=True)
 
@@ -539,10 +623,9 @@ def sklearn_sweep_model_specs(
                 result_field="ridge_df",
                 trimmed_result_field="ridge_trimmed_df",
                 model_factory=lambda: Ridge(alpha=0.1),
-                hyperparameter_spec=GridHyperparameterSpec(
-                    estimator_factory=Ridge,
-                    grid={"alpha": (0.01, 0.1, 1.0, 10.0)},
-                ),
+                trial_tuning_spec=RidgeOptunaTrialTuningSpec(),
+                optuna_n_trials=4,
+                optuna_study_factory=_ridge_optuna_study_factory,
                 selection_metadata_field="ridge_selection_df",
             ),
         ),
