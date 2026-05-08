@@ -78,9 +78,9 @@ gate_type = "mlp"
 gating_mode = "soft"
 hidden_dims = []
 
-[experiment.learning_curve.models.moe.training]
+[experiment.learning_curve.models.moe.tuning]
 
-[experiment.learning_curve.models.moe.training.optuna]
+[experiment.learning_curve.models.moe.tuning.optuna]
 # n_trials = 50
 # sampler = "tpe"
 # pruner = "median"

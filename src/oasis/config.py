@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field
 
 try:
@@ -61,15 +62,11 @@ class AnalysisConfig(BaseModel):
     prefixes: List[str]
 
 
-class OptunaTuningConfig(BaseModel):
-    n_trials: int = 50
-    sampler: Optional[str] = None
-    pruner: Optional[str] = None
-    timeout_s: Optional[int] = None
-    seed: Optional[int] = None
-
-
 class MoETrainingConfig(BaseModel):
+    pass
+
+
+class MoETuningConfig(BaseModel):
     optuna: Optional[OptunaTuningConfig] = None
 
 
@@ -79,6 +76,7 @@ class MoEConfig(BaseModel):
     gating_mode: Optional[str] = None
     hidden_dims: List[int] = Field(default_factory=list)
     training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
+    tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
 
 
 class LearningCurveModelsConfig(BaseModel):

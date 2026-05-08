@@ -124,7 +124,7 @@ class ConfigParsingTests(unittest.TestCase):
                                 "gate_type": "mlp",
                                 "gating_mode": "soft",
                                 "hidden_dims": [16, 8],
-                                "training": {
+                                "tuning": {
                                     "optuna": {
                                         "n_trials": 25,
                                         "sampler": "tpe",
@@ -150,20 +150,20 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.models.moe.gate_type, "mlp")
         self.assertEqual(cfg.experiment.learning_curve.models.moe.gating_mode, "soft")
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [16, 8])
-        assert cfg.experiment.learning_curve.models.moe.training.optuna is not None
+        assert cfg.experiment.learning_curve.models.moe.tuning.optuna is not None
         self.assertEqual(
-            cfg.experiment.learning_curve.models.moe.training.optuna.n_trials, 25
+            cfg.experiment.learning_curve.models.moe.tuning.optuna.n_trials, 25
         )
         self.assertEqual(
-            cfg.experiment.learning_curve.models.moe.training.optuna.sampler, "tpe"
+            cfg.experiment.learning_curve.models.moe.tuning.optuna.sampler, "tpe"
         )
         self.assertEqual(
-            cfg.experiment.learning_curve.models.moe.training.optuna.pruner, "median"
+            cfg.experiment.learning_curve.models.moe.tuning.optuna.pruner, "median"
         )
         self.assertEqual(
-            cfg.experiment.learning_curve.models.moe.training.optuna.timeout_s, 600
+            cfg.experiment.learning_curve.models.moe.tuning.optuna.timeout_s, 600
         )
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.optuna.seed, 7)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.tuning.optuna.seed, 7)
         self.assertEqual(cfg.experiment.learning_curve.min_train, 2)
         self.assertEqual(cfg.experiment.learning_curve.max_train, 4)
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
@@ -215,7 +215,8 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_simplex)
         self.assertFalse(cfg.experiment.learning_curve.models.moe.enabled)
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [])
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.optuna)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.dict(), {})
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna)
 
     def test_learning_curve_models_moe_optuna_defaults_parse(self) -> None:
         cfg = Config(
@@ -249,7 +250,7 @@ class ConfigParsingTests(unittest.TestCase):
                             "use_residual": True,
                             "moe": {
                                 "enabled": True,
-                                "training": {
+                                "tuning": {
                                     "optuna": {
                                         "n_trials": 50,
                                     }
@@ -264,12 +265,12 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         assert cfg.experiment.learning_curve.models is not None
-        assert cfg.experiment.learning_curve.models.moe.training.optuna is not None
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.optuna.n_trials, 50)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.optuna.sampler)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.optuna.pruner)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.optuna.timeout_s)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.optuna.seed)
+        assert cfg.experiment.learning_curve.models.moe.tuning.optuna is not None
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.tuning.optuna.n_trials, 50)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.sampler)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.pruner)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.timeout_s)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.seed)
 
     def test_plot_can_parse_without_model_toggles(self) -> None:
         cfg = Config(
