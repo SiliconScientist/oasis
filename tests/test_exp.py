@@ -1200,6 +1200,52 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(results.lasso_df)
         self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
 
+    def test_run_learning_curve_experiments_from_config_selects_models_without_plot(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+                "elastic_mlip_ads_eng_median": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            }
+        )
+
+        if not HAS_SKLEARN:
+            self.skipTest("requires scikit-learn")
+
+        cfg = SimpleNamespace(
+            seed=29,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=4,
+                    n_repeats=2,
+                    trim=False,
+                    models=SimpleNamespace(
+                        use_ridge=False,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=True,
+                        use_weighted_linear=True,
+                        use_weighted_simplex=False,
+                    ),
+                )
+            ),
+        )
+
+        results = run_learning_curve_experiments_from_config(df, cfg=cfg)
+
+        self.assertIsNone(results.ridge_df)
+        self.assertIsNone(results.lasso_df)
+        self.assertIsNone(results.elastic_df)
+        self.assertIsNotNone(results.resid_df)
+        self.assertIsNotNone(results.weighted_linear_df)
+        self.assertIsNone(results.weighted_simplex_df)
+
     def test_run_learning_curve_experiments_from_frame_runs_weighted_baselines(
         self,
     ) -> None:

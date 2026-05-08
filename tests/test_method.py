@@ -40,6 +40,7 @@ try:
         SupervisedModelSweepRunner,
         SweepFamilySpec,
         ValidationAwareSupervisedModelSweepRunner,
+        default_sweep_model_families,
         enabled_learning_curve_model_names_from_config,
         learned_family_registration,
         learning_curve_model_registry,
@@ -254,6 +255,28 @@ class SweepOutputRegressionTests(unittest.TestCase):
             moe_family.requirements(),
             SweepFamilyRequirements(requires_inner_validation=True),
         )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_default_built_in_families_still_instantiate_and_run(self) -> None:
+        X, y = self._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=11,
+            use_trim=False,
+            model_families=default_sweep_model_families(),
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertIsNotNone(results.kernel_ridge_df)
+        self.assertIsNotNone(results.lasso_df)
+        self.assertIsNotNone(results.elastic_df)
+        self.assertIsNotNone(results.resid_df)
+        self.assertIsNotNone(results.weighted_linear_df)
+        self.assertIsNotNone(results.weighted_simplex_df)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
