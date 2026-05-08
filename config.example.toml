@@ -50,6 +50,9 @@ output_dir = "data/results/plots"
 [experiment.learning_curve]
 min_train = 5
 max_train = 25
+validation_fraction = 0.2
+min_val_size = 1
+min_test_size = 1
 n_repeats = 10
 trim = true
 

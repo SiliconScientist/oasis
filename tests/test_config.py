@@ -6,6 +6,79 @@ from oasis.config import Config
 
 
 class ConfigParsingTests(unittest.TestCase):
+    def test_learning_curve_split_sizing_explicit_values_parse(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "trim": False,
+                        "validation_fraction": 0.35,
+                        "min_val_size": 2,
+                        "min_test_size": 3,
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.35)
+        self.assertEqual(cfg.experiment.learning_curve.min_val_size, 2)
+        self.assertEqual(cfg.experiment.learning_curve.min_test_size, 3)
+
+    def test_learning_curve_split_sizing_defaults_parse(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "trim": False,
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
+        self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.min_test_size, 1)
+
     def test_learning_curve_models_section_parses(self) -> None:
         cfg = Config(
             **{
