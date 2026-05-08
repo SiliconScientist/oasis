@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from oasis.sweep import (
+    GraphDatasetView,
     LearningCurveResults,
     SweepDataset,
     SweepFamilyRequirements,
@@ -232,6 +233,7 @@ def run_learning_curve_experiments_from_frame(
     seed: int = 42,
     use_trim: bool = True,
     enabled_model_names: Sequence[str] | None = None,
+    graph_view: GraphDatasetView | None = None,
 ) -> LearningCurveResults:
     feature_cols = mlip_columns(df)
     if not feature_cols:
@@ -243,6 +245,30 @@ def run_learning_curve_experiments_from_frame(
     if n_rows <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
 
+    dataset = build_sweep_dataset_from_frame(df, graph_view=graph_view)
+
+    return run_learning_curve_experiments(
+        dataset,
+        min_train=min_train,
+        max_train=max_train,
+        n_repeats=n_repeats,
+        seed=seed,
+        use_trim=use_trim,
+        enabled_model_names=enabled_model_names,
+    )
+
+
+def build_sweep_dataset_from_frame(
+    df: Any,
+    *,
+    graph_view: GraphDatasetView | None = None,
+) -> SweepDataset:
+    if graph_view is not None:
+        from oasis.graphs import build_graph_sweep_dataset
+
+        return build_graph_sweep_dataset(df, graph_view)
+
+    feature_cols = mlip_columns(df)
     if hasattr(df, "select"):
         X = df.select(feature_cols).to_numpy()
     else:
@@ -253,20 +279,11 @@ def run_learning_curve_experiments_from_frame(
         if "reaction" in getattr(df, "columns", ())
         else None
     )
-
-    return run_learning_curve_experiments(
-        SweepDataset(
-            mlip_features=X,
-            targets=y,
-            sample_ids=sample_ids,
-            auxiliary_views={},
-        ),
-        min_train=min_train,
-        max_train=max_train,
-        n_repeats=n_repeats,
-        seed=seed,
-        use_trim=use_trim,
-        enabled_model_names=enabled_model_names,
+    return SweepDataset(
+        mlip_features=X,
+        targets=y,
+        sample_ids=sample_ids,
+        auxiliary_views={},
     )
 
 

@@ -19,6 +19,8 @@ from oasis.exp import (
     run_learning_curve_experiments_from_frame,
 )
 from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
     LearningCurveResults,
     SweepDataset,
     SweepFamilyRequirements,
@@ -374,6 +376,67 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.targets,
             np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
         )
+
+    def test_run_learning_curve_experiments_from_frame_can_build_graph_backed_dataset(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": [
+                    "rxn-0",
+                    "rxn-1",
+                    "rxn-2",
+                    "rxn-3",
+                    "rxn-4",
+                    "rxn-5",
+                ],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            tuple(
+                GraphRecord(
+                    sample_id=f"rxn-{idx}",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                )
+                for idx in range(6)
+            )
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_learning_curve_experiments",
+            autospec=True,
+        ) as run_mock:
+            run_mock.return_value = LearningCurveResults.from_mapping(
+                {"ridge_df": result_df}
+            )
+
+            run_learning_curve_experiments_from_frame(
+                df,
+                min_train=2,
+                max_train=4,
+                n_repeats=1,
+                graph_view=graph_view,
+            )
+
+        dataset = run_mock.call_args.args[0]
+        self.assertIsInstance(dataset, SweepDataset)
+        self.assertTrue(dataset.has_graphs)
+        self.assertEqual(
+            dataset.graphs.sample_ids,
+            ("rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"),
+        )
+        self.assertIsNone(dataset.auxiliary_views)
 
     def test_run_learning_curve_experiments_plans_splits_from_dataset_sample_count(
         self,
