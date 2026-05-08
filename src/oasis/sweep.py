@@ -11,6 +11,25 @@ import pandas as pd
 SampleId: TypeAlias = Hashable
 
 
+def _format_sample_id_list(sample_ids: Sequence[SampleId], *, limit: int = 5) -> str:
+    preview = ", ".join(repr(sample_id) for sample_id in sample_ids[:limit])
+    if len(sample_ids) > limit:
+        preview = f"{preview}, ..."
+    return preview
+
+
+def _duplicate_sample_ids(sample_ids: Sequence[SampleId]) -> tuple[SampleId, ...]:
+    seen: set[SampleId] = set()
+    duplicates: list[SampleId] = []
+    duplicate_set: set[SampleId] = set()
+    for sample_id in sample_ids:
+        if sample_id in seen and sample_id not in duplicate_set:
+            duplicates.append(sample_id)
+            duplicate_set.add(sample_id)
+        seen.add(sample_id)
+    return tuple(duplicates)
+
+
 @dataclass(frozen=True, slots=True)
 class GraphRecord:
     sample_id: SampleId
@@ -66,7 +85,8 @@ class GraphDatasetView:
         for sample_id, record in normalized_records.items():
             if sample_id != record.sample_id:
                 raise ValueError(
-                    "records_by_sample_id keys must match each record's sample_id."
+                    "records_by_sample_id keys must match each record's sample_id: "
+                    f"key={sample_id!r}, record.sample_id={record.sample_id!r}."
                 )
         object.__setattr__(self, "records_by_sample_id", normalized_records)
 
@@ -159,15 +179,40 @@ class SweepDataset:
             return
 
         dataset_sample_ids = tuple(self.sample_ids.tolist())
-        if len(dataset_sample_ids) != len(set(dataset_sample_ids)):
+        duplicate_dataset_ids = _duplicate_sample_ids(dataset_sample_ids)
+        if duplicate_dataset_ids:
             raise ValueError(
-                "dataset sample_ids must be unique when graph_view is provided."
+                "dataset sample_ids must be unique when graph_view is provided; "
+                f"duplicates: {_format_sample_id_list(duplicate_dataset_ids)}."
             )
 
         graph_sample_ids = graph_view.sample_ids
-        if set(graph_sample_ids) != set(dataset_sample_ids):
+        missing_graph_ids = tuple(
+            sample_id
+            for sample_id in dataset_sample_ids
+            if sample_id not in graph_view.records_by_sample_id
+        )
+        extra_graph_ids = tuple(
+            sample_id
+            for sample_id in graph_sample_ids
+            if sample_id not in set(dataset_sample_ids)
+        )
+        if missing_graph_ids or extra_graph_ids:
+            details: list[str] = []
+            if missing_graph_ids:
+                details.append(
+                    "missing graph sample_ids: "
+                    f"{_format_sample_id_list(missing_graph_ids)}"
+                )
+            if extra_graph_ids:
+                details.append(
+                    "extra graph sample_ids: "
+                    f"{_format_sample_id_list(extra_graph_ids)}"
+                )
             raise ValueError(
-                "graph_view sample_ids must match dataset sample_ids."
+                "graph_view sample_ids must match dataset sample_ids; "
+                + "; ".join(details)
+                + "."
             )
 
     @property

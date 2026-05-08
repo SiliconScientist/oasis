@@ -60,7 +60,10 @@ class LoadGraphDatasetViewTests(unittest.TestCase):
             },
         ]
 
-        with self.assertRaisesRegex(ValueError, "duplicate graph record"):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"duplicate graph record for sample_id='s0'",
+        ):
             _load_from_payload(payload)
 
     def test_load_graph_dataset_view_rejects_malformed_records(self) -> None:
@@ -137,7 +140,10 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
             )
         )
 
-        with self.assertRaisesRegex(KeyError, "missing graphs"):
+        with self.assertRaisesRegex(
+            KeyError,
+            r"missing graphs for reaction values: 'rxn-b'",
+        ):
             build_graph_sweep_dataset(wide_df, graph_view)
 
     def test_build_graph_sweep_dataset_rejects_extra_graph_without_frame_row(self) -> None:
@@ -163,7 +169,10 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
             )
         )
 
-        with self.assertRaisesRegex(KeyError, "extra sample_ids"):
+        with self.assertRaisesRegex(
+            KeyError,
+            r"extra sample_ids with no matching reaction: 'rxn-b'",
+        ):
             build_graph_sweep_dataset(wide_df, graph_view)
 
     def test_build_graph_sweep_dataset_rejects_duplicate_frame_ids(self) -> None:
@@ -184,7 +193,10 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
             )
         )
 
-        with self.assertRaisesRegex(ValueError, "duplicate reaction values"):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"duplicate reaction values: 'rxn-a'",
+        ):
             build_graph_sweep_dataset(wide_df, graph_view)
 
     def test_build_graph_sweep_dataset_rejects_duplicate_graph_ids(self) -> None:
@@ -216,7 +228,10 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
             new_callable=PropertyMock,
             return_value=("rxn-a", "rxn-a"),
         ):
-            with self.assertRaisesRegex(ValueError, "duplicate sample_ids"):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"duplicate sample_ids: 'rxn-a'",
+            ):
                 build_graph_sweep_dataset(wide_df, graph_view)
 
 

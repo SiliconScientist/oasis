@@ -109,7 +109,10 @@ class GraphDatasetViewTests(unittest.TestCase):
             edge_index=np.array([[0], [1]], dtype=np.int64),
         )
 
-        with self.assertRaisesRegex(ValueError, "keys must match"):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"key='other', record.sample_id='s0'",
+        ):
             GraphDatasetView(records_by_sample_id={"other": record})
 
 
@@ -213,11 +216,63 @@ class SweepDatasetTests(unittest.TestCase):
             )
         )
 
-        with self.assertRaisesRegex(ValueError, "sample_ids must be unique"):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"duplicates: 's0'",
+        ):
             SweepDataset(
                 mlip_features=np.arange(6, dtype=float).reshape(2, 3),
                 targets=np.arange(2, dtype=float),
                 sample_ids=np.array(["s0", "s0"]),
+                graph_view=graph_view,
+            )
+
+    def test_sweep_dataset_rejects_missing_graph_ids_with_specific_ids(self) -> None:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+            )
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"missing graph sample_ids: 's1'",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+                targets=np.arange(2, dtype=float),
+                sample_ids=np.array(["s0", "s1"]),
+                graph_view=graph_view,
+            )
+
+    def test_sweep_dataset_rejects_extra_graph_ids_with_specific_ids(self) -> None:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s2",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+            )
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"extra graph sample_ids: 's2'",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+                targets=np.arange(2, dtype=float),
+                sample_ids=np.array(["s0", "s1"]),
                 graph_view=graph_view,
             )
 

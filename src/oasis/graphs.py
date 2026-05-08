@@ -7,7 +7,12 @@ from typing import Any
 import numpy as np
 
 from oasis.exp import column_to_numpy, mlip_columns
-from oasis.sweep import GraphDatasetView, GraphRecord
+from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
+    _duplicate_sample_ids,
+    _format_sample_id_list,
+)
 from oasis.sweep import SweepDataset
 
 
@@ -46,25 +51,39 @@ def build_graph_sweep_dataset(
         )
 
     sample_ids = tuple(column_to_numpy(wide_df, join_key).tolist())
-    if len(sample_ids) != len(set(sample_ids)):
-        raise ValueError(f"wide_df contains duplicate {join_key} values.")
-
-    graph_sample_ids = graph_view.sample_ids
-    if len(graph_sample_ids) != len(set(graph_sample_ids)):
-        raise ValueError("graph_view contains duplicate sample_ids.")
-
-    missing_graph_ids = tuple(sample_id for sample_id in sample_ids if sample_id not in graph_view.records_by_sample_id)
-    if missing_graph_ids:
-        preview = ", ".join(repr(sample_id) for sample_id in missing_graph_ids[:5])
-        raise KeyError(
-            f"missing graphs for {join_key} values: {preview}"
+    duplicate_frame_ids = _duplicate_sample_ids(sample_ids)
+    if duplicate_frame_ids:
+        raise ValueError(
+            f"wide_df contains duplicate {join_key} values: "
+            f"{_format_sample_id_list(duplicate_frame_ids)}."
         )
 
-    extra_graph_ids = tuple(sample_id for sample_id in graph_sample_ids if sample_id not in set(sample_ids))
-    if extra_graph_ids:
-        preview = ", ".join(repr(sample_id) for sample_id in extra_graph_ids[:5])
+    graph_sample_ids = graph_view.sample_ids
+    duplicate_graph_ids = _duplicate_sample_ids(graph_sample_ids)
+    if duplicate_graph_ids:
+        raise ValueError(
+            "graph_view contains duplicate sample_ids: "
+            f"{_format_sample_id_list(duplicate_graph_ids)}."
+        )
+
+    graph_records = graph_view.records_by_sample_id
+    sample_id_set = set(sample_ids)
+    missing_graph_ids = tuple(
+        sample_id for sample_id in sample_ids if sample_id not in graph_records
+    )
+    if missing_graph_ids:
         raise KeyError(
-            f"graph_view contains extra sample_ids with no matching {join_key}: {preview}"
+            f"missing graphs for {join_key} values: "
+            f"{_format_sample_id_list(missing_graph_ids)}."
+        )
+
+    extra_graph_ids = tuple(
+        sample_id for sample_id in graph_sample_ids if sample_id not in sample_id_set
+    )
+    if extra_graph_ids:
+        raise KeyError(
+            f"graph_view contains extra sample_ids with no matching {join_key}: "
+            f"{_format_sample_id_list(extra_graph_ids)}."
         )
 
     if hasattr(wide_df, "select"):
