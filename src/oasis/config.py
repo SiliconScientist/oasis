@@ -61,8 +61,16 @@ class AnalysisConfig(BaseModel):
     prefixes: List[str]
 
 
+class OptunaTuningConfig(BaseModel):
+    n_trials: int = 50
+    sampler: Optional[str] = None
+    pruner: Optional[str] = None
+    timeout_s: Optional[int] = None
+    seed: Optional[int] = None
+
+
 class MoETrainingConfig(BaseModel):
-    pass
+    optuna: Optional[OptunaTuningConfig] = None
 
 
 class MoEConfig(BaseModel):

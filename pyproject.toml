@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib",
     "numpy",
     "openpyxl",
+    "optuna",
     "pandas",
     "polars",
     "pydantic",

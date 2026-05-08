@@ -80,6 +80,13 @@ hidden_dims = []
 
 [experiment.learning_curve.models.moe.training]
 
+[experiment.learning_curve.models.moe.training.optuna]
+# n_trials = 50
+# sampler = "tpe"
+# pruner = "median"
+# timeout_s = 600
+# seed = 42
+
 [analysis]
 run_adsorption_analysis = false
 # calculating_path = "data/mlips/example_run"
