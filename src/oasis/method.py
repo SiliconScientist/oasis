@@ -687,8 +687,8 @@ def sweep_model(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
         X_test = X[split.test_idx]
@@ -708,8 +708,8 @@ def sweep_model_with_validation(
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in splits:
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model = model_factory()
         model.fit(
             X[split.train_idx],
@@ -727,8 +727,8 @@ def _select_candidate_factory_by_validation(
     split: TrainValTestSweepRunnerInput,
     hyperparameter_spec: HyperparameterSpec,
 ) -> Callable[[], object]:
-    X = split.dataset.X
-    y = split.dataset.y
+    X = split.dataset.mlip_features
+    y = split.dataset.targets
     best_candidate_factory = None
     best_rmse = np.inf
     for candidate_factory in hyperparameter_spec.candidate_factories():
@@ -758,8 +758,8 @@ def _fit_selected_supervised_model(
         hyperparameter_spec,
     )
     model = candidate_factory()
-    X = split.dataset.X
-    y = split.dataset.y
+    X = split.dataset.mlip_features
+    y = split.dataset.targets
     if refit_policy == "train_only":
         fit_idx = split.train_idx
     else:
@@ -814,13 +814,13 @@ def sweep_supervised_model_selection(
     rmses_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
-        y = split.dataset.y
+        y = split.dataset.targets
         model, metadata = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
             refit_policy=refit_policy,
         )
-        preds = model.predict(split.dataset.X[split.test_idx])
+        preds = model.predict(split.dataset.mlip_features[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
@@ -841,8 +841,8 @@ def sweep_model_trimmed(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model = model_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
 
@@ -879,8 +879,8 @@ def sweep_model_with_validation_trimmed(
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in splits:
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model = model_factory()
         model.fit(
             X[split.train_idx],
@@ -928,8 +928,8 @@ def sweep_supervised_model_selection_trimmed(
     rmses_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model, metadata = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
@@ -999,8 +999,8 @@ def residual_sweep(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -1023,8 +1023,8 @@ def residual_sweep_trimmed(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
 
@@ -1048,8 +1048,8 @@ def weighted_linear_sweep(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         model = LinearRegression(fit_intercept=fit_intercept)
         model.fit(X[split.train_idx], y[split.train_idx])
         preds = model.predict(X[split.test_idx])
@@ -1081,8 +1081,8 @@ def weighted_simplex_sweep(
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
-        X = split.dataset.X
-        y = split.dataset.y
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
         weights = _simplex_weights(
             X[split.train_idx],
             y[split.train_idx],

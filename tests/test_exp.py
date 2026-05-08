@@ -362,7 +362,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def _train_test_payload(seed: int = 13) -> SweepRunPayload:
         X, y = SweepOutputRegressionTests._regression_dataset()
         return SweepRunPayload(
-            dataset=SweepDataset(X=X, y=y),
+            dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=SweepSplitCollection(
                 splits=tuple(
                     generate_sweep_splits(
@@ -491,7 +491,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def test_all_methods_consume_same_split_counts_and_keep_result_shape(self) -> None:
         X, y = self._regression_dataset()
         payload = SweepRunPayload(
-            dataset=SweepDataset(X=X, y=y),
+            dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=SweepSplitCollection(
                 splits=tuple(
                     generate_sweep_splits(
@@ -533,7 +533,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_registry_pipeline_matches_direct_method_outputs(self) -> None:
         X, y = self._regression_dataset()
-        dataset = SweepDataset(X=X, y=y)
+        dataset = SweepDataset(mlip_features=X, targets=y)
         payload = self._train_test_payload(seed=13)
         sklearn_specs = {
             name: spec for name, _, spec in sklearn_sweep_model_specs()
@@ -541,7 +541,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         validation_payload = SweepRunPayload(
             dataset=dataset,
             split_collection=build_sweep_split_collection(
-                len(dataset.X),
+                len(dataset.mlip_features),
                 min_train=2,
                 max_train=4,
                 n_repeats=2,
@@ -641,7 +641,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         X, y = self._regression_dataset()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=4,
             n_repeats=1,
@@ -667,7 +667,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         X, y = self._regression_dataset()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=1,
             max_train=3,
             n_repeats=1,
@@ -682,7 +682,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_selection_is_deterministic_for_fixed_seed(self) -> None:
         X, y = self._regression_dataset()
-        dataset = SweepDataset(X=X, y=y)
+        dataset = SweepDataset(mlip_features=X, targets=y)
 
         first = run_learning_curve_experiments(
             dataset,
@@ -710,7 +710,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         X, y = self._regression_dataset()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=4,
             n_repeats=1,
@@ -824,7 +824,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
     def _fixed_payload() -> SweepRunPayload:
         X, y = WeightedBaselineRegressionTests._toy_dataset()
         return SweepRunPayload(
-            dataset=SweepDataset(X=X, y=y),
+            dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=SweepSplitCollection(
                 splits=(
                     SweepSplit(
@@ -896,7 +896,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         X, _ = self._toy_dataset()
         y = 0.75 * X[:, 0] + 0.25 * X[:, 1]
         payload = SweepRunPayload(
-            dataset=SweepDataset(X=X, y=y),
+            dataset=SweepDataset(mlip_features=X, targets=y),
             split_collection=self._fixed_payload().split_collection,
             use_trim=False,
         )
@@ -941,7 +941,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_hyperparameter_selection_runner_picks_best_validation_candidate(self) -> None:
         dataset = SweepDataset(
-            X=np.array(
+            mlip_features=np.array(
                 [
                     [1.0],
                     [2.0],
@@ -951,7 +951,7 @@ class BoundaryTests(unittest.TestCase):
                     [6.0],
                 ]
             ),
-            y=np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0]),
+            targets=np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -998,8 +998,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_supervised_model_selection_uses_val_idx_not_test_idx(self) -> None:
         dataset = SweepDataset(
-            X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
-            y=np.array([0.0, 0.0, 0.0, 100.0, 100.0, 100.0]),
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 0.0, 100.0, 100.0, 100.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1048,8 +1048,8 @@ class BoundaryTests(unittest.TestCase):
         self,
     ) -> None:
         dataset = SweepDataset(
-            X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
-            y=np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1062,8 +1062,8 @@ class BoundaryTests(unittest.TestCase):
                 ),
             )
         )
-        val_X = dataset.X[np.array([2, 3])]
-        test_X = dataset.X[np.array([4, 5])]
+        val_X = dataset.mlip_features[np.array([2, 3])]
+        test_X = dataset.mlip_features[np.array([4, 5])]
         events: list[tuple[str, str, tuple[float, ...]]] = []
 
         class SpyPredictor:
@@ -1105,8 +1105,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_supervised_model_selection_breaks_validation_ties_deterministically(self) -> None:
         dataset = SweepDataset(
-            X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
-            y=np.array([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]),
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1119,7 +1119,9 @@ class BoundaryTests(unittest.TestCase):
                 ),
             )
         )
-        val_signature = tuple(float(v) for v in np.ravel(dataset.X[np.array([2, 3])]))
+        val_signature = tuple(
+            float(v) for v in np.ravel(dataset.mlip_features[np.array([2, 3])])
+        )
 
         class TiePredictor:
             def __init__(self, *, val_constant: float, test_constant: float) -> None:
@@ -1160,8 +1162,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_supervised_model_selection_runner_supports_refit_policy(self) -> None:
         dataset = SweepDataset(
-            X=np.array([[0.0], [1.0], [2.0], [10.0], [4.0], [5.0]]),
-            y=np.array([0.0, 1.0, 2.0, 10.0, 4.0, 5.0]),
+            mlip_features=np.array([[0.0], [1.0], [2.0], [10.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 10.0, 4.0, 5.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1216,8 +1218,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_supervised_model_selection_runner_rejects_unknown_refit_policy(self) -> None:
         dataset = SweepDataset(
-            X=np.array([[0.0], [1.0], [2.0], [3.0]]),
-            y=np.array([0.0, 1.0, 2.0, 3.0]),
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 3.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1281,8 +1283,8 @@ class BoundaryTests(unittest.TestCase):
                 name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
             }["lasso"]
             dataset = SweepDataset(
-                X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
-                y=np.array([0.0, 0.0, 0.001, 0.99, 0.0]),
+                mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+                targets=np.array([0.0, 0.0, 0.001, 0.99, 0.0]),
             )
             first_split = TrainValTestSweepRunnerInput(
                 dataset=dataset,
@@ -1343,8 +1345,8 @@ class BoundaryTests(unittest.TestCase):
                 name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
             }["elastic"]
             dataset = SweepDataset(
-                X=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
-                y=np.array([0.0, 0.0, 0.201, 0.299, 0.0]),
+                mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+                targets=np.array([0.0, 0.0, 0.201, 0.299, 0.0]),
             )
             first_split = TrainValTestSweepRunnerInput(
                 dataset=dataset,
@@ -1380,7 +1382,7 @@ class BoundaryTests(unittest.TestCase):
         X, y = SweepOutputRegressionTests._regression_dataset()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=1,
             max_train=3,
             n_repeats=1,
@@ -1395,7 +1397,7 @@ class BoundaryTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_train_test_baselines_remain_unaffected_by_lasso_and_elastic(self) -> None:
         X, y = SweepOutputRegressionTests._regression_dataset()
-        dataset = SweepDataset(X=X, y=y)
+        dataset = SweepDataset(mlip_features=X, targets=y)
 
         baseline_only = run_learning_curve_experiments(
             dataset,
@@ -1449,7 +1451,7 @@ class BoundaryTests(unittest.TestCase):
         X, y = SweepOutputRegressionTests._regression_dataset()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=1,
             max_train=3,
             n_repeats=1,
@@ -1471,7 +1473,7 @@ class BoundaryTests(unittest.TestCase):
                 return X @ self.coef_
 
         dataset = SweepDataset(
-            X=np.array(
+            mlip_features=np.array(
                 [
                     [1.0, 0.0],
                     [0.0, 1.0],
@@ -1481,7 +1483,7 @@ class BoundaryTests(unittest.TestCase):
                     [2.0, 2.0],
                 ]
             ),
-            y=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
         )
         payload = SweepRunnerPayload(
             splits=(
@@ -1566,7 +1568,7 @@ class BoundaryTests(unittest.TestCase):
         family = CapabilityAwareStubFamily()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=5,
             n_repeats=1,
@@ -1588,8 +1590,8 @@ class BoundaryTests(unittest.TestCase):
         self,
     ) -> None:
         dataset = SweepDataset(
-            X=np.arange(18, dtype=float).reshape(6, 3),
-            y=np.arange(6, dtype=float),
+            mlip_features=np.arange(18, dtype=float).reshape(6, 3),
+            targets=np.arange(6, dtype=float),
         )
         payload = SweepRunPayload(
             dataset=dataset,
@@ -1619,6 +1621,8 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsInstance(runner_payload.splits[1], TrainValTestSweepRunnerInput)
         self.assertIs(runner_payload.splits[0].dataset, dataset)
         self.assertIs(runner_payload.splits[1].dataset, dataset)
+        np.testing.assert_array_equal(dataset.X, dataset.mlip_features)
+        np.testing.assert_array_equal(dataset.y, dataset.targets)
         np.testing.assert_array_equal(
             runner_payload.splits[1].val_idx,
             np.array([3]),
@@ -1665,7 +1669,7 @@ class BoundaryTests(unittest.TestCase):
         weighted_family = StubFamily("weighted_linear_df")
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=4,
             n_repeats=1,
@@ -1724,7 +1728,7 @@ class BoundaryTests(unittest.TestCase):
         family = ValidationAwareStubFamily()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=5,
             n_repeats=1,
@@ -1823,7 +1827,7 @@ class BoundaryTests(unittest.TestCase):
         validation_family = ValidationStubFamily()
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=5,
             n_repeats=1,
@@ -1923,7 +1927,7 @@ class BoundaryTests(unittest.TestCase):
         )
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=5,
             n_repeats=1,
@@ -1960,8 +1964,8 @@ class BoundaryTests(unittest.TestCase):
         )
         payload = SweepRunPayload(
             dataset=SweepDataset(
-                X=np.arange(21, dtype=float).reshape(7, 3),
-                y=np.arange(7, dtype=float),
+                mlip_features=np.arange(21, dtype=float).reshape(7, 3),
+                targets=np.arange(7, dtype=float),
             ),
             split_collection=SweepSplitCollection(
                 splits=tuple(
@@ -2062,7 +2066,7 @@ class BoundaryTests(unittest.TestCase):
         )
 
         results = run_learning_curve_experiments(
-            SweepDataset(X=X, y=y),
+            SweepDataset(mlip_features=X, targets=y),
             min_train=2,
             max_train=4,
             n_repeats=1,
@@ -2120,8 +2124,8 @@ class BoundaryTests(unittest.TestCase):
         )
         payload = SweepRunPayload(
             dataset=SweepDataset(
-                X=np.arange(21, dtype=float).reshape(7, 3),
-                y=np.arange(7, dtype=float),
+                mlip_features=np.arange(21, dtype=float).reshape(7, 3),
+                targets=np.arange(7, dtype=float),
             ),
             split_collection=SweepSplitCollection(
                 splits=tuple(

@@ -28,8 +28,16 @@ class SweepSplit:
 
 @dataclass(frozen=True, slots=True)
 class SweepDataset:
-    X: np.ndarray
-    y: np.ndarray
+    mlip_features: np.ndarray
+    targets: np.ndarray
+
+    @property
+    def X(self) -> np.ndarray:
+        return self.mlip_features
+
+    @property
+    def y(self) -> np.ndarray:
+        return self.targets
 
 
 @dataclass(frozen=True, slots=True)
