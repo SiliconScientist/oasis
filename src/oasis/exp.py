@@ -248,9 +248,19 @@ def run_learning_curve_experiments_from_frame(
     else:
         X = np.column_stack([column_to_numpy(df, col) for col in feature_cols])
     y = column_to_numpy(df, "reference_ads_eng")
+    sample_ids = (
+        column_to_numpy(df, "reaction")
+        if "reaction" in getattr(df, "columns", ())
+        else None
+    )
 
     return run_learning_curve_experiments(
-        SweepDataset(mlip_features=X, targets=y),
+        SweepDataset(
+            mlip_features=X,
+            targets=y,
+            sample_ids=sample_ids,
+            auxiliary_views={},
+        ),
         min_train=min_train,
         max_train=max_train,
         n_repeats=n_repeats,

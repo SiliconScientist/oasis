@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -317,6 +318,63 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
 
 class ExpIntegrationTests(unittest.TestCase):
+    def test_run_learning_curve_experiments_from_frame_passes_reaction_ids_into_dataset(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": [
+                    "rxn-0",
+                    "rxn-1",
+                    "rxn-2",
+                    "rxn-3",
+                    "rxn-4",
+                    "rxn-5",
+                ],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_learning_curve_experiments",
+            autospec=True,
+        ) as run_mock:
+            run_mock.return_value = LearningCurveResults.from_mapping(
+                {"ridge_df": result_df}
+            )
+
+            results = run_learning_curve_experiments_from_frame(
+                df,
+                min_train=2,
+                max_train=4,
+                n_repeats=1,
+                seed=17,
+                use_trim=False,
+            )
+
+        self.assertIsNotNone(results.ridge_df)
+        dataset = run_mock.call_args.args[0]
+        self.assertIsInstance(dataset, SweepDataset)
+        np.testing.assert_array_equal(
+            dataset.sample_ids,
+            np.array(["rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"]),
+        )
+        self.assertEqual(dataset.auxiliary_views, {})
+        self.assertEqual(dataset.mlip_features.shape, (6, 2))
+        np.testing.assert_array_equal(
+            dataset.targets,
+            np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+
     def test_run_learning_curve_experiments_plans_splits_from_dataset_sample_count(
         self,
     ) -> None:
