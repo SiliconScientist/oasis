@@ -15,7 +15,6 @@ from oasis.graphs import (
     atoms_to_graph_record,
     build_graph_sweep_dataset,
     dump_graph_dataset_view,
-    export_atoms_graph_artifacts,
     load_graph_dataset_view,
     save_graph_dataset_view,
 )

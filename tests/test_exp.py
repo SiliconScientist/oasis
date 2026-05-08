@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from ase import Atoms
 import numpy as np
 import pandas as pd
 
@@ -18,6 +19,7 @@ from oasis.exp import (
     run_learning_curve_experiments_from_config,
     run_learning_curve_experiments_from_frame,
 )
+from oasis.graphs import atoms_to_graph_dataset_view
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -436,6 +438,76 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.graphs.sample_ids,
             ("rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"),
         )
+        self.assertIsNone(dataset.auxiliary_views)
+
+    def test_run_learning_curve_experiments_from_frame_plumbs_atoms_derived_graphs(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": [
+                    "rxn-0",
+                    "rxn-1",
+                    "rxn-2",
+                    "rxn-3",
+                    "rxn-4",
+                    "rxn-5",
+                ],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        sample_ids = df["reaction"].tolist()
+        sample_atoms = [
+            Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.74 + 0.01 * idx, 0.0, 0.0]])
+            for idx in range(6)
+        ]
+        graph_view = atoms_to_graph_dataset_view(sample_ids, sample_atoms)
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_learning_curve_experiments",
+            autospec=True,
+        ) as run_mock:
+            run_mock.return_value = LearningCurveResults.from_mapping(
+                {"ridge_df": result_df}
+            )
+
+            run_learning_curve_experiments_from_frame(
+                df,
+                min_train=2,
+                max_train=4,
+                n_repeats=1,
+                graph_view=graph_view,
+            )
+
+        dataset = run_mock.call_args.args[0]
+        self.assertIsInstance(dataset, SweepDataset)
+        self.assertTrue(dataset.has_graphs)
+        self.assertEqual(
+            dataset.graphs.sample_ids,
+            ("rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"),
+        )
+        np.testing.assert_array_equal(
+            dataset.sample_ids,
+            np.array(sample_ids),
+        )
+        np.testing.assert_allclose(
+            dataset.graphs["rxn-3"].node_positions,
+            sample_atoms[3].positions,
+        )
+        np.testing.assert_array_equal(
+            dataset.graphs["rxn-3"].node_features,
+            np.array([[1.0], [1.0]]),
+        )
+        self.assertEqual(dataset.graphs["rxn-3"].edge_index.dtype, np.int64)
         self.assertIsNone(dataset.auxiliary_views)
 
     def test_run_learning_curve_experiments_plans_splits_from_dataset_sample_count(
