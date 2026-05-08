@@ -204,9 +204,26 @@ def _config_flag_enabled(config_key: str) -> Callable[[Any], bool]:
 
 @dataclass(frozen=True, slots=True)
 class LearnedFamilyRegistrationSpec:
+    """Registry spec for non-sklearn learning-curve families.
+
+    Families can register either as:
+    - a concrete `family_factory` that returns a `SweepModelFamily`, or
+    - a trial-tuned family declaration that provides result fields plus a
+      `TrialTuningSpec`, which the registry wires into the shared
+      `OptunaModelSelectionSweepRunner`.
+    """
+
     name: str
     capabilities: SweepModelCapabilities
-    family_factory: Callable[[], SweepModelFamily]
+    family_factory: Callable[[], SweepModelFamily] | None = None
+    result_field: str | None = None
+    trimmed_result_field: str | None = None
+    trial_tuning_spec: TrialTuningSpec | None = None
+    optuna_n_trials: int | None = None
+    optuna_timeout_s: int | None = None
+    optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
+    selection_metadata_field: str | None = None
+    trim_z_thresh: float = 1.0
     config_key: str | None = None
     is_enabled: Callable[[Any], bool] | None = None
     default_enabled: bool = True
@@ -232,7 +249,10 @@ def _family_factory_for_learned_family_spec(
     spec: LearnedFamilyRegistrationSpec,
 ) -> Callable[[], SweepModelFamily]:
     def build_family() -> SweepModelFamily:
-        family = spec.family_factory()
+        if spec.family_factory is not None:
+            family = spec.family_factory()
+        else:
+            family = _configured_trial_tuned_family_for_learned_family_spec(spec)
         if family.capabilities() != spec.capabilities:
             raise ValueError(
                 f"learned family registration '{spec.name}' declared capabilities "
@@ -241,6 +261,45 @@ def _family_factory_for_learned_family_spec(
         return family
 
     return build_family
+
+
+def _configured_trial_tuned_family_for_learned_family_spec(
+    spec: LearnedFamilyRegistrationSpec,
+) -> SweepModelFamily:
+    if spec.trial_tuning_spec is None:
+        raise ValueError(
+            f"learned family registration '{spec.name}' must define family_factory "
+            "or trial_tuning_spec"
+        )
+    if spec.result_field is None:
+        raise ValueError(
+            f"learned family registration '{spec.name}' must define result_field "
+            "for trial-tuned registration"
+        )
+    if spec.optuna_n_trials is None:
+        raise ValueError(
+            f"learned family registration '{spec.name}' must define optuna_n_trials "
+            "for trial-tuned registration"
+        )
+    runner_kwargs = {
+        "n_trials": spec.optuna_n_trials,
+        "timeout_s": spec.optuna_timeout_s,
+    }
+    if spec.optuna_study_factory is not None:
+        runner_kwargs["study_factory"] = spec.optuna_study_factory
+    return ConfiguredSweepModelFamily(
+        SweepFamilySpec(
+            result_field=spec.result_field,
+            trimmed_result_field=spec.trimmed_result_field,
+            runner=OptunaModelSelectionSweepRunner(
+                spec.trial_tuning_spec,
+                **runner_kwargs,
+            ),
+            selection_metadata_field=spec.selection_metadata_field,
+            trim_z_thresh=spec.trim_z_thresh,
+            capabilities=spec.capabilities,
+        )
+    )
 
 
 def learned_family_registration(
@@ -602,6 +661,10 @@ def learned_family_registration_specs(
             name="moe",
             is_enabled=_moe_enabled,
             capabilities=SweepModelCapabilities(requires_validation=True),
+            # A real MoE implementation can keep this registry entry shape but
+            # swap the placeholder family_factory for `trial_tuning_spec=...`
+            # plus Optuna study settings to run through the shared trial-based
+            # selection runner.
             family_factory=lambda: PlaceholderLearnedSweepModelFamily(
                 name="moe",
                 declared_capabilities=SweepModelCapabilities(

@@ -19,6 +19,7 @@ from oasis.sweep import (
     SweepFamilyRequirements,
     SweepModelCapabilities,
     SweepRunnerPayload,
+    SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
     TrainTestSweepRunnerInput,
@@ -27,6 +28,7 @@ from oasis.sweep import (
 from oasis.tune import (
     OptunaModelSelectionSweepRunner,
     SupervisedModelSelectionSweepRunner,
+    TrialTuningSpec,
     sweep_model_with_hyperparameter_selection,
     sweep_model_with_hyperparameter_selection_trimmed,
     sweep_model_with_optuna_selection,
@@ -255,6 +257,130 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             moe_family.requirements(),
             SweepFamilyRequirements(requires_inner_validation=True),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_learned_family_registration_supports_trial_tuned_stub_family(self) -> None:
+        class FakeTrialSpec:
+            def build_trial_objective(self, split):
+                y_val = split.dataset.targets[split.val_idx]
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial.params["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+
+                class ConstantModel:
+                    def __init__(self, constant: float) -> None:
+                        self.constant = constant
+
+                    def predict(self, X):
+                        return np.full(len(X), self.constant, dtype=float)
+
+                return ConstantModel(float(best_trial.params["constant"]))
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial.params["constant"]),
+                    "selected": float(model.constant),
+                }
+
+        class FakeTrial:
+            def __init__(self, constant: float) -> None:
+                self.params = {"constant": constant}
+                self.value: float | None = None
+
+        class FakeStudy:
+            def __init__(self) -> None:
+                self.trials = (FakeTrial(0.0), FakeTrial(3.0))
+                self.best_trial = None
+
+            def optimize(self, objective, *, n_trials, timeout):
+                del timeout
+                best_value = np.inf
+                for trial in self.trials[:n_trials]:
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
+                        self.best_trial = trial
+
+        registration = learned_family_registration(
+            LearnedFamilyRegistrationSpec(
+                name="stub_trial_learned",
+                config_key="use_stub_trial_learned",
+                capabilities=SweepModelCapabilities(requires_validation=True),
+                result_field="ridge_df",
+                trial_tuning_spec=FakeTrialSpec(),
+                optuna_n_trials=2,
+                optuna_study_factory=lambda split: FakeStudy(),
+                selection_metadata_field="ridge_selection_df",
+            )
+        )
+        self.assertIsInstance(FakeTrialSpec(), TrialTuningSpec)
+
+        self.assertEqual(registration.name, "stub_trial_learned")
+        self.assertTrue(
+            registration.is_enabled(SimpleNamespace(use_stub_trial_learned=True))
+        )
+        self.assertFalse(
+            registration.is_enabled(SimpleNamespace(use_stub_trial_learned=False))
+        )
+
+        family = registration.family_factory()
+        self.assertIsInstance(family, ConfiguredSweepModelFamily)
+        self.assertEqual(
+            family.capabilities(),
+            SweepModelCapabilities(requires_validation=True),
+        )
+        self.assertEqual(
+            family.requirements(),
+            SweepFamilyRequirements(requires_inner_validation=True),
+        )
+        self.assertIsInstance(family.spec.runner, OptunaModelSelectionSweepRunner)
+
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 1.0, 3.0, 4.0, 5.0]),
+        )
+        payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=4,
+                        train_idx=np.array([0, 1]),
+                        val_idx=np.array([2, 3]),
+                        test_idx=np.array([4, 5]),
+                    ),
+                ),
+                planning_requirements=SweepFamilyRequirements(
+                    requires_inner_validation=True
+                ),
+            ),
+            use_trim=False,
+        )
+        result = family.run(payload)
+
+        self.assertIsNotNone(result.ridge_df)
+        self.assertIsNotNone(result.ridge_selection_df)
+        self.assertEqual(
+            result.ridge_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(
+            result.ridge_selection_df.columns.tolist(),
+            [
+                "n_train",
+                "best_validation_score",
+                "constant",
+                "selected",
+                "trial_count",
+            ],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
