@@ -293,15 +293,15 @@ def run_learning_curve_experiments_from_config(
 ) -> LearningCurveResults:
     from oasis.method import enabled_learning_curve_model_names_from_config
 
-    plot_cfg = cfg.plot if cfg else None
-    model_cfg = cfg.learning_curve_models if cfg else None
+    experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
+    model_cfg = experiment_cfg.models if experiment_cfg else None
     return run_learning_curve_experiments_from_frame(
         df,
-        min_train=plot_cfg.min_train if plot_cfg else 5,
-        max_train=plot_cfg.max_train if plot_cfg else 10,
-        n_repeats=plot_cfg.n_repeats if plot_cfg else 50,
+        min_train=experiment_cfg.min_train if experiment_cfg else 5,
+        max_train=experiment_cfg.max_train if experiment_cfg else 10,
+        n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
-        use_trim=plot_cfg.trim if plot_cfg else True,
+        use_trim=experiment_cfg.trim if experiment_cfg else True,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
     )
 

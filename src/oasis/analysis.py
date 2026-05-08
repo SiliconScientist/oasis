@@ -234,7 +234,7 @@ def filter_wide_predictions(
     if adsorbate_filter is not None:
         if "adsorbate" not in filtered_df.columns:
             raise ValueError(
-                f"Configured plot.adsorbate='{adsorbate_filter}', but no "
+                f"Configured plot.filters.adsorbate='{adsorbate_filter}', but no "
                 "'adsorbate' column exists in the combined dataframe"
             )
         filtered_df = filtered_df.filter(pl.col("adsorbate") == adsorbate_filter)
@@ -255,7 +255,7 @@ def filter_wide_predictions(
         ]
         if not label_cols and not detail_cols:
             raise ValueError(
-                f"Configured plot.anomaly_label='{anomaly_filter}', but no "
+                f"Configured plot.filters.anomaly_label='{anomaly_filter}', but no "
                 "label/detail columns exist in the combined dataframe"
             )
         exclude_mode = anomaly_filter.startswith(("!", "not:"))
@@ -264,14 +264,14 @@ def filter_wide_predictions(
         )
         if not anomaly_value:
             raise ValueError(
-                "plot.anomaly_label exclusion must specify a label, e.g. "
+                "plot.filters.anomaly_label exclusion must specify a label, e.g. "
                 "'!adsorbate_migration' or 'not:adsorbate_migration'"
             )
         if anomaly_value == "inference_anomaly":
             if not detail_cols:
                 raise ValueError(
-                    "Configured plot.anomaly_label for inference anomaly filtering, "
-                    "but no inference detail columns exist in the combined dataframe"
+                    "Configured plot.filters.anomaly_label for inference anomaly "
+                    "filtering, but no inference detail columns exist in the combined dataframe"
                 )
             anomaly_expr = pl.any_horizontal([pl.col(col) > 0 for col in detail_cols])
             label_expr = ~anomaly_expr if exclude_mode else anomaly_expr

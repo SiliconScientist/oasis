@@ -84,22 +84,36 @@ class LearningCurveModelsConfig(BaseModel):
     moe: MoEConfig = Field(default_factory=MoEConfig)
 
 
-class PlotConfig(BaseModel):
-    """Plot configuration.
+class PlotFiltersConfig(BaseModel):
+    adsorbate: Optional[str] = None
+    anomaly_label: Optional[str] = None
+    reaction_contains: Optional[List[str]] = None
+
+
+class LearningCurveExperimentConfig(BaseModel):
+    """Learning-curve sweep configuration.
 
     `min_train` and `max_train` define the outer training-budget sweep. Methods
     that require validation may spend part of that budget on inner validation,
     while the test split remains reserved for outer evaluation only.
     """
 
-    output_dir: Path
     min_train: int
     max_train: int
     n_repeats: int
     trim: bool
-    adsorbate: Optional[str] = None
-    anomaly_label: Optional[str] = None
-    reaction_contains: Optional[List[str]] = None
+    models: Optional[LearningCurveModelsConfig] = None
+
+
+class ExperimentConfig(BaseModel):
+    learning_curve: Optional[LearningCurveExperimentConfig] = None
+
+
+class PlotConfig(BaseModel):
+    """Plot configuration."""
+
+    output_dir: Path
+    filters: PlotFiltersConfig = Field(default_factory=PlotFiltersConfig)
 
 
 class Config(BaseModel):
@@ -110,8 +124,8 @@ class Config(BaseModel):
     ingest: IngestConfig
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
+    experiment: Optional[ExperimentConfig] = None
     plot: Optional[PlotConfig] = None
-    learning_curve_models: Optional[LearningCurveModelsConfig] = None
 
     def init_paths(self):
         catbench_folder = (

@@ -26,9 +26,12 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
-    adsorbate_filter = cfg.plot.adsorbate if cfg.plot else None
-    anomaly_filter = cfg.plot.anomaly_label if cfg.plot else None
-    reaction_contains_filter = cfg.plot.reaction_contains if cfg.plot else None
+    plot_filters = cfg.plot.filters if cfg.plot else None
+    adsorbate_filter = plot_filters.adsorbate if plot_filters else None
+    anomaly_filter = plot_filters.anomaly_label if plot_filters else None
+    reaction_contains_filter = (
+        plot_filters.reaction_contains if plot_filters else None
+    )
     if reaction_contains_filter is not None:
         reaction_contains_filter = [s for s in reaction_contains_filter if s]
         if not reaction_contains_filter:

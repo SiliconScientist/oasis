@@ -1164,6 +1164,42 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(results.ridge_df)
         self.assertEqual(results.ridge_df["n_train"].tolist(), [5])
 
+    def test_run_learning_curve_experiments_from_config_uses_default_models_with_plot_only_cfg(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+
+        if not HAS_SKLEARN:
+            self.skipTest("requires scikit-learn")
+
+        cfg = SimpleNamespace(
+            seed=23,
+            plot=SimpleNamespace(
+                output_dir="unused",
+            ),
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=4,
+                    n_repeats=2,
+                    trim=False,
+                    models=None,
+                )
+            ),
+        )
+
+        results = run_learning_curve_experiments_from_config(df, cfg=cfg)
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertIsNotNone(results.lasso_df)
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
+
     def test_run_learning_curve_experiments_from_frame_runs_weighted_baselines(
         self,
     ) -> None:
@@ -1216,20 +1252,23 @@ class ExpIntegrationTests(unittest.TestCase):
 
         cfg = SimpleNamespace(
             seed=19,
-            plot=SimpleNamespace(
-                min_train=2,
-                max_train=4,
-                n_repeats=2,
-                trim=False,
-            ),
-            learning_curve_models=SimpleNamespace(
-                use_ridge=True,
-                use_kernel_ridge=False,
-                use_lasso=False,
-                use_elastic_net=False,
-                use_residual=False,
-                use_weighted_linear=True,
-                use_weighted_simplex=False,
+            plot=SimpleNamespace(output_dir="unused"),
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=4,
+                    n_repeats=2,
+                    trim=False,
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=True,
+                        use_weighted_simplex=False,
+                    ),
+                )
             ),
         )
 
