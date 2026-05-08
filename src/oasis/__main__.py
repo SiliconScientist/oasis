@@ -6,7 +6,11 @@ import sys
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.exp import run_learning_curve_experiments_from_config
-from oasis.io import find_result_files, load_wide_predictions
+from oasis.io import (
+    find_result_files,
+    load_sample_atoms_for_wide_df,
+    load_wide_predictions,
+)
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
 
@@ -34,7 +38,7 @@ def main() -> None:
         anomaly_filter=anomaly_filter,
         reaction_contains_filter=reaction_contains_filter,
     )
-
+    sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix_parts: list[str] = []
@@ -56,6 +60,7 @@ def main() -> None:
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
+    print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
 
     learning_curve_results = run_learning_curve_experiments_from_config(wide_df, cfg)
 
