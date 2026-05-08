@@ -248,12 +248,16 @@ class SweepDataset:
 class SweepFamilyRequirements:
     """Split-planning requirements for a model family.
 
-    `min_train_size` refers to the outer training budget for a sweep point.
-    `requires_inner_validation=True` means that budget must be partitioned into
-    inner-train and validation subsets, while `test_idx` remains reserved for
-    outer evaluation only. Selection-based families therefore skip sweep sizes
-    that are too small to support both validation and at least one inner-train
-    sample.
+    `min_train_size` refers to the outer training budget for a sweep point. The
+    planner takes the maximum of the caller's requested `min_train`, this
+    family-level minimum, and any additional feasibility guards implied by the
+    split policy.
+
+    `requires_inner_validation=True` means that outer-train budget must be
+    partitioned into inner-train and validation subsets, while `test_idx`
+    remains reserved for outer evaluation only. Selection-based families
+    therefore skip sweep sizes that cannot support the configured minimum
+    validation budget and at least one inner-train sample.
     """
 
     min_train_size: int = 0

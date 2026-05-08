@@ -187,12 +187,15 @@ def build_sweep_split_collection(
     to support inner train/val partitioning while keeping `test_idx` as the
     outer evaluation holdout.
 
-    The minimum sweep size for a selection-based family is therefore the maximum
-    of:
+    The effective minimum sweep size is the maximum of:
     - the caller's requested `min_train`
     - the family's declared `min_train_size`
-    - the smallest sweep size that leaves at least one inner-train sample after
-      the validation policy carves out `val_idx`
+    - for validation-aware families, the smallest sweep size that can satisfy
+      `min_val_size` while still leaving at least one inner-train sample
+
+    The feasible sweep range is also bounded above by `n_samples - min_test_size`
+    so that every emitted split leaves at least `min_test_size` samples in the
+    outer test set.
     """
 
     requirements = requirements or SweepFamilyRequirements()
@@ -200,6 +203,7 @@ def build_sweep_split_collection(
     effective_min_train = max(min_train, requirements.min_train_size)
     rng = np.random.default_rng(seed)
     if requirements.requires_inner_validation:
+        effective_min_train = max(effective_min_train, min_val_size + 1)
         splits = tuple(
             generate_inner_validation_sweep_splits(
                 n_samples,

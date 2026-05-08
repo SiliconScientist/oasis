@@ -966,6 +966,62 @@ class ExpIntegrationTests(unittest.TestCase):
         )
         self.assertTrue(all(split.val_idx is not None for split in split_collection.splits))
 
+    def test_build_sweep_split_collection_heavy_family_minimum_dominates(self) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=10,
+            min_train=2,
+            max_train=8,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=6,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_test_size=2,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [6, 7, 8],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in split_collection.splits],
+            [2, 2, 2],
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in split_collection.splits],
+            [4, 3, 2],
+        )
+
+    def test_build_sweep_split_collection_validation_and_test_guards_dominate(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=7,
+            min_train=1,
+            max_train=6,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=3,
+            min_test_size=3,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [4],
+        )
+        split = split_collection.splits[0]
+        self.assertEqual(len(split.val_idx), 3)
+        self.assertEqual(len(split.train_idx), 1)
+        self.assertEqual(len(split.test_idx), 3)
+
     def test_validation_aware_family_does_not_constrain_baseline_sweep_sizes(
         self,
     ) -> None:
