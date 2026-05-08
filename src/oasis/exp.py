@@ -22,9 +22,6 @@ if TYPE_CHECKING:
     from oasis.config import Config
 
 
-_INNER_VALIDATION_FRACTION = 0.2
-
-
 @dataclass(frozen=True, slots=True)
 class ParityPlotData:
     reference: np.ndarray
@@ -34,20 +31,24 @@ class ParityPlotData:
 def inner_validation_size_for_sweep(
     sweep_size: int,
     *,
-    frac: float = _INNER_VALIDATION_FRACTION,
+    validation_fraction: float,
+    min_val_size: int,
 ) -> int:
     """Return the inner validation size for one outer-train budget.
 
     This policy consumes part of the requested sweep budget for validation via
-    `max(1, floor(frac * sweep_size))`. The remainder stays available for inner
-    training; outer test samples are not involved in this calculation.
+    `max(min_val_size, floor(validation_fraction * sweep_size))`. The remainder
+    stays available for inner training; outer test samples are not involved in
+    this calculation.
     """
 
     if sweep_size <= 0:
         raise ValueError("sweep_size must be positive.")
-    if frac <= 0:
-        raise ValueError("frac must be positive.")
-    return max(1, math.floor(frac * sweep_size))
+    if validation_fraction < 0:
+        raise ValueError("validation_fraction must be non-negative.")
+    if min_val_size <= 0:
+        raise ValueError("min_val_size must be positive.")
+    return max(min_val_size, math.floor(validation_fraction * sweep_size))
 
 def generate_sweep_splits(
     n_samples: int,
@@ -120,7 +121,8 @@ def generate_inner_validation_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
     *,
-    validation_fraction: float = _INNER_VALIDATION_FRACTION,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield sweep splits with policy-sized inner validation holdouts.
 
@@ -137,7 +139,8 @@ def generate_inner_validation_sweep_splits(
     for sweep_size in range(min_train, max_train + 1):
         n_val = inner_validation_size_for_sweep(
             sweep_size,
-            frac=validation_fraction,
+            validation_fraction=validation_fraction,
+            min_val_size=min_val_size,
         )
         if n_val >= sweep_size:
             continue

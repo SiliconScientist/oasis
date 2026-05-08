@@ -127,17 +127,81 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
     def test_inner_validation_size_for_sweep_uses_fraction_policy(self) -> None:
-        self.assertEqual(inner_validation_size_for_sweep(1), 1)
-        self.assertEqual(inner_validation_size_for_sweep(4), 1)
-        self.assertEqual(inner_validation_size_for_sweep(5), 1)
-        self.assertEqual(inner_validation_size_for_sweep(10), 2)
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                1,
+                validation_fraction=0.2,
+                min_val_size=1,
+            ),
+            1,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                4,
+                validation_fraction=0.2,
+                min_val_size=1,
+            ),
+            1,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                5,
+                validation_fraction=0.2,
+                min_val_size=1,
+            ),
+            1,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                10,
+                validation_fraction=0.2,
+                min_val_size=1,
+            ),
+            2,
+        )
+
+    def test_inner_validation_size_for_sweep_uses_minimum_policy(self) -> None:
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                4,
+                validation_fraction=0.2,
+                min_val_size=2,
+            ),
+            2,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                10,
+                validation_fraction=0.0,
+                min_val_size=3,
+            ),
+            3,
+        )
 
     def test_inner_validation_size_for_sweep_rejects_invalid_inputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "sweep_size must be positive"):
-            inner_validation_size_for_sweep(0)
+            inner_validation_size_for_sweep(
+                0,
+                validation_fraction=0.2,
+                min_val_size=1,
+            )
 
-        with self.assertRaisesRegex(ValueError, "frac must be positive"):
-            inner_validation_size_for_sweep(5, frac=0.0)
+        with self.assertRaisesRegex(
+            ValueError,
+            "validation_fraction must be non-negative",
+        ):
+            inner_validation_size_for_sweep(
+                5,
+                validation_fraction=-0.1,
+                min_val_size=1,
+            )
+
+        with self.assertRaisesRegex(ValueError, "min_val_size must be positive"):
+            inner_validation_size_for_sweep(
+                5,
+                validation_fraction=0.2,
+                min_val_size=0,
+            )
 
     def test_generate_sweep_splits_with_validation_yields_disjoint_full_partitions(
         self,
@@ -303,6 +367,23 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             [len(split.train_idx) for split in splits],
             [3, 4, 5, 6, 7, 8, 8],
         )
+
+    def test_generate_inner_validation_sweep_splits_honors_minimum_policy(self) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=12,
+                min_train=4,
+                max_train=10,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.2,
+                min_val_size=2,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual([len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2])
+        self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8])
 
         with self.assertRaisesRegex(
             ValueError,
