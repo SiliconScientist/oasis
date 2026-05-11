@@ -666,6 +666,18 @@ class SweepPayloadTests(unittest.TestCase):
             self.assertTrue(seen.isdisjoint(subset_ids))
             seen.update(subset_ids)
 
+    def _assert_loader_sample_ids(
+        self,
+        loader_payload: dict[str, object],
+        *,
+        expected_split_name: str,
+        expected_sample_ids: tuple[str, ...],
+    ) -> None:
+        self.assertEqual(loader_payload["split_name"], expected_split_name)
+        self.assertEqual(loader_payload["sample_ids"], expected_sample_ids)
+        self.assertEqual(loader_payload["graph_ids"], expected_sample_ids)
+        self.assertEqual(loader_payload["sample_id_set"], set(expected_sample_ids))
+
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
         self,
     ) -> None:
@@ -1043,6 +1055,122 @@ class SweepPayloadTests(unittest.TestCase):
             ),
             set(dataset.sample_ids.tolist()),
         )
+
+    def test_split_to_loaders_preserves_sample_ids_for_non_monotonic_split_indices(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([4, 0, 5]),
+            val_idx=np.array([2, 1]),
+            test_idx=np.array([3]),
+        )
+
+        def loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            sample_ids = tuple(dataset.sample_ids.tolist())
+            return {
+                "split_name": split_name,
+                "sample_ids": sample_ids,
+                "sample_id_set": set(sample_ids),
+                "graph_ids": dataset.graphs.sample_ids,
+            }
+
+        loaders = split_to_loaders(split, loader_factory)
+
+        self._assert_loader_sample_ids(
+            loaders.train,
+            expected_split_name="train",
+            expected_sample_ids=("s4", "s0", "s5"),
+        )
+        self._assert_loader_sample_ids(
+            loaders.val,
+            expected_split_name="val",
+            expected_sample_ids=("s2", "s1"),
+        )
+        self._assert_loader_sample_ids(
+            loaders.test,
+            expected_split_name="test",
+            expected_sample_ids=("s3",),
+        )
+        self.assertTrue(
+            loaders.train["sample_id_set"].isdisjoint(loaders.val["sample_id_set"])
+        )
+        self.assertTrue(
+            loaders.train["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+        )
+        self.assertTrue(
+            loaders.val["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+        )
+
+    def test_split_to_loaders_repeated_construction_preserves_split_membership(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([1, 5, 0]),
+            val_idx=np.array([4]),
+            test_idx=np.array([3, 2]),
+        )
+        calls: list[tuple[str, tuple[str, ...], int]] = []
+
+        def loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            sample_ids = tuple(dataset.sample_ids.tolist())
+            calls.append((split_name, sample_ids, dataset))
+            return {
+                "split_name": split_name,
+                "sample_ids": sample_ids,
+                "sample_id_set": set(sample_ids),
+                "graph_ids": dataset.graphs.sample_ids,
+                "dataset_ref": dataset,
+            }
+
+        first = split_to_loaders(split, loader_factory)
+        second = split.loaders(loader_factory)
+
+        for loaders in (first, second):
+            self._assert_loader_sample_ids(
+                loaders.train,
+                expected_split_name="train",
+                expected_sample_ids=("s1", "s5", "s0"),
+            )
+            self._assert_loader_sample_ids(
+                loaders.val,
+                expected_split_name="val",
+                expected_sample_ids=("s4",),
+            )
+            self._assert_loader_sample_ids(
+                loaders.test,
+                expected_split_name="test",
+                expected_sample_ids=("s3", "s2"),
+            )
+            self.assertTrue(
+                loaders.train["sample_id_set"].isdisjoint(loaders.val["sample_id_set"])
+            )
+            self.assertTrue(
+                loaders.train["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+            )
+            self.assertTrue(
+                loaders.val["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                ("train", ("s1", "s5", "s0"), first.train["dataset_ref"]),
+                ("val", ("s4",), first.val["dataset_ref"]),
+                ("test", ("s3", "s2"), first.test["dataset_ref"]),
+                ("train", ("s1", "s5", "s0"), second.train["dataset_ref"]),
+                ("val", ("s4",), second.val["dataset_ref"]),
+                ("test", ("s3", "s2"), second.test["dataset_ref"]),
+            ],
+        )
+        self.assertIsNot(first.train["dataset_ref"], second.train["dataset_ref"])
+        self.assertIsNot(first.val["dataset_ref"], second.val["dataset_ref"])
+        self.assertIsNot(first.test["dataset_ref"], second.test["dataset_ref"])
 
     def test_train_test_runner_input_loaders_delegate_per_subset(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()

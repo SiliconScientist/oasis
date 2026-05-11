@@ -31,6 +31,7 @@ from oasis.tune import (
     OptunaModelSelectionSweepRunner,
     SupervisedModelSelectionSweepRunner,
     TrialTuningSpec,
+    _select_candidate_factory_by_validation,
     sweep_model_with_hyperparameter_selection,
     sweep_model_with_optuna_selection,
 )
@@ -1000,11 +1001,11 @@ class BoundaryTests(unittest.TestCase):
                 test_idx=np.array([4]),
             )
 
-            first_model = method_module._select_candidate_factory_by_validation(
+            first_model = _select_candidate_factory_by_validation(
                 first_split,
                 lasso_spec.hyperparameter_spec,
             )()
-            second_model = method_module._select_candidate_factory_by_validation(
+            second_model = _select_candidate_factory_by_validation(
                 second_split,
                 lasso_spec.hyperparameter_spec,
             )()
@@ -1062,11 +1063,11 @@ class BoundaryTests(unittest.TestCase):
                 test_idx=np.array([4]),
             )
 
-            first_model = method_module._select_candidate_factory_by_validation(
+            first_model = _select_candidate_factory_by_validation(
                 first_split,
                 elastic_spec.hyperparameter_spec,
             )()
-            second_model = method_module._select_candidate_factory_by_validation(
+            second_model = _select_candidate_factory_by_validation(
                 second_split,
                 elastic_spec.hyperparameter_spec,
             )()
