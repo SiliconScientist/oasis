@@ -640,6 +640,32 @@ class SweepPayloadTests(unittest.TestCase):
             },
         )
 
+    def _assert_subset_matches_indices(
+        self,
+        subset: SweepDataset,
+        dataset: SweepDataset,
+        indices: np.ndarray,
+    ) -> None:
+        expected_sample_ids = dataset.sample_ids[indices]
+        expected_targets = dataset.targets[indices]
+        expected_features = dataset.mlip_features[indices]
+        expected_weights = dataset.auxiliary_views["weights"][indices]
+        expected_folds = [dataset.auxiliary_views["folds"][index] for index in indices]
+
+        np.testing.assert_array_equal(subset.sample_ids, expected_sample_ids)
+        np.testing.assert_array_equal(subset.targets, expected_targets)
+        np.testing.assert_array_equal(subset.mlip_features, expected_features)
+        np.testing.assert_array_equal(subset.auxiliary_views["weights"], expected_weights)
+        self.assertEqual(subset.auxiliary_views["folds"], expected_folds)
+        self.assertEqual(subset.graphs.sample_ids, tuple(expected_sample_ids.tolist()))
+
+    def _assert_disjoint_sample_ids(self, *subsets: SweepDataset) -> None:
+        seen: set[str] = set()
+        for subset in subsets:
+            subset_ids = set(subset.sample_ids.tolist())
+            self.assertTrue(seen.isdisjoint(subset_ids))
+            seen.update(subset_ids)
+
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
         self,
     ) -> None:
@@ -734,6 +760,29 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
         self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s5", "s2"))
 
+    def test_train_test_runner_input_dataset_subsets_follow_declared_split_membership(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        train_idx = np.array([5, 1, 3])
+        test_idx = np.array([4, 0, 2])
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=train_idx,
+            test_idx=test_idx,
+        )
+
+        subsets = split.dataset_subsets()
+
+        self._assert_subset_matches_indices(subsets.train, dataset, train_idx)
+        self._assert_subset_matches_indices(subsets.test, dataset, test_idx)
+        self._assert_disjoint_sample_ids(subsets.train, subsets.test)
+        self.assertEqual(
+            set(subsets.train.sample_ids.tolist()) | set(subsets.test.sample_ids.tolist()),
+            set(dataset.sample_ids.tolist()),
+        )
+
     def test_train_test_runner_input_preserves_multimodal_identity_for_sample_ids(
         self,
     ) -> None:
@@ -821,6 +870,34 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertEqual(inputs.val.graph_view_required().sample_ids, ("s1",))
         self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
         self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s3", "s5"))
+
+    def test_split_to_dataset_subsets_preserves_ordered_membership_per_split(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        train_idx = np.array([4, 1, 5])
+        val_idx = np.array([0])
+        test_idx = np.array([3, 2])
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=train_idx,
+            val_idx=val_idx,
+            test_idx=test_idx,
+        )
+
+        subsets = split_to_dataset_subsets(split)
+
+        self._assert_subset_matches_indices(subsets.train, dataset, train_idx)
+        self._assert_subset_matches_indices(subsets.val, dataset, val_idx)
+        self._assert_subset_matches_indices(subsets.test, dataset, test_idx)
+        self._assert_disjoint_sample_ids(subsets.train, subsets.val, subsets.test)
+        self.assertEqual(
+            (
+                set(subsets.train.sample_ids.tolist())
+                | set(subsets.val.sample_ids.tolist())
+                | set(subsets.test.sample_ids.tolist())
+            ),
+            set(dataset.sample_ids.tolist()),
+        )
 
     def test_train_val_test_runner_input_preserves_multimodal_identity_for_sample_ids(
         self,
@@ -911,6 +988,62 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertEqual(loaders.test["sample_ids"], ("s4", "s5"))
         self.assertEqual(loaders.test["graph_ids"], ("s4", "s5"))
 
+    def test_split_to_loaders_passes_subset_datasets_without_cross_split_leakage(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        train_idx = np.array([5, 0, 2])
+        val_idx = np.array([4, 1])
+        test_idx = np.array([3])
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=train_idx,
+            val_idx=val_idx,
+            test_idx=test_idx,
+        )
+        seen_subset_ids: set[int] = set()
+
+        def loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            sample_ids = tuple(dataset.sample_ids.tolist())
+            seen_subset_ids.add(id(dataset))
+            return {
+                "split_name": split_name,
+                "sample_ids": sample_ids,
+                "sample_id_set": set(sample_ids),
+                "targets": tuple(dataset.targets.tolist()),
+                "weights": tuple(dataset.auxiliary_views["weights"].tolist()),
+                "graph_ids": dataset.graphs.sample_ids,
+            }
+
+        loaders = split_to_loaders(split, loader_factory)
+
+        self.assertIsInstance(loaders, TrainValTestSplitLoaders)
+        self.assertEqual(len(seen_subset_ids), 3)
+        self.assertEqual(loaders.train["sample_ids"], ("s5", "s0", "s2"))
+        self.assertEqual(loaders.val["sample_ids"], ("s4", "s1"))
+        self.assertEqual(loaders.test["sample_ids"], ("s3",))
+        self.assertEqual(loaders.train["graph_ids"], loaders.train["sample_ids"])
+        self.assertEqual(loaders.val["graph_ids"], loaders.val["sample_ids"])
+        self.assertEqual(loaders.test["graph_ids"], loaders.test["sample_ids"])
+        self.assertTrue(
+            loaders.train["sample_id_set"].isdisjoint(loaders.val["sample_id_set"])
+        )
+        self.assertTrue(
+            loaders.train["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+        )
+        self.assertTrue(
+            loaders.val["sample_id_set"].isdisjoint(loaders.test["sample_id_set"])
+        )
+        self.assertEqual(
+            (
+                loaders.train["sample_id_set"]
+                | loaders.val["sample_id_set"]
+                | loaders.test["sample_id_set"]
+            ),
+            set(dataset.sample_ids.tolist()),
+        )
+
     def test_train_test_runner_input_loaders_delegate_per_subset(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()
         split = TrainTestSweepRunnerInput(
@@ -946,5 +1079,52 @@ class SweepPayloadTests(unittest.TestCase):
                 "sample_ids": ("s1", "s2", "s4"),
                 "targets": (1.25, 2.25, 4.25),
                 "graph_ids": ("s1", "s2", "s4"),
+            },
+        )
+
+    def test_train_test_runner_input_loaders_preserve_subset_order_and_alignment(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([2, 5, 1]),
+            test_idx=np.array([4, 0, 3]),
+        )
+
+        def loader_factory(subset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            return {
+                "split_name": split_name,
+                "sample_ids": tuple(subset.sample_ids.tolist()),
+                "targets": tuple(subset.targets.tolist()),
+                "weights": tuple(subset.auxiliary_views["weights"].tolist()),
+                "folds": tuple(subset.auxiliary_views["folds"]),
+                "graph_ids": subset.graphs.sample_ids,
+            }
+
+        loaders = split.loaders(loader_factory)
+
+        self.assertIsInstance(loaders, TrainTestSplitLoaders)
+        self.assertEqual(
+            loaders.train,
+            {
+                "split_name": "train",
+                "sample_ids": ("s2", "s5", "s1"),
+                "targets": (2.25, 5.25, 1.25),
+                "weights": (3.0, 6.0, 2.0),
+                "folds": ("c", "f", "b"),
+                "graph_ids": ("s2", "s5", "s1"),
+            },
+        )
+        self.assertEqual(
+            loaders.test,
+            {
+                "split_name": "test",
+                "sample_ids": ("s4", "s0", "s3"),
+                "targets": (4.25, 0.25, 3.25),
+                "weights": (5.0, 1.0, 4.0),
+                "folds": ("e", "a", "d"),
+                "graph_ids": ("s4", "s0", "s3"),
             },
         )
