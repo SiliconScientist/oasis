@@ -64,11 +64,19 @@ try:
         weighted_simplex_sweep,
     )
 
+    HAS_METHOD = True
+except ModuleNotFoundError:
+    HAS_METHOD = False
+
+try:
+    import sklearn  # noqa: F401
+
     HAS_SKLEARN = True
 except ModuleNotFoundError:
     HAS_SKLEARN = False
 
 
+@unittest.skipUnless(HAS_METHOD, "requires method dependencies")
 class SweepOutputRegressionTests(unittest.TestCase):
     _regression_dataset = staticmethod(regression_dataset)
     _train_test_payload = staticmethod(regression_train_test_payload)
@@ -807,6 +815,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         pd.testing.assert_frame_equal(split_aware, legacy)
 
 
+@unittest.skipUnless(HAS_METHOD, "requires method dependencies")
 class WeightedBaselineRegressionTests(unittest.TestCase):
     _toy_dataset = staticmethod(weighted_toy_dataset)
     _fixed_payload = staticmethod(weighted_fixed_payload)
@@ -907,6 +916,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(HAS_METHOD, "requires method dependencies")
 class BoundaryTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_sklearn_specs_declare_validation_search_spaces(self) -> None:

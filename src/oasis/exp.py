@@ -12,6 +12,7 @@ from oasis.sweep import (
     GraphDatasetView,
     LearningCurveResults,
     SweepDataset,
+    SweepDatasetInputs,
     SweepFamilyRequirements,
     SweepRunPayload,
     SweepSplit,
@@ -323,8 +324,10 @@ def build_sweep_dataset_from_frame(
         if "reaction" in getattr(df, "columns", ())
         else None
     )
-    return SweepDataset(
-        mlip_features=X,
+    return SweepDataset.from_inputs(
+        inputs=SweepDatasetInputs(
+            mlip_features=X,
+        ),
         targets=y,
         sample_ids=sample_ids,
         auxiliary_views={},

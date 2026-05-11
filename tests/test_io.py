@@ -6,10 +6,14 @@ import tempfile
 import unittest
 
 from ase import Atoms
-import polars as pl
+try:
+    import polars as pl
+    from oasis.config import Config
+    from oasis.io import load_sample_atoms_for_wide_df
 
-from oasis.config import Config
-from oasis.io import load_sample_atoms_for_wide_df
+    HAS_IO_DEPS = True
+except ModuleNotFoundError:
+    HAS_IO_DEPS = False
 
 
 def _row_wrapped_atoms_json(atoms: Atoms) -> str:
@@ -25,6 +29,7 @@ def _row_wrapped_atoms_json(atoms: Atoms) -> str:
     )
 
 
+@unittest.skipUnless(HAS_IO_DEPS, "requires io dependencies")
 class LoadSampleAtomsForWideDfTests(unittest.TestCase):
     def test_loads_atoms_in_wide_df_row_order(self) -> None:
         first_atoms = Atoms("H", positions=[[0.0, 0.0, 0.0]])

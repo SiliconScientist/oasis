@@ -154,6 +154,23 @@ class SweepDataset:
     graph_view: GraphDatasetView | None = None
     auxiliary_views: Mapping[str, Any] | None = None
 
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        inputs: SweepDatasetInputs | SweepDatasetModalities,
+        targets: np.ndarray,
+        sample_ids: np.ndarray | None = None,
+        auxiliary_views: Mapping[str, Any] | None = None,
+    ) -> SweepDataset:
+        return cls(
+            mlip_features=inputs.mlip_features,
+            targets=targets,
+            sample_ids=sample_ids,
+            graph_view=inputs.graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+
     @property
     def n_samples(self) -> int:
         return len(self.mlip_features)

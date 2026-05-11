@@ -13,6 +13,7 @@ from oasis.exp import column_to_numpy, mlip_columns
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
+    SweepDatasetInputs,
     _duplicate_sample_ids,
     _format_sample_id_list,
 )
@@ -204,11 +205,13 @@ def build_graph_sweep_dataset(
     aligned_graphs = GraphDatasetView.from_records(
         tuple(graph_view[sample_id] for sample_id in sample_ids)
     )
-    return SweepDataset(
-        mlip_features=mlip_features,
+    return SweepDataset.from_inputs(
+        inputs=SweepDatasetInputs(
+            mlip_features=mlip_features,
+            graph_view=aligned_graphs,
+        ),
         targets=targets,
         sample_ids=np.asarray(sample_ids),
-        graph_view=aligned_graphs,
     )
 
 

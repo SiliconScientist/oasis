@@ -45,9 +45,9 @@ try:
         sweep_results_frame,
     )
 
-    HAS_SKLEARN = True
+    HAS_METHOD = True
 except ModuleNotFoundError:
-    HAS_SKLEARN = False
+    HAS_METHOD = False
 
 
 class GenerateSweepSplitsTests(unittest.TestCase):
@@ -533,6 +533,7 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
 
 
+@unittest.skipUnless(HAS_METHOD, "requires method dependencies")
 class ExpIntegrationTests(unittest.TestCase):
     def test_run_learning_curve_experiments_from_frame_passes_reaction_ids_into_dataset(
         self,
@@ -585,6 +586,7 @@ class ExpIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(dataset.auxiliary_views, {})
         self.assertEqual(dataset.mlip_features.shape, (6, 2))
+        self.assertIs(dataset.inputs.mlip_features, dataset.mlip_features)
         np.testing.assert_array_equal(
             dataset.targets,
             np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
@@ -649,6 +651,7 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.graphs.sample_ids,
             ("rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"),
         )
+        self.assertIs(dataset.inputs.graph_view_required(), dataset.graph_view)
         self.assertIs(dataset.modalities.mlip_features, dataset.mlip_features)
         self.assertIs(dataset.modalities.graphs, dataset.graphs)
         self.assertIsNone(dataset.auxiliary_views)

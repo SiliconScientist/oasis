@@ -323,6 +323,8 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
         np.testing.assert_array_equal(dataset.targets, np.array([2.0, 1.0]))
         self.assertTrue(dataset.has_graphs)
         self.assertEqual(dataset.graphs.sample_ids, ("rxn-b", "rxn-a"))
+        self.assertIs(dataset.inputs.mlip_features, dataset.mlip_features)
+        self.assertIs(dataset.inputs.graph_view_required(), dataset.graph_view)
         sample = dataset.sample(0)
         self.assertEqual(sample.sample_id, "rxn-b")
         np.testing.assert_array_equal(sample.mlip_features, np.array([2.2, 1.8]))

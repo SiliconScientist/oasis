@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from oasis.config import Config
+try:
+    from oasis.config import Config
+
+    HAS_CONFIG = True
+except ModuleNotFoundError:
+    HAS_CONFIG = False
 
 
+@unittest.skipUnless(HAS_CONFIG, "requires config dependencies")
 class ConfigParsingTests(unittest.TestCase):
     def test_learning_curve_split_sizing_explicit_values_parse(self) -> None:
         cfg = Config(
