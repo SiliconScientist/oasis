@@ -148,7 +148,20 @@ class TrialTuningSpec(Protocol):
 
 @runtime_checkable
 class LearnedTrialTuningSpec(Protocol):
-    """Contract for learned-model trial tuning over split-aware dataset subsets."""
+    """Contract for learned-model trial tuning over split-aware dataset subsets.
+
+    Implementations receive the full `TrainValTestSweepRunnerInput`, so they may
+    derive framework-specific loaders from `split.dataset_subsets()` or
+    `split.loaders(...)` instead of slicing raw numpy arrays directly.
+
+    Selection contract:
+    - candidate ranking may use only train/val data
+    - `fit_selected_model(...)` may refit on train only or train+val according
+      to `refit_policy`
+    - `predict(...)` is called exactly once on the held-out outer test subset
+      after selection/refit
+    - outer test targets must never influence candidate ranking
+    """
 
     def build_trial_objective(
         self,

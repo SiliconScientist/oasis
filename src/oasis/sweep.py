@@ -447,6 +447,16 @@ class TrainValTestSweepRunnerInput:
     `train_idx` and `val_idx` together make up the full outer training budget
     for that sweep point. `test_idx` remains a held-out outer evaluation split
     and must not be touched during candidate selection.
+
+    Developer contract for learned families:
+    - `dataset_subsets()` materializes aligned `SweepDataset` views for
+      train/val/test, including sample IDs, graphs, and auxiliary views.
+    - `loaders(...)` is the framework seam: build PyTorch Geometric,
+      DGL, or other framework loaders from those subset datasets outside the
+      core sweep planner.
+    - model selection may use only train/val data.
+    - outer-test data must remain held out until one final evaluation after
+      selection and any optional refit.
     """
 
     dataset: SweepDataset
