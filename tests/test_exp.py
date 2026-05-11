@@ -752,6 +752,25 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2])
         self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8])
 
+    def test_generate_inner_validation_sweep_splits_exposes_one_point_validation_pathology(
+        self,
+    ) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=8,
+                min_train=2,
+                max_train=6,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.2,
+                min_val_size=1,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [2, 3, 4, 5, 6])
+        self.assertEqual([len(split.val_idx) for split in splits], [1, 1, 1, 1, 1])
+        self.assertEqual([len(split.train_idx) for split in splits], [1, 2, 3, 4, 5])
+
     def test_generate_inner_validation_sweep_splits_keeps_outer_test_disjoint(self) -> None:
         splits = list(
             generate_inner_validation_sweep_splits(
@@ -810,6 +829,40 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                     rng=np.random.default_rng(1),
                 )
             )
+
+    def test_generate_inner_validation_sweep_splits_returns_no_splits_when_min_val_consumes_budget(
+        self,
+    ) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=10,
+                min_train=1,
+                max_train=3,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.0,
+                min_val_size=3,
+            )
+        )
+
+        self.assertEqual(splits, [])
+
+    def test_generate_sweep_splits_with_validation_returns_no_splits_when_min_test_size_leaves_too_little_room(
+        self,
+    ) -> None:
+        splits = list(
+            generate_sweep_splits_with_validation(
+                n_samples=6,
+                min_train=3,
+                max_train=5,
+                n_val=2,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                min_test_size=4,
+            )
+        )
+
+        self.assertEqual(splits, [])
 
     def test_build_sweep_split_collection_honors_min_test_size(self) -> None:
         split_collection = build_sweep_split_collection(
@@ -877,6 +930,33 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             )
             self.assertEqual(len(split.val_idx), expected_n_val)
             self.assertEqual(len(split.train_idx) + len(split.val_idx), split.sweep_size)
+
+    def test_build_sweep_split_collection_returns_no_validation_sweeps_when_guards_consume_budget(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=6,
+            min_train=1,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.0,
+            min_val_size=2,
+            min_test_size=4,
+        )
+
+        self.assertEqual(split_collection.splits, ())
+        self.assertEqual(
+            split_collection.planning_requirements,
+            SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+        )
 
 
 
