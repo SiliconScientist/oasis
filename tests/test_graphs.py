@@ -15,6 +15,7 @@ from oasis.graphs import (
     atoms_to_graph_record,
     build_graph_sweep_dataset,
     dump_graph_dataset_view,
+    load_configured_graph_dataset_view,
     load_graph_dataset_view,
     save_graph_dataset_view,
 )
@@ -111,6 +112,35 @@ class LoadGraphDatasetViewTests(unittest.TestCase):
         self.assertEqual(view.sample_ids, ("rxn-b", "rxn-a"))
         np.testing.assert_array_equal(view["rxn-b"].node_features, np.array([[2.0]]))
         np.testing.assert_array_equal(view["rxn-a"].node_features, np.array([[1.0]]))
+
+    def test_load_configured_graph_dataset_view_reads_configured_path(self) -> None:
+        payload = [
+            {
+                "sample_id": "rxn-a",
+                "node_features": [[1.0]],
+                "edge_index": [[], []],
+            }
+        ]
+        graph_dataset_cfg = type(
+            "GraphDatasetCfg",
+            (),
+            {"path": None, "join_key": "reaction"},
+        )()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            graph_dataset_cfg.path = Path(tmp_dir) / "graphs.json"
+            graph_dataset_cfg.path.write_text(json.dumps(payload), encoding="utf-8")
+
+            view = load_configured_graph_dataset_view(graph_dataset_cfg)
+
+        assert view is not None
+        self.assertEqual(view.sample_ids, ("rxn-a",))
+        np.testing.assert_array_equal(view["rxn-a"].node_features, np.array([[1.0]]))
+
+    def test_load_configured_graph_dataset_view_returns_none_without_config(
+        self,
+    ) -> None:
+        self.assertIsNone(load_configured_graph_dataset_view(None))
 
 
 def _load_from_payload(payload: object):

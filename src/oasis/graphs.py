@@ -21,6 +21,7 @@ from oasis.sweep import SweepDataset
 
 if TYPE_CHECKING:
     from ase import Atoms
+    from oasis.config import GraphDatasetInputConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,16 @@ def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
 
     records = tuple(_graph_record_from_mapping(item) for item in payload)
     return GraphDatasetView.from_records(records)
+
+
+def load_configured_graph_dataset_view(
+    graph_dataset_cfg: GraphDatasetInputConfig | None,
+) -> GraphDatasetView | None:
+    """Load a graph dataset view from configured graph dataset input settings."""
+
+    if graph_dataset_cfg is None:
+        return None
+    return load_graph_dataset_view(graph_dataset_cfg.path)
 
 
 def dump_graph_dataset_view(graph_view: GraphDatasetView) -> list[dict[str, Any]]:

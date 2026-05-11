@@ -351,12 +351,14 @@ def run_learning_curve_experiments_from_config(
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
+    graph_dataset_cfg = getattr(experiment_cfg, "graph_dataset", None)
     graph_join_key = "reaction"
-    if graph_view is None and experiment_cfg and experiment_cfg.graph_dataset is not None:
-        from oasis.graphs import load_graph_dataset_view
+    if graph_view is None and experiment_cfg:
+        from oasis.graphs import load_configured_graph_dataset_view
 
-        graph_view = load_graph_dataset_view(experiment_cfg.graph_dataset.path)
-        graph_join_key = experiment_cfg.graph_dataset.join_key
+        graph_view = load_configured_graph_dataset_view(graph_dataset_cfg)
+    if graph_dataset_cfg is not None:
+        graph_join_key = graph_dataset_cfg.join_key
     return run_learning_curve_experiments_from_frame(
         df,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,
