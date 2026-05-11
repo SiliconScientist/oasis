@@ -9,6 +9,7 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import pandas as pd
 from oasis.sweep import (
+    SweepDataset,
     LearningCurveResults,
     SweepFamilyRequirements,
     SweepModelCapabilities,
@@ -18,9 +19,7 @@ from oasis.sweep import (
     TrainValTestSweepRunnerInput,
 )
 from oasis.tune import (
-    FactoryListHyperparameterSpec,
     GridHyperparameterSpec,
-    HyperparameterSelectionSweepRunner,
     HyperparameterSpec,
     LearnedOptunaModelSelectionSweepRunner,
     LearnedTrialTuningSpec,
@@ -30,10 +29,6 @@ from oasis.tune import (
     SweepRunnerArtifacts,
     TrialTuningSpec,
     ValidationAwareEstimator,
-    _select_candidate_factory_by_validation,
-    sweep_model_with_hyperparameter_selection,
-    sweep_model_with_optuna_selection,
-    sweep_supervised_model_selection,
 )
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
@@ -88,15 +83,11 @@ class RidgeOptunaTrialTuningSpec:
         y = split.dataset.targets
 
         def objective(trial: Any) -> float:
-            alpha = float(
-                trial.suggest_categorical("alpha", [0.01, 0.1, 1.0, 10.0])
-            )
+            alpha = float(trial.suggest_categorical("alpha", [0.01, 0.1, 1.0, 10.0]))
             model = Ridge(alpha=alpha)
             model.fit(X[split.train_idx], y[split.train_idx])
             val_preds = model.predict(X[split.val_idx])
-            return float(
-                np.sqrt(mean_squared_error(y[split.val_idx], val_preds))
-            )
+            return float(np.sqrt(mean_squared_error(y[split.val_idx], val_preds)))
 
         return objective
 
@@ -138,7 +129,9 @@ def _as_runner_payload(
 def _payload_uses_validation(payload: SweepRunnerPayload) -> bool:
     if payload.planning_requirements.requires_validation:
         return True
-    return any(isinstance(split, TrainValTestSweepRunnerInput) for split in payload.splits)
+    return any(
+        isinstance(split, TrainValTestSweepRunnerInput) for split in payload.splits
+    )
 
 
 def _assert_train_test_payload(
@@ -256,7 +249,10 @@ def _family_factory_for_learned_family_spec(
 def _configured_trial_tuned_family_for_learned_family_spec(
     spec: LearnedFamilyRegistrationSpec,
 ) -> SweepModelFamily:
-    if spec.trial_tuning_spec is not None and spec.learned_trial_tuning_spec is not None:
+    if (
+        spec.trial_tuning_spec is not None
+        and spec.learned_trial_tuning_spec is not None
+    ):
         raise ValueError(
             f"learned family registration '{spec.name}' cannot define both "
             "trial_tuning_spec and learned_trial_tuning_spec"
@@ -305,7 +301,9 @@ def _configured_trial_tuned_family_for_learned_family_spec(
 
 def _graph_feature_means(dataset: SweepDataset) -> np.ndarray:
     if not dataset.has_graphs:
-        raise ValueError("graph_mean learned family requires graph_view on the dataset.")
+        raise ValueError(
+            "graph_mean learned family requires graph_view on the dataset."
+        )
     return np.asarray(
         [
             float(np.mean(dataset.graphs[sample_id].node_features))
@@ -448,6 +446,7 @@ class SweepExperimentRunner(Protocol):
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
 
+
 @runtime_checkable
 class ValidationAwareSweepExperimentRunner(Protocol):
     """Runner interface for methods that select on val and evaluate on outer test."""
@@ -478,9 +477,7 @@ class SweepFamilySpec:
     result_field: str
     runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner
     selection_metadata_field: str | None = None
-    capabilities: SweepModelCapabilities = field(
-        default_factory=SweepModelCapabilities
-    )
+    capabilities: SweepModelCapabilities = field(default_factory=SweepModelCapabilities)
 
 
 @dataclass(frozen=True, slots=True)
@@ -674,7 +671,9 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
             family_factory=lambda spec=spec: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field=spec.result_field,
-                    selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
+                    selection_metadata_field=_sklearn_selection_metadata_field_for_spec(
+                        spec
+                    ),
                     runner=_sklearn_runner_for_spec(spec),
                     capabilities=_sklearn_capabilities_for_spec(spec),
                 )
@@ -688,8 +687,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
     )
 
 
-def learned_family_registration_specs(
-) -> tuple[LearnedFamilyRegistrationSpec, ...]:
+def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
     return (
         LearnedFamilyRegistrationSpec(
             name="residual",
@@ -745,17 +743,14 @@ def learned_family_registration_specs(
             # selection runner.
             family_factory=lambda: PlaceholderLearnedSweepModelFamily(
                 name="moe",
-                declared_capabilities=SweepModelCapabilities(
-                    requires_validation=True
-                ),
+                declared_capabilities=SweepModelCapabilities(requires_validation=True),
             ),
             default_enabled=False,
         ),
     )
 
 
-def sklearn_sweep_model_specs(
-) -> tuple[tuple[str, str, SklearnSweepModelSpec], ...]:
+def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec], ...]:
     return (
         (
             "ridge",
@@ -833,7 +828,9 @@ def sklearn_model_families(
         ConfiguredSweepModelFamily(
             SweepFamilySpec(
                 result_field=spec.result_field,
-                selection_metadata_field=_sklearn_selection_metadata_field_for_spec(spec),
+                selection_metadata_field=_sklearn_selection_metadata_field_for_spec(
+                    spec
+                ),
                 runner=_sklearn_runner_for_spec(spec),
                 capabilities=_sklearn_capabilities_for_spec(spec),
             )
