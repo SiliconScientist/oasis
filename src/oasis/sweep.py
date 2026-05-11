@@ -568,9 +568,10 @@ class TrainTestSweepRunnerInput:
     test_idx: np.ndarray
 
     def dataset_subsets(self) -> TrainTestSplitDatasets:
-        return TrainTestSplitDatasets(
-            train=self.dataset.subset(self.train_idx),
-            test=self.dataset.subset(self.test_idx),
+        return _build_train_test_split_datasets(
+            self.dataset,
+            train_idx=self.train_idx,
+            test_idx=self.test_idx,
         )
 
     def loaders(
@@ -610,10 +611,11 @@ class TrainValTestSweepRunnerInput:
     test_idx: np.ndarray
 
     def dataset_subsets(self) -> TrainValTestSplitDatasets:
-        return TrainValTestSplitDatasets(
-            train=self.dataset.subset(self.train_idx),
-            val=self.dataset.subset(self.val_idx),
-            test=self.dataset.subset(self.test_idx),
+        return _build_train_val_test_split_datasets(
+            self.dataset,
+            train_idx=self.train_idx,
+            val_idx=self.val_idx,
+            test_idx=self.test_idx,
         )
 
     def loaders(
@@ -646,12 +648,40 @@ class TrainTestSplitDatasets:
     train: SweepDataset
     test: SweepDataset
 
+    @property
+    def inputs(self) -> TrainTestSplitDatasetInputs:
+        return TrainTestSplitDatasetInputs(
+            train=self.train.inputs,
+            test=self.test.inputs,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class TrainValTestSplitDatasets:
     train: SweepDataset
     val: SweepDataset
     test: SweepDataset
+
+    @property
+    def inputs(self) -> TrainValTestSplitDatasetInputs:
+        return TrainValTestSplitDatasetInputs(
+            train=self.train.inputs,
+            val=self.val.inputs,
+            test=self.test.inputs,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainTestSplitDatasetInputs:
+    train: SweepDatasetInputs
+    test: SweepDatasetInputs
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestSplitDatasetInputs:
+    train: SweepDatasetInputs
+    val: SweepDatasetInputs
+    test: SweepDatasetInputs
 
 
 SplitDatasets: TypeAlias = TrainTestSplitDatasets | TrainValTestSplitDatasets
@@ -676,6 +706,32 @@ class TrainValTestSplitLoaders:
 
 
 SplitLoaders: TypeAlias = TrainTestSplitLoaders | TrainValTestSplitLoaders
+
+
+def _build_train_test_split_datasets(
+    dataset: SweepDataset,
+    *,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+) -> TrainTestSplitDatasets:
+    return TrainTestSplitDatasets(
+        train=dataset.subset(train_idx),
+        test=dataset.subset(test_idx),
+    )
+
+
+def _build_train_val_test_split_datasets(
+    dataset: SweepDataset,
+    *,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    test_idx: np.ndarray,
+) -> TrainValTestSplitDatasets:
+    return TrainValTestSplitDatasets(
+        train=dataset.subset(train_idx),
+        val=dataset.subset(val_idx),
+        test=dataset.subset(test_idx),
+    )
 
 
 def split_to_runner_input(

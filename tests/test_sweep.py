@@ -13,6 +13,7 @@ from oasis.sweep import (
     SweepDatasetInputs,
     SweepDatasetModalities,
     SweepRunnerPayload,
+    TrainTestSplitDatasetInputs,
     SweepSampleInputs,
     SweepSampleModalities,
     SweepSplit,
@@ -21,6 +22,7 @@ from oasis.sweep import (
     TrainTestSplitDatasets,
     TrainTestSplitLoaders,
     TrainTestSweepRunnerInput,
+    TrainValTestSplitDatasetInputs,
     TrainValTestSplitDatasets,
     TrainValTestSplitLoaders,
     TrainValTestSweepRunnerInput,
@@ -717,6 +719,13 @@ class SweepPayloadTests(unittest.TestCase):
         np.testing.assert_array_equal(subsets.test.targets, np.array([5.25, 2.25]))
         self.assertEqual(subsets.train.sample(0).graph.sample_id, "s4")
         self.assertEqual(subsets.test.sample(1).auxiliary, {"weights": 3.0, "folds": "c"})
+        inputs = subsets.inputs
+        self.assertIsInstance(inputs, TrainTestSplitDatasetInputs)
+        self.assertIsInstance(inputs.train, SweepDatasetInputs)
+        self.assertIs(inputs.train.mlip_features, subsets.train.mlip_features)
+        self.assertEqual(inputs.train.graph_view_required().sample_ids, ("s4", "s1", "s0"))
+        self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
+        self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s5", "s2"))
 
     def test_train_val_test_runner_input_builds_non_overlapping_dataset_subsets(
         self,
@@ -767,6 +776,14 @@ class SweepPayloadTests(unittest.TestCase):
             np.array([4.0, 6.0]),
         )
         self.assertEqual(subsets.test.graphs.sample_ids, ("s3", "s5"))
+        inputs = subsets.inputs
+        self.assertIsInstance(inputs, TrainValTestSplitDatasetInputs)
+        self.assertIs(inputs.train.mlip_features, subsets.train.mlip_features)
+        self.assertEqual(inputs.train.graph_view_required().sample_ids, ("s0", "s2", "s4"))
+        self.assertIs(inputs.val.mlip_features, subsets.val.mlip_features)
+        self.assertEqual(inputs.val.graph_view_required().sample_ids, ("s1",))
+        self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
+        self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s3", "s5"))
 
     def test_split_to_loaders_uses_thin_adapter_seam(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()
