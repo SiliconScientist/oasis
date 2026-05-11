@@ -122,6 +122,7 @@ class LearningCurveExperimentConfig(BaseModel):
     n_repeats: int
     validation_fraction: float = 0.2
     min_val_size: int = 1
+    min_inner_train_size: int = 1
     min_test_size: int = 1
     graph_dataset: Optional[GraphDatasetInputConfig] = None
     models: Optional[LearningCurveModelsConfig] = None

@@ -55,6 +55,7 @@ min_train = 5
 max_train = 25
 validation_fraction = 0.2
 min_val_size = 1
+min_inner_train_size = 1
 min_test_size = 1
 # Repeats are independent outer splits at each training-budget value.
 n_repeats = 10

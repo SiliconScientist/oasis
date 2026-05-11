@@ -91,6 +91,7 @@ def generate_sweep_splits_with_validation(
     n_repeats: int,
     rng: np.random.Generator,
     *,
+    min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield repeated outer train/test splits with inner train/val partitions.
@@ -106,12 +107,14 @@ def generate_sweep_splits_with_validation(
         raise ValueError("n_val must be positive.")
     if n_val >= n_samples:
         raise ValueError("n_val must be smaller than n_samples.")
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
     if min_test_size <= 0:
         raise ValueError("min_test_size must be positive.")
 
     idx = np.arange(n_samples)
     max_train = min(max_train, n_samples - min_test_size)
-    for n_train in range(max(min_train, n_val + 1), max_train + 1):
+    for n_train in range(max(min_train, n_val + min_inner_train_size), max_train + 1):
         for _ in range(n_repeats):
             outer_train_idx = rng.choice(idx, size=n_train, replace=False)
             test_idx = np.setdiff1d(idx, outer_train_idx, assume_unique=False)
@@ -134,6 +137,7 @@ def generate_inner_validation_sweep_splits(
     *,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield sweep splits with policy-sized inner validation holdouts.
@@ -142,11 +146,11 @@ def generate_inner_validation_sweep_splits(
     untouched during model selection, and validation is taken from within the
     requested training budget.
 
-    Sweep sizes that cannot support both validation and at least one inner-train
-    sample are skipped. For the current fraction-based policy, that means the
-    minimum valid selection-aware sweep size is usually 2, subject to any larger
-    family-specific `min_train_size` requirement.
+    Sweep sizes that cannot support both validation and at least
+    `min_inner_train_size` inner-train samples are skipped.
     """
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
     if min_test_size <= 0:
         raise ValueError("min_test_size must be positive.")
 
@@ -157,7 +161,7 @@ def generate_inner_validation_sweep_splits(
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
         )
-        if n_val >= sweep_size:
+        if n_val + min_inner_train_size > sweep_size:
             continue
         yield from generate_sweep_splits_with_validation(
             n_samples=n_samples,
@@ -166,6 +170,7 @@ def generate_inner_validation_sweep_splits(
             n_val=n_val,
             n_repeats=n_repeats,
             rng=rng,
+            min_inner_train_size=min_inner_train_size,
             min_test_size=min_test_size,
         )
 
@@ -180,6 +185,7 @@ def build_sweep_split_collection(
     requirements: SweepFamilyRequirements | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> SweepSplitCollection:
     """Build the split collection for one family under its split requirements.
@@ -193,7 +199,8 @@ def build_sweep_split_collection(
     - the caller's requested `min_train`
     - the family's declared `min_train_size`
     - for validation-aware families, the smallest sweep size that can satisfy
-      `min_val_size` while still leaving at least one inner-train sample
+      `min_val_size` while still leaving at least `min_inner_train_size`
+      inner-train samples
 
     The feasible sweep range is also bounded above by `n_samples - min_test_size`
     so that every emitted split leaves at least `min_test_size` samples in the
@@ -205,7 +212,10 @@ def build_sweep_split_collection(
     effective_min_train = max(min_train, requirements.min_train_size)
     rng = np.random.default_rng(seed)
     if requirements.requires_inner_validation:
-        effective_min_train = max(effective_min_train, min_val_size + 1)
+        effective_min_train = max(
+            effective_min_train,
+            min_val_size + min_inner_train_size,
+        )
         splits = tuple(
             generate_inner_validation_sweep_splits(
                 n_samples,
@@ -215,6 +225,7 @@ def build_sweep_split_collection(
                 rng,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
+                min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
             )
         )
@@ -276,6 +287,7 @@ def run_learning_curve_experiments_from_frame(
     graph_join_key: str = "reaction",
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
@@ -295,6 +307,7 @@ def run_learning_curve_experiments_from_frame(
         enabled_model_names=enabled_model_names,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
+        min_inner_train_size=min_inner_train_size,
         min_test_size=min_test_size,
         model_families=model_families,
     )
@@ -404,6 +417,11 @@ def run_learning_curve_experiments_from_config(
             else 0.2
         ),
         min_val_size=getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1,
+        min_inner_train_size=(
+            getattr(experiment_cfg, "min_inner_train_size", 1)
+            if experiment_cfg
+            else 1
+        ),
         min_test_size=(
             getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
         ),
@@ -433,6 +451,7 @@ def run_learning_curve_experiments(
     enabled_model_names: Sequence[str] | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
@@ -462,6 +481,7 @@ def run_learning_curve_experiments(
                 requirements=requirements,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
+                min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
             ),
         )
