@@ -22,6 +22,8 @@ from oasis.tune import (
     GridHyperparameterSpec,
     HyperparameterSelectionSweepRunner,
     HyperparameterSpec,
+    LearnedOptunaModelSelectionSweepRunner,
+    LearnedTrialTuningSpec,
     OptunaModelSelectionSweepRunner,
     SelectionRefitPolicy,
     SupervisedModelSelectionSweepRunner,
@@ -207,6 +209,7 @@ class LearnedFamilyRegistrationSpec:
     family_factory: Callable[[], SweepModelFamily] | None = None
     result_field: str | None = None
     trial_tuning_spec: TrialTuningSpec | None = None
+    learned_trial_tuning_spec: LearnedTrialTuningSpec | None = None
     optuna_n_trials: int | None = None
     optuna_timeout_s: int | None = None
     optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
@@ -253,10 +256,15 @@ def _family_factory_for_learned_family_spec(
 def _configured_trial_tuned_family_for_learned_family_spec(
     spec: LearnedFamilyRegistrationSpec,
 ) -> SweepModelFamily:
-    if spec.trial_tuning_spec is None:
+    if spec.trial_tuning_spec is not None and spec.learned_trial_tuning_spec is not None:
+        raise ValueError(
+            f"learned family registration '{spec.name}' cannot define both "
+            "trial_tuning_spec and learned_trial_tuning_spec"
+        )
+    if spec.trial_tuning_spec is None and spec.learned_trial_tuning_spec is None:
         raise ValueError(
             f"learned family registration '{spec.name}' must define family_factory "
-            "or trial_tuning_spec"
+            "or a trial tuning spec"
         )
     if spec.result_field is None:
         raise ValueError(
@@ -274,15 +282,141 @@ def _configured_trial_tuned_family_for_learned_family_spec(
     }
     if spec.optuna_study_factory is not None:
         runner_kwargs["study_factory"] = spec.optuna_study_factory
+    runner = (
+        OptunaModelSelectionSweepRunner(
+            spec.trial_tuning_spec,
+            **runner_kwargs,
+        )
+        if spec.trial_tuning_spec is not None
+        else LearnedOptunaModelSelectionSweepRunner(
+            spec.learned_trial_tuning_spec,
+            **runner_kwargs,
+        )
+    )
     return ConfiguredSweepModelFamily(
         SweepFamilySpec(
             result_field=spec.result_field,
-            runner=OptunaModelSelectionSweepRunner(
-                spec.trial_tuning_spec,
-                **runner_kwargs,
-            ),
+            runner=runner,
             selection_metadata_field=spec.selection_metadata_field,
             capabilities=spec.capabilities,
+        )
+    )
+
+
+def _graph_feature_means(dataset: SweepDataset) -> np.ndarray:
+    if not dataset.has_graphs:
+        raise ValueError("graph_mean learned family requires graph_view on the dataset.")
+    return np.asarray(
+        [
+            float(np.mean(dataset.graphs[sample_id].node_features))
+            for sample_id in dataset.sample_ids.tolist()
+        ],
+        dtype=float,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class GraphMeanConstantModel:
+    scale: float
+    offset: float
+
+
+@dataclass(frozen=True, slots=True)
+class GraphMeanLearnedTrialTuningSpec:
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]:
+        subsets = split.dataset_subsets()
+        graph_means = _graph_feature_means(subsets.val)
+        targets = subsets.val.targets
+
+        def objective(trial: Any) -> float:
+            scale = float(trial.params["scale"])
+            preds = graph_means * scale
+            return float(np.sqrt(mean_squared_error(targets, preds)))
+
+        return objective
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> GraphMeanConstantModel:
+        subsets = split.dataset_subsets()
+        scale = float(best_trial.params["scale"])
+        if refit_policy == "train_only":
+            fit_graph_means = _graph_feature_means(subsets.train)
+            fit_targets = subsets.train.targets
+        else:
+            fit_graph_means = np.concatenate(
+                [_graph_feature_means(subsets.train), _graph_feature_means(subsets.val)]
+            )
+            fit_targets = np.concatenate([subsets.train.targets, subsets.val.targets])
+        offset = float(np.mean(fit_targets - (fit_graph_means * scale)))
+        return GraphMeanConstantModel(scale=scale, offset=offset)
+
+    def predict(
+        self,
+        model: GraphMeanConstantModel,
+        dataset: SweepDataset,
+    ) -> np.ndarray:
+        return (_graph_feature_means(dataset) * model.scale) + model.offset
+
+    def trial_metadata(
+        self,
+        best_trial: Any,
+        model: GraphMeanConstantModel,
+    ) -> dict[str, Any]:
+        return {
+            "scale": float(best_trial.params["scale"]),
+            "offset": float(model.offset),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _FixedScaleTrial:
+    scale: float
+    value: float | None = None
+
+    @property
+    def params(self) -> dict[str, float]:
+        return {"scale": self.scale}
+
+
+@dataclass(frozen=True, slots=True)
+class _FixedScaleStudy:
+    trials: tuple[_FixedScaleTrial, ...]
+    best_trial: _FixedScaleTrial | None = None
+
+    def optimize(
+        self,
+        objective: Callable[[Any], float],
+        *,
+        n_trials: int,
+        timeout: int | None,
+    ) -> None:
+        del timeout
+        best_value = np.inf
+        best_trial = None
+        for trial in self.trials[:n_trials]:
+            objective_value = objective(trial)
+            object.__setattr__(trial, "value", objective_value)
+            if objective_value < best_value:
+                best_value = objective_value
+                best_trial = trial
+        object.__setattr__(self, "best_trial", best_trial)
+
+
+def _graph_mean_study_factory(split: TrainValTestSweepRunnerInput) -> Any:
+    del split
+    return _FixedScaleStudy(
+        trials=(
+            _FixedScaleTrial(scale=0.5),
+            _FixedScaleTrial(scale=1.0),
+            _FixedScaleTrial(scale=1.5),
         )
     )
 
@@ -589,6 +723,17 @@ def learned_family_registration_specs(
                     runner=WeightedSimplexSweepRunner(),
                 )
             ),
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="graph_mean",
+            config_key="use_graph_mean",
+            capabilities=SweepModelCapabilities(requires_validation=True),
+            result_field="graph_mean_df",
+            learned_trial_tuning_spec=GraphMeanLearnedTrialTuningSpec(),
+            optuna_n_trials=3,
+            optuna_study_factory=_graph_mean_study_factory,
+            selection_metadata_field="graph_mean_selection_df",
+            default_enabled=False,
         ),
         LearnedFamilyRegistrationSpec(
             name="moe",

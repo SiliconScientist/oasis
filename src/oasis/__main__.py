@@ -43,12 +43,11 @@ def main() -> None:
         reaction_contains_filter=reaction_contains_filter,
     )
     sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
-    sample_graphs = dump_graph_dataset_view(
-        atoms_to_graph_dataset_view(
-            wide_df.get_column("reaction").to_list(),
-            sample_atoms,
-        )
+    graph_view = atoms_to_graph_dataset_view(
+        wide_df.get_column("reaction").to_list(),
+        sample_atoms,
     )
+    sample_graphs = dump_graph_dataset_view(graph_view)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix_parts: list[str] = []
@@ -73,7 +72,11 @@ def main() -> None:
     print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
     print(f"Built {len(sample_graphs)} graph artifacts from sampled structures")
 
-    learning_curve_results = run_learning_curve_experiments_from_config(wide_df, cfg)
+    learning_curve_results = run_learning_curve_experiments_from_config(
+        wide_df,
+        cfg,
+        graph_view=graph_view,
+    )
 
     learning_curve_plot(
         results=learning_curve_results,

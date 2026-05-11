@@ -579,6 +579,8 @@ class LearningCurveResults:
     resid_df: pd.DataFrame | None = None
     weighted_linear_df: pd.DataFrame | None = None
     weighted_simplex_df: pd.DataFrame | None = None
+    graph_mean_df: pd.DataFrame | None = None
+    graph_mean_selection_df: pd.DataFrame | None = None
     kernel_ridge_selection_df: pd.DataFrame | None = None
 
     @classmethod
@@ -601,6 +603,8 @@ class LearningCurveResults:
             resid_df=frames.get("resid_df"),
             weighted_linear_df=frames.get("weighted_linear_df"),
             weighted_simplex_df=frames.get("weighted_simplex_df"),
+            graph_mean_df=frames.get("graph_mean_df"),
+            graph_mean_selection_df=frames.get("graph_mean_selection_df"),
             kernel_ridge_selection_df=frames.get("kernel_ridge_selection_df"),
         )
 
@@ -641,6 +645,16 @@ class LearningCurveResults:
                 other.weighted_simplex_df
                 if other.weighted_simplex_df is not None
                 else self.weighted_simplex_df
+            ),
+            graph_mean_df=(
+                other.graph_mean_df
+                if other.graph_mean_df is not None
+                else self.graph_mean_df
+            ),
+            graph_mean_selection_df=(
+                other.graph_mean_selection_df
+                if other.graph_mean_selection_df is not None
+                else self.graph_mean_selection_df
             ),
             kernel_ridge_selection_df=(
                 other.kernel_ridge_selection_df

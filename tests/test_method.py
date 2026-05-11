@@ -14,6 +14,8 @@ from oasis.exp import (
     run_learning_curve_experiments,
 )
 from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
     LearningCurveResults,
     SweepDataset,
     SweepFamilyRequirements,
@@ -41,6 +43,7 @@ try:
         ConfiguredSweepModelFamily,
         LearnedFamilyRegistrationSpec,
         LearnedModelSweepRunner,
+        LearnedOptunaModelSelectionSweepRunner,
         PlaceholderLearnedSweepModelFamily,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
@@ -121,6 +124,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "residual",
                 "weighted_linear",
                 "weighted_simplex",
+                "graph_mean",
                 "moe",
             ],
         )
@@ -136,6 +140,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                         use_residual=True,
                         use_weighted_linear=True,
                         use_weighted_simplex=True,
+                        use_graph_mean=True,
                     )
                 )
             )
@@ -151,6 +156,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "residual",
                 "weighted_linear",
                 "weighted_simplex",
+                "graph_mean",
             ),
         )
 
@@ -179,6 +185,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
             ],
         )
         built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
@@ -192,6 +199,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
+                SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
             ],
         )
@@ -249,6 +257,101 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             moe_family.requirements(),
             SweepFamilyRequirements(requires_inner_validation=True),
+        )
+
+    @staticmethod
+    def _graph_dataset() -> SweepDataset:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.array([[1.0], [1.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.array([[2.0], [2.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s2",
+                    node_features=np.array([[3.0], [3.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s3",
+                    node_features=np.array([[4.0], [4.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s4",
+                    node_features=np.array([[5.0], [5.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s5",
+                    node_features=np.array([[6.0], [6.0]]),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+            )
+        )
+        return SweepDataset(
+            mlip_features=np.zeros((6, 1), dtype=float),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+            graph_view=graph_view,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_graph_mean_family_is_registered_as_learned_validation_family(self) -> None:
+        graph_mean_registration = next(
+            registration
+            for registration in learning_curve_model_registry()
+            if registration.name == "graph_mean"
+        )
+        graph_mean_family = graph_mean_registration.family_factory()
+
+        self.assertEqual(
+            graph_mean_family.capabilities(),
+            SweepModelCapabilities(requires_validation=True),
+        )
+        self.assertEqual(
+            graph_mean_family.requirements(),
+            SweepFamilyRequirements(requires_inner_validation=True),
+        )
+        self.assertIsInstance(graph_mean_family, ConfiguredSweepModelFamily)
+        self.assertIsInstance(
+            graph_mean_family.spec.runner,
+            LearnedOptunaModelSelectionSweepRunner,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_graph_mean_family_runs_end_to_end_with_standard_result_shape(self) -> None:
+        dataset = self._graph_dataset()
+
+        results = run_learning_curve_experiments(
+            dataset,
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=41,
+            enabled_model_names=["graph_mean"],
+        )
+
+        self.assertIsNotNone(results.graph_mean_df)
+        self.assertIsNotNone(results.graph_mean_selection_df)
+        self.assertEqual(
+            results.graph_mean_df.columns.tolist(),
+            ["n_train", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(results.graph_mean_df["n_train"].tolist(), [2, 3, 4])
+        self.assertEqual(
+            results.graph_mean_selection_df.columns.tolist(),
+            ["n_train", "best_validation_score", "offset", "scale", "trial_count"],
+        )
+        self.assertEqual(
+            results.graph_mean_selection_df["n_train"].tolist(),
+            results.graph_mean_df["n_train"].tolist(),
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")

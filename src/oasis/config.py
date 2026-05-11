@@ -94,6 +94,7 @@ class LearningCurveModelsConfig(BaseModel):
     use_residual: bool
     use_weighted_linear: bool = False
     use_weighted_simplex: bool = False
+    use_graph_mean: bool = False
     moe: MoEConfig = Field(default_factory=MoEConfig)
 
 

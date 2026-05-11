@@ -335,6 +335,7 @@ def run_learning_curve_experiments_from_config(
     df: Any,
     cfg: Config | None,
     *,
+    graph_view: GraphDatasetView | None = None,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
     from oasis.method import enabled_learning_curve_model_names_from_config
@@ -348,6 +349,7 @@ def run_learning_curve_experiments_from_config(
         n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
+        graph_view=graph_view,
         validation_fraction=(
             getattr(experiment_cfg, "validation_fraction", 0.2)
             if experiment_cfg

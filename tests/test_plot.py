@@ -27,6 +27,7 @@ class PlotTests(unittest.TestCase):
             resid_df=None,
             weighted_linear_df=result_df,
             weighted_simplex_df=None,
+            graph_mean_df=result_df,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

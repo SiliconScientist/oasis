@@ -247,6 +247,22 @@ def learning_curve_plot(
             alpha=0.2,
             label="Weighted simplex +/- 1sd",
         )
+    if results.graph_mean_df is not None:
+        ax.plot(
+            results.graph_mean_df["n_train"],
+            results.graph_mean_df["rmse_mean"],
+            marker="P",
+            color="tab:red",
+            label="Graph mean mean",
+        )
+        ax.fill_between(
+            results.graph_mean_df["n_train"],
+            results.graph_mean_df["rmse_mean"] - results.graph_mean_df["rmse_std"],
+            results.graph_mean_df["rmse_mean"] + results.graph_mean_df["rmse_std"],
+            color="tab:red",
+            alpha=0.2,
+            label="Graph mean +/- 1sd",
+        )
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)

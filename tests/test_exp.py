@@ -1896,3 +1896,73 @@ class ExpIntegrationTests(unittest.TestCase):
             [len(split.test_idx) for split in family.last_payload.split_collection.splits],
             [3, 2],
         )
+
+    def test_run_learning_curve_experiments_from_config_forwards_graph_view(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["s0", "s1", "s2", "s3", "s4", "s5"],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s2",
+                    node_features=np.array([[3.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s3",
+                    node_features=np.array([[4.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s4",
+                    node_features=np.array([[5.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s5",
+                    node_features=np.array([[6.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+        cfg = SimpleNamespace(
+            seed=23,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=4,
+                    n_repeats=1,
+                    validation_fraction=0.2,
+                    min_val_size=1,
+                    min_test_size=1,
+                    models=None,
+                )
+            ),
+        )
+
+        with patch("oasis.exp.run_learning_curve_experiments_from_frame") as mock_run:
+            mock_run.return_value = LearningCurveResults.empty()
+
+            result = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                graph_view=graph_view,
+            )
+
+        self.assertEqual(result, LearningCurveResults.empty())
+        self.assertIs(mock_run.call_args.kwargs["graph_view"], graph_view)
