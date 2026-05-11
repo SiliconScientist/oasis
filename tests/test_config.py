@@ -118,6 +118,8 @@ class ConfigParsingTests(unittest.TestCase):
                             "n_repeats": 3,
                             "validation_fraction": 0.35,
                             "min_val_size": 2,
+                            "min_tuning_val_size": 4,
+                            "min_inner_train_size": 5,
                             "min_test_size": 3,
                     }
                 },
@@ -128,6 +130,8 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.35)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 2)
+        self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 4)
+        self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 5)
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 3)
 
     def test_learning_curve_split_sizing_defaults_parse(self) -> None:
@@ -162,6 +166,8 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 1)
 
     def test_learning_curve_models_section_parses(self) -> None:
