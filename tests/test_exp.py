@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from oasis.exp import (
+    build_sweep_dataset_from_frame,
     build_sweep_split_collection,
     generate_inner_validation_sweep_splits,
     generate_sweep_splits,
@@ -48,6 +49,13 @@ try:
     HAS_METHOD = True
 except ModuleNotFoundError:
     HAS_METHOD = False
+
+try:
+    import sklearn  # noqa: F401
+
+    HAS_SKLEARN = True
+except ModuleNotFoundError:
+    HAS_SKLEARN = False
 
 
 class GenerateSweepSplitsTests(unittest.TestCase):
@@ -167,6 +175,75 @@ class GenerateSweepSplitsTests(unittest.TestCase):
         np.testing.assert_array_equal(split.train_idx, np.array([0, 1, 2]))
         np.testing.assert_array_equal(split.val_idx, np.array([3, 4]))
         np.testing.assert_array_equal(split.test_idx, np.array([5, 6]))
+
+
+class BuildSweepDatasetFromFrameTests(unittest.TestCase):
+    def test_build_sweep_dataset_from_frame_without_graphs_uses_frame_order(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+                "model_b_mlip_ads_eng_median": [1.8, 0.9],
+            }
+        )
+
+        dataset = build_sweep_dataset_from_frame(df)
+
+        np.testing.assert_array_equal(dataset.sample_ids, np.array(["rxn-b", "rxn-a"]))
+        np.testing.assert_array_equal(
+            dataset.mlip_features,
+            np.array([[2.2, 1.8], [1.1, 0.9]]),
+        )
+        np.testing.assert_array_equal(dataset.targets, np.array([2.0, 1.0]))
+        self.assertFalse(dataset.has_graphs)
+
+    def test_build_sweep_dataset_from_frame_with_graphs_aligns_to_frame_order(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-c", "rxn-a", "rxn-b"],
+                "reference_ads_eng": [3.0, 1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [3.3, 1.1, 2.2],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.array([[3.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+
+        dataset = build_sweep_dataset_from_frame(df, graph_view=graph_view)
+
+        np.testing.assert_array_equal(
+            dataset.sample_ids,
+            np.array(["rxn-c", "rxn-a", "rxn-b"]),
+        )
+        np.testing.assert_array_equal(
+            dataset.mlip_features,
+            np.array([[3.3], [1.1], [2.2]]),
+        )
+        np.testing.assert_array_equal(dataset.targets, np.array([3.0, 1.0, 2.0]))
+        self.assertTrue(dataset.has_graphs)
+        self.assertEqual(dataset.graphs.sample_ids, ("rxn-c", "rxn-a", "rxn-b"))
+        self.assertIs(dataset.sample(0).graph, graph_view["rxn-c"])
+        self.assertIs(dataset.sample(1).graph, graph_view["rxn-a"])
+        self.assertIs(dataset.sample(2).graph, graph_view["rxn-b"])
 
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):

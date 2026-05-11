@@ -92,6 +92,26 @@ class LoadGraphDatasetViewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "edge_index must have shape"):
             _load_from_payload(payload)
 
+    def test_load_graph_dataset_view_preserves_payload_record_order(self) -> None:
+        payload = [
+            {
+                "sample_id": "rxn-b",
+                "node_features": [[2.0]],
+                "edge_index": [[], []],
+            },
+            {
+                "sample_id": "rxn-a",
+                "node_features": [[1.0]],
+                "edge_index": [[], []],
+            },
+        ]
+
+        view = _load_from_payload(payload)
+
+        self.assertEqual(view.sample_ids, ("rxn-b", "rxn-a"))
+        np.testing.assert_array_equal(view["rxn-b"].node_features, np.array([[2.0]]))
+        np.testing.assert_array_equal(view["rxn-a"].node_features, np.array([[1.0]]))
+
 
 def _load_from_payload(payload: object):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -331,6 +351,43 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
         self.assertEqual(sample.target, 2.0)
         self.assertIsNotNone(sample.graph)
         self.assertEqual(sample.graph.sample_id, "rxn-b")
+
+    def test_build_graph_sweep_dataset_reorders_graph_view_to_match_frame_order(
+        self,
+    ) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-c", "rxn-a", "rxn-b"],
+                "reference_ads_eng": [3.0, 1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [3.3, 1.1, 2.2],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.array([[3.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+
+        dataset = build_graph_sweep_dataset(wide_df, graph_view)
+
+        self.assertEqual(dataset.graphs.sample_ids, ("rxn-c", "rxn-a", "rxn-b"))
+        self.assertIs(dataset.sample(0).graph, graph_view["rxn-c"])
+        self.assertIs(dataset.sample(1).graph, graph_view["rxn-a"])
+        self.assertIs(dataset.sample(2).graph, graph_view["rxn-b"])
 
     def test_build_graph_sweep_dataset_preserves_identity_across_non_monotonic_splits(
         self,
