@@ -29,6 +29,7 @@ from oasis.exp import (
     run_learning_curve_experiments,
     run_learning_curve_experiments_from_config,
     run_learning_curve_experiments_from_frame,
+    validation_size_if_sweep_feasible,
 )
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.sweep import (
@@ -551,6 +552,29 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 min_val_size=1,
                 min_tuning_val_size=0,
             )
+
+    def test_validation_size_if_sweep_feasible_centralizes_feasibility_rule(
+        self,
+    ) -> None:
+        self.assertIsNone(
+            validation_size_if_sweep_feasible(
+                4,
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=3,
+                min_inner_train_size=2,
+            )
+        )
+        self.assertEqual(
+            validation_size_if_sweep_feasible(
+                5,
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=3,
+                min_inner_train_size=2,
+            ),
+            3,
+        )
 
     def test_generate_sweep_splits_with_validation_yields_disjoint_full_partitions(
         self,

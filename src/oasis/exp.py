@@ -59,6 +59,34 @@ def inner_validation_size_for_sweep(
         math.floor(validation_fraction * sweep_size),
     )
 
+
+def validation_size_if_sweep_feasible(
+    sweep_size: int,
+    *,
+    validation_fraction: float,
+    min_val_size: int,
+    min_tuning_val_size: int = 1,
+    min_inner_train_size: int = 1,
+) -> int | None:
+    """Return the validation size for a feasible validation-aware sweep point.
+
+    If the requested sweep budget cannot satisfy both the validation policy and
+    the minimum remaining inner-train budget, return `None`.
+    """
+
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+
+    n_val = inner_validation_size_for_sweep(
+        sweep_size,
+        validation_fraction=validation_fraction,
+        min_val_size=min_val_size,
+        min_tuning_val_size=min_tuning_val_size,
+    )
+    if n_val + min_inner_train_size > sweep_size:
+        return None
+    return n_val
+
 def generate_sweep_splits(
     n_samples: int,
     min_train: int,
@@ -164,13 +192,14 @@ def generate_inner_validation_sweep_splits(
 
     max_train = min(max_train, n_samples - min_test_size)
     for sweep_size in range(min_train, max_train + 1):
-        n_val = inner_validation_size_for_sweep(
+        n_val = validation_size_if_sweep_feasible(
             sweep_size,
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
             min_tuning_val_size=min_tuning_val_size,
+            min_inner_train_size=min_inner_train_size,
         )
-        if n_val + min_inner_train_size > sweep_size:
+        if n_val is None:
             continue
         yield from generate_sweep_splits_with_validation(
             n_samples=n_samples,
@@ -246,15 +275,27 @@ def build_sweep_split_collection(
 
     rng = np.random.default_rng(seed)
     if requirements.requires_inner_validation:
-        effective_min_train = max(
-            effective_min_train,
-            max(min_val_size, min_tuning_val_size) + min_inner_train_size,
+        first_feasible_train = next(
+            (
+                sweep_size
+                for sweep_size in range(effective_min_train, feasible_max_train + 1)
+                if validation_size_if_sweep_feasible(
+                    sweep_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                )
+                is not None
+            ),
+            None,
         )
-        if feasible_max_train < effective_min_train:
+        if first_feasible_train is None:
             return SweepSplitCollection(
                 splits=(),
                 planning_requirements=requirements,
             )
+        effective_min_train = first_feasible_train
         splits = tuple(
             generate_inner_validation_sweep_splits(
                 n_samples,
