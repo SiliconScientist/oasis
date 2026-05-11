@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from oasis.exp import (
+    build_sweep_dataset_from_config,
     build_sweep_dataset_from_frame,
     build_sweep_split_collection,
     generate_inner_validation_sweep_splits,
@@ -244,6 +245,139 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
         self.assertIs(dataset.sample(0).graph, graph_view["rxn-c"])
         self.assertIs(dataset.sample(1).graph, graph_view["rxn-a"])
         self.assertIs(dataset.sample(2).graph, graph_view["rxn-b"])
+
+    def test_build_sweep_dataset_from_config_loads_configured_graph_view(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-c", "rxn-a", "rxn-b"],
+                "reference_ads_eng": [3.0, 1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [3.3, 1.1, 2.2],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.array([[3.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+        graph_dataset_cfg = SimpleNamespace(
+            path="data/graphs/reactions.json",
+            join_key="reaction",
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(graph_dataset=graph_dataset_cfg)
+            )
+        )
+
+        with patch(
+            "oasis.graphs.load_configured_graph_dataset_view",
+            return_value=graph_view,
+        ) as mock_load:
+            dataset = build_sweep_dataset_from_config(df, cfg)
+
+        self.assertIs(mock_load.call_args.args[0], graph_dataset_cfg)
+        self.assertTrue(dataset.has_graphs)
+        self.assertEqual(dataset.graphs.sample_ids, ("rxn-c", "rxn-a", "rxn-b"))
+
+    def test_build_sweep_dataset_from_config_prefers_explicit_graph_view(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=SimpleNamespace(
+                        path="data/graphs/reactions.json",
+                        join_key="reaction",
+                    )
+                )
+            )
+        )
+
+        with patch("oasis.graphs.load_configured_graph_dataset_view") as mock_load:
+            dataset = build_sweep_dataset_from_config(df, cfg, graph_view=graph_view)
+
+        mock_load.assert_not_called()
+        self.assertTrue(dataset.has_graphs)
+        self.assertEqual(dataset.graphs.sample_ids, ("rxn-b", "rxn-a"))
+
+    def test_build_sweep_dataset_from_config_honors_configured_graph_join_key(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction_id": ["rxn-c", "rxn-a", "rxn-b"],
+                "reference_ads_eng": [3.0, 1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [3.3, 1.1, 2.2],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.array([[3.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+            )
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=SimpleNamespace(
+                        path="data/graphs/reactions.json",
+                        join_key="reaction_id",
+                    )
+                )
+            )
+        )
+
+        with patch("oasis.graphs.load_configured_graph_dataset_view") as mock_load:
+            dataset = build_sweep_dataset_from_config(df, cfg, graph_view=graph_view)
+
+        mock_load.assert_not_called()
+        self.assertEqual(dataset.graphs.sample_ids, ("rxn-c", "rxn-a", "rxn-b"))
 
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
@@ -2037,17 +2171,25 @@ class ExpIntegrationTests(unittest.TestCase):
             ),
         )
 
-        with patch("oasis.exp.run_learning_curve_experiments_from_frame") as mock_run:
-            mock_run.return_value = LearningCurveResults.empty()
+        with patch("oasis.exp.build_sweep_dataset_from_config") as mock_build:
+            with patch("oasis.exp.run_learning_curve_experiments") as mock_run:
+                mock_build.return_value = SweepDataset(
+                    mlip_features=np.array([[1.0]]),
+                    targets=np.array([1.0]),
+                    sample_ids=np.array(["s0"]),
+                    graph_view=GraphDatasetView.from_records((graph_view["s0"],)),
+                )
+                mock_run.return_value = LearningCurveResults.empty()
 
-            result = run_learning_curve_experiments_from_config(
-                df,
-                cfg=cfg,
-                graph_view=graph_view,
-            )
+                result = run_learning_curve_experiments_from_config(
+                    df,
+                    cfg=cfg,
+                    graph_view=graph_view,
+                )
 
         self.assertEqual(result, LearningCurveResults.empty())
-        self.assertIs(mock_run.call_args.kwargs["graph_view"], graph_view)
+        self.assertIs(mock_build.call_args.kwargs["graph_view"], graph_view)
+        self.assertIs(mock_run.call_args.args[0], mock_build.return_value)
 
     def test_run_learning_curve_experiments_from_config_loads_graph_view_from_config(
         self,
@@ -2093,12 +2235,20 @@ class ExpIntegrationTests(unittest.TestCase):
             "oasis.graphs.load_configured_graph_dataset_view",
             return_value=graph_view,
         ) as mock_load:
-            with patch("oasis.exp.run_learning_curve_experiments_from_frame") as mock_run:
-                mock_run.return_value = LearningCurveResults.empty()
+            with patch("oasis.exp.build_sweep_dataset_from_config") as mock_build:
+                with patch("oasis.exp.run_learning_curve_experiments") as mock_run:
+                    mock_build.return_value = SweepDataset(
+                        mlip_features=np.array([[1.0]]),
+                        targets=np.array([1.0]),
+                        sample_ids=np.array(["s0"]),
+                        graph_view=graph_view,
+                    )
+                    mock_run.return_value = LearningCurveResults.empty()
 
-                result = run_learning_curve_experiments_from_config(df, cfg=cfg)
+                    result = run_learning_curve_experiments_from_config(df, cfg=cfg)
 
         self.assertEqual(result, LearningCurveResults.empty())
-        self.assertIs(mock_load.call_args.args[0], graph_dataset_cfg)
-        self.assertIs(mock_run.call_args.kwargs["graph_view"], graph_view)
-        self.assertEqual(mock_run.call_args.kwargs["graph_join_key"], "reaction_id")
+        self.assertIs(mock_build.call_args.args[1], cfg)
+        self.assertIsNone(mock_build.call_args.kwargs["graph_view"])
+        self.assertIs(mock_run.call_args.args[0].graph_view, graph_view)
+        self.assertFalse(mock_load.called)

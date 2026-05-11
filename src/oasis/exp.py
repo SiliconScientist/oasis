@@ -278,17 +278,8 @@ def run_learning_curve_experiments_from_frame(
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
-    feature_cols = mlip_columns(df)
-    if not feature_cols:
-        raise ValueError(
-            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
-        )
-
-    n_rows = getattr(df, "height", len(df))
-    if n_rows <= 5:
-        raise ValueError("Not enough data to evaluate (need >5 samples).")
-
-    dataset = build_sweep_dataset_from_frame(
+    _validate_learning_curve_frame(df)
+    dataset = assemble_learning_curve_dataset_from_frame(
         df,
         graph_view=graph_view,
         graph_join_key=graph_join_key,
@@ -305,6 +296,19 @@ def run_learning_curve_experiments_from_frame(
         min_val_size=min_val_size,
         min_test_size=min_test_size,
         model_families=model_families,
+    )
+
+
+def assemble_learning_curve_dataset_from_frame(
+    df: Any,
+    *,
+    graph_view: GraphDatasetView | None = None,
+    graph_join_key: str = "reaction",
+) -> SweepDataset:
+    return build_sweep_dataset_from_frame(
+        df,
+        graph_view=graph_view,
+        graph_join_key=graph_join_key,
     )
 
 
@@ -340,6 +344,28 @@ def build_sweep_dataset_from_frame(
     )
 
 
+def build_sweep_dataset_from_config(
+    df: Any,
+    cfg: Config | None,
+    *,
+    graph_view: GraphDatasetView | None = None,
+) -> SweepDataset:
+    experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
+    graph_dataset_cfg = getattr(experiment_cfg, "graph_dataset", None)
+    graph_join_key = (
+        graph_dataset_cfg.join_key if graph_dataset_cfg is not None else "reaction"
+    )
+    if graph_view is None and experiment_cfg:
+        from oasis.graphs import load_configured_graph_dataset_view
+
+        graph_view = load_configured_graph_dataset_view(graph_dataset_cfg)
+    return assemble_learning_curve_dataset_from_frame(
+        df,
+        graph_view=graph_view,
+        graph_join_key=graph_join_key,
+    )
+
+
 def run_learning_curve_experiments_from_config(
     df: Any,
     cfg: Config | None,
@@ -351,23 +377,15 @@ def run_learning_curve_experiments_from_config(
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
-    graph_dataset_cfg = getattr(experiment_cfg, "graph_dataset", None)
-    graph_join_key = "reaction"
-    if graph_view is None and experiment_cfg:
-        from oasis.graphs import load_configured_graph_dataset_view
-
-        graph_view = load_configured_graph_dataset_view(graph_dataset_cfg)
-    if graph_dataset_cfg is not None:
-        graph_join_key = graph_dataset_cfg.join_key
-    return run_learning_curve_experiments_from_frame(
-        df,
+    _validate_learning_curve_frame(df)
+    dataset = build_sweep_dataset_from_config(df, cfg, graph_view=graph_view)
+    return run_learning_curve_experiments(
+        dataset,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,
         max_train=experiment_cfg.max_train if experiment_cfg else 10,
         n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
-        graph_view=graph_view,
-        graph_join_key=graph_join_key,
         validation_fraction=(
             getattr(experiment_cfg, "validation_fraction", 0.2)
             if experiment_cfg
@@ -379,6 +397,18 @@ def run_learning_curve_experiments_from_config(
         ),
         model_families=model_families,
     )
+
+
+def _validate_learning_curve_frame(df: Any) -> None:
+    feature_cols = mlip_columns(df)
+    if not feature_cols:
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
+        )
+
+    n_rows = getattr(df, "height", len(df))
+    if n_rows <= 5:
+        raise ValueError("Not enough data to evaluate (need >5 samples).")
 
 
 def run_learning_curve_experiments(
