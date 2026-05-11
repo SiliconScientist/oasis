@@ -214,23 +214,52 @@ def build_sweep_split_collection(
 
     The feasible sweep range is also bounded above by `n_samples - min_test_size`
     so that every emitted split leaves at least `min_test_size` samples in the
-    outer test set.
+    outer test set. If the combined train/validation/test minima leave no
+    feasible sweep points, an empty collection is returned deterministically.
     """
 
     requirements = requirements or SweepFamilyRequirements()
-    max_train = min(max_train, n_samples - min_test_size)
+    if n_samples <= 0:
+        raise ValueError("n_samples must be positive.")
+    if min_train <= 0:
+        raise ValueError("min_train must be positive.")
+    if max_train <= 0:
+        raise ValueError("max_train must be positive.")
+    if n_repeats <= 0:
+        raise ValueError("n_repeats must be positive.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+    if min_val_size <= 0:
+        raise ValueError("min_val_size must be positive.")
+    if min_tuning_val_size <= 0:
+        raise ValueError("min_tuning_val_size must be positive.")
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+
+    feasible_max_train = min(max_train, n_samples - min_test_size)
     effective_min_train = max(min_train, requirements.min_train_size)
+    if feasible_max_train < effective_min_train:
+        return SweepSplitCollection(
+            splits=(),
+            planning_requirements=requirements,
+        )
+
     rng = np.random.default_rng(seed)
     if requirements.requires_inner_validation:
         effective_min_train = max(
             effective_min_train,
             max(min_val_size, min_tuning_val_size) + min_inner_train_size,
         )
+        if feasible_max_train < effective_min_train:
+            return SweepSplitCollection(
+                splits=(),
+                planning_requirements=requirements,
+            )
         splits = tuple(
             generate_inner_validation_sweep_splits(
                 n_samples,
                 effective_min_train,
-                max_train,
+                feasible_max_train,
                 n_repeats,
                 rng,
                 validation_fraction=validation_fraction,
@@ -245,7 +274,7 @@ def build_sweep_split_collection(
             generate_sweep_splits(
                 n_samples,
                 effective_min_train,
-                max_train,
+                feasible_max_train,
                 n_repeats,
                 rng,
                 min_test_size=min_test_size,

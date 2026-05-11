@@ -1019,6 +1019,53 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([split.sweep_size for split in split_collection.splits], [4, 5])
         self.assertEqual([len(split.test_idx) for split in split_collection.splits], [3, 2])
 
+    def test_build_sweep_split_collection_rejects_invalid_planner_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "n_samples must be positive"):
+            build_sweep_split_collection(
+                n_samples=0,
+                min_train=1,
+                max_train=2,
+                n_repeats=1,
+                seed=3,
+            )
+
+        with self.assertRaisesRegex(ValueError, "min_train must be positive"):
+            build_sweep_split_collection(
+                n_samples=6,
+                min_train=0,
+                max_train=2,
+                n_repeats=1,
+                seed=3,
+            )
+
+        with self.assertRaisesRegex(ValueError, "max_train must be positive"):
+            build_sweep_split_collection(
+                n_samples=6,
+                min_train=1,
+                max_train=0,
+                n_repeats=1,
+                seed=3,
+            )
+
+        with self.assertRaisesRegex(ValueError, "n_repeats must be positive"):
+            build_sweep_split_collection(
+                n_samples=6,
+                min_train=1,
+                max_train=2,
+                n_repeats=0,
+                seed=3,
+            )
+
+        with self.assertRaisesRegex(ValueError, "min_test_size must be positive"):
+            build_sweep_split_collection(
+                n_samples=6,
+                min_train=1,
+                max_train=2,
+                n_repeats=1,
+                seed=3,
+                min_test_size=0,
+            )
+
     def test_build_sweep_split_collection_preserves_train_only_requirements(self) -> None:
         requirements = SweepFamilyRequirements(
             min_train_size=5,
@@ -1038,6 +1085,27 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual(split_collection.planning_requirements, requirements)
         self.assertEqual([split.sweep_size for split in split_collection.splits], [5, 6, 7])
         self.assertTrue(all(split.val_idx is None for split in split_collection.splits))
+
+    def test_build_sweep_split_collection_returns_empty_train_only_region_when_test_minimum_blocks_all_splits(
+        self,
+    ) -> None:
+        requirements = SweepFamilyRequirements(
+            min_train_size=5,
+            requires_inner_validation=False,
+        )
+
+        split_collection = build_sweep_split_collection(
+            n_samples=6,
+            min_train=4,
+            max_train=6,
+            n_repeats=2,
+            seed=3,
+            requirements=requirements,
+            min_test_size=2,
+        )
+
+        self.assertEqual(split_collection.splits, ())
+        self.assertEqual(split_collection.planning_requirements, requirements)
 
     def test_build_sweep_split_collection_uses_policy_sized_validation_budget(
         self,
@@ -1155,6 +1223,46 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 requires_inner_validation=True,
             ),
         )
+
+    def test_build_sweep_split_collection_returns_empty_validation_region_when_minima_cannot_fit_together(
+        self,
+    ) -> None:
+        requirements = SweepFamilyRequirements(
+            min_train_size=0,
+            requires_inner_validation=True,
+        )
+
+        split_collection_a = build_sweep_split_collection(
+            n_samples=8,
+            min_train=1,
+            max_train=7,
+            n_repeats=2,
+            seed=3,
+            requirements=requirements,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_tuning_val_size=4,
+            min_inner_train_size=3,
+            min_test_size=2,
+        )
+        split_collection_b = build_sweep_split_collection(
+            n_samples=8,
+            min_train=1,
+            max_train=7,
+            n_repeats=2,
+            seed=99,
+            requirements=requirements,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_tuning_val_size=4,
+            min_inner_train_size=3,
+            min_test_size=2,
+        )
+
+        self.assertEqual(split_collection_a.splits, ())
+        self.assertEqual(split_collection_b.splits, ())
+        self.assertEqual(split_collection_a.planning_requirements, requirements)
+        self.assertEqual(split_collection_b.planning_requirements, requirements)
 
     def test_run_learning_curve_experiments_honors_minimum_inner_train_policy(
         self,
