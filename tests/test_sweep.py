@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import PropertyMock, patch
 
 import numpy as np
 
@@ -204,6 +205,16 @@ class SweepDatasetTests(unittest.TestCase):
                 targets=np.arange(3, dtype=float),
             )
 
+    def test_sweep_dataset_rejects_non_vector_targets(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "targets must be a 1D array",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+                targets=np.arange(4, dtype=float).reshape(4, 1),
+            )
+
     def test_sweep_dataset_rejects_mismatched_sample_id_length(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
@@ -213,6 +224,17 @@ class SweepDatasetTests(unittest.TestCase):
                 mlip_features=np.arange(12, dtype=float).reshape(4, 3),
                 targets=np.arange(4, dtype=float),
                 sample_ids=np.array(["a", "b", "c"]),
+            )
+
+    def test_sweep_dataset_rejects_non_vector_sample_ids(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "sample_ids must be a 1D array",
+        ):
+            SweepDataset(
+                mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+                targets=np.arange(4, dtype=float),
+                sample_ids=np.array([["a"], ["b"], ["c"], ["d"]]),
             )
 
     def test_sweep_dataset_rejects_mismatched_auxiliary_view_length(self) -> None:
@@ -266,6 +288,43 @@ class SweepDatasetTests(unittest.TestCase):
 
         self.assertTrue(dataset.has_graphs)
         self.assertIs(dataset.graphs, graph_view)
+
+    def test_sweep_dataset_accepts_graph_only_rows_when_graph_modality_is_present(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.empty((2, 0), dtype=float),
+            targets=np.array([0.0, 1.0]),
+            sample_ids=np.array(["s0", "s1"]),
+            graph_view=GraphDatasetView.from_records(
+                (
+                    GraphRecord(
+                        sample_id="s0",
+                        node_features=np.arange(4, dtype=float).reshape(2, 2),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                    GraphRecord(
+                        sample_id="s1",
+                        node_features=np.arange(6, dtype=float).reshape(3, 2),
+                        edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                    ),
+                )
+            ),
+        )
+
+        self.assertEqual(dataset.mlip_features.shape, (2, 0))
+        self.assertTrue(dataset.has_graphs)
+
+    def test_sweep_dataset_rejects_missing_all_modalities(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "dataset must provide at least one modality",
+        ):
+            SweepDataset(
+                mlip_features=np.empty((2, 0), dtype=float),
+                targets=np.array([0.0, 1.0]),
+                sample_ids=np.array(["s0", "s1"]),
+            )
 
     def test_sweep_dataset_exposes_named_modalities_while_preserving_legacy_fields(
         self,
@@ -451,6 +510,39 @@ class SweepDatasetTests(unittest.TestCase):
                 sample_ids=np.array(["s0", "s1"]),
                 graph_view=graph_view,
             )
+
+    def test_sweep_dataset_rejects_duplicate_graph_view_ids(self) -> None:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+            )
+        )
+
+        with patch.object(
+            GraphDatasetView,
+            "sample_ids",
+            new_callable=PropertyMock,
+            return_value=("s0", "s0"),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"graph_view sample_ids must be unique; duplicates: 's0'",
+            ):
+                SweepDataset(
+                    mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+                    targets=np.arange(2, dtype=float),
+                    sample_ids=np.array(["s0", "s1"]),
+                    graph_view=graph_view,
+                )
 
 
 class SweepPayloadTests(unittest.TestCase):

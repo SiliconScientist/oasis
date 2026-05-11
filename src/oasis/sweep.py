@@ -159,6 +159,9 @@ class SweepDataset:
         return len(self.mlip_features)
 
     def __post_init__(self) -> None:
+        if self.targets.ndim != 1:
+            raise ValueError("targets must be a 1D array aligned to mlip_features rows.")
+
         if len(self.targets) != self.n_samples:
             raise ValueError(
                 "targets must have the same length as mlip_features."
@@ -167,9 +170,16 @@ class SweepDataset:
         sample_ids = self.sample_ids
         if sample_ids is None:
             object.__setattr__(self, "sample_ids", np.arange(self.n_samples))
+        elif sample_ids.ndim != 1:
+            raise ValueError("sample_ids must be a 1D array aligned to mlip_features rows.")
         elif len(sample_ids) != self.n_samples:
             raise ValueError(
                 "sample_ids must have the same length as mlip_features."
+            )
+
+        if not _has_mlip_feature_modality(self.mlip_features) and self.graph_view is None:
+            raise ValueError(
+                "dataset must provide at least one modality: non-empty mlip_features or graph_view."
             )
 
         if self.auxiliary_views is None:
@@ -197,6 +207,13 @@ class SweepDataset:
             )
 
         graph_sample_ids = graph_view.sample_ids
+        duplicate_graph_ids = _duplicate_sample_ids(graph_sample_ids)
+        if duplicate_graph_ids:
+            raise ValueError(
+                "graph_view sample_ids must be unique; "
+                f"duplicates: {_format_sample_id_list(duplicate_graph_ids)}."
+            )
+
         missing_graph_ids = tuple(
             sample_id
             for sample_id in dataset_sample_ids
@@ -361,6 +378,14 @@ class SweepSample:
             mlip_features=self.mlip_features,
             graph=self.graph,
         )
+
+
+def _has_mlip_feature_modality(mlip_features: np.ndarray) -> bool:
+    if mlip_features.ndim == 0:
+        return False
+    if mlip_features.ndim == 1:
+        return True
+    return bool(mlip_features.shape[1])
 
 
 def _normalize_sample_index(index: int, n_samples: int) -> int:
