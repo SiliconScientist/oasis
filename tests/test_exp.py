@@ -1847,6 +1847,43 @@ class ExpIntegrationTests(unittest.TestCase):
             [4, 3, 2],
         )
 
+    def test_build_sweep_split_collection_family_minimum_and_new_guards_compose(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=10,
+            min_train=2,
+            max_train=8,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_tuning_val_size=3,
+            min_inner_train_size=2,
+            min_test_size=2,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [5, 6, 7, 8],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in split_collection.splits],
+            [3, 3, 3, 3],
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in split_collection.splits],
+            [2, 3, 4, 5],
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in split_collection.splits],
+            [5, 4, 3, 2],
+        )
+
     def test_build_sweep_split_collection_validation_and_test_guards_dominate(
         self,
     ) -> None:
@@ -2132,6 +2169,113 @@ class ExpIntegrationTests(unittest.TestCase):
                 if split.val_idx is not None:
                     self.assertEqual(len(np.intersect1d(split.val_idx, split.test_idx)), 0)
                     self.assertEqual(len(np.intersect1d(split.train_idx, split.val_idx)), 0)
+
+    def test_run_learning_curve_experiments_family_requirements_compose_with_new_guards(
+        self,
+    ) -> None:
+        X = np.arange(30, dtype=float).reshape(10, 3)
+        y = np.arange(10, dtype=float)
+        result_df = pd.DataFrame(
+            {
+                "n_train": [5, 6, 7, 8],
+                "rmse_mean": [0.4, 0.35, 0.3, 0.25],
+                "rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = ValidationAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=8,
+            n_repeats=1,
+            seed=3,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_tuning_val_size=3,
+            min_inner_train_size=2,
+            min_test_size=2,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [5, 6, 7, 8],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [3, 3, 3, 3],
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [2, 3, 4, 5],
+        )
+        self.assertTrue(
+            all(len(split.test_idx) >= 2 for split in family.last_payload.split_collection.splits)
+        )
+        self.assertEqual(
+            family.last_payload.split_collection.planning_requirements,
+            SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
+        )
+
+    def test_run_learning_curve_experiments_skips_learned_family_when_combined_guards_make_range_infeasible(
+        self,
+    ) -> None:
+        X = np.arange(24, dtype=float).reshape(8, 3)
+        y = np.arange(8, dtype=float)
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=4,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.empty()
+
+        family = ValidationAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=6,
+            n_repeats=1,
+            seed=3,
+            validation_fraction=0.2,
+            min_val_size=2,
+            min_tuning_val_size=4,
+            min_inner_train_size=3,
+            min_test_size=2,
+            model_families=[family],
+        )
+
+        self.assertIsNone(results.ridge_df)
+        self.assertEqual(family.last_payload.split_collection.splits, ())
+        self.assertEqual(
+            family.last_payload.split_collection.planning_requirements,
+            SweepFamilyRequirements(
+                min_train_size=4,
+                requires_inner_validation=True,
+            ),
+        )
 
     def test_run_learning_curve_experiments_supports_mixed_runner_input_types(
         self,

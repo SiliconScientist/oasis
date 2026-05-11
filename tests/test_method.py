@@ -678,6 +678,38 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3])
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_ridge_respects_combined_family_and_validation_guards(self) -> None:
+        X = np.array(
+            [
+                [1.0, 1.2, 0.8],
+                [1.8, 2.1, 1.9],
+                [2.7, 3.0, 2.9],
+                [3.9, 4.2, 3.8],
+                [5.1, 5.0, 4.9],
+                [6.2, 6.0, 5.8],
+                [7.1, 7.0, 6.9],
+                [8.0, 8.2, 7.8],
+            ]
+        )
+        y = np.array([1.1, 2.0, 2.9, 4.0, 5.0, 6.1, 7.0, 8.1])
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=6,
+            n_repeats=1,
+            seed=17,
+            enabled_model_names=["ridge"],
+            min_val_size=2,
+            min_tuning_val_size=3,
+            min_inner_train_size=2,
+            min_test_size=2,
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [5, 6])
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_selection_is_deterministic_for_fixed_seed(self) -> None:
         X, y = self._regression_dataset()
         dataset = SweepDataset(mlip_features=X, targets=y)
