@@ -9,6 +9,13 @@ from unittest.mock import PropertyMock, patch
 from ase import Atoms
 import numpy as np
 
+try:
+    import polars as pl
+
+    HAS_POLARS = True
+except ModuleNotFoundError:
+    HAS_POLARS = False
+
 from oasis.graphs import (
     AtomsToGraphPolicy,
     atoms_to_graph_dataset_view,
@@ -17,6 +24,7 @@ from oasis.graphs import (
     dump_graph_dataset_view,
     load_configured_graph_dataset_view,
     load_graph_dataset_view,
+    save_aligned_graph_dataset_parquet,
     save_graph_dataset_view,
 )
 from oasis.sweep import (
@@ -141,6 +149,49 @@ class LoadGraphDatasetViewTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertIsNone(load_configured_graph_dataset_view(None))
+
+    @unittest.skipUnless(HAS_POLARS, "requires polars")
+    def test_load_graph_dataset_view_reads_parquet_graph_artifact(self) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.array([[0], [0]], dtype=np.int64),
+                    node_positions=np.array([[0.0, 0.0, 0.0]]),
+                    edge_features=np.array([[0.5]]),
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "graphs.parquet"
+            save_aligned_graph_dataset_parquet(wide_df, graph_view, path)
+
+            reloaded = load_graph_dataset_view(path)
+
+        self.assertEqual(reloaded.sample_ids, ("rxn-b", "rxn-a"))
+        np.testing.assert_array_equal(reloaded["rxn-b"].node_features, np.array([[2.0]]))
+        np.testing.assert_array_equal(
+            reloaded["rxn-b"].edge_index,
+            np.array([[0], [0]], dtype=np.int64),
+        )
+        np.testing.assert_allclose(
+            reloaded["rxn-b"].edge_features,
+            np.array([[0.5]]),
+        )
 
 
 def _load_from_payload(payload: object):
@@ -335,6 +386,53 @@ class AtomsToGraphConversionTests(unittest.TestCase):
         np.testing.assert_array_equal(
             reloaded["rxn-a"].edge_index,
             view["rxn-a"].edge_index,
+        )
+
+    @unittest.skipUnless(HAS_POLARS, "requires polars")
+    def test_save_aligned_graph_dataset_parquet_writes_frame_and_graph_columns(
+        self,
+    ) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.array([[0], [0]], dtype=np.int64),
+                    node_positions=np.array([[0.0, 0.0, 0.0]]),
+                    edge_features=np.array([[0.5]]),
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "aligned_graphs.parquet"
+            saved_path = save_aligned_graph_dataset_parquet(wide_df, graph_view, path)
+            frame = pl.read_parquet(saved_path)
+
+        self.assertEqual(saved_path, path)
+        self.assertEqual(
+            frame.select("reaction").to_series().to_list(),
+            ["rxn-b", "rxn-a"],
+        )
+        self.assertEqual(
+            frame.select("graph_sample_id").to_series().to_list(),
+            ["rxn-b", "rxn-a"],
+        )
+        self.assertEqual(
+            frame.select("graph_node_features").to_series().to_list(),
+            [[[2.0]], [[1.0]]],
         )
 
 

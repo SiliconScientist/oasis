@@ -60,7 +60,7 @@ min_test_size = 1
 n_repeats = 10
 
 [experiment.learning_curve.graph_dataset]
-path = "data/graphs/example_reactions.json"
+path = "data/graphs/example_reactions.parquet"
 join_key = "reaction"
 
 [plot.filters]

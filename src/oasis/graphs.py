@@ -47,11 +47,21 @@ class AtomsToGraphPolicy:
 
 DEFAULT_ATOMS_TO_GRAPH_POLICY = AtomsToGraphPolicy()
 
+_GRAPH_PARQUET_SAMPLE_ID_COLUMN = "graph_sample_id"
+_GRAPH_PARQUET_NODE_FEATURES_COLUMN = "graph_node_features"
+_GRAPH_PARQUET_EDGE_INDEX_COLUMN = "graph_edge_index"
+_GRAPH_PARQUET_NODE_POSITIONS_COLUMN = "graph_node_positions"
+_GRAPH_PARQUET_EDGE_FEATURES_COLUMN = "graph_edge_features"
+_GRAPH_PARQUET_GRAPH_FEATURES_COLUMN = "graph_graph_features"
+
 
 def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
-    """Load a graph dataset view from a JSON list of graph records."""
+    """Load a graph dataset view from JSON records or a Parquet graph artifact."""
 
     resolved_path = Path(path)
+    if resolved_path.suffix == ".parquet":
+        return _load_graph_dataset_view_from_parquet(resolved_path)
+
     with resolved_path.open("r", encoding="utf-8") as f:
         payload = json.load(f)
 
@@ -88,6 +98,70 @@ def save_graph_dataset_view(
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     with resolved_path.open("w", encoding="utf-8") as f:
         json.dump(dump_graph_dataset_view(graph_view), f, indent=2)
+    return resolved_path
+
+
+def save_aligned_graph_dataset_parquet(
+    wide_df: Any,
+    graph_view: GraphDatasetView,
+    path: str | Path,
+    *,
+    join_key: str = "reaction",
+) -> Path:
+    """Write the aligned MLIP frame plus graph payloads to a Parquet artifact."""
+
+    pl = _require_polars()
+    aligned_graphs = build_graph_sweep_dataset(
+        wide_df,
+        graph_view,
+        join_key=join_key,
+    ).graphs
+    artifact_frame = _wide_frame_to_polars(wide_df)
+    artifact_frame = artifact_frame.with_columns(
+        pl.Series(
+            _GRAPH_PARQUET_SAMPLE_ID_COLUMN,
+            list(aligned_graphs.sample_ids),
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_NODE_FEATURES_COLUMN,
+            [aligned_graphs[sample_id].node_features.tolist() for sample_id in aligned_graphs.sample_ids],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_EDGE_INDEX_COLUMN,
+            [aligned_graphs[sample_id].edge_index.tolist() for sample_id in aligned_graphs.sample_ids],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_NODE_POSITIONS_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].node_positions is None
+                else aligned_graphs[sample_id].node_positions.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_EDGE_FEATURES_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].edge_features is None
+                else aligned_graphs[sample_id].edge_features.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_GRAPH_FEATURES_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].graph_features is None
+                else aligned_graphs[sample_id].graph_features.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+    )
+
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_frame.write_parquet(resolved_path)
     return resolved_path
 
 
@@ -262,6 +336,64 @@ def _graph_record_to_mapping(record: GraphRecord) -> dict[str, Any]:
     if record.graph_features is not None:
         payload["graph_features"] = record.graph_features.tolist()
     return payload
+
+
+def _load_graph_dataset_view_from_parquet(path: Path) -> GraphDatasetView:
+    pl = _require_polars()
+    payload = pl.read_parquet(path).to_dicts()
+    records = tuple(_graph_record_from_parquet_row(item) for item in payload)
+    return GraphDatasetView.from_records(records)
+
+
+def _graph_record_from_parquet_row(payload: dict[str, Any]) -> GraphRecord:
+    sample_id = payload.get(_GRAPH_PARQUET_SAMPLE_ID_COLUMN)
+    if sample_id is None:
+        raise ValueError(
+            f"graph dataset Parquet is missing required column: {_GRAPH_PARQUET_SAMPLE_ID_COLUMN}"
+        )
+
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=np.asarray(payload[_GRAPH_PARQUET_NODE_FEATURES_COLUMN], dtype=float),
+        edge_index=np.asarray(payload[_GRAPH_PARQUET_EDGE_INDEX_COLUMN], dtype=np.int64),
+        node_positions=_optional_array(
+            payload.get(_GRAPH_PARQUET_NODE_POSITIONS_COLUMN),
+            dtype=float,
+        ),
+        edge_features=_optional_array(
+            payload.get(_GRAPH_PARQUET_EDGE_FEATURES_COLUMN),
+            dtype=float,
+        ),
+        graph_features=_optional_array(
+            payload.get(_GRAPH_PARQUET_GRAPH_FEATURES_COLUMN),
+            dtype=float,
+        ),
+    )
+
+
+def _wide_frame_to_polars(wide_df: Any) -> Any:
+    pl = _require_polars()
+    if isinstance(wide_df, pl.DataFrame):
+        return wide_df
+    if hasattr(wide_df, "to_dicts"):
+        return pl.from_dicts(wide_df.to_dicts())
+    columns = list(getattr(wide_df, "columns", ()))
+    return pl.DataFrame(
+        {
+            column_name: column_to_numpy(wide_df, column_name).tolist()
+            for column_name in columns
+        }
+    )
+
+
+def _require_polars() -> Any:
+    try:
+        import polars as pl
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "polars is required for Parquet graph dataset artifacts."
+        ) from exc
+    return pl
 
 
 def _optional_array(value: Any, *, dtype: Any | None = None) -> np.ndarray | None:
