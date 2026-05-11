@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from oasis.sweep import (
+    DatasetLoaderFactory,
     GraphDatasetView,
     GraphRecord,
     SweepDataset,
@@ -12,8 +13,14 @@ from oasis.sweep import (
     SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
+    TrainTestSplitDatasets,
+    TrainTestSplitLoaders,
     TrainTestSweepRunnerInput,
+    TrainValTestSplitDatasets,
+    TrainValTestSplitLoaders,
     TrainValTestSweepRunnerInput,
+    split_to_dataset_subsets,
+    split_to_loaders,
 )
 
 
@@ -377,6 +384,52 @@ class SweepDatasetTests(unittest.TestCase):
 
 
 class SweepPayloadTests(unittest.TestCase):
+    def _dataset_with_graphs_and_auxiliary(self) -> SweepDataset:
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s2",
+                    node_features=np.arange(2, dtype=float).reshape(1, 2),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s3",
+                    node_features=np.arange(8, dtype=float).reshape(4, 2),
+                    edge_index=np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s4",
+                    node_features=np.arange(10, dtype=float).reshape(5, 2),
+                    edge_index=np.array([[0, 1, 2, 3], [1, 2, 3, 4]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s5",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+            )
+        )
+        return SweepDataset(
+            mlip_features=np.arange(18, dtype=float).reshape(6, 3),
+            targets=np.arange(6, dtype=float) + 0.25,
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+            graph_view=graph_view,
+            auxiliary_views={
+                "weights": np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                "folds": ["a", "b", "c", "d", "e", "f"],
+            },
+        )
+
     def test_sweep_run_payload_converts_train_test_and_train_val_test_runner_inputs(
         self,
     ) -> None:
@@ -416,3 +469,117 @@ class SweepPayloadTests(unittest.TestCase):
             runner_payload.splits[1].val_idx,
             np.array([3]),
         )
+
+    def test_train_test_runner_input_builds_aligned_dataset_subsets(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([4, 1, 0]),
+            test_idx=np.array([5, 2]),
+        )
+
+        subsets = split.dataset_subsets()
+
+        self.assertIsInstance(subsets, TrainTestSplitDatasets)
+        np.testing.assert_array_equal(
+            subsets.train.sample_ids,
+            np.array(["s4", "s1", "s0"]),
+        )
+        np.testing.assert_array_equal(
+            subsets.test.sample_ids,
+            np.array(["s5", "s2"]),
+        )
+        self.assertEqual(subsets.train.graphs.sample_ids, ("s4", "s1", "s0"))
+        self.assertEqual(subsets.test.graphs.sample_ids, ("s5", "s2"))
+        np.testing.assert_array_equal(
+            subsets.train.auxiliary_views["weights"],
+            np.array([5.0, 2.0, 1.0]),
+        )
+        self.assertEqual(subsets.test.auxiliary_views["folds"], ["f", "c"])
+
+    def test_train_val_test_runner_input_builds_non_overlapping_dataset_subsets(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([0, 2, 4]),
+            val_idx=np.array([1]),
+            test_idx=np.array([3, 5]),
+        )
+
+        subsets = split_to_dataset_subsets(split)
+
+        self.assertIsInstance(subsets, TrainValTestSplitDatasets)
+        self.assertEqual(set(subsets.train.sample_ids.tolist()), {"s0", "s2", "s4"})
+        self.assertEqual(set(subsets.val.sample_ids.tolist()), {"s1"})
+        self.assertEqual(set(subsets.test.sample_ids.tolist()), {"s3", "s5"})
+        self.assertTrue(
+            set(subsets.train.sample_ids.tolist()).isdisjoint(
+                subsets.val.sample_ids.tolist()
+            )
+        )
+        self.assertTrue(
+            set(subsets.train.sample_ids.tolist()).isdisjoint(
+                subsets.test.sample_ids.tolist()
+            )
+        )
+        self.assertTrue(
+            set(subsets.val.sample_ids.tolist()).isdisjoint(
+                subsets.test.sample_ids.tolist()
+            )
+        )
+
+    def test_split_to_loaders_uses_thin_adapter_seam(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([0, 1, 2]),
+            val_idx=np.array([3]),
+            test_idx=np.array([4, 5]),
+        )
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            calls.append((split_name, tuple(dataset.sample_ids.tolist())))
+            return {
+                "split_name": split_name,
+                "sample_ids": tuple(dataset.sample_ids.tolist()),
+            }
+
+        self.assertIsInstance(loader_factory, DatasetLoaderFactory)
+
+        loaders = split_to_loaders(split, loader_factory)
+
+        self.assertIsInstance(loaders, TrainValTestSplitLoaders)
+        self.assertEqual(
+            calls,
+            [
+                ("train", ("s0", "s1", "s2")),
+                ("val", ("s3",)),
+                ("test", ("s4", "s5")),
+            ],
+        )
+        self.assertEqual(loaders.train["split_name"], "train")
+        self.assertEqual(loaders.val["sample_ids"], ("s3",))
+        self.assertEqual(loaders.test["sample_ids"], ("s4", "s5"))
+
+    def test_train_test_runner_input_loaders_delegate_per_subset(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([0, 3, 5]),
+            test_idx=np.array([1, 2, 4]),
+        )
+
+        loaders = split.loaders(
+            lambda subset, *, split_name: (split_name, tuple(subset.sample_ids.tolist()))
+        )
+
+        self.assertIsInstance(loaders, TrainTestSplitLoaders)
+        self.assertEqual(loaders.train, ("train", ("s0", "s3", "s5")))
+        self.assertEqual(loaders.test, ("test", ("s1", "s2", "s4")))

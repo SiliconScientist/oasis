@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, TypeAlias
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -423,6 +423,22 @@ class TrainTestSweepRunnerInput:
     train_idx: np.ndarray
     test_idx: np.ndarray
 
+    def dataset_subsets(self) -> TrainTestSplitDatasets:
+        return TrainTestSplitDatasets(
+            train=self.dataset.subset(self.train_idx),
+            test=self.dataset.subset(self.test_idx),
+        )
+
+    def loaders(
+        self,
+        loader_factory: DatasetLoaderFactory,
+    ) -> TrainTestSplitLoaders:
+        subsets = self.dataset_subsets()
+        return TrainTestSplitLoaders(
+            train=loader_factory(subsets.train, split_name="train"),
+            test=loader_factory(subsets.test, split_name="test"),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class TrainValTestSweepRunnerInput:
@@ -439,6 +455,24 @@ class TrainValTestSweepRunnerInput:
     val_idx: np.ndarray
     test_idx: np.ndarray
 
+    def dataset_subsets(self) -> TrainValTestSplitDatasets:
+        return TrainValTestSplitDatasets(
+            train=self.dataset.subset(self.train_idx),
+            val=self.dataset.subset(self.val_idx),
+            test=self.dataset.subset(self.test_idx),
+        )
+
+    def loaders(
+        self,
+        loader_factory: DatasetLoaderFactory,
+    ) -> TrainValTestSplitLoaders:
+        subsets = self.dataset_subsets()
+        return TrainValTestSplitLoaders(
+            train=loader_factory(subsets.train, split_name="train"),
+            val=loader_factory(subsets.val, split_name="val"),
+            test=loader_factory(subsets.test, split_name="test"),
+        )
+
 
 SweepRunnerInput: TypeAlias = (
     TrainTestSweepRunnerInput | TrainValTestSweepRunnerInput
@@ -451,6 +485,43 @@ class SweepRunnerPayload:
     planning_requirements: SweepFamilyRequirements = field(
         default_factory=SweepFamilyRequirements
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainTestSplitDatasets:
+    train: SweepDataset
+    test: SweepDataset
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestSplitDatasets:
+    train: SweepDataset
+    val: SweepDataset
+    test: SweepDataset
+
+
+SplitDatasets: TypeAlias = TrainTestSplitDatasets | TrainValTestSplitDatasets
+
+
+@runtime_checkable
+class DatasetLoaderFactory(Protocol):
+    def __call__(self, dataset: SweepDataset, *, split_name: str) -> Any: ...
+
+
+@dataclass(frozen=True, slots=True)
+class TrainTestSplitLoaders:
+    train: Any
+    test: Any
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestSplitLoaders:
+    train: Any
+    val: Any
+    test: Any
+
+
+SplitLoaders: TypeAlias = TrainTestSplitLoaders | TrainValTestSplitLoaders
 
 
 def split_to_runner_input(
@@ -473,6 +544,17 @@ def split_to_runner_input(
         val_idx=split.val_idx,
         test_idx=split.test_idx,
     )
+
+
+def split_to_dataset_subsets(split: SweepRunnerInput) -> SplitDatasets:
+    return split.dataset_subsets()
+
+
+def split_to_loaders(
+    split: SweepRunnerInput,
+    loader_factory: DatasetLoaderFactory,
+) -> SplitLoaders:
+    return split.loaders(loader_factory)
 
 
 @dataclass(frozen=True, slots=True)
