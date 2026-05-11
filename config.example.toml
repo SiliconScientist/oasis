@@ -48,12 +48,20 @@ checkpoint = "models/mattersim/mattersim-v1.0.0-5M.pth"
 output_dir = "data/results/plots"
 
 [experiment.learning_curve]
+# Learning-curve sweep sizes refer to the outer training budget.
+# Models that require validation spend part of that budget on inner validation.
+# The test split is always an outer holdout used only for final evaluation.
 min_train = 5
 max_train = 25
 validation_fraction = 0.2
 min_val_size = 1
 min_test_size = 1
+# Repeats are independent outer splits at each training-budget value.
 n_repeats = 10
+
+[experiment.learning_curve.graph_dataset]
+path = "data/graphs/example_reactions.json"
+join_key = "reaction"
 
 [plot.filters]
 # adsorbate = "OH"

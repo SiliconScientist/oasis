@@ -104,6 +104,11 @@ class PlotFiltersConfig(BaseModel):
     reaction_contains: Optional[List[str]] = None
 
 
+class GraphDatasetInputConfig(BaseModel):
+    path: Path
+    join_key: str = "reaction"
+
+
 class LearningCurveExperimentConfig(BaseModel):
     """Learning-curve sweep configuration.
 
@@ -118,6 +123,7 @@ class LearningCurveExperimentConfig(BaseModel):
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_test_size: int = 1
+    graph_dataset: Optional[GraphDatasetInputConfig] = None
     models: Optional[LearningCurveModelsConfig] = None
 
 

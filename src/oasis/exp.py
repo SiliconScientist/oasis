@@ -272,6 +272,7 @@ def run_learning_curve_experiments_from_frame(
     seed: int = 42,
     enabled_model_names: Sequence[str] | None = None,
     graph_view: GraphDatasetView | None = None,
+    graph_join_key: str = "reaction",
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_test_size: int = 1,
@@ -287,7 +288,11 @@ def run_learning_curve_experiments_from_frame(
     if n_rows <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
 
-    dataset = build_sweep_dataset_from_frame(df, graph_view=graph_view)
+    dataset = build_sweep_dataset_from_frame(
+        df,
+        graph_view=graph_view,
+        graph_join_key=graph_join_key,
+    )
 
     return run_learning_curve_experiments(
         dataset,
@@ -307,11 +312,12 @@ def build_sweep_dataset_from_frame(
     df: Any,
     *,
     graph_view: GraphDatasetView | None = None,
+    graph_join_key: str = "reaction",
 ) -> SweepDataset:
     if graph_view is not None:
         from oasis.graphs import build_graph_sweep_dataset
 
-        return build_graph_sweep_dataset(df, graph_view)
+        return build_graph_sweep_dataset(df, graph_view, join_key=graph_join_key)
 
     feature_cols = mlip_columns(df)
     if hasattr(df, "select"):
@@ -345,6 +351,12 @@ def run_learning_curve_experiments_from_config(
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
+    graph_join_key = "reaction"
+    if graph_view is None and experiment_cfg and experiment_cfg.graph_dataset is not None:
+        from oasis.graphs import load_graph_dataset_view
+
+        graph_view = load_graph_dataset_view(experiment_cfg.graph_dataset.path)
+        graph_join_key = experiment_cfg.graph_dataset.join_key
     return run_learning_curve_experiments_from_frame(
         df,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,
@@ -353,6 +365,7 @@ def run_learning_curve_experiments_from_config(
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
         graph_view=graph_view,
+        graph_join_key=graph_join_key,
         validation_fraction=(
             getattr(experiment_cfg, "validation_fraction", 0.2)
             if experiment_cfg

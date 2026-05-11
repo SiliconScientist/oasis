@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 try:
@@ -12,6 +13,86 @@ except ModuleNotFoundError:
 
 @unittest.skipUnless(HAS_CONFIG, "requires config dependencies")
 class ConfigParsingTests(unittest.TestCase):
+    def test_learning_curve_graph_dataset_section_parses(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "graph_dataset": {
+                            "path": "data/graphs/reactions.json",
+                            "join_key": "reaction_id",
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/graphs/reactions.json"),
+        )
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.join_key,
+            "reaction_id",
+        )
+
+    def test_learning_curve_graph_dataset_join_key_defaults(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "graph_dataset": {
+                            "path": "data/graphs/reactions.json",
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(cfg.experiment.learning_curve.graph_dataset.join_key, "reaction")
+
     def test_learning_curve_split_sizing_explicit_values_parse(self) -> None:
         cfg = Config(
             **{
