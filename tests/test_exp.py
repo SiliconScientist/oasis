@@ -2701,9 +2701,9 @@ class ExpIntegrationTests(unittest.TestCase):
         )
         result_df = pd.DataFrame(
             {
-                "n_train": [4, 5],
-                "rmse_mean": [0.4, 0.3],
-                "rmse_std": [0.05, 0.04],
+                "n_train": [5],
+                "rmse_mean": [0.3],
+                "rmse_std": [0.04],
             }
         )
 
@@ -2729,6 +2729,8 @@ class ExpIntegrationTests(unittest.TestCase):
                     n_repeats=1,
                     validation_fraction=0.2,
                     min_val_size=2,
+                    min_tuning_val_size=3,
+                    min_inner_train_size=2,
                     min_test_size=2,
                     models=None,
                 )
@@ -2744,15 +2746,19 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIs(results.ridge_df, result_df)
         self.assertEqual(
             [split.sweep_size for split in family.last_payload.split_collection.splits],
-            [4, 5],
+            [5],
         )
         self.assertEqual(
             [len(split.val_idx) for split in family.last_payload.split_collection.splits],
-            [2, 2],
+            [3],
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [2],
         )
         self.assertEqual(
             [len(split.test_idx) for split in family.last_payload.split_collection.splits],
-            [3, 2],
+            [2],
         )
 
     def test_run_learning_curve_experiments_from_config_forwards_graph_view(self) -> None:
