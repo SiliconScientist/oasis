@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
 import math
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -355,6 +356,17 @@ def build_sweep_dataset_from_config(
     graph_join_key = (
         graph_dataset_cfg.join_key if graph_dataset_cfg is not None else "reaction"
     )
+    if (
+        graph_view is None
+        and graph_dataset_cfg is not None
+        and Path(graph_dataset_cfg.path).is_file()
+    ):
+        from oasis.graphs import load_sweep_dataset_from_graph_artifact
+
+        return load_sweep_dataset_from_graph_artifact(
+            graph_dataset_cfg.path,
+            join_key=graph_join_key,
+        )
     if graph_view is None and experiment_cfg:
         from oasis.graphs import load_configured_graph_dataset_view
 

@@ -69,21 +69,29 @@ def main() -> None:
         if cfg.experiment and cfg.experiment.learning_curve
         else None
     )
-    sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
-    graph_view = atoms_to_graph_dataset_view(
-        wide_df.get_column("reaction").to_list(),
-        sample_atoms,
+    reuse_existing_graph_dataset = (
+        graph_dataset_cfg is not None
+        and graph_dataset_cfg.path.is_file()
     )
-    print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
-    print(f"Built {len(graph_view)} graph artifacts from sampled structures")
-    if graph_dataset_cfg is not None:
-        saved_graph_dataset_path = save_aligned_graph_dataset_parquet(
-            wide_df,
-            graph_view,
-            graph_dataset_cfg.path,
-            join_key=graph_dataset_cfg.join_key,
+    graph_view = None
+    if reuse_existing_graph_dataset:
+        print(f"Using existing aligned graph dataset from {graph_dataset_cfg.path}")
+    else:
+        sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
+        graph_view = atoms_to_graph_dataset_view(
+            wide_df.get_column("reaction").to_list(),
+            sample_atoms,
         )
-        print(f"Saved aligned graph dataset to {saved_graph_dataset_path}")
+        print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
+        print(f"Built {len(graph_view)} graph artifacts from sampled structures")
+        if graph_dataset_cfg is not None:
+            saved_graph_dataset_path = save_aligned_graph_dataset_parquet(
+                wide_df,
+                graph_view,
+                graph_dataset_cfg.path,
+                join_key=graph_dataset_cfg.join_key,
+            )
+            print(f"Saved aligned graph dataset to {saved_graph_dataset_path}")
 
     learning_curve_results = run_learning_curve_experiments_from_config(
         wide_df,

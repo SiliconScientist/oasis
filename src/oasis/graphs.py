@@ -165,6 +165,24 @@ def save_aligned_graph_dataset_parquet(
     return resolved_path
 
 
+def load_sweep_dataset_from_graph_artifact(
+    path: str | Path,
+    *,
+    join_key: str = "reaction",
+) -> SweepDataset:
+    """Load a saved aligned MLIP+graph artifact into a SweepDataset."""
+
+    resolved_path = Path(path)
+    pl = _require_polars()
+    artifact_frame = pl.read_parquet(resolved_path)
+    graph_view = load_graph_dataset_view(resolved_path)
+    return build_graph_sweep_dataset(
+        artifact_frame,
+        graph_view,
+        join_key=join_key,
+    )
+
+
 def atoms_to_graph_record(
     atoms: Atoms,
     *,

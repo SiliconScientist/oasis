@@ -379,6 +379,44 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
         mock_load.assert_not_called()
         self.assertEqual(dataset.graphs.sample_ids, ("rxn-c", "rxn-a", "rxn-b"))
 
+    def test_build_sweep_dataset_from_config_loads_existing_graph_artifact_when_enabled(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+            }
+        )
+        dataset = SweepDataset(
+            mlip_features=np.array([[2.2], [1.1]]),
+            targets=np.array([2.0, 1.0]),
+            sample_ids=np.array(["rxn-b", "rxn-a"]),
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=SimpleNamespace(
+                        path="data/graphs/reactions.parquet",
+                        join_key="reaction",
+                    )
+                )
+            )
+        )
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            with patch(
+                "oasis.graphs.load_sweep_dataset_from_graph_artifact",
+                return_value=dataset,
+            ) as mock_load_dataset:
+                with patch("oasis.graphs.load_configured_graph_dataset_view") as mock_load_graphs:
+                    built_dataset = build_sweep_dataset_from_config(df, cfg)
+
+        self.assertIs(built_dataset, dataset)
+        self.assertEqual(mock_load_dataset.call_args.kwargs["join_key"], "reaction")
+        mock_load_graphs.assert_not_called()
+
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
     def test_inner_validation_size_for_sweep_uses_fraction_policy(self) -> None:
