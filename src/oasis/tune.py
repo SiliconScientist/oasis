@@ -174,8 +174,9 @@ class LearnedTrialTuningSpec(Protocol):
     """Contract for learned-model trial tuning over split-aware dataset subsets.
 
     Implementations receive the full `TrainValTestSweepRunnerInput`, so they may
-    derive framework-specific loaders from `split.dataset_subsets()` or
-    `split.loaders(...)` instead of slicing raw numpy arrays directly.
+    derive framework-specific loaders from `split.dataset_subsets()`,
+    `split.loader_inputs(...)`, or `split.loaders(...)` instead of slicing raw
+    numpy arrays directly.
 
     Selection contract:
     - candidate ranking may use only train/val data

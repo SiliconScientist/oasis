@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
 import pandas as pd
 
 
 SampleId: TypeAlias = Hashable
+SplitName: TypeAlias = Literal["train", "val", "test"]
+LoaderCollateFn: TypeAlias = Callable[[Sequence[Any]], Any]
 
 
 def _format_sample_id_list(sample_ids: Sequence[SampleId], *, limit: int = 5) -> str:
@@ -591,14 +593,34 @@ class TrainTestSweepRunnerInput:
             test_idx=self.test_idx,
         )
 
+    def loader_inputs(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainTestSplitLoaderInputs:
+        adapter = _as_loader_adapter(loader_adapter)
+        subsets = self.dataset_subsets()
+        return TrainTestSplitLoaderInputs(
+            train=LoaderAdapterInput(
+                dataset=subsets.train,
+                split_name="train",
+                batching=adapter.batching_for_split(split_name="train"),
+            ),
+            test=LoaderAdapterInput(
+                dataset=subsets.test,
+                split_name="test",
+                batching=adapter.batching_for_split(split_name="test"),
+            ),
+        )
+
     def loaders(
         self,
-        loader_factory: DatasetLoaderFactory,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
     ) -> TrainTestSplitLoaders:
-        subsets = self.dataset_subsets()
+        adapter = _as_loader_adapter(loader_adapter)
+        inputs = self.loader_inputs(adapter)
         return TrainTestSplitLoaders(
-            train=loader_factory(subsets.train, split_name="train"),
-            test=loader_factory(subsets.test, split_name="test"),
+            train=adapter.build_loader(inputs.train),
+            test=adapter.build_loader(inputs.test),
         )
 
 
@@ -613,9 +635,10 @@ class TrainValTestSweepRunnerInput:
     Developer contract for learned families:
     - `dataset_subsets()` materializes aligned `SweepDataset` views for
       train/val/test, including sample IDs, graphs, and auxiliary views.
-    - `loaders(...)` is the framework seam: build PyTorch Geometric,
-      DGL, or other framework loaders from those subset datasets outside the
-      core sweep planner.
+    - `loader_inputs(...)` separates split membership from batching/collation.
+    - `loaders(...)` is the framework seam: build PyTorch Geometric, DGL,
+      or other framework loaders from those subset datasets outside the core
+      sweep planner.
     - model selection may use only train/val data.
     - outer-test data must remain held out until one final evaluation after
       selection and any optional refit.
@@ -635,15 +658,40 @@ class TrainValTestSweepRunnerInput:
             test_idx=self.test_idx,
         )
 
+    def loader_inputs(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainValTestSplitLoaderInputs:
+        adapter = _as_loader_adapter(loader_adapter)
+        subsets = self.dataset_subsets()
+        return TrainValTestSplitLoaderInputs(
+            train=LoaderAdapterInput(
+                dataset=subsets.train,
+                split_name="train",
+                batching=adapter.batching_for_split(split_name="train"),
+            ),
+            val=LoaderAdapterInput(
+                dataset=subsets.val,
+                split_name="val",
+                batching=adapter.batching_for_split(split_name="val"),
+            ),
+            test=LoaderAdapterInput(
+                dataset=subsets.test,
+                split_name="test",
+                batching=adapter.batching_for_split(split_name="test"),
+            ),
+        )
+
     def loaders(
         self,
-        loader_factory: DatasetLoaderFactory,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
     ) -> TrainValTestSplitLoaders:
-        subsets = self.dataset_subsets()
+        adapter = _as_loader_adapter(loader_adapter)
+        inputs = self.loader_inputs(adapter)
         return TrainValTestSplitLoaders(
-            train=loader_factory(subsets.train, split_name="train"),
-            val=loader_factory(subsets.val, split_name="val"),
-            test=loader_factory(subsets.test, split_name="test"),
+            train=adapter.build_loader(inputs.train),
+            val=adapter.build_loader(inputs.val),
+            test=adapter.build_loader(inputs.test),
         )
 
 
@@ -704,9 +752,63 @@ class TrainValTestSplitDatasetInputs:
 SplitDatasets: TypeAlias = TrainTestSplitDatasets | TrainValTestSplitDatasets
 
 
+@dataclass(frozen=True, slots=True)
+class LoaderBatching:
+    batch_size: int | None = None
+    shuffle: bool = False
+    collate_fn: LoaderCollateFn | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LoaderAdapterInput:
+    dataset: SweepDataset
+    split_name: SplitName
+    batching: LoaderBatching = field(default_factory=LoaderBatching)
+
+
 @runtime_checkable
 class DatasetLoaderFactory(Protocol):
     def __call__(self, dataset: SweepDataset, *, split_name: str) -> Any: ...
+
+
+@runtime_checkable
+class DatasetLoaderAdapter(Protocol):
+    def batching_for_split(self, *, split_name: SplitName) -> LoaderBatching: ...
+
+    def build_loader(self, loader_input: LoaderAdapterInput) -> Any: ...
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetLoaderFactoryAdapter:
+    loader_factory: DatasetLoaderFactory
+
+    def batching_for_split(self, *, split_name: SplitName) -> LoaderBatching:
+        del split_name
+        return LoaderBatching()
+
+    def build_loader(self, loader_input: LoaderAdapterInput) -> Any:
+        return self.loader_factory(
+            loader_input.dataset,
+            split_name=loader_input.split_name,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainTestSplitLoaderInputs:
+    train: LoaderAdapterInput
+    test: LoaderAdapterInput
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestSplitLoaderInputs:
+    train: LoaderAdapterInput
+    val: LoaderAdapterInput
+    test: LoaderAdapterInput
+
+
+SplitLoaderInputs: TypeAlias = (
+    TrainTestSplitLoaderInputs | TrainValTestSplitLoaderInputs
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -723,6 +825,14 @@ class TrainValTestSplitLoaders:
 
 
 SplitLoaders: TypeAlias = TrainTestSplitLoaders | TrainValTestSplitLoaders
+
+
+def _as_loader_adapter(
+    loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+) -> DatasetLoaderAdapter:
+    if isinstance(loader_adapter, DatasetLoaderAdapter):
+        return loader_adapter
+    return DatasetLoaderFactoryAdapter(loader_adapter)
 
 
 def _build_train_test_split_datasets(
@@ -777,11 +887,18 @@ def split_to_dataset_subsets(split: SweepRunnerInput) -> SplitDatasets:
     return split.dataset_subsets()
 
 
+def split_to_loader_inputs(
+    split: SweepRunnerInput,
+    loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+) -> SplitLoaderInputs:
+    return split.loader_inputs(loader_adapter)
+
+
 def split_to_loaders(
     split: SweepRunnerInput,
-    loader_factory: DatasetLoaderFactory,
+    loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
 ) -> SplitLoaders:
-    return split.loaders(loader_factory)
+    return split.loaders(loader_adapter)
 
 
 @dataclass(frozen=True, slots=True)

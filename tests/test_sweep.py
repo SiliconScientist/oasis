@@ -6,9 +6,13 @@ from unittest.mock import PropertyMock, patch
 import numpy as np
 
 from oasis.sweep import (
+    DatasetLoaderAdapter,
+    DatasetLoaderFactoryAdapter,
     DatasetLoaderFactory,
     GraphDatasetView,
     GraphRecord,
+    LoaderAdapterInput,
+    LoaderBatching,
     SweepDataset,
     SweepDatasetInputs,
     SweepDatasetModalities,
@@ -21,13 +25,16 @@ from oasis.sweep import (
     SweepSplitCollection,
     SweepRunPayload,
     TrainTestSplitDatasets,
+    TrainTestSplitLoaderInputs,
     TrainTestSplitLoaders,
     TrainTestSweepRunnerInput,
     TrainValTestSplitDatasetInputs,
     TrainValTestSplitDatasets,
+    TrainValTestSplitLoaderInputs,
     TrainValTestSplitLoaders,
     TrainValTestSweepRunnerInput,
     split_to_dataset_subsets,
+    split_to_loader_inputs,
     split_to_loaders,
 )
 
@@ -999,6 +1006,104 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertEqual(loaders.val["sample_ids"], ("s3",))
         self.assertEqual(loaders.test["sample_ids"], ("s4", "s5"))
         self.assertEqual(loaders.test["graph_ids"], ("s4", "s5"))
+
+    def test_split_to_loader_inputs_separates_subset_selection_from_batching(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([5, 1, 0]),
+            val_idx=np.array([4]),
+            test_idx=np.array([3, 2]),
+        )
+
+        def train_collate(rows: object) -> object:
+            return rows
+
+        def eval_collate(rows: object) -> object:
+            return rows
+
+        class FakeLoaderAdapter:
+            def batching_for_split(self, *, split_name: str) -> LoaderBatching:
+                if split_name == "train":
+                    return LoaderBatching(
+                        batch_size=2,
+                        shuffle=True,
+                        collate_fn=train_collate,
+                    )
+                return LoaderBatching(
+                    batch_size=4,
+                    shuffle=False,
+                    collate_fn=eval_collate,
+                )
+
+            def build_loader(self, loader_input: LoaderAdapterInput) -> object:
+                raise AssertionError("build_loader should not be called in this test")
+
+        adapter = FakeLoaderAdapter()
+        self.assertIsInstance(adapter, DatasetLoaderAdapter)
+
+        loader_inputs = split_to_loader_inputs(split, adapter)
+
+        self.assertIsInstance(loader_inputs, TrainValTestSplitLoaderInputs)
+        np.testing.assert_array_equal(
+            loader_inputs.train.dataset.sample_ids,
+            np.array(["s5", "s1", "s0"]),
+        )
+        np.testing.assert_array_equal(
+            loader_inputs.val.dataset.sample_ids,
+            np.array(["s4"]),
+        )
+        np.testing.assert_array_equal(
+            loader_inputs.test.dataset.sample_ids,
+            np.array(["s3", "s2"]),
+        )
+        self.assertEqual(loader_inputs.train.split_name, "train")
+        self.assertEqual(loader_inputs.val.split_name, "val")
+        self.assertEqual(loader_inputs.test.split_name, "test")
+        self.assertEqual(loader_inputs.train.batching.batch_size, 2)
+        self.assertTrue(loader_inputs.train.batching.shuffle)
+        self.assertIs(loader_inputs.train.batching.collate_fn, train_collate)
+        self.assertEqual(loader_inputs.val.batching.batch_size, 4)
+        self.assertFalse(loader_inputs.val.batching.shuffle)
+        self.assertIs(loader_inputs.val.batching.collate_fn, eval_collate)
+        self.assertEqual(loader_inputs.test.batching.batch_size, 4)
+        self.assertFalse(loader_inputs.test.batching.shuffle)
+        self.assertIs(loader_inputs.test.batching.collate_fn, eval_collate)
+
+    def test_train_test_loader_inputs_wrap_legacy_loader_factory_with_default_batching(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([2, 0, 5]),
+            test_idx=np.array([4, 1, 3]),
+        )
+
+        def loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+            return {
+                "split_name": split_name,
+                "sample_ids": tuple(dataset.sample_ids.tolist()),
+            }
+
+        self.assertIsInstance(loader_factory, DatasetLoaderFactory)
+
+        adapter = DatasetLoaderFactoryAdapter(loader_factory)
+        loader_inputs = split.loader_inputs(adapter)
+
+        self.assertIsInstance(loader_inputs, TrainTestSplitLoaderInputs)
+        self.assertEqual(loader_inputs.train.batching, LoaderBatching())
+        self.assertEqual(loader_inputs.test.batching, LoaderBatching())
+        np.testing.assert_array_equal(
+            loader_inputs.train.dataset.sample_ids,
+            np.array(["s2", "s0", "s5"]),
+        )
+        np.testing.assert_array_equal(
+            loader_inputs.test.dataset.sample_ids,
+            np.array(["s4", "s1", "s3"]),
+        )
 
     def test_split_to_loaders_passes_subset_datasets_without_cross_split_leakage(
         self,

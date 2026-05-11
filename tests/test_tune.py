@@ -5,7 +5,14 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from oasis.sweep import SweepDataset, SweepRunnerPayload, TrainValTestSweepRunnerInput
+from oasis.sweep import (
+    DatasetLoaderAdapter,
+    LoaderAdapterInput,
+    LoaderBatching,
+    SweepDataset,
+    SweepRunnerPayload,
+    TrainValTestSweepRunnerInput,
+)
 
 try:
     from oasis.tune import (
@@ -553,7 +560,7 @@ class TuneTests(unittest.TestCase):
             )
         )
         seen_values: list[float] = []
-        seen_loader_splits: list[tuple[str, tuple[str, ...]]] = []
+        seen_loader_splits: list[tuple[str, tuple[str, ...], int | None, bool, str | None]] = []
 
         class ConstantPredictor:
             def __init__(self, constant: float) -> None:
@@ -561,17 +568,62 @@ class TuneTests(unittest.TestCase):
 
         class FakeLearnedTrialTuningSpec:
             @staticmethod
-            def _loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
-                return {
-                    "split_name": split_name,
-                    "sample_ids": tuple(dataset.sample_ids.tolist()),
-                    "targets": dataset.targets,
-                }
+            def _train_collate(samples: object) -> object:
+                return samples
+
+            @staticmethod
+            def _eval_collate(samples: object) -> object:
+                return samples
+
+            class _LoaderAdapter:
+                def batching_for_split(self, *, split_name: str) -> LoaderBatching:
+                    if split_name == "train":
+                        return LoaderBatching(
+                            batch_size=2,
+                            shuffle=True,
+                            collate_fn=FakeLearnedTrialTuningSpec._train_collate,
+                        )
+                    return LoaderBatching(
+                        batch_size=4,
+                        shuffle=False,
+                        collate_fn=FakeLearnedTrialTuningSpec._eval_collate,
+                    )
+
+                def build_loader(self, loader_input: LoaderAdapterInput) -> dict[str, object]:
+                    collate_fn = loader_input.batching.collate_fn
+                    return {
+                        "split_name": loader_input.split_name,
+                        "sample_ids": tuple(loader_input.dataset.sample_ids.tolist()),
+                        "targets": loader_input.dataset.targets,
+                        "batch_size": loader_input.batching.batch_size,
+                        "shuffle": loader_input.batching.shuffle,
+                        "collate_name": None if collate_fn is None else collate_fn.__name__,
+                    }
+
+            _loader_adapter = _LoaderAdapter()
 
             def build_trial_objective(self, split):
-                loaders = split.loaders(self._loader_factory)
-                seen_loader_splits.append(("train", loaders.train["sample_ids"]))
-                seen_loader_splits.append(("val", loaders.val["sample_ids"]))
+                self_ref = self
+                self_ref.assertIsInstance(self._loader_adapter, DatasetLoaderAdapter)
+                loaders = split.loaders(self._loader_adapter)
+                seen_loader_splits.append(
+                    (
+                        "train",
+                        loaders.train["sample_ids"],
+                        loaders.train["batch_size"],
+                        loaders.train["shuffle"],
+                        loaders.train["collate_name"],
+                    )
+                )
+                seen_loader_splits.append(
+                    (
+                        "val",
+                        loaders.val["sample_ids"],
+                        loaders.val["batch_size"],
+                        loaders.val["shuffle"],
+                        loaders.val["collate_name"],
+                    )
+                )
                 y_val = np.asarray(loaders.val["targets"], dtype=float)
 
                 def objective(trial):
@@ -595,6 +647,7 @@ class TuneTests(unittest.TestCase):
                 }
 
         spec = FakeLearnedTrialTuningSpec()
+        spec.assertIsInstance = self.assertIsInstance
         self.assertIsInstance(spec, LearnedTrialTuningSpec)
         trial_factory = lambda split: (  # noqa: E731
             {"constant": 0.0},
@@ -612,12 +665,12 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(
             seen_loader_splits,
             [
-                ("train", ("s0", "s1")),
-                ("val", ("s2", "s3")),
-                ("train", ("s0", "s1")),
-                ("val", ("s2", "s3")),
-                ("train", ("s0", "s1")),
-                ("val", ("s2", "s3")),
+                ("train", ("s0", "s1"), 2, True, "_train_collate"),
+                ("val", ("s2", "s3"), 4, False, "_eval_collate"),
+                ("train", ("s0", "s1"), 2, True, "_train_collate"),
+                ("val", ("s2", "s3"), 4, False, "_eval_collate"),
+                ("train", ("s0", "s1"), 2, True, "_train_collate"),
+                ("val", ("s2", "s3"), 4, False, "_eval_collate"),
             ],
         )
         np.testing.assert_allclose(
