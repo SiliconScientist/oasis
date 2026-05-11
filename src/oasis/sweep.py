@@ -243,6 +243,109 @@ class SweepDataset:
     def y(self) -> np.ndarray:
         return self.targets
 
+    def __len__(self) -> int:
+        return self.n_samples
+
+    def sample(self, index: int) -> SweepSample:
+        row_index = _normalize_sample_index(index, self.n_samples)
+        sample_id = self.sample_ids[row_index]
+        graph = None if self.graph_view is None else self.graph_view[sample_id]
+        auxiliary = (
+            None
+            if self.auxiliary_views is None
+            else {
+                view_name: _index_view(view, row_index)
+                for view_name, view in self.auxiliary_views.items()
+            }
+        )
+        return SweepSample(
+            index=row_index,
+            mlip_features=self.mlip_features[row_index],
+            target=self.targets[row_index],
+            sample_id=sample_id,
+            graph=graph,
+            auxiliary=auxiliary,
+        )
+
+    def subset(self, indices: slice | Sequence[int] | np.ndarray) -> SweepDataset:
+        row_index = _normalize_row_indices(indices, self.n_samples)
+        sample_ids = self.sample_ids[row_index]
+        graph_view = None
+        if self.graph_view is not None:
+            graph_view = GraphDatasetView.from_records(
+                tuple(self.graph_view[sample_id] for sample_id in sample_ids.tolist())
+            )
+        auxiliary_views = None
+        if self.auxiliary_views is not None:
+            auxiliary_views = {
+                view_name: _index_view(view, row_index)
+                for view_name, view in self.auxiliary_views.items()
+            }
+        return SweepDataset(
+            mlip_features=self.mlip_features[row_index],
+            targets=self.targets[row_index],
+            sample_ids=sample_ids,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SweepSample:
+    index: int
+    mlip_features: np.ndarray
+    target: Any
+    sample_id: SampleId
+    graph: GraphRecord | None = None
+    auxiliary: Mapping[str, Any] | None = None
+
+
+def _normalize_sample_index(index: int, n_samples: int) -> int:
+    row_index = int(index)
+    if row_index < 0:
+        row_index += n_samples
+    if row_index < 0 or row_index >= n_samples:
+        raise IndexError(
+            f"sample index {index} is out of bounds for dataset with {n_samples} rows."
+        )
+    return row_index
+
+
+def _normalize_row_indices(
+    indices: slice | Sequence[int] | np.ndarray,
+    n_samples: int,
+) -> np.ndarray:
+    if isinstance(indices, slice):
+        return np.arange(n_samples)[indices]
+
+    row_index = np.asarray(indices)
+    if row_index.ndim != 1:
+        raise ValueError("row indices must be a 1D slice, mask, or integer index array.")
+
+    if np.issubdtype(row_index.dtype, np.bool_):
+        if len(row_index) != n_samples:
+            raise ValueError(
+                "boolean row mask must have the same length as the dataset."
+            )
+        return np.flatnonzero(row_index)
+
+    normalized = np.asarray(row_index, dtype=np.int64).copy()
+    normalized[normalized < 0] += n_samples
+    if np.any(normalized < 0) or np.any(normalized >= n_samples):
+        raise IndexError(
+            f"row indices are out of bounds for dataset with {n_samples} rows."
+        )
+    return normalized
+
+
+def _index_view(view: Any, row_index: int | np.ndarray) -> Any:
+    try:
+        return view[row_index]
+    except (TypeError, KeyError):
+        if isinstance(row_index, np.ndarray):
+            return [view[int(i)] for i in row_index.tolist()]
+        return view[int(row_index)]
+
 
 @dataclass(frozen=True, slots=True)
 class SweepFamilyRequirements:

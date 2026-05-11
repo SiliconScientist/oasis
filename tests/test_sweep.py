@@ -137,6 +137,44 @@ class GraphDatasetViewTests(unittest.TestCase):
 
 
 class SweepDatasetTests(unittest.TestCase):
+    def _graph_view(self) -> GraphDatasetView:
+        return GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="s0",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s1",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s2",
+                    node_features=np.arange(2, dtype=float).reshape(1, 2),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="s3",
+                    node_features=np.arange(8, dtype=float).reshape(4, 2),
+                    edge_index=np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int64),
+                ),
+            )
+        )
+
+    def _dataset_with_graphs_and_auxiliary(self) -> SweepDataset:
+        return SweepDataset(
+            mlip_features=np.arange(12, dtype=float).reshape(4, 3),
+            targets=np.arange(4, dtype=float) + 0.5,
+            sample_ids=np.array(["s0", "s1", "s2", "s3"]),
+            graph_view=self._graph_view(),
+            auxiliary_views={
+                "weights": np.array([1.0, 2.0, 3.0, 4.0]),
+                "folds": ["train", "val", "test", "holdout"],
+            },
+        )
+
     def test_sweep_dataset_defaults_sample_ids_to_row_indices(self) -> None:
         dataset = SweepDataset(
             mlip_features=np.arange(12, dtype=float).reshape(4, 3),
@@ -219,6 +257,47 @@ class SweepDatasetTests(unittest.TestCase):
 
         self.assertTrue(dataset.has_graphs)
         self.assertIs(dataset.graphs, graph_view)
+
+    def test_sweep_dataset_sample_returns_aligned_graph_and_auxiliary_views(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        sample = dataset.sample(1)
+
+        self.assertEqual(sample.index, 1)
+        np.testing.assert_array_equal(sample.mlip_features, np.array([3.0, 4.0, 5.0]))
+        self.assertEqual(sample.target, 1.5)
+        self.assertEqual(sample.sample_id, "s1")
+        self.assertIsNotNone(sample.graph)
+        self.assertEqual(sample.graph.sample_id, "s1")
+        self.assertEqual(sample.auxiliary, {"weights": 2.0, "folds": "val"})
+
+    def test_sweep_dataset_subset_keeps_all_views_aligned_for_split_indices(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        subset = dataset.subset(np.array([3, 1]))
+
+        np.testing.assert_array_equal(
+            subset.mlip_features,
+            np.array([[9.0, 10.0, 11.0], [3.0, 4.0, 5.0]]),
+        )
+        np.testing.assert_array_equal(subset.targets, np.array([3.5, 1.5]))
+        np.testing.assert_array_equal(subset.sample_ids, np.array(["s3", "s1"]))
+        self.assertEqual(subset.graphs.sample_ids, ("s3", "s1"))
+        self.assertEqual(subset.graphs["s3"].sample_id, "s3")
+        np.testing.assert_array_equal(
+            subset.auxiliary_views["weights"],
+            np.array([4.0, 2.0]),
+        )
+        self.assertEqual(subset.auxiliary_views["folds"], ["holdout", "val"])
+
+    def test_sweep_dataset_subset_accepts_boolean_masks(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        subset = dataset.subset(np.array([True, False, True, False]))
+
+        np.testing.assert_array_equal(subset.sample_ids, np.array(["s0", "s2"]))
+        self.assertEqual(subset.graphs.sample_ids, ("s0", "s2"))
+        self.assertEqual(subset.auxiliary_views["folds"], ["train", "test"])
 
     def test_sweep_dataset_rejects_duplicate_graph_ids(self) -> None:
         graph_view = GraphDatasetView.from_records(
