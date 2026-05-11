@@ -496,6 +496,26 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             3,
         )
 
+    def test_inner_validation_size_for_sweep_uses_tuning_minimum_policy(self) -> None:
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                5,
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=3,
+            ),
+            3,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                20,
+                validation_fraction=0.2,
+                min_val_size=2,
+                min_tuning_val_size=3,
+            ),
+            4,
+        )
+
     def test_inner_validation_size_for_sweep_rejects_invalid_inputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "sweep_size must be positive"):
             inner_validation_size_for_sweep(
@@ -519,6 +539,17 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 5,
                 validation_fraction=0.2,
                 min_val_size=0,
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "min_tuning_val_size must be positive",
+        ):
+            inner_validation_size_for_sweep(
+                5,
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=0,
             )
 
     def test_generate_sweep_splits_with_validation_yields_disjoint_full_partitions(
@@ -786,6 +817,26 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2])
         self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8])
 
+    def test_generate_inner_validation_sweep_splits_honors_tuning_validation_minimum(
+        self,
+    ) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=12,
+                min_train=4,
+                max_train=10,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=3,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual([len(split.val_idx) for split in splits], [3, 3, 3, 3, 3, 3, 3])
+        self.assertEqual([len(split.train_idx) for split in splits], [1, 2, 3, 4, 5, 6, 7])
+
     def test_generate_inner_validation_sweep_splits_exposes_one_point_validation_pathology(
         self,
     ) -> None:
@@ -804,6 +855,25 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([split.sweep_size for split in splits], [2, 3, 4, 5, 6])
         self.assertEqual([len(split.val_idx) for split in splits], [1, 1, 1, 1, 1])
         self.assertEqual([len(split.train_idx) for split in splits], [1, 2, 3, 4, 5])
+
+    def test_generate_inner_validation_sweep_splits_skips_points_with_insufficient_tuning_validation(
+        self,
+    ) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=8,
+                min_train=2,
+                max_train=6,
+                n_repeats=1,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=3,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 5, 6])
+        self.assertEqual([len(split.val_idx) for split in splits], [3, 3, 3])
 
     def test_generate_inner_validation_sweep_splits_honors_minimum_inner_train_policy(
         self,
@@ -1003,6 +1073,34 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             self.assertEqual(len(split.val_idx), expected_n_val)
             self.assertEqual(len(split.train_idx) + len(split.val_idx), split.sweep_size)
 
+    def test_build_sweep_split_collection_honors_tuning_validation_minimum(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=10,
+            min_train=1,
+            max_train=7,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            validation_fraction=0.2,
+            min_val_size=1,
+            min_tuning_val_size=3,
+            min_test_size=2,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [4, 5, 6, 7],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in split_collection.splits],
+            [3, 3, 3, 3],
+        )
+
     def test_build_sweep_split_collection_honors_minimum_inner_train_policy(
         self,
     ) -> None:
@@ -1104,6 +1202,54 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual(
             [len(split.train_idx) for split in family.last_payload.split_collection.splits],
             [2, 3, 4],
+        )
+
+    def test_run_learning_curve_experiments_honors_tuning_validation_minimum(
+        self,
+    ) -> None:
+        X = np.arange(24, dtype=float).reshape(8, 3)
+        y = np.arange(8, dtype=float)
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4, 5],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class ValidationAwareStubFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements(
+                    min_train_size=0,
+                    requires_inner_validation=True,
+                )
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = ValidationAwareStubFamily()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=5,
+            n_repeats=1,
+            seed=3,
+            validation_fraction=0.2,
+            min_val_size=1,
+            min_tuning_val_size=3,
+            model_families=[family],
+        )
+
+        self.assertIs(results.ridge_df, result_df)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [4, 5],
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [3, 3],
         )
 
 

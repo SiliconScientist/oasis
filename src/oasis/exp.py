@@ -35,13 +35,14 @@ def inner_validation_size_for_sweep(
     *,
     validation_fraction: float,
     min_val_size: int,
+    min_tuning_val_size: int = 1,
 ) -> int:
     """Return the inner validation size for one outer-train budget.
 
     This policy consumes part of the requested sweep budget for validation via
-    `max(min_val_size, floor(validation_fraction * sweep_size))`. The remainder
-    stays available for inner training; outer test samples are not involved in
-    this calculation.
+    `max(min_val_size, min_tuning_val_size, floor(validation_fraction * sweep_size))`.
+    The remainder stays available for inner training; outer test samples are not
+    involved in this calculation.
     """
 
     if sweep_size <= 0:
@@ -50,7 +51,13 @@ def inner_validation_size_for_sweep(
         raise ValueError("validation_fraction must be non-negative.")
     if min_val_size <= 0:
         raise ValueError("min_val_size must be positive.")
-    return max(min_val_size, math.floor(validation_fraction * sweep_size))
+    if min_tuning_val_size <= 0:
+        raise ValueError("min_tuning_val_size must be positive.")
+    return max(
+        min_val_size,
+        min_tuning_val_size,
+        math.floor(validation_fraction * sweep_size),
+    )
 
 def generate_sweep_splits(
     n_samples: int,
@@ -137,6 +144,7 @@ def generate_inner_validation_sweep_splits(
     *,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
@@ -160,6 +168,7 @@ def generate_inner_validation_sweep_splits(
             sweep_size,
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
+            min_tuning_val_size=min_tuning_val_size,
         )
         if n_val + min_inner_train_size > sweep_size:
             continue
@@ -185,6 +194,7 @@ def build_sweep_split_collection(
     requirements: SweepFamilyRequirements | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> SweepSplitCollection:
@@ -199,8 +209,8 @@ def build_sweep_split_collection(
     - the caller's requested `min_train`
     - the family's declared `min_train_size`
     - for validation-aware families, the smallest sweep size that can satisfy
-      `min_val_size` while still leaving at least `min_inner_train_size`
-      inner-train samples
+      `min_val_size` and `min_tuning_val_size` while still leaving at least
+      `min_inner_train_size` inner-train samples
 
     The feasible sweep range is also bounded above by `n_samples - min_test_size`
     so that every emitted split leaves at least `min_test_size` samples in the
@@ -214,7 +224,7 @@ def build_sweep_split_collection(
     if requirements.requires_inner_validation:
         effective_min_train = max(
             effective_min_train,
-            min_val_size + min_inner_train_size,
+            max(min_val_size, min_tuning_val_size) + min_inner_train_size,
         )
         splits = tuple(
             generate_inner_validation_sweep_splits(
@@ -225,6 +235,7 @@ def build_sweep_split_collection(
                 rng,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
                 min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
             )
@@ -287,6 +298,7 @@ def run_learning_curve_experiments_from_frame(
     graph_join_key: str = "reaction",
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
@@ -307,6 +319,7 @@ def run_learning_curve_experiments_from_frame(
         enabled_model_names=enabled_model_names,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
+        min_tuning_val_size=min_tuning_val_size,
         min_inner_train_size=min_inner_train_size,
         min_test_size=min_test_size,
         model_families=model_families,
@@ -417,6 +430,11 @@ def run_learning_curve_experiments_from_config(
             else 0.2
         ),
         min_val_size=getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1,
+        min_tuning_val_size=(
+            getattr(experiment_cfg, "min_tuning_val_size", 1)
+            if experiment_cfg
+            else 1
+        ),
         min_inner_train_size=(
             getattr(experiment_cfg, "min_inner_train_size", 1)
             if experiment_cfg
@@ -451,6 +469,7 @@ def run_learning_curve_experiments(
     enabled_model_names: Sequence[str] | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
@@ -481,6 +500,7 @@ def run_learning_curve_experiments(
                 requirements=requirements,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
                 min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
             ),
