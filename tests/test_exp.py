@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -7,6 +9,13 @@ from unittest.mock import patch
 from ase import Atoms
 import numpy as np
 import pandas as pd
+
+try:
+    import polars  # noqa: F401
+
+    HAS_POLARS = True
+except ModuleNotFoundError:
+    HAS_POLARS = False
 
 from oasis.exp import (
     build_sweep_dataset_from_config,
@@ -21,7 +30,7 @@ from oasis.exp import (
     run_learning_curve_experiments_from_config,
     run_learning_curve_experiments_from_frame,
 )
-from oasis.graphs import atoms_to_graph_dataset_view
+from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -2290,3 +2299,89 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(mock_build.call_args.kwargs["graph_view"])
         self.assertIs(mock_run.call_args.args[0].graph_view, graph_view)
         self.assertFalse(mock_load.called)
+
+    @unittest.skipUnless(HAS_POLARS, "requires polars")
+    def test_run_learning_curve_experiments_from_config_runs_with_saved_graph_artifact(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["s0", "s1", "s2", "s3", "s4", "s5"],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            tuple(
+                GraphRecord(
+                    sample_id=f"s{idx}",
+                    node_features=np.array([[float(idx + 1)]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                    node_positions=np.array([[float(idx), 0.0, 0.0]]),
+                )
+                for idx in range(6)
+            )
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        class RecordingFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = RecordingFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = Path(tmp_dir) / "aligned_graphs.parquet"
+            save_aligned_graph_dataset_parquet(df, graph_view, artifact_path)
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_test_size=1,
+                        graph_dataset=SimpleNamespace(
+                            path=artifact_path,
+                            join_key="reaction",
+                        ),
+                        models=None,
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+
+        self.assertIs(results.ridge_df, result_df)
+        dataset = family.last_payload.dataset
+        self.assertTrue(dataset.has_graphs)
+        np.testing.assert_array_equal(
+            dataset.sample_ids,
+            np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        self.assertEqual(dataset.graphs.sample_ids, ("s0", "s1", "s2", "s3", "s4", "s5"))
+        np.testing.assert_allclose(
+            dataset.graphs["s3"].node_positions,
+            np.array([[3.0, 0.0, 0.0]]),
+        )
+        np.testing.assert_array_equal(
+            dataset.mlip_features[:, 0],
+            np.array([1.1, 2.1, 3.1, 4.1, 5.1, 6.1]),
+        )
