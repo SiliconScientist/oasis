@@ -40,9 +40,11 @@ try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
         LearnedFamilyRegistrationSpec,
+        LearnedModelSweepRunner,
         PlaceholderLearnedSweepModelFamily,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
+        ValidationAwareLearnedModelSweepRunner,
         ValidationAwareSupervisedModelSweepRunner,
         default_sweep_model_families,
         enabled_learning_curve_model_names_from_config,
@@ -51,6 +53,8 @@ try:
         residual_sweep,
         sklearn_model_families,
         sklearn_sweep_model_specs,
+        sweep_learned_model,
+        sweep_learned_model_with_validation,
         sweep_model,
         sweep_model_with_validation,
         weighted_linear_sweep,
@@ -1055,6 +1059,105 @@ class BoundaryTests(unittest.TestCase):
             result.columns.tolist(),
             ["n_train", "rmse_mean", "rmse_std"],
         )
+        self.assertEqual(result["n_train"].tolist(), [4])
+        pd.testing.assert_frame_equal(result, runner_result)
+
+    def test_learned_runner_uses_full_train_test_split_input(self) -> None:
+        seen_splits: list[TrainTestSweepRunnerInput] = []
+
+        class SplitAwareLinearModel:
+            def fit(self, split: TrainTestSweepRunnerInput) -> None:
+                seen_splits.append(split)
+                X_train = split.dataset.mlip_features[split.train_idx]
+                y_train = split.dataset.targets[split.train_idx]
+                self.coef_, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
+
+            def predict(self, X):
+                return X @ self.coef_
+
+        dataset = SweepDataset(
+            mlip_features=np.array(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0],
+                    [2.0, 1.0],
+                    [1.0, 2.0],
+                    [2.0, 2.0],
+                ]
+            ),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([0, 1, 2]),
+                    test_idx=np.array([3, 4, 5]),
+                ),
+            )
+        )
+
+        result = sweep_learned_model(payload, SplitAwareLinearModel)
+        runner_result = LearnedModelSweepRunner(SplitAwareLinearModel).run(payload)
+
+        self.assertEqual(len(seen_splits), 2)
+        self.assertIs(seen_splits[0], payload.splits[0])
+        self.assertEqual(result["n_train"].tolist(), [3])
+        pd.testing.assert_frame_equal(result, runner_result)
+
+    def test_validation_aware_learned_runner_uses_full_train_val_test_split_input(
+        self,
+    ) -> None:
+        seen_splits: list[TrainValTestSweepRunnerInput] = []
+
+        class SplitAwareValidationModel:
+            def fit(self, split: TrainValTestSweepRunnerInput) -> None:
+                seen_splits.append(split)
+                fit_idx = np.concatenate([split.train_idx, split.val_idx])
+                X_fit = split.dataset.mlip_features[fit_idx]
+                y_fit = split.dataset.targets[fit_idx]
+                self.coef_, *_ = np.linalg.lstsq(X_fit, y_fit, rcond=None)
+
+            def predict(self, X):
+                return X @ self.coef_
+
+        dataset = SweepDataset(
+            mlip_features=np.array(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0],
+                    [2.0, 1.0],
+                    [1.0, 2.0],
+                    [2.0, 2.0],
+                ]
+            ),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1, 2]),
+                    val_idx=np.array([3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        result = sweep_learned_model_with_validation(
+            payload,
+            SplitAwareValidationModel,
+        )
+        runner_result = ValidationAwareLearnedModelSweepRunner(
+            SplitAwareValidationModel
+        ).run_with_validation(payload)
+
+        self.assertEqual(len(seen_splits), 2)
+        self.assertIs(seen_splits[0], payload.splits[0])
         self.assertEqual(result["n_train"].tolist(), [4])
         pd.testing.assert_frame_equal(result, runner_result)
 

@@ -39,6 +39,7 @@ from tests.support import regression_dataset
 try:
     from oasis.method import (
         ConfiguredSweepModelFamily,
+        LearnedModelSweepRunner,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
         sweep_results_frame,
@@ -1347,6 +1348,71 @@ class ExpIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(len(baseline_runner.payloads), 1)
         self.assertEqual(len(validation_runner.payloads), 1)
+
+    def test_run_learning_curve_experiments_supports_sklearn_and_learned_runners(
+        self,
+    ) -> None:
+        class SklearnLikeModel:
+            fit_calls = 0
+
+            def fit(self, X, y) -> None:
+                type(self).fit_calls += 1
+                self.coef_, *_ = np.linalg.lstsq(X, y, rcond=None)
+
+            def predict(self, X):
+                return X @ self.coef_
+
+        seen_splits: list[TrainTestSweepRunnerInput] = []
+
+        class SplitAwareModel:
+            def fit(self, split: TrainTestSweepRunnerInput) -> None:
+                seen_splits.append(split)
+                X_train = split.dataset.mlip_features[split.train_idx]
+                y_train = split.dataset.targets[split.train_idx]
+                self.coef_, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
+
+            def predict(self, X):
+                return X @ self.coef_
+
+        X = np.array(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 1.0],
+                [2.0, 1.0],
+                [1.0, 2.0],
+                [2.0, 2.0],
+            ]
+        )
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+
+        sklearn_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                runner=SupervisedModelSweepRunner(SklearnLikeModel),
+            )
+        )
+        learned_family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="weighted_linear_df",
+                runner=LearnedModelSweepRunner(SplitAwareModel),
+            )
+        )
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=3,
+            max_train=3,
+            n_repeats=1,
+            seed=5,
+            model_families=[sklearn_family, learned_family],
+        )
+
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [3])
+        self.assertEqual(results.weighted_linear_df["n_train"].tolist(), [3])
+        self.assertEqual(SklearnLikeModel.fit_calls, 1)
+        self.assertEqual(len(seen_splits), 1)
+        self.assertIsInstance(seen_splits[0], TrainTestSweepRunnerInput)
 
     def test_configured_family_rejects_validation_splits_for_train_test_runner(
         self,

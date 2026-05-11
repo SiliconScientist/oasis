@@ -321,6 +321,24 @@ class ValidationAwareSweepExperimentRunner(Protocol):
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
 
 
+@runtime_checkable
+class TrainTestLearnedEstimator(Protocol):
+    """Estimator that trains from the full train/test split input."""
+
+    def fit(self, split: TrainTestSweepRunnerInput) -> None: ...
+
+    def predict(self, X: np.ndarray) -> np.ndarray: ...
+
+
+@runtime_checkable
+class TrainValTestLearnedEstimator(Protocol):
+    """Estimator that trains from the full train/val/test split input."""
+
+    def fit(self, split: TrainValTestSweepRunnerInput) -> None: ...
+
+    def predict(self, X: np.ndarray) -> np.ndarray: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SweepFamilySpec:
     result_field: str
@@ -357,6 +375,26 @@ class ValidationAwareSupervisedModelSweepRunner:
 
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         return sweep_model_with_validation(payload, self.model_factory)
+
+
+@dataclass(frozen=True, slots=True)
+class LearnedModelSweepRunner:
+    """Adapter for learned estimators that need the full train/test split input."""
+
+    model_factory: Callable[[], TrainTestLearnedEstimator]
+
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_learned_model(payload, self.model_factory)
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationAwareLearnedModelSweepRunner:
+    """Adapter for learned estimators that need the full train/val/test split input."""
+
+    model_factory: Callable[[], TrainValTestLearnedEstimator]
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_learned_model_with_validation(payload, self.model_factory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -712,6 +750,44 @@ def sweep_model_with_validation(
             X[split.val_idx],
             y[split.val_idx],
         )
+        preds = model.predict(X[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def sweep_learned_model(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], TrainTestLearnedEstimator],
+) -> pd.DataFrame:
+    """Evaluate a learned estimator that consumes full train/test split inputs."""
+
+    payload = _as_runner_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in _assert_train_test_payload(payload):
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
+        model = model_factory()
+        model.fit(split)
+        preds = model.predict(X[split.test_idx])
+        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+    return sweep_results_frame(rmses_by_size)
+
+
+def sweep_learned_model_with_validation(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], TrainValTestLearnedEstimator],
+) -> pd.DataFrame:
+    """Evaluate a learned estimator that consumes full train/val/test split inputs."""
+
+    payload = _as_runner_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    for split in _assert_train_val_test_payload(payload):
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
+        model = model_factory()
+        model.fit(split)
         preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
