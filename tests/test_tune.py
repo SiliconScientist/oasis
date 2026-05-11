@@ -762,6 +762,143 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(train_only.selection_metadata["mean"].tolist(), [0.5])
         self.assertEqual(train_plus_val.selection_metadata["mean"].tolist(), [3.25])
 
+    def test_learned_trial_tuning_spec_can_use_batched_mlip_only_loaders(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [40.0], [50.0]]),
+            targets=np.array([0.0, 0.0, 2.0, 3.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([1, 0]),
+                    val_idx=np.array([3, 2]),
+                    test_idx=np.array([5, 4]),
+                ),
+            )
+        )
+        objective_batch_signatures: list[tuple[str, tuple[str, ...], tuple[float, ...]]] = []
+        test_predict_signatures: list[tuple[str, ...]] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        def collate_batch(rows: list[dict[str, object]]) -> dict[str, object]:
+            return {
+                "sample_ids": tuple(row["sample_id"] for row in rows),
+                "targets": np.array([row["target"] for row in rows], dtype=float),
+                "mlip_features": np.stack([row["mlip_features"] for row in rows]),
+            }
+
+        class FakeLearnedTrialTuningSpec:
+            class _LoaderAdapter:
+                def batching_for_split(self, *, split_name: str) -> LoaderBatching:
+                    if split_name == "train":
+                        return LoaderBatching(
+                            batch_size=2,
+                            shuffle=False,
+                            collate_fn=collate_batch,
+                        )
+                    return LoaderBatching(
+                        batch_size=1,
+                        shuffle=False,
+                        collate_fn=collate_batch,
+                    )
+
+                def build_loader(self, loader_input: LoaderAdapterInput) -> list[dict[str, object]]:
+                    collate_fn = loader_input.batching.collate_fn
+                    batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
+                    if collate_fn is None:
+                        raise AssertionError("collate_fn is required")
+                    rows = [
+                        {
+                            "sample_id": sample.sample_id,
+                            "target": sample.target,
+                            "mlip_features": sample.mlip_features,
+                        }
+                        for sample in (
+                            loader_input.dataset.sample(i)
+                            for i in range(len(loader_input.dataset))
+                        )
+                    ]
+                    batches = []
+                    for start in range(0, len(rows), batch_size):
+                        batches.append(collate_fn(rows[start : start + batch_size]))
+                    return batches
+
+            _loader_adapter = _LoaderAdapter()
+
+            def build_trial_objective(self, split):
+                loaders = split.loaders(self._loader_adapter)
+                for batch in loaders.train:
+                    objective_batch_signatures.append(
+                        (
+                            "train",
+                            batch["sample_ids"],
+                            tuple(float(v) for v in batch["targets"]),
+                        )
+                    )
+                for batch in loaders.val:
+                    objective_batch_signatures.append(
+                        (
+                            "val",
+                            batch["sample_ids"],
+                            tuple(float(v) for v in batch["targets"]),
+                        )
+                    )
+                y_val = np.concatenate([batch["targets"] for batch in loaders.val])
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial["constant"]))
+
+            def predict(self, model, dataset):
+                test_predict_signatures.append(tuple(dataset.sample_ids.tolist()))
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial["constant"]),
+                    "selected_constant": float(model.constant),
+                }
+
+        spec = FakeLearnedTrialTuningSpec()
+        self.assertIsInstance(spec, LearnedTrialTuningSpec)
+        trial_factory = lambda split: (  # noqa: E731
+            {"constant": 0.0},
+            {"constant": 3.0},
+        )
+
+        artifacts = sweep_learned_trial_model_selection(payload, spec, trial_factory)
+
+        self.assertEqual(
+            objective_batch_signatures,
+            [
+                ("train", ("s1", "s0"), (0.0, 0.0)),
+                ("val", ("s3",), (3.0,)),
+                ("val", ("s2",), (2.0,)),
+            ],
+        )
+        self.assertEqual(test_predict_signatures, [("s5", "s4")])
+        np.testing.assert_allclose(
+            artifacts.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(2.5)],
+            atol=1e-12,
+        )
+        self.assertEqual(
+            artifacts.selection_metadata["selected_constant"].tolist(),
+            [3.0],
+        )
+
     def test_optuna_runner_objective_sees_only_train_and_val(self) -> None:
         dataset = SweepDataset(
             mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [40.0], [50.0]]),
