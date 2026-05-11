@@ -319,6 +319,12 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
         np.testing.assert_array_equal(dataset.targets, np.array([2.0, 1.0]))
         self.assertTrue(dataset.has_graphs)
         self.assertEqual(dataset.graphs.sample_ids, ("rxn-b", "rxn-a"))
+        sample = dataset.sample(0)
+        self.assertEqual(sample.sample_id, "rxn-b")
+        np.testing.assert_array_equal(sample.mlip_features, np.array([2.2, 1.8]))
+        self.assertEqual(sample.target, 2.0)
+        self.assertIsNotNone(sample.graph)
+        self.assertEqual(sample.graph.sample_id, "rxn-b")
 
     def test_build_graph_sweep_dataset_rejects_missing_graph_for_frame_row(self) -> None:
         wide_df = _Frame(
