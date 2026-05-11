@@ -254,10 +254,23 @@ class SweepDataset:
         )
 
     @property
+    def inputs(self) -> SweepDatasetInputs:
+        return SweepDatasetInputs(
+            mlip_features=self.mlip_features,
+            graph_view=self.graph_view,
+        )
+
+    @property
     def graphs(self) -> GraphDatasetView:
         if self.graph_view is None:
             raise ValueError("graph_view is not available for this dataset.")
         return self.graph_view
+
+    def mlip_view(self) -> np.ndarray:
+        return self.inputs.mlip_features
+
+    def graph_view_required(self) -> GraphDatasetView:
+        return self.inputs.graph_view_required()
 
     @property
     def X(self) -> np.ndarray:
@@ -354,6 +367,21 @@ class SweepDatasetModalities:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepDatasetInputs:
+    mlip_features: np.ndarray
+    graph_view: GraphDatasetView | None = None
+
+    @property
+    def has_graphs(self) -> bool:
+        return self.graph_view is not None
+
+    def graph_view_required(self) -> GraphDatasetView:
+        if self.graph_view is None:
+            raise ValueError("graph_view is required for these dataset inputs.")
+        return self.graph_view
+
+
+@dataclass(frozen=True, slots=True)
 class SweepSampleModalities:
     mlip_features: np.ndarray
     graph: GraphRecord | None = None
@@ -361,6 +389,21 @@ class SweepSampleModalities:
     @property
     def has_graph(self) -> bool:
         return self.graph is not None
+
+
+@dataclass(frozen=True, slots=True)
+class SweepSampleInputs:
+    mlip_features: np.ndarray
+    graph: GraphRecord | None = None
+
+    @property
+    def has_graph(self) -> bool:
+        return self.graph is not None
+
+    def graph_required(self) -> GraphRecord:
+        if self.graph is None:
+            raise ValueError("graph is required for these sample inputs.")
+        return self.graph
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +421,19 @@ class SweepSample:
             mlip_features=self.mlip_features,
             graph=self.graph,
         )
+
+    @property
+    def inputs(self) -> SweepSampleInputs:
+        return SweepSampleInputs(
+            mlip_features=self.mlip_features,
+            graph=self.graph,
+        )
+
+    def mlip_view(self) -> np.ndarray:
+        return self.inputs.mlip_features
+
+    def graph_required(self) -> GraphRecord:
+        return self.inputs.graph_required()
 
 
 def _has_mlip_feature_modality(mlip_features: np.ndarray) -> bool:

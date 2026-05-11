@@ -10,8 +10,10 @@ from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
     SweepDataset,
+    SweepDatasetInputs,
     SweepDatasetModalities,
     SweepRunnerPayload,
+    SweepSampleInputs,
     SweepSampleModalities,
     SweepSplit,
     SweepSplitCollection,
@@ -339,6 +341,30 @@ class SweepDatasetTests(unittest.TestCase):
         self.assertIs(modalities.graphs, dataset.graphs)
         self.assertIs(modalities.graph_view, dataset.graph_view)
 
+    def test_sweep_dataset_exposes_input_views_for_learned_family_callers(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        inputs = dataset.inputs
+
+        self.assertIsInstance(inputs, SweepDatasetInputs)
+        self.assertIs(inputs.mlip_features, dataset.mlip_features)
+        self.assertTrue(inputs.has_graphs)
+        self.assertIs(inputs.graph_view_required(), dataset.graph_view)
+        self.assertIs(dataset.mlip_view(), dataset.mlip_features)
+        self.assertIs(dataset.graph_view_required(), dataset.graph_view)
+
+    def test_sweep_dataset_graph_view_required_rejects_missing_graphs(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+            targets=np.arange(2, dtype=float),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "graph_view is required for these dataset inputs",
+        ):
+            dataset.graph_view_required()
+
     def test_sweep_dataset_sample_returns_aligned_graph_and_auxiliary_views(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()
 
@@ -360,6 +386,25 @@ class SweepDatasetTests(unittest.TestCase):
         np.testing.assert_array_equal(modalities.mlip_features, sample.mlip_features)
         self.assertTrue(modalities.has_graph)
         self.assertIs(modalities.graph, sample.graph)
+        inputs = sample.inputs
+        self.assertIsInstance(inputs, SweepSampleInputs)
+        np.testing.assert_array_equal(inputs.mlip_features, sample.mlip_features)
+        self.assertTrue(inputs.has_graph)
+        self.assertIs(inputs.graph_required(), sample.graph)
+        np.testing.assert_array_equal(sample.mlip_view(), sample.mlip_features)
+        self.assertIs(sample.graph_required(), sample.graph)
+
+    def test_sweep_dataset_sample_graph_required_rejects_missing_graph(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(6, dtype=float).reshape(2, 3),
+            targets=np.arange(2, dtype=float),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "graph is required for these sample inputs",
+        ):
+            dataset.sample(0).graph_required()
 
     def test_sweep_dataset_sample_uses_sample_id_to_resolve_graph_after_reordering(
         self,
