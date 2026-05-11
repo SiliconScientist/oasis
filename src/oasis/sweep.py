@@ -230,6 +230,13 @@ class SweepDataset:
         return self.graph_view is not None
 
     @property
+    def modalities(self) -> SweepDatasetModalities:
+        return SweepDatasetModalities(
+            mlip_features=self.mlip_features,
+            graph_view=self.graph_view,
+        )
+
+    @property
     def graphs(self) -> GraphDatasetView:
         if self.graph_view is None:
             raise ValueError("graph_view is not available for this dataset.")
@@ -291,6 +298,32 @@ class SweepDataset:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepDatasetModalities:
+    mlip_features: np.ndarray
+    graph_view: GraphDatasetView | None = None
+
+    @property
+    def has_graphs(self) -> bool:
+        return self.graph_view is not None
+
+    @property
+    def graphs(self) -> GraphDatasetView:
+        if self.graph_view is None:
+            raise ValueError("graph_view is not available for this modality bundle.")
+        return self.graph_view
+
+
+@dataclass(frozen=True, slots=True)
+class SweepSampleModalities:
+    mlip_features: np.ndarray
+    graph: GraphRecord | None = None
+
+    @property
+    def has_graph(self) -> bool:
+        return self.graph is not None
+
+
+@dataclass(frozen=True, slots=True)
 class SweepSample:
     index: int
     mlip_features: np.ndarray
@@ -298,6 +331,13 @@ class SweepSample:
     sample_id: SampleId
     graph: GraphRecord | None = None
     auxiliary: Mapping[str, Any] | None = None
+
+    @property
+    def modalities(self) -> SweepSampleModalities:
+        return SweepSampleModalities(
+            mlip_features=self.mlip_features,
+            graph=self.graph,
+        )
 
 
 def _normalize_sample_index(index: int, n_samples: int) -> int:

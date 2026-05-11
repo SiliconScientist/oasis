@@ -649,6 +649,8 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.graphs.sample_ids,
             ("rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"),
         )
+        self.assertIs(dataset.modalities.mlip_features, dataset.mlip_features)
+        self.assertIs(dataset.modalities.graphs, dataset.graphs)
         self.assertIsNone(dataset.auxiliary_views)
 
     def test_run_learning_curve_experiments_from_frame_plumbs_atoms_derived_graphs(

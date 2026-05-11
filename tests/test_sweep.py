@@ -9,7 +9,9 @@ from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
     SweepDataset,
+    SweepDatasetModalities,
     SweepRunnerPayload,
+    SweepSampleModalities,
     SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
@@ -265,6 +267,19 @@ class SweepDatasetTests(unittest.TestCase):
         self.assertTrue(dataset.has_graphs)
         self.assertIs(dataset.graphs, graph_view)
 
+    def test_sweep_dataset_exposes_named_modalities_while_preserving_legacy_fields(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        modalities = dataset.modalities
+
+        self.assertIsInstance(modalities, SweepDatasetModalities)
+        self.assertIs(modalities.mlip_features, dataset.mlip_features)
+        self.assertTrue(modalities.has_graphs)
+        self.assertIs(modalities.graphs, dataset.graphs)
+        self.assertIs(modalities.graph_view, dataset.graph_view)
+
     def test_sweep_dataset_sample_returns_aligned_graph_and_auxiliary_views(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()
 
@@ -281,6 +296,11 @@ class SweepDatasetTests(unittest.TestCase):
             sample.graph.node_features,
             dataset.graphs["s1"].node_features,
         )
+        modalities = sample.modalities
+        self.assertIsInstance(modalities, SweepSampleModalities)
+        np.testing.assert_array_equal(modalities.mlip_features, sample.mlip_features)
+        self.assertTrue(modalities.has_graph)
+        self.assertIs(modalities.graph, sample.graph)
 
     def test_sweep_dataset_sample_uses_sample_id_to_resolve_graph_after_reordering(
         self,
