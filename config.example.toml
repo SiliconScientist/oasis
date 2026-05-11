@@ -60,7 +60,10 @@ min_test_size = 1
 n_repeats = 10
 
 [experiment.learning_curve.graph_dataset]
+# Reuse this aligned MLIP+graph artifact if it already exists; otherwise Oasis
+# builds it from `mlip.dataset` atoms and saves it here.
 path = "data/graphs/example_reactions.parquet"
+# Must match a column in the filtered MLIP wide frame.
 join_key = "reaction"
 
 [plot.filters]
