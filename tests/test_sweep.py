@@ -727,6 +727,36 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
         self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s5", "s2"))
 
+    def test_train_test_runner_input_preserves_multimodal_identity_for_sample_ids(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([4, 1, 0]),
+            test_idx=np.array([5, 2]),
+        )
+
+        subsets = split.dataset_subsets()
+        expected_by_sample_id = {
+            sample.sample_id: sample
+            for sample in (dataset.sample(i) for i in range(len(dataset)))
+        }
+
+        for subset in (subsets.train, subsets.test):
+            for row_index, sample_id in enumerate(subset.sample_ids.tolist()):
+                subset_sample = subset.sample(row_index)
+                expected = expected_by_sample_id[sample_id]
+                self.assertEqual(subset_sample.sample_id, expected.sample_id)
+                np.testing.assert_array_equal(
+                    subset_sample.mlip_features,
+                    expected.mlip_features,
+                )
+                self.assertEqual(subset_sample.target, expected.target)
+                self.assertIs(subset_sample.graph, expected.graph)
+                self.assertEqual(subset_sample.auxiliary, expected.auxiliary)
+
     def test_train_val_test_runner_input_builds_non_overlapping_dataset_subsets(
         self,
     ) -> None:
@@ -784,6 +814,37 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertEqual(inputs.val.graph_view_required().sample_ids, ("s1",))
         self.assertIs(inputs.test.mlip_features, subsets.test.mlip_features)
         self.assertEqual(inputs.test.graph_view_required().sample_ids, ("s3", "s5"))
+
+    def test_train_val_test_runner_input_preserves_multimodal_identity_for_sample_ids(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([4, 0, 2]),
+            val_idx=np.array([5, 1]),
+            test_idx=np.array([3]),
+        )
+
+        subsets = split.dataset_subsets()
+        expected_by_sample_id = {
+            sample.sample_id: sample
+            for sample in (dataset.sample(i) for i in range(len(dataset)))
+        }
+
+        for subset in (subsets.train, subsets.val, subsets.test):
+            for row_index, sample_id in enumerate(subset.sample_ids.tolist()):
+                subset_sample = subset.sample(row_index)
+                expected = expected_by_sample_id[sample_id]
+                self.assertEqual(subset_sample.sample_id, expected.sample_id)
+                np.testing.assert_array_equal(
+                    subset_sample.mlip_features,
+                    expected.mlip_features,
+                )
+                self.assertEqual(subset_sample.target, expected.target)
+                self.assertIs(subset_sample.graph, expected.graph)
+                self.assertEqual(subset_sample.auxiliary, expected.auxiliary)
 
     def test_split_to_loaders_uses_thin_adapter_seam(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()

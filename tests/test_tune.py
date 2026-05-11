@@ -31,11 +31,19 @@ try:
         sweep_trial_model_selection,
     )
 
+    HAS_TUNE = True
+except ModuleNotFoundError:
+    HAS_TUNE = False
+
+try:
+    import sklearn  # noqa: F401
+
     HAS_SKLEARN = True
 except ModuleNotFoundError:
     HAS_SKLEARN = False
 
 
+@unittest.skipUnless(HAS_TUNE, "requires oasis.tune dependencies")
 class TuneTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_grid_hyperparameter_spec_expands_candidate_factories(self) -> None:

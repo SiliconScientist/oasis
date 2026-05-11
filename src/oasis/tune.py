@@ -16,8 +16,23 @@ from oasis.sweep import (
     SweepRunPayload,
     TrainValTestSweepRunnerInput,
 )
-from pydantic import BaseModel
-from sklearn.metrics import mean_squared_error
+
+try:
+    from pydantic import BaseModel
+except ModuleNotFoundError:
+    class BaseModel:
+        def __init__(self, **data: Any) -> None:
+            annotations = getattr(type(self), "__annotations__", {})
+            unexpected = set(data) - set(annotations)
+            if unexpected:
+                unexpected_names = ", ".join(sorted(unexpected))
+                raise TypeError(f"unexpected config fields: {unexpected_names}")
+            for field_name in annotations:
+                if field_name in data:
+                    value = data[field_name]
+                else:
+                    value = getattr(type(self), field_name)
+                setattr(self, field_name, value)
 
 SelectionRefitPolicy = Literal["train_only", "train_plus_val"]
 
@@ -28,6 +43,14 @@ class OptunaTuningConfig(BaseModel):
     pruner: str | None = None
     timeout_s: int | None = None
     seed: int | None = None
+
+
+def _mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true_arr = np.asarray(y_true, dtype=float)
+    y_pred_arr = np.asarray(y_pred, dtype=float)
+    if y_true_arr.shape != y_pred_arr.shape:
+        raise ValueError("y_true and y_pred must have the same shape.")
+    return float(np.mean((y_true_arr - y_pred_arr) ** 2))
 
 
 @runtime_checkable
@@ -399,7 +422,7 @@ def _select_candidate_factory_by_validation(
         model = candidate_factory()
         model.fit(X[split.train_idx], y[split.train_idx])
         val_preds = model.predict(X[split.val_idx])
-        val_rmse = np.sqrt(mean_squared_error(y[split.val_idx], val_preds))
+        val_rmse = np.sqrt(_mean_squared_error(y[split.val_idx], val_preds))
         if val_rmse < best_rmse:
             best_rmse = val_rmse
             best_candidate_factory = candidate_factory
@@ -631,7 +654,7 @@ def sweep_supervised_model_selection(
             refit_policy=refit_policy,
         )
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
@@ -662,7 +685,7 @@ def sweep_trial_model_selection(
             refit_policy=refit_policy,
         )
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
@@ -694,7 +717,7 @@ def sweep_learned_trial_model_selection(
             refit_policy=refit_policy,
         )
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
@@ -731,7 +754,7 @@ def sweep_optuna_model_selection(
             refit_policy=refit_policy,
         )
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
@@ -769,7 +792,7 @@ def sweep_learned_optuna_model_selection(
             refit_policy=refit_policy,
         )
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(

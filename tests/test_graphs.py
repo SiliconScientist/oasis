@@ -18,7 +18,11 @@ from oasis.graphs import (
     load_graph_dataset_view,
     save_graph_dataset_view,
 )
-from oasis.sweep import GraphDatasetView, GraphRecord
+from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
+    TrainValTestSweepRunnerInput,
+)
 
 
 class LoadGraphDatasetViewTests(unittest.TestCase):
@@ -325,6 +329,68 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
         self.assertEqual(sample.target, 2.0)
         self.assertIsNotNone(sample.graph)
         self.assertEqual(sample.graph.sample_id, "rxn-b")
+
+    def test_build_graph_sweep_dataset_preserves_identity_across_non_monotonic_splits(
+        self,
+    ) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-a", "rxn-b", "rxn-c", "rxn-d"],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0],
+                "model_a_mlip_ads_eng_median": [1.1, 2.2, 3.3, 4.4],
+                "model_b_mlip_ads_eng_median": [0.9, 1.8, 2.7, 3.6],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.arange(4, dtype=float).reshape(2, 2),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.arange(6, dtype=float).reshape(3, 2),
+                    edge_index=np.array([[0, 1], [1, 2]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.arange(2, dtype=float).reshape(1, 2),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-d",
+                    node_features=np.arange(8, dtype=float).reshape(4, 2),
+                    edge_index=np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int64),
+                ),
+            )
+        )
+
+        dataset = build_graph_sweep_dataset(wide_df, graph_view)
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([3, 1]),
+            val_idx=np.array([0]),
+            test_idx=np.array([2]),
+        )
+
+        subsets = split.dataset_subsets()
+        expected_by_sample_id = {
+            sample.sample_id: sample
+            for sample in (dataset.sample(i) for i in range(len(dataset)))
+        }
+
+        for subset in (subsets.train, subsets.val, subsets.test):
+            for row_index, sample_id in enumerate(subset.sample_ids.tolist()):
+                subset_sample = subset.sample(row_index)
+                expected = expected_by_sample_id[sample_id]
+                np.testing.assert_array_equal(
+                    subset_sample.mlip_features,
+                    expected.mlip_features,
+                )
+                self.assertEqual(subset_sample.target, expected.target)
+                self.assertIs(subset_sample.graph, expected.graph)
 
     def test_build_graph_sweep_dataset_rejects_missing_graph_for_frame_row(self) -> None:
         wide_df = _Frame(
