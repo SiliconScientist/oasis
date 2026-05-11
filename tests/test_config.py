@@ -121,6 +121,17 @@ class ConfigParsingTests(unittest.TestCase):
                                 "gate_type": "mlp",
                                 "gating_mode": "soft",
                                 "hidden_dims": [16, 8],
+                                "training": {
+                                    "batch_size": 64,
+                                    "eval_batch_size": 128,
+                                    "epochs": 250,
+                                    "lr": 5e-4,
+                                    "weight_decay": 1e-5,
+                                    "num_workers": 4,
+                                    "device": "cuda:0",
+                                    "early_stopping_patience": 12,
+                                    "seed": 17,
+                                },
                                 "tuning": {
                                     "optuna": {
                                         "n_trials": 25,
@@ -147,6 +158,27 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.models.moe.gate_type, "mlp")
         self.assertEqual(cfg.experiment.learning_curve.models.moe.gating_mode, "soft")
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [16, 8])
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.batch_size, 64)
+        self.assertEqual(
+            cfg.experiment.learning_curve.models.moe.training.eval_batch_size,
+            128,
+        )
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.epochs, 250)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.lr, 5e-4)
+        self.assertEqual(
+            cfg.experiment.learning_curve.models.moe.training.weight_decay,
+            1e-5,
+        )
+        self.assertEqual(
+            cfg.experiment.learning_curve.models.moe.training.num_workers,
+            4,
+        )
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.device, "cuda:0")
+        self.assertEqual(
+            cfg.experiment.learning_curve.models.moe.training.early_stopping_patience,
+            12,
+        )
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.seed, 17)
         assert cfg.experiment.learning_curve.models.moe.tuning.optuna is not None
         self.assertEqual(
             cfg.experiment.learning_curve.models.moe.tuning.optuna.n_trials, 25
@@ -210,7 +242,20 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_simplex)
         self.assertFalse(cfg.experiment.learning_curve.models.moe.enabled)
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [])
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.dict(), {})
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.batch_size, 32)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.eval_batch_size)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.epochs, 100)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.lr, 1e-3)
+        self.assertEqual(
+            cfg.experiment.learning_curve.models.moe.training.weight_decay,
+            0.0,
+        )
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.num_workers, 0)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.device)
+        self.assertIsNone(
+            cfg.experiment.learning_curve.models.moe.training.early_stopping_patience
+        )
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.seed)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna)
 
     def test_learning_curve_models_moe_optuna_defaults_parse(self) -> None:

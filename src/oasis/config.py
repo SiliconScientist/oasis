@@ -63,7 +63,14 @@ class AnalysisConfig(BaseModel):
 
 
 class MoETrainingConfig(BaseModel):
-    pass
+    batch_size: int = 32
+    eval_batch_size: Optional[int] = None
+    epochs: int = 100
+    lr: float = 1e-3
+    weight_decay: float = 0.0
+    num_workers: int = 0
+    device: Optional[str] = None
+    seed: Optional[int] = None
 
 
 class MoETuningConfig(BaseModel):
