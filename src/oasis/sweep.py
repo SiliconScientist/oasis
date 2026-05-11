@@ -253,10 +253,18 @@ class SweepDataset:
     def __len__(self) -> int:
         return self.n_samples
 
-    def sample(self, index: int) -> SweepSample:
-        row_index = _normalize_sample_index(index, self.n_samples)
-        sample_id = self.sample_ids[row_index]
-        graph = None if self.graph_view is None else self.graph_view[sample_id]
+    def _sample_bundle(self, row_index: int | np.ndarray) -> _SweepDatasetRowBundle:
+        sample_ids = self.sample_ids[row_index]
+        graph = None
+        graph_view = None
+        if self.graph_view is not None:
+            if isinstance(row_index, np.ndarray):
+                ordered_sample_ids = sample_ids.tolist()
+                graph_view = GraphDatasetView.from_records(
+                    tuple(self.graph_view[sample_id] for sample_id in ordered_sample_ids)
+                )
+            else:
+                graph = self.graph_view[sample_ids]
         auxiliary = (
             None
             if self.auxiliary_views is None
@@ -265,35 +273,50 @@ class SweepDataset:
                 for view_name, view in self.auxiliary_views.items()
             }
         )
+        return _SweepDatasetRowBundle(
+            mlip_features=self.mlip_features[row_index],
+            targets=self.targets[row_index],
+            sample_ids=sample_ids,
+            graph=graph,
+            graph_view=graph_view,
+            auxiliary=auxiliary,
+            auxiliary_views=auxiliary,
+        )
+
+    def sample(self, index: int) -> SweepSample:
+        row_index = _normalize_sample_index(index, self.n_samples)
+        bundle = self._sample_bundle(row_index)
         return SweepSample(
             index=row_index,
-            mlip_features=self.mlip_features[row_index],
-            target=self.targets[row_index],
-            sample_id=sample_id,
-            graph=graph,
-            auxiliary=auxiliary,
+            mlip_features=bundle.mlip_features,
+            target=bundle.targets,
+            sample_id=bundle.sample_ids,
+            graph=bundle.graph,
+            auxiliary=bundle.auxiliary,
         )
 
     def subset(self, indices: slice | Sequence[int] | np.ndarray) -> SweepDataset:
         row_index = _normalize_row_indices(indices, self.n_samples)
-        sample_ids = self.sample_ids[row_index]
-        graph_view = None
-        if self.graph_view is not None:
-            graph_view = GraphDatasetView.from_records(
-                tuple(self.graph_view[sample_id] for sample_id in sample_ids.tolist())
-            )
-        auxiliary_views = None
-        if self.auxiliary_views is not None:
-            auxiliary_views = {
-                view_name: _index_view(view, row_index)
-                for view_name, view in self.auxiliary_views.items()
-            }
+        return self._sample_bundle(row_index).to_dataset()
+
+
+@dataclass(frozen=True, slots=True)
+class _SweepDatasetRowBundle:
+    mlip_features: Any
+    targets: Any
+    sample_ids: Any
+    graph: GraphRecord | None = None
+    graph_view: GraphDatasetView | None = None
+    auxiliary: Mapping[str, Any] | None = None
+    auxiliary_views: Mapping[str, Any] | None = None
+
+    def to_dataset(self) -> SweepDataset:
         return SweepDataset(
-            mlip_features=self.mlip_features[row_index],
-            targets=self.targets[row_index],
-            sample_ids=sample_ids,
-            graph_view=graph_view,
-            auxiliary_views=auxiliary_views,
+            mlip_features=self.mlip_features,
+            targets=self.targets,
+            sample_ids=self.sample_ids,
+            graph_view=self.graph_view,
+            auxiliary_views=self.auxiliary_views,
         )
 
 

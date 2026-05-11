@@ -356,6 +356,26 @@ class SweepDatasetTests(unittest.TestCase):
         self.assertEqual(subset.graphs.sample_ids, ("s0", "s2"))
         self.assertEqual(subset.auxiliary_views["folds"], ["train", "test"])
 
+    def test_sweep_dataset_subset_accepts_slices_through_shared_alignment_path(
+        self,
+    ) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        subset = dataset.subset(slice(1, 4, 2))
+
+        np.testing.assert_array_equal(subset.sample_ids, np.array(["s1", "s3"]))
+        np.testing.assert_array_equal(
+            subset.mlip_features,
+            np.array([[3.0, 4.0, 5.0], [9.0, 10.0, 11.0]]),
+        )
+        np.testing.assert_array_equal(subset.targets, np.array([1.5, 3.5]))
+        self.assertEqual(subset.graphs.sample_ids, ("s1", "s3"))
+        np.testing.assert_array_equal(
+            subset.auxiliary_views["weights"],
+            np.array([2.0, 4.0]),
+        )
+        self.assertEqual(subset.auxiliary_views["folds"], ["val", "holdout"])
+
     def test_sweep_dataset_rejects_duplicate_graph_ids(self) -> None:
         graph_view = GraphDatasetView.from_records(
             (
