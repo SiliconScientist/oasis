@@ -12,10 +12,17 @@ try:
         FactoryListHyperparameterSpec,
         GridHyperparameterSpec,
         HyperparameterSelectionSweepRunner,
+        LearnedOptunaModelSelectionSweepRunner,
+        LearnedTrialModelSelectionSweepRunner,
+        LearnedTrialTuningSpec,
         OptunaModelSelectionSweepRunner,
         SupervisedModelSelectionSweepRunner,
         TrialModelSelectionSweepRunner,
         TrialTuningSpec,
+        sweep_learned_model_with_optuna_selection,
+        sweep_learned_model_with_trial_tuning,
+        sweep_learned_optuna_model_selection,
+        sweep_learned_trial_model_selection,
         sweep_model_with_hyperparameter_selection,
         sweep_model_with_optuna_selection,
         sweep_model_with_trial_tuning,
@@ -520,6 +527,180 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(train_only.selection_metadata["mean"].tolist(), [0.5])
         self.assertEqual(train_plus_val.selection_metadata["mean"].tolist(), [3.25])
 
+    def test_learned_trial_tuning_spec_uses_split_aware_datasets_and_runner(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 1.0, 3.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+        seen_values: list[float] = []
+        seen_loader_splits: list[tuple[str, tuple[str, ...]]] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        class FakeLearnedTrialTuningSpec:
+            @staticmethod
+            def _loader_factory(dataset: SweepDataset, *, split_name: str) -> dict[str, object]:
+                return {
+                    "split_name": split_name,
+                    "sample_ids": tuple(dataset.sample_ids.tolist()),
+                    "targets": dataset.targets,
+                }
+
+            def build_trial_objective(self, split):
+                loaders = split.loaders(self._loader_factory)
+                seen_loader_splits.append(("train", loaders.train["sample_ids"]))
+                seen_loader_splits.append(("val", loaders.val["sample_ids"]))
+                y_val = np.asarray(loaders.val["targets"], dtype=float)
+
+                def objective(trial):
+                    seen_values.append(float(trial["constant"]))
+                    preds = np.full(len(y_val), trial["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial["constant"]))
+
+            def predict(self, model, dataset):
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial["constant"]),
+                    "selected_constant": float(model.constant),
+                }
+
+        spec = FakeLearnedTrialTuningSpec()
+        self.assertIsInstance(spec, LearnedTrialTuningSpec)
+        trial_factory = lambda split: (  # noqa: E731
+            {"constant": 0.0},
+            {"constant": 3.0},
+        )
+
+        artifacts = sweep_learned_trial_model_selection(payload, spec, trial_factory)
+        runner_artifacts = LearnedTrialModelSelectionSweepRunner(
+            spec,
+            trial_factory,
+        ).run_artifacts_with_validation(payload)
+        result = sweep_learned_model_with_trial_tuning(payload, spec, trial_factory)
+
+        self.assertEqual(seen_values, [0.0, 3.0, 0.0, 3.0, 0.0, 3.0])
+        self.assertEqual(
+            seen_loader_splits,
+            [
+                ("train", ("s0", "s1")),
+                ("val", ("s2", "s3")),
+                ("train", ("s0", "s1")),
+                ("val", ("s2", "s3")),
+                ("train", ("s0", "s1")),
+                ("val", ("s2", "s3")),
+            ],
+        )
+        np.testing.assert_allclose(
+            artifacts.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(2.5)],
+            atol=1e-12,
+        )
+        self.assertEqual(
+            artifacts.selection_metadata.columns.tolist(),
+            ["n_train", "constant", "selected_constant"],
+        )
+        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
+        pd.testing.assert_frame_equal(
+            artifacts.selection_metadata,
+            runner_artifacts.selection_metadata,
+        )
+        pd.testing.assert_frame_equal(artifacts.metrics, result)
+
+    def test_learned_trial_tuning_refit_policy_uses_split_subsets(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [10.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 10.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        class MeanPredictor:
+            def __init__(self, mean_: float) -> None:
+                self.mean_ = mean_
+
+        class FakeLearnedTrialTuningSpec:
+            def build_trial_objective(self, split):
+                def objective(trial):
+                    return float(trial["score"])
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del best_trial
+                subsets = split.dataset_subsets()
+                if refit_policy == "train_only":
+                    fit_targets = subsets.train.targets
+                else:
+                    fit_targets = np.concatenate([subsets.train.targets, subsets.val.targets])
+                return MeanPredictor(float(np.mean(fit_targets)))
+
+            def predict(self, model, dataset):
+                return np.full(len(dataset), model.mean_, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {"score": float(best_trial["score"]), "mean": float(model.mean_)}
+
+        spec = FakeLearnedTrialTuningSpec()
+        trial_factory = lambda split: ({"score": 1.0},)  # noqa: E731
+
+        train_only = sweep_learned_trial_model_selection(
+            payload,
+            spec,
+            trial_factory,
+            refit_policy="train_only",
+        )
+        train_plus_val = sweep_learned_trial_model_selection(
+            payload,
+            spec,
+            trial_factory,
+            refit_policy="train_plus_val",
+        )
+
+        np.testing.assert_allclose(
+            train_only.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(16.25)],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            train_plus_val.metrics["rmse_mean"].to_numpy(),
+            [np.sqrt(1.8125)],
+            atol=1e-12,
+        )
+        self.assertEqual(train_only.selection_metadata["mean"].tolist(), [0.5])
+        self.assertEqual(train_plus_val.selection_metadata["mean"].tolist(), [3.25])
+
     def test_optuna_runner_objective_sees_only_train_and_val(self) -> None:
         dataset = SweepDataset(
             mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [40.0], [50.0]]),
@@ -646,6 +827,216 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(artifacts.selection_metadata["trial_count"].tolist(), [2])
         self.assertEqual(artifacts.selection_metadata["sampler"].tolist(), ["FakeSampler"])
         self.assertEqual(artifacts.selection_metadata["pruner"].tolist(), ["FakePruner"])
+
+    def test_learned_optuna_runner_objective_sees_only_train_and_val(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [40.0], [50.0]]),
+            targets=np.array([0.0, 0.0, 2.0, 3.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+        objective_signatures: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+        test_predict_signatures: list[tuple[str, ...]] = []
+
+        class SpyModel:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        class FakeLearnedOptunaSpec:
+            def build_trial_objective(self, split):
+                subsets = split.dataset_subsets()
+                train_signature = tuple(subsets.train.sample_ids.tolist())
+                val_signature = tuple(subsets.val.sample_ids.tolist())
+                y_val = subsets.val.targets
+
+                def objective(trial):
+                    objective_signatures.append((train_signature, val_signature))
+                    preds = np.full(len(y_val), trial.params["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                return SpyModel(float(best_trial.params["constant"]))
+
+            def predict(self, model, dataset):
+                test_predict_signatures.append(tuple(dataset.sample_ids.tolist()))
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "value": float(best_trial.params["constant"]),
+                    "selected": float(model.constant),
+                }
+
+        class FakeTrial:
+            def __init__(self, constant: float) -> None:
+                self.params = {"constant": constant}
+                self.value: float | None = None
+
+        class FakeSampler:
+            pass
+
+        class FakePruner:
+            pass
+
+        class FakeStudy:
+            def __init__(self, trials):
+                self.trials = tuple(trials)
+                self.best_trial = None
+                self.sampler = FakeSampler()
+                self.pruner = FakePruner()
+
+            def optimize(self, objective, *, n_trials, timeout):
+                del timeout
+                best_value = np.inf
+                for trial in self.trials[:n_trials]:
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
+                        self.best_trial = trial
+
+        study_factory = lambda split: FakeStudy((FakeTrial(0.0), FakeTrial(3.0)))  # noqa: E731
+        spec = FakeLearnedOptunaSpec()
+
+        artifacts = sweep_learned_optuna_model_selection(
+            payload,
+            spec,
+            n_trials=2,
+            study_factory=study_factory,
+        )
+
+        self.assertEqual(
+            objective_signatures,
+            [(("s0", "s1"), ("s2", "s3")), (("s0", "s1"), ("s2", "s3"))],
+        )
+        self.assertEqual(test_predict_signatures, [("s4", "s5")])
+        self.assertEqual(
+            artifacts.selection_metadata.columns.tolist(),
+            [
+                "n_train",
+                "best_validation_score",
+                "constant",
+                "pruner",
+                "sampler",
+                "selected",
+                "trial_count",
+                "value",
+            ],
+        )
+        self.assertEqual(artifacts.selection_metadata["constant"].tolist(), [3.0])
+
+    def test_learned_optuna_runner_uses_outer_test_once_after_selection(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 0.0, 1.0, 3.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+        events: list[tuple[str, float | tuple[str, ...]]] = []
+
+        class FakeTrial:
+            def __init__(self, value: float) -> None:
+                self.params = {"value": value}
+                self.value: float | None = None
+
+        class FakeStudy:
+            def __init__(self, trials):
+                self.trials = tuple(trials)
+                self.best_trial = None
+
+            def optimize(self, objective, *, n_trials, timeout):
+                del timeout
+                best_value = np.inf
+                for trial in self.trials[:n_trials]:
+                    events.append(("objective", trial.params["value"]))
+                    objective_value = objective(trial)
+                    trial.value = objective_value
+                    if objective_value < best_value:
+                        best_value = objective_value
+                        self.best_trial = trial
+
+        class PredictSpyModel:
+            def __init__(self, value: float) -> None:
+                self.value = value
+
+        class FakeLearnedOptunaSpec:
+            def build_trial_objective(self, split):
+                y_val = split.dataset_subsets().val.targets
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial.params["value"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                events.append(("refit", float(best_trial.params["value"])))
+                return PredictSpyModel(float(best_trial.params["value"]))
+
+            def predict(self, model, dataset):
+                events.append(("predict", tuple(dataset.sample_ids.tolist())))
+                return np.full(len(dataset), model.value, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "value": float(best_trial.params["value"]),
+                    "selected": float(model.value),
+                }
+
+        study_factory = lambda split: FakeStudy((FakeTrial(0.0), FakeTrial(3.0)))  # noqa: E731
+
+        result = sweep_learned_model_with_optuna_selection(
+            payload,
+            FakeLearnedOptunaSpec(),
+            n_trials=2,
+            study_factory=study_factory,
+        )
+        runner_result = LearnedOptunaModelSelectionSweepRunner(
+            FakeLearnedOptunaSpec(),
+            n_trials=2,
+            study_factory=study_factory,
+        ).run_artifacts_with_validation(payload)
+
+        self.assertEqual(
+            events,
+            [
+                ("objective", 0.0),
+                ("objective", 3.0),
+                ("refit", 3.0),
+                ("predict", ("s4", "s5")),
+                ("objective", 0.0),
+                ("objective", 3.0),
+                ("refit", 3.0),
+                ("predict", ("s4", "s5")),
+            ],
+        )
+        np.testing.assert_allclose(result["rmse_mean"].to_numpy(), [np.sqrt(2.5)], atol=1e-12)
+        self.assertEqual(result.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"])
+        self.assertEqual(runner_result.metrics["n_train"].tolist(), [4])
 
     def test_optuna_runner_uses_outer_test_once_after_selection(self) -> None:
         dataset = SweepDataset(

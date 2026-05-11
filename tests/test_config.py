@@ -129,7 +129,6 @@ class ConfigParsingTests(unittest.TestCase):
                                     "weight_decay": 1e-5,
                                     "num_workers": 4,
                                     "device": "cuda:0",
-                                    "early_stopping_patience": 12,
                                     "seed": 17,
                                 },
                                 "tuning": {
@@ -174,10 +173,6 @@ class ConfigParsingTests(unittest.TestCase):
             4,
         )
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.device, "cuda:0")
-        self.assertEqual(
-            cfg.experiment.learning_curve.models.moe.training.early_stopping_patience,
-            12,
-        )
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.seed, 17)
         assert cfg.experiment.learning_curve.models.moe.tuning.optuna is not None
         self.assertEqual(
@@ -252,9 +247,6 @@ class ConfigParsingTests(unittest.TestCase):
         )
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.num_workers, 0)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.device)
-        self.assertIsNone(
-            cfg.experiment.learning_curve.models.moe.training.early_stopping_patience
-        )
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.seed)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna)
 

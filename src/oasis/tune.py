@@ -10,7 +10,12 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
-from oasis.sweep import SweepRunnerPayload, SweepRunPayload, TrainValTestSweepRunnerInput
+from oasis.sweep import (
+    SweepDataset,
+    SweepRunnerPayload,
+    SweepRunPayload,
+    TrainValTestSweepRunnerInput,
+)
 from pydantic import BaseModel
 from sklearn.metrics import mean_squared_error
 
@@ -141,6 +146,36 @@ class TrialTuningSpec(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class LearnedTrialTuningSpec(Protocol):
+    """Contract for learned-model trial tuning over split-aware dataset subsets."""
+
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]: ...
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> object: ...
+
+    def predict(
+        self,
+        model: object,
+        dataset: SweepDataset,
+    ) -> np.ndarray: ...
+
+    def trial_metadata(
+        self,
+        best_trial: Any,
+        model: object,
+    ) -> Mapping[str, Any]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SweepRunnerArtifacts:
     metrics: pd.DataFrame
@@ -203,6 +238,34 @@ class TrialModelSelectionSweepRunner:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class LearnedTrialModelSelectionSweepRunner:
+    """Reusable runner for learned-model trial selection on split-aware datasets."""
+
+    tuning_spec: LearnedTrialTuningSpec
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]]
+    refit_policy: SelectionRefitPolicy = "train_plus_val"
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return sweep_learned_model_with_trial_tuning(
+            payload,
+            self.tuning_spec,
+            self.trial_factory,
+            refit_policy=self.refit_policy,
+        )
+
+    def run_artifacts_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+    ) -> SweepRunnerArtifacts:
+        return sweep_learned_trial_model_selection(
+            payload,
+            self.tuning_spec,
+            self.trial_factory,
+            refit_policy=self.refit_policy,
+        )
+
+
 def _default_optuna_study_factory(split: TrainValTestSweepRunnerInput) -> Any:
     del split
     import optuna
@@ -237,6 +300,42 @@ class OptunaModelSelectionSweepRunner:
         payload: SweepRunnerPayload,
     ) -> SweepRunnerArtifacts:
         return sweep_optuna_model_selection(
+            payload,
+            self.tuning_spec,
+            n_trials=self.n_trials,
+            timeout_s=self.timeout_s,
+            study_factory=self.study_factory,
+            refit_policy=self.refit_policy,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LearnedOptunaModelSelectionSweepRunner:
+    """Reusable runner for Optuna-backed learned-model selection."""
+
+    tuning_spec: LearnedTrialTuningSpec
+    n_trials: int
+    timeout_s: int | None = None
+    study_factory: Callable[[TrainValTestSweepRunnerInput], Any] = (
+        _default_optuna_study_factory
+    )
+    refit_policy: SelectionRefitPolicy = "train_plus_val"
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+        return sweep_learned_optuna_model_selection(
+            payload,
+            self.tuning_spec,
+            n_trials=self.n_trials,
+            timeout_s=self.timeout_s,
+            study_factory=self.study_factory,
+            refit_policy=self.refit_policy,
+        )
+
+    def run_artifacts_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+    ) -> SweepRunnerArtifacts:
+        return sweep_learned_optuna_model_selection(
             payload,
             self.tuning_spec,
             n_trials=self.n_trials,
@@ -373,6 +472,23 @@ def _fit_trial_selected_model(
     return model, tuning_spec.trial_metadata(best_trial, model)
 
 
+def _fit_learned_trial_selected_model(
+    split: TrainValTestSweepRunnerInput,
+    tuning_spec: LearnedTrialTuningSpec,
+    trials: Iterable[Any],
+    *,
+    refit_policy: SelectionRefitPolicy,
+) -> tuple[object, Mapping[str, Any]]:
+    _validate_selection_refit_policy(refit_policy)
+    best_trial = _select_best_trial_by_validation(split, tuning_spec, trials)
+    model = tuning_spec.fit_selected_model(
+        split,
+        best_trial,
+        refit_policy=refit_policy,
+    )
+    return model, tuning_spec.trial_metadata(best_trial, model)
+
+
 def _optimize_study_best_trial(
     split: TrainValTestSweepRunnerInput,
     tuning_spec: TrialTuningSpec,
@@ -393,6 +509,36 @@ def _optimize_study_best_trial(
 def _fit_optuna_selected_model(
     split: TrainValTestSweepRunnerInput,
     tuning_spec: TrialTuningSpec,
+    *,
+    n_trials: int,
+    timeout_s: int | None,
+    study_factory: Callable[[TrainValTestSweepRunnerInput], Any],
+    refit_policy: SelectionRefitPolicy,
+) -> tuple[object, Mapping[str, Any]]:
+    _validate_selection_refit_policy(refit_policy)
+    study, best_trial = _optimize_study_best_trial(
+        split,
+        tuning_spec,
+        n_trials=n_trials,
+        timeout_s=timeout_s,
+        study_factory=study_factory,
+    )
+    model = tuning_spec.fit_selected_model(
+        split,
+        best_trial,
+        refit_policy=refit_policy,
+    )
+    return model, _optuna_selection_metadata(
+        study,
+        best_trial,
+        model,
+        tuning_spec,
+    )
+
+
+def _fit_learned_optuna_selected_model(
+    split: TrainValTestSweepRunnerInput,
+    tuning_spec: LearnedTrialTuningSpec,
     *,
     n_trials: int,
     timeout_s: int | None,
@@ -512,6 +658,38 @@ def sweep_trial_model_selection(
     )
 
 
+def sweep_learned_trial_model_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: LearnedTrialTuningSpec,
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]],
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> SweepRunnerArtifacts:
+    """Select learned-model trials on validation subsets, then evaluate on test."""
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    for split in splits:
+        test_dataset = split.dataset_subsets().test
+        y_test = test_dataset.targets
+        model, metadata = _fit_learned_trial_selected_model(
+            split,
+            tuning_spec,
+            trial_factory(split),
+            refit_policy=refit_policy,
+        )
+        preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
+        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+    return SweepRunnerArtifacts(
+        metrics=_sweep_results_frame(rmses_by_size),
+        selection_metadata=_selection_metadata_frame(metadata_by_size),
+    )
+
+
 def sweep_optuna_model_selection(
     payload: SweepRunPayload | SweepRunnerPayload,
     tuning_spec: TrialTuningSpec,
@@ -549,6 +727,44 @@ def sweep_optuna_model_selection(
     )
 
 
+def sweep_learned_optuna_model_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: LearnedTrialTuningSpec,
+    *,
+    n_trials: int,
+    timeout_s: int | None = None,
+    study_factory: Callable[[TrainValTestSweepRunnerInput], Any] = (
+        _default_optuna_study_factory
+    ),
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> SweepRunnerArtifacts:
+    """Optimize learned-model trials on train/val subsets, then test once."""
+
+    payload = _as_runner_payload(payload)
+    splits = _assert_train_val_test_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    for split in splits:
+        test_dataset = split.dataset_subsets().test
+        y_test = test_dataset.targets
+        model, metadata = _fit_learned_optuna_selected_model(
+            split,
+            tuning_spec,
+            n_trials=n_trials,
+            timeout_s=timeout_s,
+            study_factory=study_factory,
+            refit_policy=refit_policy,
+        )
+        preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
+        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+    return SweepRunnerArtifacts(
+        metrics=_sweep_results_frame(rmses_by_size),
+        selection_metadata=_selection_metadata_frame(metadata_by_size),
+    )
+
+
 def sweep_model_with_hyperparameter_selection(
     payload: SweepRunPayload | SweepRunnerPayload,
     hyperparameter_spec: HyperparameterSpec,
@@ -577,6 +793,21 @@ def sweep_model_with_trial_tuning(
     ).metrics
 
 
+def sweep_learned_model_with_trial_tuning(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: LearnedTrialTuningSpec,
+    trial_factory: Callable[[TrainValTestSweepRunnerInput], Iterable[Any]],
+    *,
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> pd.DataFrame:
+    return sweep_learned_trial_model_selection(
+        payload,
+        tuning_spec,
+        trial_factory,
+        refit_policy=refit_policy,
+    ).metrics
+
+
 def sweep_model_with_optuna_selection(
     payload: SweepRunPayload | SweepRunnerPayload,
     tuning_spec: TrialTuningSpec,
@@ -589,6 +820,27 @@ def sweep_model_with_optuna_selection(
     refit_policy: SelectionRefitPolicy = "train_plus_val",
 ) -> pd.DataFrame:
     return sweep_optuna_model_selection(
+        payload,
+        tuning_spec,
+        n_trials=n_trials,
+        timeout_s=timeout_s,
+        study_factory=study_factory,
+        refit_policy=refit_policy,
+    ).metrics
+
+
+def sweep_learned_model_with_optuna_selection(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    tuning_spec: LearnedTrialTuningSpec,
+    *,
+    n_trials: int,
+    timeout_s: int | None = None,
+    study_factory: Callable[[TrainValTestSweepRunnerInput], Any] = (
+        _default_optuna_study_factory
+    ),
+    refit_policy: SelectionRefitPolicy = "train_plus_val",
+) -> pd.DataFrame:
+    return sweep_learned_optuna_model_selection(
         payload,
         tuning_spec,
         n_trials=n_trials,
