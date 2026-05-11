@@ -51,12 +51,17 @@ output_dir = "data/results/plots"
 # Learning-curve sweep sizes refer to the outer training budget.
 # Models that require validation spend part of that budget on inner validation.
 # The test split is always an outer holdout used only for final evaluation.
+# Validation-aware points are skipped when these minima cannot all fit together.
 min_train = 5
 max_train = 25
 validation_fraction = 0.2
+# Minimum validation samples to carve out at all.
 min_val_size = 1
+# Stronger minimum for validation sets used to score/tune model choices.
 min_tuning_val_size = 1
+# Minimum inner-train samples left after validation is removed.
 min_inner_train_size = 1
+# Minimum outer-test samples left for final evaluation.
 min_test_size = 1
 # Repeats are independent outer splits at each training-budget value.
 n_repeats = 10

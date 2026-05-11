@@ -90,3 +90,43 @@ their own splitting logic.
 - Model selection may use only train/val data.
 - Outer test data must remain held out until one final evaluation after
   selection and any optional refit.
+
+## Split Feasibility Policy
+
+Learning-curve sweep sizes are outer training budgets.
+
+- For train/test-only families, `sweep_size` is the full training set size.
+- For validation-aware families, `sweep_size` must cover both inner training
+  and inner validation.
+- `test_idx` is always an outer holdout and is never part of `sweep_size`.
+
+Validation-aware runs size validation as:
+
+```text
+max(
+  floor(validation_fraction * sweep_size),
+  min_val_size,
+  min_tuning_val_size,
+)
+```
+
+A validation-aware sweep point is emitted only if all of these can be satisfied
+together:
+
+- caller-requested `min_train` / `max_train`
+- family-level `min_train_size`
+- `min_tuning_val_size` and `min_val_size`
+- `min_inner_train_size`
+- `min_test_size`
+
+That means some requested sweep sizes may be skipped, and some whole sweep
+regions may collapse to an empty split collection, when the budget is too small
+to leave:
+
+- enough validation samples for meaningful scoring
+- enough remaining inner-train samples after validation
+- enough outer-test samples for final evaluation
+
+This behavior is intentional. Oasis now prefers dropping infeasible
+validation-aware points over producing train/val/test splits that are too small
+to support sensible model selection.
