@@ -479,6 +479,22 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             ),
             3,
         )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                14,
+                validation_fraction=0.2,
+                min_val_size=2,
+            ),
+            2,
+        )
+        self.assertEqual(
+            inner_validation_size_for_sweep(
+                15,
+                validation_fraction=0.2,
+                min_val_size=2,
+            ),
+            3,
+        )
 
     def test_inner_validation_size_for_sweep_rejects_invalid_inputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "sweep_size must be positive"):
@@ -761,6 +777,25 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 full_idx,
             )
 
+    def test_generate_inner_validation_sweep_splits_skips_infeasible_policy_points(
+        self,
+    ) -> None:
+        splits = list(
+            generate_inner_validation_sweep_splits(
+                n_samples=10,
+                min_train=1,
+                max_train=4,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                validation_fraction=0.6,
+                min_val_size=3,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 4])
+        self.assertTrue(all(len(split.val_idx) == 3 for split in splits))
+        self.assertTrue(all(len(split.train_idx) == 1 for split in splits))
+
         with self.assertRaisesRegex(
             ValueError,
             "n_val must be smaller than n_samples",
@@ -788,6 +823,60 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
         self.assertEqual([split.sweep_size for split in split_collection.splits], [4, 5])
         self.assertEqual([len(split.test_idx) for split in split_collection.splits], [3, 2])
+
+    def test_build_sweep_split_collection_preserves_train_only_requirements(self) -> None:
+        requirements = SweepFamilyRequirements(
+            min_train_size=5,
+            requires_inner_validation=False,
+        )
+
+        split_collection = build_sweep_split_collection(
+            n_samples=9,
+            min_train=2,
+            max_train=8,
+            n_repeats=1,
+            seed=3,
+            requirements=requirements,
+            min_test_size=2,
+        )
+
+        self.assertEqual(split_collection.planning_requirements, requirements)
+        self.assertEqual([split.sweep_size for split in split_collection.splits], [5, 6, 7])
+        self.assertTrue(all(split.val_idx is None for split in split_collection.splits))
+
+    def test_build_sweep_split_collection_uses_policy_sized_validation_budget(
+        self,
+    ) -> None:
+        requirements = SweepFamilyRequirements(
+            min_train_size=2,
+            requires_inner_validation=True,
+        )
+
+        split_collection = build_sweep_split_collection(
+            n_samples=12,
+            min_train=1,
+            max_train=7,
+            n_repeats=1,
+            seed=3,
+            requirements=requirements,
+            validation_fraction=0.34,
+            min_val_size=2,
+            min_test_size=2,
+        )
+
+        self.assertEqual(split_collection.planning_requirements, requirements)
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits],
+            [3, 4, 5, 6, 7],
+        )
+        for split in split_collection.splits:
+            expected_n_val = inner_validation_size_for_sweep(
+                split.sweep_size,
+                validation_fraction=0.34,
+                min_val_size=2,
+            )
+            self.assertEqual(len(split.val_idx), expected_n_val)
+            self.assertEqual(len(split.train_idx) + len(split.val_idx), split.sweep_size)
 
 
 

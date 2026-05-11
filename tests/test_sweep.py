@@ -12,6 +12,7 @@ from oasis.sweep import (
     SweepDataset,
     SweepDatasetInputs,
     SweepDatasetModalities,
+    SweepFamilyRequirements,
     SweepRunnerPayload,
     TrainTestSplitDatasetInputs,
     SweepSampleInputs,
@@ -646,6 +647,10 @@ class SweepPayloadTests(unittest.TestCase):
             mlip_features=np.arange(18, dtype=float).reshape(6, 3),
             targets=np.arange(6, dtype=float),
         )
+        requirements = SweepFamilyRequirements(
+            min_train_size=4,
+            requires_inner_validation=True,
+        )
         payload = SweepRunPayload(
             dataset=dataset,
             split_collection=SweepSplitCollection(
@@ -661,7 +666,8 @@ class SweepPayloadTests(unittest.TestCase):
                         val_idx=np.array([3]),
                         test_idx=np.array([4, 5]),
                     ),
-                )
+                ),
+                planning_requirements=requirements,
             ),
         )
 
@@ -678,6 +684,7 @@ class SweepPayloadTests(unittest.TestCase):
             runner_payload.splits[1].val_idx,
             np.array([3]),
         )
+        self.assertEqual(runner_payload.planning_requirements, requirements)
 
     def test_train_test_runner_input_builds_aligned_dataset_subsets(self) -> None:
         dataset = self._dataset_with_graphs_and_auxiliary()
