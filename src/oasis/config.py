@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
+
+GateType = Literal["mlip_baseline"]
 
 from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field
@@ -79,8 +81,7 @@ class MoETuningConfig(BaseModel):
 
 class MoEConfig(BaseModel):
     enabled: bool = False
-    gate_type: Optional[str] = None
-    gating_mode: Optional[str] = None
+    gate_type: GateType = "mlip_baseline"
     hidden_dims: List[int] = Field(default_factory=list)
     training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
     tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
