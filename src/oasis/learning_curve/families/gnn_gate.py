@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
@@ -104,3 +106,32 @@ class GnnEncoder(nn.Module):
 
         pooled = _global_mean_pool(h, batch_vector, n_graphs)  # (n_graphs, hidden_dim)
         return self.output_proj(pooled)  # (n_graphs, out_features)
+
+
+@dataclass(frozen=True, slots=True)
+class GnnGateModel:
+    state_dict: dict[str, Any]
+    n_experts: int
+    hidden_dim: int
+    n_layers: int
+    bias: float = 0.0
+
+    def _build_encoder(self, in_features: int) -> GnnEncoder:
+        encoder = GnnEncoder(
+            in_features=in_features,
+            hidden_dim=self.hidden_dim,
+            out_features=self.n_experts,
+            n_layers=self.n_layers,
+        )
+        encoder.load_state_dict(self.state_dict)
+        encoder.eval()
+        return encoder
+
+    def predict(self, X: np.ndarray, graphs: Sequence[GraphRecord]) -> np.ndarray:
+        in_features = graphs[0].node_features.shape[1]
+        encoder = self._build_encoder(in_features)
+        node_features, edge_index, batch_vector = collate_graphs(graphs)
+        with torch.no_grad():
+            logits = encoder(node_features, edge_index, batch_vector)  # (n_samples, n_experts)
+        weights = torch.softmax(logits, dim=1).numpy()  # (n_samples, n_experts)
+        return (X * weights).sum(axis=1) + self.bias
