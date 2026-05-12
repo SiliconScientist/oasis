@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import types
 import unittest
 from dataclasses import dataclass
 
 import numpy as np
 
 from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
-from oasis.learning_curve.learned_specs import learned_family_registration_specs
+from oasis.learning_curve.learned_specs import (
+    _moe_config_tuning_spec_factory,
+    learned_family_registration_specs,
+)
 from oasis.learning_curve.registry import learned_family_registration
 from oasis.learning_curve.runners import ConfiguredSweepModelFamily
 from oasis.sweep import SweepDataset, TrainValTestSweepRunnerInput
@@ -121,6 +125,36 @@ class MoERegistrationTests(unittest.TestCase):
         moe_spec = next(s for s in specs if s.name == "moe")
         self.assertIsNone(moe_spec.family_factory)
         self.assertIsInstance(moe_spec.learned_trial_tuning_spec, MlipBaselineGateTuningSpec)
+
+
+def _model_cfg(gate_type: str) -> object:
+    return types.SimpleNamespace(moe=types.SimpleNamespace(gate_type=gate_type))
+
+
+class MoEGateDispatchTests(unittest.TestCase):
+    def _moe_registration(self) -> object:
+        specs = learned_family_registration_specs()
+        moe_spec = next(s for s in specs if s.name == "moe")
+        return learned_family_registration(moe_spec)
+
+    def test_mlip_baseline_config_produces_configured_family(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg("mlip_baseline"))
+        self.assertIsInstance(family, ConfiguredSweepModelFamily)
+
+    def test_mlip_baseline_config_uses_mlip_baseline_tuning_spec(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg("mlip_baseline"))
+        self.assertIsInstance(family.spec.runner.tuning_spec, MlipBaselineGateTuningSpec)
+
+    def test_unknown_gate_type_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            _moe_config_tuning_spec_factory(_model_cfg("bad_gate"))
+
+    def test_family_factory_fallback_still_works(self) -> None:
+        registration = self._moe_registration()
+        family = registration.family_factory()
+        self.assertIsInstance(family, ConfiguredSweepModelFamily)
 
 
 if __name__ == "__main__":
