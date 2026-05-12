@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from oasis.learning_curve.learned_specs import learned_family_registration_specs
 from oasis.learning_curve.runners import (
     ConfiguredSweepModelFamily,
     FunctionalSweepRunner,
@@ -17,6 +18,7 @@ from oasis.learning_curve.runners import (
     WeightedLinearSweepRunner,
     WeightedSimplexSweepRunner,
 )
+from oasis.learning_curve.sklearn_specs import sklearn_sweep_model_specs
 from oasis.sweep import SweepModelCapabilities
 from oasis.tune import (
     LearnedOptunaModelSelectionSweepRunner,
@@ -212,8 +214,6 @@ def _sklearn_selection_metadata_field_for_spec(
 
 
 def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...]:
-    from oasis.method import learned_family_registration_specs, sklearn_sweep_model_specs
-
     sklearn_registrations = tuple(
         LearningCurveModelRegistration(
             name=name,
