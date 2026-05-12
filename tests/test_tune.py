@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from oasis.sweep import (
+    build_sweep_batches,
     DatasetLoaderAdapter,
     GraphDatasetView,
     GraphRecord,
@@ -788,13 +789,6 @@ class TuneTests(unittest.TestCase):
             def __init__(self, constant: float) -> None:
                 self.constant = constant
 
-        def collate_batch(rows: list[dict[str, object]]) -> dict[str, object]:
-            return {
-                "sample_ids": tuple(row["sample_id"] for row in rows),
-                "targets": np.array([row["target"] for row in rows], dtype=float),
-                "mlip_features": np.stack([row["mlip_features"] for row in rows]),
-            }
-
         class FakeLearnedTrialTuningSpec:
             class _LoaderAdapter:
                 def batching_for_split(self, *, split_name: str) -> LoaderBatching:
@@ -802,34 +796,14 @@ class TuneTests(unittest.TestCase):
                         return LoaderBatching(
                             batch_size=2,
                             shuffle=False,
-                            collate_fn=collate_batch,
                         )
                     return LoaderBatching(
                         batch_size=1,
                         shuffle=False,
-                        collate_fn=collate_batch,
                     )
 
-                def build_loader(self, loader_input: LoaderAdapterInput) -> list[dict[str, object]]:
-                    collate_fn = loader_input.batching.collate_fn
-                    batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
-                    if collate_fn is None:
-                        raise AssertionError("collate_fn is required")
-                    rows = [
-                        {
-                            "sample_id": sample.sample_id,
-                            "target": sample.target,
-                            "mlip_features": sample.mlip_features,
-                        }
-                        for sample in (
-                            loader_input.dataset.sample(i)
-                            for i in range(len(loader_input.dataset))
-                        )
-                    ]
-                    batches = []
-                    for start in range(0, len(rows), batch_size):
-                        batches.append(collate_fn(rows[start : start + batch_size]))
-                    return batches
+                def build_loader(self, loader_input: LoaderAdapterInput):
+                    return build_sweep_batches(loader_input)
 
             _loader_adapter = _LoaderAdapter()
 
@@ -838,20 +812,20 @@ class TuneTests(unittest.TestCase):
                 for batch in loaders.train:
                     objective_batch_signatures.append(
                         (
-                            "train",
-                            batch["sample_ids"],
-                            tuple(float(v) for v in batch["targets"]),
+                            batch.split_name,
+                            batch.sample_ids,
+                            tuple(float(v) for v in batch.targets),
                         )
                     )
                 for batch in loaders.val:
                     objective_batch_signatures.append(
                         (
-                            "val",
-                            batch["sample_ids"],
-                            tuple(float(v) for v in batch["targets"]),
+                            batch.split_name,
+                            batch.sample_ids,
+                            tuple(float(v) for v in batch.targets),
                         )
                     )
-                y_val = np.concatenate([batch["targets"] for batch in loaders.val])
+                y_val = np.concatenate([batch.targets for batch in loaders.val])
 
                 def objective(trial):
                     preds = np.full(len(y_val), trial["constant"], dtype=float)
@@ -954,17 +928,6 @@ class TuneTests(unittest.TestCase):
             def __init__(self, constant: float) -> None:
                 self.constant = constant
 
-        def collate_graph_rows(rows: list[dict[str, object]]) -> dict[str, object]:
-            return {
-                "sample_ids": tuple(row["sample_id"] for row in rows),
-                "graph_ids": tuple(row["graph"].sample_id for row in rows),
-                "targets": np.array([row["target"] for row in rows], dtype=float),
-                "node_features": tuple(
-                    tuple(float(v) for v in np.ravel(row["graph"].node_features))
-                    for row in rows
-                ),
-            }
-
         class FakeLearnedTrialTuningSpec:
             class _LoaderAdapter:
                 def batching_for_split(self, *, split_name: str) -> LoaderBatching:
@@ -972,37 +935,14 @@ class TuneTests(unittest.TestCase):
                         return LoaderBatching(
                             batch_size=2,
                             shuffle=False,
-                            collate_fn=collate_graph_rows,
                         )
                     return LoaderBatching(
                         batch_size=1,
                         shuffle=False,
-                        collate_fn=collate_graph_rows,
                     )
 
-                def build_loader(
-                    self,
-                    loader_input: LoaderAdapterInput,
-                ) -> list[dict[str, object]]:
-                    collate_fn = loader_input.batching.collate_fn
-                    if collate_fn is None:
-                        raise AssertionError("collate_fn is required")
-                    batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
-                    rows = [
-                        {
-                            "sample_id": sample.sample_id,
-                            "target": sample.target,
-                            "graph": sample.graph_required(),
-                        }
-                        for sample in (
-                            loader_input.dataset.sample(i)
-                            for i in range(len(loader_input.dataset))
-                        )
-                    ]
-                    return [
-                        collate_fn(rows[start : start + batch_size])
-                        for start in range(0, len(rows), batch_size)
-                    ]
+                def build_loader(self, loader_input: LoaderAdapterInput):
+                    return build_sweep_batches(loader_input)
 
             _loader_adapter = _LoaderAdapter()
 
@@ -1011,24 +951,42 @@ class TuneTests(unittest.TestCase):
                 for batch in loaders.train:
                     objective_graph_signatures.append(
                         (
-                            "train",
-                            batch["sample_ids"],
-                            batch["node_features"],
+                            batch.split_name,
+                            batch.sample_ids,
+                            tuple(
+                                tuple(float(v) for v in np.ravel(graph.node_features))
+                                for graph in batch.graphs
+                                if graph is not None
+                            ),
                         )
                     )
                     self_ref = self
-                    self_ref.assertEqual(batch["sample_ids"], batch["graph_ids"])
+                    self_ref.assertEqual(
+                        batch.sample_ids,
+                        tuple(
+                            graph.sample_id for graph in batch.graphs if graph is not None
+                        ),
+                    )
                 for batch in loaders.val:
                     objective_graph_signatures.append(
                         (
-                            "val",
-                            batch["sample_ids"],
-                            batch["node_features"],
+                            batch.split_name,
+                            batch.sample_ids,
+                            tuple(
+                                tuple(float(v) for v in np.ravel(graph.node_features))
+                                for graph in batch.graphs
+                                if graph is not None
+                            ),
                         )
                     )
                     self_ref = self
-                    self_ref.assertEqual(batch["sample_ids"], batch["graph_ids"])
-                y_val = np.concatenate([batch["targets"] for batch in loaders.val])
+                    self_ref.assertEqual(
+                        batch.sample_ids,
+                        tuple(
+                            graph.sample_id for graph in batch.graphs if graph is not None
+                        ),
+                    )
+                y_val = np.concatenate([batch.targets for batch in loaders.val])
 
                 def objective(trial):
                     preds = np.full(len(y_val), trial["constant"], dtype=float)

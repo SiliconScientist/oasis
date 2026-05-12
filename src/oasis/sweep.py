@@ -766,6 +766,21 @@ class LoaderAdapterInput:
     batching: LoaderBatching = field(default_factory=LoaderBatching)
 
 
+@dataclass(frozen=True, slots=True)
+class SweepBatch:
+    split_name: SplitName
+    batch_index: int
+    sample_ids: tuple[SampleId, ...]
+    targets: np.ndarray
+    mlip_features: np.ndarray
+    graphs: tuple[GraphRecord | None, ...]
+    auxiliary: tuple[Mapping[str, Any] | None, ...]
+
+    @property
+    def has_graphs(self) -> bool:
+        return any(graph is not None for graph in self.graphs)
+
+
 @runtime_checkable
 class DatasetLoaderFactory(Protocol):
     def __call__(self, dataset: SweepDataset, *, split_name: str) -> Any: ...
@@ -833,6 +848,66 @@ def _as_loader_adapter(
     if isinstance(loader_adapter, DatasetLoaderAdapter):
         return loader_adapter
     return DatasetLoaderFactoryAdapter(loader_adapter)
+
+
+def _normalized_batch_size(loader_input: LoaderAdapterInput) -> int:
+    batch_size = loader_input.batching.batch_size
+    if batch_size is None:
+        return len(loader_input.dataset)
+    normalized = int(batch_size)
+    if normalized <= 0:
+        raise ValueError("batch_size must be positive when batching is enabled.")
+    return normalized
+
+
+def dataset_batch_slices(loader_input: LoaderAdapterInput) -> tuple[slice, ...]:
+    batch_size = _normalized_batch_size(loader_input)
+    n_samples = len(loader_input.dataset)
+    return tuple(
+        slice(start, min(start + batch_size, n_samples))
+        for start in range(0, n_samples, batch_size)
+    )
+
+
+def collate_sweep_samples(
+    samples: Sequence[SweepSample],
+    *,
+    split_name: SplitName,
+    batch_index: int,
+) -> SweepBatch:
+    sample_seq = tuple(samples)
+    if not sample_seq:
+        raise ValueError("cannot collate an empty batch.")
+    return SweepBatch(
+        split_name=split_name,
+        batch_index=batch_index,
+        sample_ids=tuple(sample.sample_id for sample in sample_seq),
+        targets=np.asarray([sample.target for sample in sample_seq]),
+        mlip_features=np.stack([sample.mlip_features for sample in sample_seq]),
+        graphs=tuple(sample.graph for sample in sample_seq),
+        auxiliary=tuple(sample.auxiliary for sample in sample_seq),
+    )
+
+
+def build_sweep_batches(loader_input: LoaderAdapterInput) -> tuple[Any, ...]:
+    collate_fn = loader_input.batching.collate_fn
+    batch_slices = dataset_batch_slices(loader_input)
+    batches: list[Any] = []
+    for batch_index, batch_slice in enumerate(batch_slices):
+        row_indices = np.arange(len(loader_input.dataset))[batch_slice]
+        samples = tuple(
+            loader_input.dataset.sample(int(row_index)) for row_index in row_indices
+        )
+        if collate_fn is None:
+            batch = collate_sweep_samples(
+                samples,
+                split_name=loader_input.split_name,
+                batch_index=batch_index,
+            )
+        else:
+            batch = collate_fn(samples)
+        batches.append(batch)
+    return tuple(batches)
 
 
 def _build_train_test_split_datasets(

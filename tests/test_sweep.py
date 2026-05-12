@@ -6,6 +6,8 @@ from unittest.mock import PropertyMock, patch
 import numpy as np
 
 from oasis.sweep import (
+    build_sweep_batches,
+    collate_sweep_samples,
     DatasetLoaderAdapter,
     DatasetLoaderFactoryAdapter,
     DatasetLoaderFactory,
@@ -14,6 +16,7 @@ from oasis.sweep import (
     LoaderAdapterInput,
     LoaderBatching,
     SweepDataset,
+    SweepBatch,
     SweepDatasetInputs,
     SweepDatasetModalities,
     SweepFamilyRequirements,
@@ -1121,47 +1124,20 @@ class SweepPayloadTests(unittest.TestCase):
             test_idx=np.array([3]),
         )
 
-        def collate_mlip_rows(rows: list[dict[str, object]]) -> dict[str, object]:
-            return {
-                "sample_ids": tuple(row["sample_id"] for row in rows),
-                "targets": np.array([row["target"] for row in rows], dtype=float),
-                "mlip_features": np.stack([row["mlip_features"] for row in rows]),
-            }
-
         class BatchedMlipsOnlyAdapter:
             def batching_for_split(self, *, split_name: str) -> LoaderBatching:
                 if split_name == "train":
                     return LoaderBatching(
                         batch_size=2,
                         shuffle=False,
-                        collate_fn=collate_mlip_rows,
                     )
                 return LoaderBatching(
                     batch_size=1,
                     shuffle=False,
-                    collate_fn=collate_mlip_rows,
                 )
 
-            def build_loader(self, loader_input: LoaderAdapterInput) -> list[dict[str, object]]:
-                batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
-                collate_fn = loader_input.batching.collate_fn
-                if collate_fn is None:
-                    raise AssertionError("collate_fn is required for batched loader test")
-                rows = [
-                    {
-                        "sample_id": sample.sample_id,
-                        "target": sample.target,
-                        "mlip_features": sample.mlip_features,
-                    }
-                    for sample in (
-                        loader_input.dataset.sample(i)
-                        for i in range(len(loader_input.dataset))
-                    )
-                ]
-                return [
-                    collate_fn(rows[start : start + batch_size])
-                    for start in range(0, len(rows), batch_size)
-                ]
+            def build_loader(self, loader_input: LoaderAdapterInput) -> tuple[SweepBatch, ...]:
+                return build_sweep_batches(loader_input)
 
         adapter = BatchedMlipsOnlyAdapter()
         self.assertIsInstance(adapter, DatasetLoaderAdapter)
@@ -1171,49 +1147,73 @@ class SweepPayloadTests(unittest.TestCase):
         self.assertEqual(len(loaders.train), 2)
         self.assertEqual(len(loaders.val), 2)
         self.assertEqual(len(loaders.test), 1)
-        self.assertEqual(loaders.train[0]["sample_ids"], ("s5", "s1"))
+        self.assertEqual(loaders.train[0].split_name, "train")
+        self.assertEqual(loaders.val[0].split_name, "val")
+        self.assertEqual(loaders.test[0].split_name, "test")
+        self.assertEqual(loaders.train[0].sample_ids, ("s5", "s1"))
         np.testing.assert_array_equal(
-            loaders.train[0]["targets"],
+            loaders.train[0].targets,
             np.array([5.5, 1.5]),
         )
         np.testing.assert_array_equal(
-            loaders.train[0]["mlip_features"],
+            loaders.train[0].mlip_features,
             np.array([[15.0, 16.0, 17.0], [3.0, 4.0, 5.0]]),
         )
-        self.assertEqual(loaders.train[1]["sample_ids"], ("s0",))
+        self.assertEqual(loaders.train[1].sample_ids, ("s0",))
         np.testing.assert_array_equal(
-            loaders.train[1]["mlip_features"],
+            loaders.train[1].mlip_features,
             np.array([[0.0, 1.0, 2.0]]),
         )
-        self.assertEqual(loaders.val[0]["sample_ids"], ("s4",))
+        self.assertEqual(loaders.val[0].sample_ids, ("s4",))
         np.testing.assert_array_equal(
-            loaders.val[0]["targets"],
+            loaders.val[0].targets,
             np.array([4.5]),
         )
-        self.assertEqual(loaders.val[1]["sample_ids"], ("s2",))
+        self.assertEqual(loaders.val[1].sample_ids, ("s2",))
         np.testing.assert_array_equal(
-            loaders.val[1]["mlip_features"],
+            loaders.val[1].mlip_features,
             np.array([[6.0, 7.0, 8.0]]),
         )
-        self.assertEqual(loaders.test[0]["sample_ids"], ("s3",))
+        self.assertEqual(loaders.test[0].sample_ids, ("s3",))
         np.testing.assert_array_equal(
-            loaders.test[0]["targets"],
+            loaders.test[0].targets,
             np.array([3.5]),
         )
         np.testing.assert_array_equal(
-            loaders.test[0]["mlip_features"],
+            loaders.test[0].mlip_features,
             np.array([[9.0, 10.0, 11.0]]),
         )
 
-        train_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.train))
-        val_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.val))
-        test_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.test))
+        train_ids = set().union(*(set(batch.sample_ids) for batch in loaders.train))
+        val_ids = set().union(*(set(batch.sample_ids) for batch in loaders.val))
+        test_ids = set().union(*(set(batch.sample_ids) for batch in loaders.test))
         self.assertEqual(train_ids, {"s5", "s1", "s0"})
         self.assertEqual(val_ids, {"s4", "s2"})
         self.assertEqual(test_ids, {"s3"})
         self.assertTrue(train_ids.isdisjoint(val_ids))
         self.assertTrue(train_ids.isdisjoint(test_ids))
         self.assertTrue(val_ids.isdisjoint(test_ids))
+
+    def test_collate_sweep_samples_preserves_split_identity_in_batch_object(self) -> None:
+        dataset = self._dataset_with_graphs_and_auxiliary()
+
+        batch = collate_sweep_samples(
+            (dataset.sample(5), dataset.sample(1)),
+            split_name="train",
+            batch_index=3,
+        )
+
+        self.assertIsInstance(batch, SweepBatch)
+        self.assertEqual(batch.split_name, "train")
+        self.assertEqual(batch.batch_index, 3)
+        self.assertEqual(batch.sample_ids, ("s5", "s1"))
+        np.testing.assert_array_equal(batch.targets, np.array([5.25, 1.25]))
+        np.testing.assert_array_equal(
+            batch.mlip_features,
+            np.array([[15.0, 16.0, 17.0], [3.0, 4.0, 5.0]]),
+        )
+        self.assertEqual(tuple(graph.sample_id for graph in batch.graphs if graph is not None), ("s5", "s1"))
+        self.assertEqual(batch.auxiliary, ({"weights": 6.0, "folds": "f"}, {"weights": 2.0, "folds": "b"}))
 
     def test_split_to_loaders_passes_subset_datasets_without_cross_split_leakage(
         self,
