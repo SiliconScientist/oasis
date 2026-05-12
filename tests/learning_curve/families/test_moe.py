@@ -8,13 +8,14 @@ import numpy as np
 
 from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
 from oasis.learning_curve.learned_specs import (
+    _moe_config_runner_kwargs,
     _moe_config_tuning_spec_factory,
     learned_family_registration_specs,
 )
 from oasis.learning_curve.registry import learned_family_registration
 from oasis.learning_curve.runners import ConfiguredSweepModelFamily
 from oasis.sweep import SweepDataset, TrainValTestSweepRunnerInput
-from oasis.tune import LearnedTrialTuningSpec
+from oasis.tune import LearnedOptunaModelSelectionSweepRunner, LearnedTrialTuningSpec
 
 
 @dataclass
@@ -155,6 +156,59 @@ class MoEGateDispatchTests(unittest.TestCase):
         registration = self._moe_registration()
         family = registration.family_factory()
         self.assertIsInstance(family, ConfiguredSweepModelFamily)
+
+
+def _model_cfg_with_optuna(n_trials: int) -> object:
+    return types.SimpleNamespace(
+        moe=types.SimpleNamespace(
+            gate_type="mlip_baseline",
+            tuning=types.SimpleNamespace(
+                optuna=types.SimpleNamespace(
+                    n_trials=n_trials,
+                    timeout_s=None,
+                    sampler=None,
+                    pruner=None,
+                    seed=None,
+                )
+            ),
+        )
+    )
+
+
+def _model_cfg_no_optuna() -> object:
+    return types.SimpleNamespace(
+        moe=types.SimpleNamespace(
+            gate_type="mlip_baseline",
+            tuning=types.SimpleNamespace(optuna=None),
+        )
+    )
+
+
+class MoEOptunaConfigThreadingTests(unittest.TestCase):
+    def _moe_registration(self) -> object:
+        specs = learned_family_registration_specs()
+        moe_spec = next(s for s in specs if s.name == "moe")
+        return learned_family_registration(moe_spec)
+
+    def test_runner_kwargs_n_trials_from_config(self) -> None:
+        kwargs = _moe_config_runner_kwargs(_model_cfg_with_optuna(3))
+        self.assertEqual(kwargs["n_trials"], 3)
+
+    def test_runner_kwargs_fallback_when_optuna_is_none(self) -> None:
+        kwargs = _moe_config_runner_kwargs(_model_cfg_no_optuna())
+        self.assertEqual(kwargs["n_trials"], 10)
+        self.assertNotIn("study_factory", kwargs)
+
+    def test_runner_kwargs_includes_study_factory_when_optuna_set(self) -> None:
+        kwargs = _moe_config_runner_kwargs(_model_cfg_with_optuna(5))
+        self.assertIn("study_factory", kwargs)
+        self.assertTrue(callable(kwargs["study_factory"]))
+
+    def test_integration_config_factory_threads_n_trials(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg_with_optuna(3))
+        self.assertIsInstance(family.spec.runner, LearnedOptunaModelSelectionSweepRunner)
+        self.assertEqual(family.spec.runner.n_trials, 3)
 
 
 if __name__ == "__main__":

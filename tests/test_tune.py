@@ -28,9 +28,11 @@ try:
         LearnedTrialModelSelectionSweepRunner,
         LearnedTrialTuningSpec,
         OptunaModelSelectionSweepRunner,
+        OptunaTuningConfig,
         SupervisedModelSelectionSweepRunner,
         TrialModelSelectionSweepRunner,
         TrialTuningSpec,
+        study_factory_from_optuna_cfg,
         sweep_learned_model_with_optuna_selection,
         sweep_learned_model_with_trial_tuning,
         sweep_learned_optuna_model_selection,
@@ -1779,3 +1781,57 @@ class TuneTests(unittest.TestCase):
         pd.testing.assert_frame_equal(first.metrics, second.metrics)
         pd.testing.assert_frame_equal(first.selection_metadata, second.selection_metadata)
         self.assertEqual(first.selection_metadata["n_train"].tolist(), [4])
+
+
+@unittest.skipUnless(HAS_TUNE, "requires tune dependencies")
+class StudyFactoryFromOptunaCfgTests(unittest.TestCase):
+    def _make_split(self) -> TrainValTestSweepRunnerInput:
+        dataset = SweepDataset(
+            mlip_features=np.zeros((4, 1)),
+            targets=np.zeros(4),
+        )
+        return TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([0, 1]),
+            val_idx=np.array([2]),
+            test_idx=np.array([3]),
+        )
+
+    def test_tpe_sampler_by_name(self) -> None:
+        import optuna
+
+        cfg = OptunaTuningConfig(n_trials=5, sampler="tpe", seed=7)
+        study = study_factory_from_optuna_cfg(cfg)(self._make_split())
+        self.assertIsInstance(study.sampler, optuna.samplers.TPESampler)
+
+    def test_default_sampler_is_tpe(self) -> None:
+        import optuna
+
+        cfg = OptunaTuningConfig(n_trials=5, sampler=None, seed=3)
+        study = study_factory_from_optuna_cfg(cfg)(self._make_split())
+        self.assertIsInstance(study.sampler, optuna.samplers.TPESampler)
+
+    def test_random_sampler_by_name(self) -> None:
+        import optuna
+
+        cfg = OptunaTuningConfig(n_trials=5, sampler="random", seed=1)
+        study = study_factory_from_optuna_cfg(cfg)(self._make_split())
+        self.assertIsInstance(study.sampler, optuna.samplers.RandomSampler)
+
+    def test_median_pruner_by_name(self) -> None:
+        import optuna
+
+        cfg = OptunaTuningConfig(n_trials=5, pruner="median")
+        study = study_factory_from_optuna_cfg(cfg)(self._make_split())
+        self.assertIsInstance(study.pruner, optuna.pruners.MedianPruner)
+
+    def test_unknown_sampler_raises(self) -> None:
+        cfg = OptunaTuningConfig(n_trials=5, sampler="bad_sampler")
+        with self.assertRaises(ValueError):
+            study_factory_from_optuna_cfg(cfg)(self._make_split())
+
+    def test_unknown_pruner_raises(self) -> None:
+        cfg = OptunaTuningConfig(n_trials=5, pruner="bad_pruner")
+        with self.assertRaises(ValueError):
+            study_factory_from_optuna_cfg(cfg)(self._make_split())
