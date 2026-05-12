@@ -41,8 +41,8 @@ class LearnedFamilyRegistrationSpec:
 
 
 def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
+    from oasis.learning_curve.execution import residual_sweep
     from oasis.learning_curve.registry import _moe_enabled
-    from oasis.method import residual_sweep
 
     return (
         LearnedFamilyRegistrationSpec(

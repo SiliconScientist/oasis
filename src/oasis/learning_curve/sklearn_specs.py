@@ -14,11 +14,11 @@ from oasis.tune import (
 )
 from sklearn.metrics import mean_squared_error
 
-
-def _method_module():
-    import oasis.method as method_module
-
-    return method_module
+try:
+    from sklearn.kernel_ridge import KernelRidge
+    from sklearn.linear_model import ElasticNet, Lasso, Ridge
+except ImportError:
+    KernelRidge = ElasticNet = Lasso = Ridge = None  # type: ignore[assignment,misc]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +60,7 @@ class RidgeOptunaTrialTuningSpec:
 
         def objective(trial: Any) -> float:
             alpha = float(trial.suggest_categorical("alpha", [0.01, 0.1, 1.0, 10.0]))
-            model = _method_module().Ridge(alpha=alpha)
+            model = Ridge(alpha=alpha)
             model.fit(X[split.train_idx], y[split.train_idx])
             val_preds = model.predict(X[split.val_idx])
             return float(np.sqrt(mean_squared_error(y[split.val_idx], val_preds)))
@@ -75,7 +75,7 @@ class RidgeOptunaTrialTuningSpec:
         refit_policy: SelectionRefitPolicy,
     ) -> object:
         alpha = float(best_trial.params["alpha"])
-        model = _method_module().Ridge(alpha=alpha)
+        model = Ridge(alpha=alpha)
         X = split.dataset.mlip_features
         y = split.dataset.targets
         if refit_policy == "train_only":
@@ -101,7 +101,7 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
             "use_ridge",
             SklearnSweepModelSpec(
                 result_field="ridge_df",
-                model_factory=lambda: _method_module().Ridge(alpha=0.1),
+                model_factory=lambda: Ridge(alpha=0.1),
                 trial_tuning_spec=RidgeOptunaTrialTuningSpec(),
                 optuna_n_trials=4,
                 optuna_study_factory=_ridge_optuna_study_factory,
@@ -113,12 +113,12 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
             "use_kernel_ridge",
             SklearnSweepModelSpec(
                 result_field="kernel_ridge_df",
-                model_factory=lambda: _method_module().KernelRidge(
+                model_factory=lambda: KernelRidge(
                     alpha=1.0,
                     kernel="rbf",
                 ),
                 hyperparameter_spec=GridHyperparameterSpec(
-                    estimator_factory=_method_module().KernelRidge,
+                    estimator_factory=KernelRidge,
                     grid={
                         "alpha": (0.1, 1.0, 10.0),
                         "gamma": (0.1, 1.0),
@@ -134,9 +134,9 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
             "use_lasso",
             SklearnSweepModelSpec(
                 result_field="lasso_df",
-                model_factory=lambda: _method_module().Lasso(alpha=0.1, max_iter=10000),
+                model_factory=lambda: Lasso(alpha=0.1, max_iter=10000),
                 hyperparameter_spec=GridHyperparameterSpec(
-                    estimator_factory=_method_module().Lasso,
+                    estimator_factory=Lasso,
                     grid={"alpha": (0.001, 0.01, 0.1, 1.0)},
                     fixed_params={"max_iter": 10000},
                 ),
@@ -148,13 +148,13 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
             "use_elastic_net",
             SklearnSweepModelSpec(
                 result_field="elastic_df",
-                model_factory=lambda: _method_module().ElasticNet(
+                model_factory=lambda: ElasticNet(
                     alpha=0.1,
                     l1_ratio=0.5,
                     max_iter=20000,
                 ),
                 hyperparameter_spec=GridHyperparameterSpec(
-                    estimator_factory=_method_module().ElasticNet,
+                    estimator_factory=ElasticNet,
                     grid={
                         "alpha": (0.001, 0.01, 0.1),
                         "l1_ratio": (0.2, 0.5, 0.8),

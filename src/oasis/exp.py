@@ -481,7 +481,7 @@ def run_learning_curve_experiments_from_config(
     graph_view: GraphDatasetView | None = None,
     model_families: Sequence[Any] | None = None,
 ) -> LearningCurveResults:
-    from oasis.method import enabled_learning_curve_model_names_from_config
+    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
@@ -546,7 +546,7 @@ def run_learning_curve_experiments(
 ) -> LearningCurveResults:
     families = model_families
     if families is None:
-        from oasis.method import default_sweep_model_families
+        from oasis.learning_curve.registry import default_sweep_model_families
 
         families = default_sweep_model_families(enabled_model_names)
 

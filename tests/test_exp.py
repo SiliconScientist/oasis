@@ -49,12 +49,12 @@ from oasis.sweep import (
 from tests.support import regression_dataset
 
 try:
-    from oasis.method import (
+    from oasis.learning_curve.execution import sweep_results_frame
+    from oasis.learning_curve.runners import (
         ConfiguredSweepModelFamily,
         LearnedModelSweepRunner,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
-        sweep_results_frame,
     )
 
     HAS_METHOD = True

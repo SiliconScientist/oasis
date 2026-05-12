@@ -19,12 +19,14 @@ from oasis.sweep import (
     LearningCurveResults,
     LoaderAdapterInput,
     SweepDataset,
+    SweepDatasetBatchLoaderAdapter,
     SweepFamilyRequirements,
     SweepModelCapabilities,
     SweepRunnerPayload,
     SweepSplit,
     SweepSplitCollection,
     SweepRunPayload,
+    TrainEvalLoaderPolicy,
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
@@ -39,25 +41,9 @@ from oasis.tune import (
 from tests.support import regression_dataset, regression_train_test_payload, weighted_fixed_payload, weighted_toy_dataset
 
 try:
-    import oasis.method as method_module
-
-    from oasis.method import (
-        ConfiguredSweepModelFamily,
-        LearnedFamilyRegistrationSpec,
-        LearnedModelSweepRunner,
-        LearnedOptunaModelSelectionSweepRunner,
-        PlaceholderLearnedSweepModelFamily,
-        SupervisedModelSweepRunner,
-        SweepFamilySpec,
-        ValidationAwareLearnedModelSweepRunner,
-        ValidationAwareSupervisedModelSweepRunner,
-        default_sweep_model_families,
-        enabled_learning_curve_model_names_from_config,
-        learned_family_registration,
-        learning_curve_model_registry,
+    import oasis.learning_curve.sklearn_specs as sklearn_specs_module
+    from oasis.learning_curve.execution import (
         residual_sweep,
-        sklearn_model_families,
-        sklearn_sweep_model_specs,
         sweep_learned_model,
         sweep_learned_model_with_validation,
         sweep_model,
@@ -65,6 +51,26 @@ try:
         weighted_linear_sweep,
         weighted_simplex_sweep,
     )
+    from oasis.learning_curve.families.graph_mean import GraphMeanLearnedTrialTuningSpec
+    from oasis.learning_curve.learned_specs import LearnedFamilyRegistrationSpec
+    from oasis.learning_curve.registry import (
+        default_sweep_model_families,
+        enabled_learning_curve_model_names_from_config,
+        learned_family_registration,
+        learning_curve_model_registry,
+        sklearn_model_families,
+    )
+    from oasis.learning_curve.runners import (
+        ConfiguredSweepModelFamily,
+        LearnedModelSweepRunner,
+        PlaceholderLearnedSweepModelFamily,
+        SupervisedModelSweepRunner,
+        SweepFamilySpec,
+        ValidationAwareLearnedModelSweepRunner,
+        ValidationAwareSupervisedModelSweepRunner,
+    )
+    from oasis.learning_curve.sklearn_specs import sklearn_sweep_model_specs
+    from oasis.tune import LearnedOptunaModelSelectionSweepRunner
 
     HAS_METHOD = True
 except ModuleNotFoundError:
@@ -103,8 +109,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
-        from oasis.method import default_sweep_model_families
-
         families = default_sweep_model_families(
             ["residual", "weighted_linear", "weighted_simplex"]
         )
@@ -365,7 +369,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
     def test_graph_mean_learned_trial_tuning_spec_uses_loader_adapter_seam(self) -> None:
-        spec = method_module.GraphMeanLearnedTrialTuningSpec()
+        spec = GraphMeanLearnedTrialTuningSpec()
         seen_split_names: list[str] = []
 
         class FakeSplit:
@@ -498,8 +502,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 self.constant = constant
 
         class FakeLearnedTrialSpec:
-            _loader_adapter = method_module.SweepDatasetBatchLoaderAdapter(
-                policy=method_module.TrainEvalLoaderPolicy(
+            _loader_adapter = SweepDatasetBatchLoaderAdapter(
+                policy=TrainEvalLoaderPolicy(
                     batch_size=2,
                     eval_batch_size=1,
                     train_shuffle=True,
@@ -566,11 +570,11 @@ class SweepOutputRegressionTests(unittest.TestCase):
                         best_value = value
                         self.best_trial = trial
 
-        family = method_module.ConfiguredSweepModelFamily(
-            spec=method_module.SweepFamilySpec(
+        family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
                 result_field="graph_mean_df",
                 selection_metadata_field="graph_mean_selection_df",
-                runner=method_module.LearnedOptunaModelSelectionSweepRunner(
+                runner=LearnedOptunaModelSelectionSweepRunner(
                     FakeLearnedTrialSpec(),
                     n_trials=2,
                     study_factory=lambda split: FakeStudy(
@@ -1231,9 +1235,9 @@ class BoundaryTests(unittest.TestCase):
                     return np.full(len(X), self.alpha, dtype=float)
                 return np.full(len(X), 1.0 - self.alpha, dtype=float)
 
-        with patch.object(method_module, "Lasso", SpyLasso):
+        with patch("oasis.learning_curve.sklearn_specs.Lasso", SpyLasso):
             lasso_spec = {
-                name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
+                name: spec for name, _, spec in sklearn_sweep_model_specs()
             }["lasso"]
             dataset = SweepDataset(
                 mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
@@ -1293,9 +1297,9 @@ class BoundaryTests(unittest.TestCase):
                     dtype=float,
                 )
 
-        with patch.object(method_module, "ElasticNet", SpyElasticNet):
+        with patch("oasis.learning_curve.sklearn_specs.ElasticNet", SpyElasticNet):
             elastic_spec = {
-                name: spec for name, _, spec in method_module.sklearn_sweep_model_specs()
+                name: spec for name, _, spec in sklearn_sweep_model_specs()
             }["elastic"]
             dataset = SweepDataset(
                 mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0]]),
