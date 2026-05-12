@@ -6,6 +6,16 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
+from oasis.learning_curve.execution import (
+    _normalize_runner_output,
+    _select_runner_call,
+    sweep_learned_model,
+    sweep_learned_model_with_validation,
+    sweep_model,
+    sweep_model_with_validation,
+    weighted_linear_sweep,
+    weighted_simplex_sweep,
+)
 from oasis.sweep import (
     LearningCurveResults,
     SweepFamilyRequirements,
@@ -15,7 +25,7 @@ from oasis.sweep import (
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
-from oasis.tune import SweepRunnerArtifacts, ValidationAwareEstimator
+from oasis.tune import ValidationAwareEstimator
 
 
 class SweepModelFamily(Protocol):
@@ -75,8 +85,6 @@ class SupervisedModelSweepRunner:
     model_factory: Callable[[], object]
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import sweep_model
-
         return sweep_model(payload, self.model_factory)
 
 
@@ -95,8 +103,6 @@ class ValidationAwareSupervisedModelSweepRunner:
     model_factory: Callable[[], ValidationAwareEstimator]
 
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import sweep_model_with_validation
-
         return sweep_model_with_validation(payload, self.model_factory)
 
 
@@ -107,8 +113,6 @@ class LearnedModelSweepRunner:
     model_factory: Callable[[], TrainTestLearnedEstimator]
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import sweep_learned_model
-
         return sweep_learned_model(payload, self.model_factory)
 
 
@@ -119,8 +123,6 @@ class ValidationAwareLearnedModelSweepRunner:
     model_factory: Callable[[], TrainValTestLearnedEstimator]
 
     def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import sweep_learned_model_with_validation
-
         return sweep_learned_model_with_validation(payload, self.model_factory)
 
 
@@ -129,8 +131,6 @@ class WeightedLinearSweepRunner:
     fit_intercept: bool = True
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import weighted_linear_sweep
-
         return weighted_linear_sweep(
             payload,
             fit_intercept=self.fit_intercept,
@@ -140,8 +140,6 @@ class WeightedLinearSweepRunner:
 @dataclass(frozen=True, slots=True)
 class WeightedSimplexSweepRunner:
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from oasis.method import weighted_simplex_sweep
-
         return weighted_simplex_sweep(payload)
 
 
@@ -156,8 +154,6 @@ class ConfiguredSweepModelFamily:
         return self.spec.capabilities.to_requirements()
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
-        from oasis.method import _normalize_runner_output, _select_runner_call
-
         runner_payload = payload.to_runner_payload()
         run = _select_runner_call(self.spec.runner, runner_payload)
         base_output = _normalize_runner_output(run(runner_payload))
