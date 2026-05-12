@@ -486,6 +486,136 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(model.offset, 1.0)
         np.testing.assert_allclose(preds, np.array([6.0]))
 
+    def test_configured_learned_family_uses_batched_loaders_and_touches_outer_test_once(
+        self,
+    ) -> None:
+        seen_objective_batches: list[tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]] = []
+        seen_fit_batches: list[tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]] = []
+        seen_test_predictions: list[tuple[str, ...]] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        class FakeLearnedTrialSpec:
+            _loader_adapter = method_module.SweepDatasetBatchLoaderAdapter(
+                policy=method_module.TrainEvalLoaderPolicy(
+                    batch_size=2,
+                    eval_batch_size=1,
+                    train_shuffle=True,
+                    eval_shuffle=False,
+                )
+            )
+
+            def build_trial_objective(self, split):
+                loaders = split.loaders(self._loader_adapter)
+                seen_objective_batches.append(
+                    (
+                        tuple(batch.sample_ids for batch in loaders.train),
+                        tuple(batch.sample_ids for batch in loaders.val),
+                    )
+                )
+                y_val = np.concatenate([batch.targets for batch in loaders.val])
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial.params["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                loaders = split.loaders(self._loader_adapter)
+                seen_fit_batches.append(
+                    (
+                        tuple(batch.sample_ids for batch in loaders.train),
+                        tuple(batch.sample_ids for batch in loaders.val),
+                    )
+                )
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial.params["constant"]))
+
+            def predict(self, model, dataset):
+                seen_test_predictions.append(tuple(dataset.sample_ids.tolist()))
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial.params["constant"]),
+                    "selected": float(model.constant),
+                }
+
+        class FakeTrial:
+            def __init__(self, constant: float) -> None:
+                self.params = {"constant": constant}
+                self.value: float | None = None
+
+        class FakeStudy:
+            def __init__(self, trials):
+                self.trials = tuple(trials)
+                self.best_trial = None
+                self.sampler = SimpleNamespace(__class__=SimpleNamespace(__name__="FakeSampler"))
+                self.pruner = SimpleNamespace(__class__=SimpleNamespace(__name__="FakePruner"))
+
+            def optimize(self, objective, *, n_trials, timeout):
+                del timeout
+                best_value = np.inf
+                for trial in self.trials[:n_trials]:
+                    value = objective(trial)
+                    trial.value = value
+                    if value < best_value:
+                        best_value = value
+                        self.best_trial = trial
+
+        family = method_module.ConfiguredSweepModelFamily(
+            spec=method_module.SweepFamilySpec(
+                result_field="graph_mean_df",
+                selection_metadata_field="graph_mean_selection_df",
+                runner=method_module.LearnedOptunaModelSelectionSweepRunner(
+                    FakeLearnedTrialSpec(),
+                    n_trials=2,
+                    study_factory=lambda split: FakeStudy(
+                        (FakeTrial(0.0), FakeTrial(4.0))
+                    ),
+                ),
+                capabilities=SweepModelCapabilities(requires_validation=True),
+            )
+        )
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                mlip_features=np.arange(24, dtype=float).reshape(8, 3),
+                targets=np.array([0.0, 0.0, 1.0, 1.0, 4.0, 4.0, 9.0, 9.0]),
+                sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]),
+            ),
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=5,
+                        train_idx=np.array([0, 1, 2, 3]),
+                        val_idx=np.array([4, 5]),
+                        test_idx=np.array([6, 7]),
+                    ),
+                ),
+                planning_requirements=SweepFamilyRequirements(
+                    requires_inner_validation=True
+                ),
+            ),
+        )
+
+        results = family.run(payload)
+
+        self.assertEqual(
+            seen_objective_batches,
+            [((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",)))],
+        )
+        self.assertEqual(
+            seen_fit_batches,
+            [((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",)))],
+        )
+        self.assertEqual(seen_test_predictions, [("s6", "s7")])
+        self.assertIsNotNone(results.graph_mean_df)
+        self.assertIsNotNone(results.graph_mean_selection_df)
+        self.assertEqual(results.graph_mean_df["n_train"].tolist(), [5])
+
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_learned_family_registration_supports_trial_tuned_stub_family(self) -> None:
         class FakeTrialSpec:

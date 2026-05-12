@@ -1137,6 +1137,121 @@ class TuneTests(unittest.TestCase):
         pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
         pd.testing.assert_frame_equal(artifacts.metrics, result)
 
+    def test_learned_trial_tuning_end_to_end_batched_loaders_touch_outer_test_once(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(24, dtype=float).reshape(8, 3),
+            targets=np.array([0.0, 0.0, 1.0, 1.0, 4.0, 4.0, 9.0, 9.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=5,
+                    train_idx=np.array([0, 1, 2, 3]),
+                    val_idx=np.array([4, 5]),
+                    test_idx=np.array([6, 7]),
+                ),
+            )
+        )
+        objective_loader_signatures: list[tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]] = []
+        fit_loader_signatures: list[tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]] = []
+        test_predict_signatures: list[tuple[str, ...]] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        class FakeLearnedTrialTuningSpec:
+            _loader_adapter = SweepDatasetBatchLoaderAdapter(
+                policy=TrainEvalLoaderPolicy(
+                    batch_size=2,
+                    eval_batch_size=1,
+                    train_shuffle=True,
+                    eval_shuffle=False,
+                )
+            )
+
+            def build_trial_objective(self, split):
+                loaders = split.loaders(self._loader_adapter)
+                train_batches = tuple(batch.sample_ids for batch in loaders.train)
+                val_batches = tuple(batch.sample_ids for batch in loaders.val)
+                objective_loader_signatures.append((train_batches, val_batches))
+                self_ref = self
+                self_ref.assertEqual(
+                    set().union(*(set(batch) for batch in train_batches)),
+                    {"s0", "s1", "s2", "s3"},
+                )
+                self_ref.assertEqual(val_batches, (("s4",), ("s5",)))
+                y_val = np.concatenate([batch.targets for batch in loaders.val])
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                loaders = split.loaders(self._loader_adapter)
+                fit_loader_signatures.append(
+                    (
+                        tuple(batch.sample_ids for batch in loaders.train),
+                        tuple(batch.sample_ids for batch in loaders.val),
+                    )
+                )
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial["constant"]))
+
+            def predict(self, model, dataset):
+                test_predict_signatures.append(tuple(dataset.sample_ids.tolist()))
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial["constant"]),
+                    "selected_constant": float(model.constant),
+                }
+
+        spec = FakeLearnedTrialTuningSpec()
+        spec.assertEqual = self.assertEqual
+        self.assertIsInstance(spec, LearnedTrialTuningSpec)
+        trial_factory = lambda split: (  # noqa: E731
+            {"constant": 0.0},
+            {"constant": 4.0},
+        )
+
+        artifacts = sweep_learned_trial_model_selection(payload, spec, trial_factory)
+        runner_artifacts = LearnedTrialModelSelectionSweepRunner(
+            spec,
+            trial_factory,
+        ).run_artifacts_with_validation(payload)
+        result = sweep_learned_model_with_trial_tuning(payload, spec, trial_factory)
+
+        self.assertEqual(
+            objective_loader_signatures,
+            [
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+            ],
+        )
+        self.assertEqual(
+            fit_loader_signatures,
+            [
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+                ((("s2", "s0"), ("s1", "s3")), (("s4",), ("s5",))),
+            ],
+        )
+        self.assertEqual(
+            test_predict_signatures,
+            [("s6", "s7"), ("s6", "s7"), ("s6", "s7")],
+        )
+        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
+        pd.testing.assert_frame_equal(artifacts.metrics, result)
+
     def test_optuna_runner_objective_sees_only_train_and_val(self) -> None:
         dataset = SweepDataset(
             mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [40.0], [50.0]]),
