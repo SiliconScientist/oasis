@@ -310,6 +310,36 @@ def _default_optuna_study_factory(split: TrainValTestSweepRunnerInput) -> Any:
     return optuna.create_study(direction="minimize")
 
 
+def study_factory_from_optuna_cfg(
+    cfg: OptunaTuningConfig,
+) -> Callable[[TrainValTestSweepRunnerInput], Any]:
+    def factory(split: TrainValTestSweepRunnerInput) -> Any:
+        del split
+        import optuna
+
+        sampler_name = cfg.sampler
+        seed = cfg.seed
+        if sampler_name is None or sampler_name == "tpe":
+            sampler = optuna.samplers.TPESampler(seed=seed)
+        elif sampler_name == "random":
+            sampler = optuna.samplers.RandomSampler(seed=seed)
+        elif sampler_name == "cmaes":
+            sampler = optuna.samplers.CmaEsSampler(seed=seed)
+        else:
+            raise ValueError(f"Unknown Optuna sampler: {sampler_name!r}")
+
+        pruner_name = cfg.pruner
+        if pruner_name is None:
+            return optuna.create_study(direction="minimize", sampler=sampler)
+        if pruner_name == "median":
+            pruner = optuna.pruners.MedianPruner()
+        else:
+            raise ValueError(f"Unknown Optuna pruner: {pruner_name!r}")
+        return optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
+
+    return factory
+
+
 @dataclass(frozen=True, slots=True)
 class OptunaModelSelectionSweepRunner:
     """Reusable runner for Optuna-backed train/val/test model selection."""
