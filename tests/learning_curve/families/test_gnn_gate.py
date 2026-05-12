@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import torch
 
-from oasis.learning_curve.families.gnn_gate import collate_graphs
+from oasis.learning_curve.families.gnn_gate import GnnEncoder, collate_graphs
 from oasis.sweep import GraphRecord
 
 
@@ -71,6 +71,59 @@ class CollateGraphsTests(unittest.TestCase):
         node_features, edge_index, batch_vector = collate_graphs([g])
         self.assertEqual(node_features.shape, (3, 2))
         self.assertEqual(edge_index.shape, (2, 0))
+
+
+def _make_batched_input(
+    n_graphs: int = 3,
+    n_nodes_each: int = 4,
+    n_features: int = 5,
+    n_edges_each: int = 6,
+    n_experts: int = 2,
+) -> tuple[Tensor, Tensor, Tensor, int]:
+    graphs = [
+        _make_graph(i, n_nodes=n_nodes_each, n_features=n_features, n_edges=n_edges_each)
+        for i in range(n_graphs)
+    ]
+    node_features, edge_index, batch_vector = collate_graphs(graphs)
+    return node_features, edge_index, batch_vector, n_experts
+
+
+class GnnEncoderTests(unittest.TestCase):
+    def test_output_shape(self) -> None:
+        node_features, edge_index, batch_vector, n_experts = _make_batched_input(
+            n_graphs=3, n_nodes_each=4, n_features=5, n_experts=2
+        )
+        encoder = GnnEncoder(in_features=5, hidden_dim=16, out_features=2, n_layers=2)
+        out = encoder(node_features, edge_index, batch_vector)
+        self.assertEqual(out.shape, (3, 2))
+
+    def test_no_nans(self) -> None:
+        node_features, edge_index, batch_vector, n_experts = _make_batched_input()
+        encoder = GnnEncoder(in_features=5, hidden_dim=16, out_features=2, n_layers=2)
+        out = encoder(node_features, edge_index, batch_vector)
+        self.assertFalse(torch.isnan(out).any().item())
+
+    def test_gradients_flow(self) -> None:
+        node_features, edge_index, batch_vector, n_experts = _make_batched_input()
+        encoder = GnnEncoder(in_features=5, hidden_dim=16, out_features=2, n_layers=2)
+        out = encoder(node_features, edge_index, batch_vector)
+        loss = out.sum()
+        loss.backward()
+        grads = [p.grad for p in encoder.parameters() if p.grad is not None]
+        self.assertGreater(len(grads), 0)
+        self.assertTrue(any(g.abs().sum().item() > 0 for g in grads))
+
+    def test_single_layer(self) -> None:
+        node_features, edge_index, batch_vector, _ = _make_batched_input(n_graphs=2)
+        encoder = GnnEncoder(in_features=5, hidden_dim=8, out_features=3, n_layers=1)
+        out = encoder(node_features, edge_index, batch_vector)
+        self.assertEqual(out.shape, (2, 3))
+
+    def test_single_graph(self) -> None:
+        node_features, edge_index, batch_vector, _ = _make_batched_input(n_graphs=1)
+        encoder = GnnEncoder(in_features=5, hidden_dim=8, out_features=4, n_layers=2)
+        out = encoder(node_features, edge_index, batch_vector)
+        self.assertEqual(out.shape, (1, 4))
 
 
 if __name__ == "__main__":
