@@ -85,11 +85,33 @@ their own splitting logic.
 - Validation-aware learned families receive `TrainValTestSweepRunnerInput`.
 - `split.dataset_subsets()` returns aligned `SweepDataset` views for each split,
   including features, targets, sample IDs, graphs, and auxiliary views.
+- `split.loader_inputs(...)` separates split membership from batching and
+  collation policy.
 - `split.loaders(...)` is the adapter seam for framework-specific loader
-  creation.
+  creation, including graph loaders and mixed-modal learned families.
 - Model selection may use only train/val data.
 - Outer test data must remain held out until one final evaluation after
   selection and any optional refit.
+
+Batching and split-safety guarantees:
+
+- Split subsets are materialized first. Batching happens only after the
+  train/val/test membership is fixed.
+- A batch is always derived from exactly one split-local `SweepDataset` subset.
+  No emitted batch may mix train, val, or test examples.
+- Train batching and eval batching are configured separately through
+  `TrainEvalLoaderPolicy`.
+- Train loaders may shuffle. Validation and test loaders default to no shuffle.
+- `eval_batch_size` may differ from `batch_size`, so validation/test throughput
+  can be tuned independently of training behavior.
+- The default helper path, `SweepDatasetBatchLoaderAdapter`, emits deterministic
+  split-safe batches from `SweepDataset` subsets.
+- If train shuffling is enabled, batch order may change inside the train split,
+  but train batches still contain only train examples.
+- Validation/test loaders remain stable unless a caller explicitly opts into
+  different behavior.
+- Held-out outer-test data must not be consumed during candidate ranking. It is
+  reserved for one final post-selection evaluation pass.
 
 ## Split Feasibility Policy
 
