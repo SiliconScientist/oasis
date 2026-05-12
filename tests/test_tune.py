@@ -13,7 +13,9 @@ from oasis.sweep import (
     LoaderAdapterInput,
     LoaderBatching,
     SweepDataset,
+    SweepDatasetBatchLoaderAdapter,
     SweepRunnerPayload,
+    TrainEvalLoaderPolicy,
     TrainValTestSweepRunnerInput,
 )
 
@@ -790,22 +792,14 @@ class TuneTests(unittest.TestCase):
                 self.constant = constant
 
         class FakeLearnedTrialTuningSpec:
-            class _LoaderAdapter:
-                def batching_for_split(self, *, split_name: str) -> LoaderBatching:
-                    if split_name == "train":
-                        return LoaderBatching(
-                            batch_size=2,
-                            shuffle=False,
-                        )
-                    return LoaderBatching(
-                        batch_size=1,
-                        shuffle=False,
-                    )
-
-                def build_loader(self, loader_input: LoaderAdapterInput):
-                    return build_sweep_batches(loader_input)
-
-            _loader_adapter = _LoaderAdapter()
+            _loader_adapter = SweepDatasetBatchLoaderAdapter(
+                policy=TrainEvalLoaderPolicy(
+                    batch_size=2,
+                    eval_batch_size=1,
+                    train_shuffle=False,
+                    eval_shuffle=False,
+                )
+            )
 
             def build_trial_objective(self, split):
                 loaders = split.loaders(self._loader_adapter)
@@ -929,22 +923,14 @@ class TuneTests(unittest.TestCase):
                 self.constant = constant
 
         class FakeLearnedTrialTuningSpec:
-            class _LoaderAdapter:
-                def batching_for_split(self, *, split_name: str) -> LoaderBatching:
-                    if split_name == "train":
-                        return LoaderBatching(
-                            batch_size=2,
-                            shuffle=False,
-                        )
-                    return LoaderBatching(
-                        batch_size=1,
-                        shuffle=False,
-                    )
-
-                def build_loader(self, loader_input: LoaderAdapterInput):
-                    return build_sweep_batches(loader_input)
-
-            _loader_adapter = _LoaderAdapter()
+            _loader_adapter = SweepDatasetBatchLoaderAdapter(
+                policy=TrainEvalLoaderPolicy(
+                    batch_size=2,
+                    eval_batch_size=1,
+                    train_shuffle=False,
+                    eval_shuffle=False,
+                )
+            )
 
             def build_trial_objective(self, split):
                 loaders = split.loaders(self._loader_adapter)

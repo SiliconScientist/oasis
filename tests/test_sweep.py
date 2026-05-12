@@ -9,6 +9,7 @@ from oasis.sweep import (
     build_sweep_batches,
     collate_sweep_samples,
     DatasetLoaderAdapter,
+    SweepDatasetBatchLoaderAdapter,
     DatasetLoaderFactoryAdapter,
     DatasetLoaderFactory,
     GraphDatasetView,
@@ -19,6 +20,7 @@ from oasis.sweep import (
     SweepBatch,
     SweepDatasetInputs,
     SweepDatasetModalities,
+    TrainEvalLoaderPolicy,
     SweepFamilyRequirements,
     SweepRunnerPayload,
     TrainTestSplitDatasetInputs,
@@ -1106,6 +1108,78 @@ class SweepPayloadTests(unittest.TestCase):
         np.testing.assert_array_equal(
             loader_inputs.test.dataset.sample_ids,
             np.array(["s4", "s1", "s3"]),
+        )
+
+    def test_train_eval_loader_policy_uses_distinct_train_and_eval_semantics(self) -> None:
+        def train_collate(samples: object) -> object:
+            return samples
+
+        def eval_collate(samples: object) -> object:
+            return samples
+
+        policy = TrainEvalLoaderPolicy(
+            batch_size=8,
+            eval_batch_size=32,
+            train_shuffle=True,
+            eval_shuffle=False,
+            train_collate_fn=train_collate,
+            eval_collate_fn=eval_collate,
+        )
+
+        train_batching = policy.batching_for_split(split_name="train")
+        val_batching = policy.batching_for_split(split_name="val")
+        test_batching = policy.batching_for_split(split_name="test")
+
+        self.assertEqual(train_batching.batch_size, 8)
+        self.assertTrue(train_batching.shuffle)
+        self.assertIs(train_batching.collate_fn, train_collate)
+        self.assertEqual(val_batching.batch_size, 32)
+        self.assertFalse(val_batching.shuffle)
+        self.assertIs(val_batching.collate_fn, eval_collate)
+        self.assertEqual(test_batching.batch_size, 32)
+        self.assertFalse(test_batching.shuffle)
+        self.assertIs(test_batching.collate_fn, eval_collate)
+
+    def test_sweep_dataset_batch_loader_adapter_shuffles_train_and_not_eval(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(18, dtype=float).reshape(6, 3),
+            targets=np.arange(6, dtype=float) + 0.5,
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
+        )
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=4,
+            train_idx=np.array([0, 1, 2, 3]),
+            val_idx=np.array([4, 5]),
+            test_idx=np.array([2, 1]),
+        )
+        adapter = SweepDatasetBatchLoaderAdapter(
+            policy=TrainEvalLoaderPolicy(
+                batch_size=2,
+                eval_batch_size=1,
+                train_shuffle=True,
+                eval_shuffle=False,
+            )
+        )
+
+        first = split_to_loaders(split, adapter)
+        second = split.loaders(adapter)
+
+        self.assertIsInstance(adapter, DatasetLoaderAdapter)
+        self.assertEqual([batch.sample_ids for batch in first.train], [("s2", "s0"), ("s1", "s3")])
+        self.assertEqual([batch.sample_ids for batch in first.val], [("s4",), ("s5",)])
+        self.assertEqual([batch.sample_ids for batch in first.test], [("s2",), ("s1",)])
+        self.assertEqual(
+            [batch.sample_ids for batch in second.train],
+            [batch.sample_ids for batch in first.train],
+        )
+        self.assertEqual(
+            [batch.sample_ids for batch in second.val],
+            [batch.sample_ids for batch in first.val],
+        )
+        self.assertEqual(
+            [batch.sample_ids for batch in second.test],
+            [batch.sample_ids for batch in first.test],
         )
 
     def test_split_to_loaders_builds_batched_mlip_only_loaders_without_split_leakage(

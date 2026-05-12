@@ -760,6 +760,33 @@ class LoaderBatching:
 
 
 @dataclass(frozen=True, slots=True)
+class TrainEvalLoaderPolicy:
+    batch_size: int | None = None
+    eval_batch_size: int | None = None
+    train_shuffle: bool = True
+    eval_shuffle: bool = False
+    train_collate_fn: LoaderCollateFn | None = None
+    eval_collate_fn: LoaderCollateFn | None = None
+
+    def batching_for_split(self, *, split_name: SplitName) -> LoaderBatching:
+        if split_name == "train":
+            return LoaderBatching(
+                batch_size=self.batch_size,
+                shuffle=self.train_shuffle,
+                collate_fn=self.train_collate_fn,
+            )
+        return LoaderBatching(
+            batch_size=(
+                self.eval_batch_size
+                if self.eval_batch_size is not None
+                else self.batch_size
+            ),
+            shuffle=self.eval_shuffle,
+            collate_fn=self.eval_collate_fn,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class LoaderAdapterInput:
     dataset: SweepDataset
     split_name: SplitName
@@ -806,6 +833,17 @@ class DatasetLoaderFactoryAdapter:
             loader_input.dataset,
             split_name=loader_input.split_name,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SweepDatasetBatchLoaderAdapter:
+    policy: TrainEvalLoaderPolicy = field(default_factory=TrainEvalLoaderPolicy)
+
+    def batching_for_split(self, *, split_name: SplitName) -> LoaderBatching:
+        return self.policy.batching_for_split(split_name=split_name)
+
+    def build_loader(self, loader_input: LoaderAdapterInput) -> tuple[Any, ...]:
+        return build_sweep_batches(loader_input)
 
 
 @dataclass(frozen=True, slots=True)
@@ -860,6 +898,15 @@ def _normalized_batch_size(loader_input: LoaderAdapterInput) -> int:
     return normalized
 
 
+def _deterministic_row_indices(loader_input: LoaderAdapterInput) -> np.ndarray:
+    row_indices = np.arange(len(loader_input.dataset), dtype=np.int64)
+    if not loader_input.batching.shuffle or len(row_indices) <= 1:
+        return row_indices
+    seed_by_split = {"train": 0, "val": 1, "test": 2}
+    rng = np.random.default_rng(seed_by_split[loader_input.split_name])
+    return row_indices[rng.permutation(len(row_indices))]
+
+
 def dataset_batch_slices(loader_input: LoaderAdapterInput) -> tuple[slice, ...]:
     batch_size = _normalized_batch_size(loader_input)
     n_samples = len(loader_input.dataset)
@@ -892,11 +939,12 @@ def collate_sweep_samples(
 def build_sweep_batches(loader_input: LoaderAdapterInput) -> tuple[Any, ...]:
     collate_fn = loader_input.batching.collate_fn
     batch_slices = dataset_batch_slices(loader_input)
+    row_indices = _deterministic_row_indices(loader_input)
     batches: list[Any] = []
     for batch_index, batch_slice in enumerate(batch_slices):
-        row_indices = np.arange(len(loader_input.dataset))[batch_slice]
+        batch_row_indices = row_indices[batch_slice]
         samples = tuple(
-            loader_input.dataset.sample(int(row_index)) for row_index in row_indices
+            loader_input.dataset.sample(int(row_index)) for row_index in batch_row_indices
         )
         if collate_fn is None:
             batch = collate_sweep_samples(
