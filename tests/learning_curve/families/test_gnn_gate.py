@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 
-from oasis.learning_curve.families.gnn_gate import GnnEncoder, GnnGateModel, collate_graphs
-from oasis.sweep import GraphRecord
+from oasis.config import MoETrainingConfig
+from oasis.learning_curve.families.gnn_gate import (
+    GnnEncoder,
+    GnnGateModel,
+    GnnGateTuningSpec,
+    collate_graphs,
+)
+from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
+from oasis.tune import LearnedTrialTuningSpec
 
 
 def _make_graph(sample_id: int, n_nodes: int, n_features: int, n_edges: int) -> GraphRecord:
@@ -194,6 +203,124 @@ class GnnGateModelTests(unittest.TestCase):
         model = _make_gnn_gate_model(n_experts=n_experts, in_features=4, bias=0.0)
         preds = model.predict(X, graphs)
         np.testing.assert_allclose(preds, np.ones(n_samples), atol=1e-5)
+
+
+@dataclass
+class _GnnMockTrial:
+    """Minimal Optuna trial stub for GnnGateTuningSpec tests."""
+
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+    hidden_dim: int = 32
+    n_layers: int = 1
+
+    def __post_init__(self) -> None:
+        self.params: dict[str, Any] = {
+            "lr": self.lr,
+            "weight_decay": self.weight_decay,
+            "hidden_dim": self.hidden_dim,
+            "n_layers": self.n_layers,
+        }
+
+    def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
+        del low, high, kwargs
+        return self.params[name]
+
+    def suggest_categorical(self, name: str, choices: list[Any]) -> Any:
+        del choices
+        return self.params[name]
+
+    def suggest_int(self, name: str, low: int, high: int) -> int:
+        del low, high
+        return self.params[name]
+
+
+def _make_split_with_graphs(
+    n_samples: int = 6,
+    n_node_features: int = 4,
+    n_experts: int = 2,
+) -> TrainValTestSweepRunnerInput:
+    rng = np.random.default_rng(42)
+    graphs = [
+        _make_graph(i, n_nodes=4, n_features=n_node_features, n_edges=3)
+        for i in range(n_samples)
+    ]
+    graph_view = GraphDatasetView.from_records(graphs)
+    dataset = SweepDataset(
+        mlip_features=rng.random((n_samples, n_experts)).astype(np.float32),
+        targets=np.array([1.5, 2.5, 3.5, 1.0, 5.5, 6.5]),
+        sample_ids=np.arange(n_samples),
+        graph_view=graph_view,
+    )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=4,
+        train_idx=np.array([0, 1, 2]),
+        val_idx=np.array([3]),
+        test_idx=np.array([4, 5]),
+    )
+
+
+def _fast_spec(hidden_dims: tuple[int, ...] = (8,)) -> GnnGateTuningSpec:
+    return GnnGateTuningSpec(
+        training_cfg=MoETrainingConfig(epochs=2, seed=0),
+        hidden_dims=hidden_dims,
+    )
+
+
+class GnnGateTuningSpecTests(unittest.TestCase):
+    def test_is_learned_trial_tuning_spec(self) -> None:
+        self.assertIsInstance(_fast_spec(), LearnedTrialTuningSpec)
+
+    def test_build_trial_objective_returns_finite_rmse(self) -> None:
+        split = _make_split_with_graphs()
+        objective = _fast_spec().build_trial_objective(split)
+        rmse = objective(_GnnMockTrial())
+        self.assertTrue(np.isfinite(rmse))
+        self.assertGreater(rmse, 0.0)
+
+    def test_build_trial_objective_search_arch_returns_finite_rmse(self) -> None:
+        # hidden_dims=() so Optuna suggest_categorical / suggest_int are exercised.
+        split = _make_split_with_graphs()
+        objective = _fast_spec(hidden_dims=()).build_trial_objective(split)
+        rmse = objective(_GnnMockTrial(hidden_dim=32, n_layers=1))
+        self.assertTrue(np.isfinite(rmse))
+
+    def test_round_trip_predict_shape_and_finite(self) -> None:
+        split = _make_split_with_graphs()
+        spec = _fast_spec()
+        trial = _GnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertIsInstance(model, GnnGateModel)
+        preds = spec.predict(model, split.dataset_subsets().test)
+        self.assertEqual(preds.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_refit_policy_train_only_returns_gnn_gate_model(self) -> None:
+        split = _make_split_with_graphs()
+        model = _fast_spec().fit_selected_model(
+            split, _GnnMockTrial(), refit_policy="train_only"
+        )
+        self.assertIsInstance(model, GnnGateModel)
+
+    def test_trial_metadata_has_expected_keys(self) -> None:
+        split = _make_split_with_graphs()
+        spec = _fast_spec()
+        trial = _GnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        metadata = spec.trial_metadata(trial, model)
+        for key in ("hidden_dim", "n_layers", "n_experts", "bias"):
+            self.assertIn(key, metadata)
+
+    def test_trial_metadata_n_experts_matches_dataset(self) -> None:
+        split = _make_split_with_graphs(n_experts=3)
+        spec = GnnGateTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0),
+            hidden_dims=(8,),
+        )
+        trial = _GnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertEqual(spec.trial_metadata(trial, model)["n_experts"], 3)
 
 
 if __name__ == "__main__":

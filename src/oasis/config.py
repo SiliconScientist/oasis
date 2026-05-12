@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-GateType = Literal["mlip_baseline"]
+GateType = Literal["mlip_baseline", "gnn"]
 
 from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field

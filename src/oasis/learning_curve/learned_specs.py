@@ -58,9 +58,19 @@ def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
 
 
 def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
-    gate_type = getattr(getattr(model_cfg, "moe", None), "gate_type", "mlip_baseline")
+    from oasis.learning_curve.families.gnn_gate import GnnGateTuningSpec
+
+    moe_cfg = getattr(model_cfg, "moe", None)
+    gate_type = getattr(moe_cfg, "gate_type", "mlip_baseline")
     if gate_type == "mlip_baseline":
         return MlipBaselineGateTuningSpec()
+    if gate_type == "gnn":
+        training_cfg = getattr(moe_cfg, "training", None)
+        hidden_dims_list = getattr(moe_cfg, "hidden_dims", [])
+        return GnnGateTuningSpec(
+            training_cfg=training_cfg,
+            hidden_dims=tuple(hidden_dims_list),
+        )
     raise ValueError(f"Unknown MoE gate type: {gate_type!r}")
 
 

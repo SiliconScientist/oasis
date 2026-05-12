@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from oasis.config import MoETrainingConfig
+from oasis.learning_curve.families.gnn_gate import GnnGateTuningSpec
 from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
 from oasis.learning_curve.learned_specs import (
     _moe_config_runner_kwargs,
@@ -132,6 +134,16 @@ def _model_cfg(gate_type: str) -> object:
     return types.SimpleNamespace(moe=types.SimpleNamespace(gate_type=gate_type))
 
 
+def _model_cfg_gnn(hidden_dims: list[int] | None = None) -> object:
+    return types.SimpleNamespace(
+        moe=types.SimpleNamespace(
+            gate_type="gnn",
+            training=MoETrainingConfig(epochs=2),
+            hidden_dims=hidden_dims if hidden_dims is not None else [32],
+        )
+    )
+
+
 class MoEGateDispatchTests(unittest.TestCase):
     def _moe_registration(self) -> object:
         specs = learned_family_registration_specs()
@@ -156,6 +168,21 @@ class MoEGateDispatchTests(unittest.TestCase):
         registration = self._moe_registration()
         family = registration.family_factory()
         self.assertIsInstance(family, ConfiguredSweepModelFamily)
+
+    def test_gnn_config_produces_configured_family(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg_gnn())
+        self.assertIsInstance(family, ConfiguredSweepModelFamily)
+
+    def test_gnn_config_uses_gnn_gate_tuning_spec(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg_gnn())
+        self.assertIsInstance(family.spec.runner.tuning_spec, GnnGateTuningSpec)
+
+    def test_gnn_config_threads_hidden_dims(self) -> None:
+        registration = self._moe_registration()
+        family = registration.config_factory(_model_cfg_gnn(hidden_dims=[64, 64]))
+        self.assertEqual(family.spec.runner.tuning_spec.hidden_dims, (64, 64))
 
 
 def _model_cfg_with_optuna(n_trials: int) -> object:

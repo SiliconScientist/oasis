@@ -92,7 +92,16 @@ use_graph_mean = false
 
 [experiment.learning_curve.models.moe]
 enabled = false
-gate_type = "mlip_baseline"
+gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn"
+# hidden_dims = [64, 64]     # GNN only: fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
+
+[experiment.learning_curve.models.moe.training]
+# GNN gate training settings (ignored for mlip_baseline).
+epochs = 100
+# lr = 1e-3
+# weight_decay = 0.0
+# device = "cpu"
+# seed = 42
 
 [experiment.learning_curve.models.moe.tuning.optuna]
 # n_trials = 50
