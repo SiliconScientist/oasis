@@ -9,12 +9,16 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import pandas as pd
 from oasis.sweep import (
+    LoaderAdapterInput,
     SweepDataset,
+    SweepDatasetBatchLoaderAdapter,
     LearningCurveResults,
     SweepFamilyRequirements,
     SweepModelCapabilities,
     SweepRunnerPayload,
     SweepRunPayload,
+    SweepBatch,
+    TrainEvalLoaderPolicy,
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
@@ -313,6 +317,32 @@ def _graph_feature_means(dataset: SweepDataset) -> np.ndarray:
     )
 
 
+_GRAPH_MEAN_BATCH_ADAPTER = SweepDatasetBatchLoaderAdapter(
+    policy=TrainEvalLoaderPolicy(
+        batch_size=None,
+        eval_batch_size=None,
+        train_shuffle=False,
+        eval_shuffle=False,
+    )
+)
+
+
+def _graph_feature_means_from_batches(batches: tuple[SweepBatch, ...]) -> np.ndarray:
+    return np.asarray(
+        [
+            float(np.mean(graph.node_features))
+            for batch in batches
+            for graph in batch.graphs
+            if graph is not None
+        ],
+        dtype=float,
+    )
+
+
+def _targets_from_batches(batches: tuple[SweepBatch, ...]) -> np.ndarray:
+    return np.concatenate([batch.targets for batch in batches])
+
+
 @dataclass(frozen=True, slots=True)
 class GraphMeanConstantModel:
     scale: float
@@ -325,9 +355,9 @@ class GraphMeanLearnedTrialTuningSpec:
         self,
         split: TrainValTestSweepRunnerInput,
     ) -> Callable[[Any], float]:
-        subsets = split.dataset_subsets()
-        graph_means = _graph_feature_means(subsets.val)
-        targets = subsets.val.targets
+        loaders = split.loaders(_GRAPH_MEAN_BATCH_ADAPTER)
+        graph_means = _graph_feature_means_from_batches(loaders.val)
+        targets = _targets_from_batches(loaders.val)
 
         def objective(trial: Any) -> float:
             scale = float(trial.params["scale"])
@@ -343,16 +373,24 @@ class GraphMeanLearnedTrialTuningSpec:
         *,
         refit_policy: SelectionRefitPolicy,
     ) -> GraphMeanConstantModel:
-        subsets = split.dataset_subsets()
+        loaders = split.loaders(_GRAPH_MEAN_BATCH_ADAPTER)
         scale = float(best_trial.params["scale"])
         if refit_policy == "train_only":
-            fit_graph_means = _graph_feature_means(subsets.train)
-            fit_targets = subsets.train.targets
+            fit_graph_means = _graph_feature_means_from_batches(loaders.train)
+            fit_targets = _targets_from_batches(loaders.train)
         else:
             fit_graph_means = np.concatenate(
-                [_graph_feature_means(subsets.train), _graph_feature_means(subsets.val)]
+                [
+                    _graph_feature_means_from_batches(loaders.train),
+                    _graph_feature_means_from_batches(loaders.val),
+                ]
             )
-            fit_targets = np.concatenate([subsets.train.targets, subsets.val.targets])
+            fit_targets = np.concatenate(
+                [
+                    _targets_from_batches(loaders.train),
+                    _targets_from_batches(loaders.val),
+                ]
+            )
         offset = float(np.mean(fit_targets - (fit_graph_means * scale)))
         return GraphMeanConstantModel(scale=scale, offset=offset)
 
@@ -361,7 +399,14 @@ class GraphMeanLearnedTrialTuningSpec:
         model: GraphMeanConstantModel,
         dataset: SweepDataset,
     ) -> np.ndarray:
-        return (_graph_feature_means(dataset) * model.scale) + model.offset
+        batches = _GRAPH_MEAN_BATCH_ADAPTER.build_loader(
+            LoaderAdapterInput(
+                dataset=dataset,
+                split_name="test",
+                batching=_GRAPH_MEAN_BATCH_ADAPTER.batching_for_split(split_name="test"),
+            )
+        )
+        return (_graph_feature_means_from_batches(batches) * model.scale) + model.offset
 
     def trial_metadata(
         self,

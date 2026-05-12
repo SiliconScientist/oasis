@@ -17,6 +17,7 @@ from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
     LearningCurveResults,
+    LoaderAdapterInput,
     SweepDataset,
     SweepFamilyRequirements,
     SweepModelCapabilities,
@@ -362,6 +363,128 @@ class SweepOutputRegressionTests(unittest.TestCase):
             results.graph_mean_selection_df["n_train"].tolist(),
             results.graph_mean_df["n_train"].tolist(),
         )
+
+    def test_graph_mean_learned_trial_tuning_spec_uses_loader_adapter_seam(self) -> None:
+        spec = method_module.GraphMeanLearnedTrialTuningSpec()
+        seen_split_names: list[str] = []
+
+        class FakeSplit:
+            def loaders(self, loader_adapter):
+                seen_split_names.extend(
+                    [
+                        "train",
+                        "val",
+                        "test",
+                    ]
+                )
+                train_dataset = SweepDataset(
+                    mlip_features=np.empty((2, 0), dtype=float),
+                    targets=np.array([2.0, 4.0]),
+                    sample_ids=np.array(["s0", "s1"]),
+                    graph_view=GraphDatasetView.from_records(
+                        (
+                            GraphRecord(
+                                sample_id="s0",
+                                node_features=np.array([[1.0], [1.0]]),
+                                edge_index=np.array([[0], [1]], dtype=np.int64),
+                            ),
+                            GraphRecord(
+                                sample_id="s1",
+                                node_features=np.array([[2.0], [2.0]]),
+                                edge_index=np.array([[0], [1]], dtype=np.int64),
+                            ),
+                        )
+                    ),
+                )
+                val_dataset = SweepDataset(
+                    mlip_features=np.empty((1, 0), dtype=float),
+                    targets=np.array([3.0]),
+                    sample_ids=np.array(["s2"]),
+                    graph_view=GraphDatasetView.from_records(
+                        (
+                            GraphRecord(
+                                sample_id="s2",
+                                node_features=np.array([[3.0], [3.0]]),
+                                edge_index=np.array([[0], [1]], dtype=np.int64),
+                            ),
+                        )
+                    ),
+                )
+                test_dataset = SweepDataset(
+                    mlip_features=np.empty((1, 0), dtype=float),
+                    targets=np.array([0.0]),
+                    sample_ids=np.array(["s3"]),
+                    graph_view=GraphDatasetView.from_records(
+                        (
+                            GraphRecord(
+                                sample_id="s3",
+                                node_features=np.array([[4.0], [4.0]]),
+                                edge_index=np.array([[0], [1]], dtype=np.int64),
+                            ),
+                        )
+                    ),
+                )
+                return SimpleNamespace(
+                    train=loader_adapter.build_loader(
+                        LoaderAdapterInput(
+                            dataset=train_dataset,
+                            split_name="train",
+                            batching=loader_adapter.batching_for_split(
+                                split_name="train"
+                            ),
+                        )
+                    ),
+                    val=loader_adapter.build_loader(
+                        LoaderAdapterInput(
+                            dataset=val_dataset,
+                            split_name="val",
+                            batching=loader_adapter.batching_for_split(split_name="val"),
+                        )
+                    ),
+                    test=loader_adapter.build_loader(
+                        LoaderAdapterInput(
+                            dataset=test_dataset,
+                            split_name="test",
+                            batching=loader_adapter.batching_for_split(
+                                split_name="test"
+                            ),
+                        )
+                    ),
+                )
+
+            def dataset_subsets(self):
+                raise AssertionError("dataset_subsets should not be used here")
+
+        objective = spec.build_trial_objective(FakeSplit())
+        trial = SimpleNamespace(params={"scale": 1.0})
+        model = spec.fit_selected_model(
+            FakeSplit(),
+            trial,
+            refit_policy="train_plus_val",
+        )
+        preds = spec.predict(
+            model,
+            SweepDataset(
+                mlip_features=np.empty((1, 0), dtype=float),
+                targets=np.array([0.0]),
+                sample_ids=np.array(["s9"]),
+                graph_view=GraphDatasetView.from_records(
+                    (
+                        GraphRecord(
+                            sample_id="s9",
+                            node_features=np.array([[5.0], [5.0]]),
+                            edge_index=np.array([[0], [1]], dtype=np.int64),
+                        ),
+                    )
+                ),
+            ),
+        )
+
+        self.assertAlmostEqual(objective(trial), 0.0)
+        self.assertEqual(seen_split_names, ["train", "val", "test", "train", "val", "test"])
+        self.assertAlmostEqual(model.scale, 1.0)
+        self.assertAlmostEqual(model.offset, 1.0)
+        np.testing.assert_allclose(preds, np.array([6.0]))
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_learned_family_registration_supports_trial_tuned_stub_family(self) -> None:
