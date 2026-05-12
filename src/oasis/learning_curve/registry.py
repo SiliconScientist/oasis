@@ -135,12 +135,15 @@ def _config_factory_for_learned_family_spec(
 
     def build_config_family(model_cfg: Any) -> SweepModelFamily:
         tuning_spec = spec.config_tuning_spec_factory(model_cfg)
-        runner_kwargs: dict[str, Any] = {
-            "n_trials": spec.optuna_n_trials,
-            "timeout_s": spec.optuna_timeout_s,
-        }
-        if spec.optuna_study_factory is not None:
-            runner_kwargs["study_factory"] = spec.optuna_study_factory
+        if spec.config_runner_kwargs_factory is not None:
+            runner_kwargs: dict[str, Any] = spec.config_runner_kwargs_factory(model_cfg)
+        else:
+            runner_kwargs = {
+                "n_trials": spec.optuna_n_trials,
+                "timeout_s": spec.optuna_timeout_s,
+            }
+            if spec.optuna_study_factory is not None:
+                runner_kwargs["study_factory"] = spec.optuna_study_factory
         runner = LearnedOptunaModelSelectionSweepRunner(tuning_spec, **runner_kwargs)
         family = ConfiguredSweepModelFamily(
             SweepFamilySpec(

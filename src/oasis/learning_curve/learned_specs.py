@@ -38,7 +38,23 @@ class LearnedFamilyRegistrationSpec:
     config_key: str | None = None
     is_enabled: Callable[[Any], bool] | None = None
     config_tuning_spec_factory: Callable[[Any], LearnedTrialTuningSpec] | None = None
+    config_runner_kwargs_factory: Callable[[Any], dict[str, Any]] | None = None
     default_enabled: bool = True
+
+
+def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
+    from oasis.tune import study_factory_from_optuna_cfg
+
+    optuna_cfg = getattr(
+        getattr(getattr(model_cfg, "moe", None), "tuning", None), "optuna", None
+    )
+    if optuna_cfg is None:
+        return {"n_trials": 10}
+    return {
+        "n_trials": optuna_cfg.n_trials,
+        "timeout_s": optuna_cfg.timeout_s,
+        "study_factory": study_factory_from_optuna_cfg(optuna_cfg),
+    }
 
 
 def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
@@ -103,6 +119,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             capabilities=SweepModelCapabilities(requires_validation=True),
             learned_trial_tuning_spec=MlipBaselineGateTuningSpec(),
             config_tuning_spec_factory=_moe_config_tuning_spec_factory,
+            config_runner_kwargs_factory=_moe_config_runner_kwargs,
             result_field="moe_df",
             selection_metadata_field="moe_selection_df",
             optuna_n_trials=10,
