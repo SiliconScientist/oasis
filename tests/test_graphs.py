@@ -28,8 +28,11 @@ from oasis.graphs import (
     save_graph_dataset_view,
 )
 from oasis.sweep import (
+    DatasetLoaderAdapter,
     GraphDatasetView,
     GraphRecord,
+    LoaderAdapterInput,
+    LoaderBatching,
     TrainValTestSweepRunnerInput,
 )
 
@@ -578,6 +581,129 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
                 )
                 self.assertEqual(subset_sample.target, expected.target)
                 self.assertIs(subset_sample.graph, expected.graph)
+
+    def test_build_graph_sweep_dataset_builds_graph_backed_batches_per_split(self) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-a", "rxn-b", "rxn-c", "rxn-d", "rxn-e"],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0],
+                "model_a_mlip_ads_eng_median": [1.1, 2.2, 3.3, 4.4, 5.5],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0], [1.1]], dtype=float),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0], [2.1]], dtype=float),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-c",
+                    node_features=np.array([[3.0], [3.1]], dtype=float),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-d",
+                    node_features=np.array([[4.0], [4.1]], dtype=float),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-e",
+                    node_features=np.array([[5.0], [5.1]], dtype=float),
+                    edge_index=np.array([[0], [1]], dtype=np.int64),
+                ),
+            )
+        )
+
+        dataset = build_graph_sweep_dataset(wide_df, graph_view)
+        split = TrainValTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=3,
+            train_idx=np.array([4, 1, 0]),
+            val_idx=np.array([3]),
+            test_idx=np.array([2]),
+        )
+
+        def collate_graph_rows(rows: list[dict[str, object]]) -> dict[str, object]:
+            return {
+                "sample_ids": tuple(row["sample_id"] for row in rows),
+                "graph_ids": tuple(row["graph"].sample_id for row in rows),
+                "graphs": tuple(row["graph"] for row in rows),
+                "node_features": np.stack(
+                    [row["graph"].node_features for row in rows]
+                ),
+            }
+
+        class GraphBatchAdapter:
+            def batching_for_split(self, *, split_name: str) -> LoaderBatching:
+                if split_name == "train":
+                    return LoaderBatching(
+                        batch_size=2,
+                        shuffle=False,
+                        collate_fn=collate_graph_rows,
+                    )
+                return LoaderBatching(
+                    batch_size=1,
+                    shuffle=False,
+                    collate_fn=collate_graph_rows,
+                )
+
+            def build_loader(
+                self,
+                loader_input: LoaderAdapterInput,
+            ) -> list[dict[str, object]]:
+                collate_fn = loader_input.batching.collate_fn
+                if collate_fn is None:
+                    raise AssertionError("collate_fn is required")
+                batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
+                rows = [
+                    {
+                        "sample_id": sample.sample_id,
+                        "graph": sample.graph_required(),
+                    }
+                    for sample in (
+                        loader_input.dataset.sample(i)
+                        for i in range(len(loader_input.dataset))
+                    )
+                ]
+                return [
+                    collate_fn(rows[start : start + batch_size])
+                    for start in range(0, len(rows), batch_size)
+                ]
+
+        adapter = GraphBatchAdapter()
+        self.assertIsInstance(adapter, DatasetLoaderAdapter)
+
+        loaders = split.loaders(adapter)
+
+        self.assertEqual([batch["sample_ids"] for batch in loaders.train], [("rxn-e", "rxn-b"), ("rxn-a",)])
+        self.assertEqual([batch["sample_ids"] for batch in loaders.val], [("rxn-d",)])
+        self.assertEqual([batch["sample_ids"] for batch in loaders.test], [("rxn-c",)])
+
+        for batch in loaders.train + loaders.val + loaders.test:
+            self.assertEqual(batch["sample_ids"], batch["graph_ids"])
+            for sample_id, graph in zip(batch["sample_ids"], batch["graphs"], strict=True):
+                self.assertIs(graph, dataset.graphs[sample_id])
+            for row_index, sample_id in enumerate(batch["sample_ids"]):
+                np.testing.assert_array_equal(
+                    batch["node_features"][row_index],
+                    dataset.graphs[sample_id].node_features,
+                )
+
+        train_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.train))
+        val_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.val))
+        test_ids = set().union(*(set(batch["sample_ids"]) for batch in loaders.test))
+        self.assertEqual(train_ids, {"rxn-e", "rxn-b", "rxn-a"})
+        self.assertEqual(val_ids, {"rxn-d"})
+        self.assertEqual(test_ids, {"rxn-c"})
+        self.assertTrue(train_ids.isdisjoint(val_ids))
+        self.assertTrue(train_ids.isdisjoint(test_ids))
+        self.assertTrue(val_ids.isdisjoint(test_ids))
 
     def test_build_graph_sweep_dataset_rejects_missing_graph_for_frame_row(self) -> None:
         wide_df = _Frame(

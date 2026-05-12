@@ -7,6 +7,8 @@ import pandas as pd
 
 from oasis.sweep import (
     DatasetLoaderAdapter,
+    GraphDatasetView,
+    GraphRecord,
     LoaderAdapterInput,
     LoaderBatching,
     SweepDataset,
@@ -897,6 +899,184 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(
             artifacts.selection_metadata["selected_constant"].tolist(),
             [3.0],
+        )
+
+    def test_learned_trial_tuning_spec_can_use_batched_graph_backed_loaders(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.empty((5, 0), dtype=float),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+            sample_ids=np.array(["s0", "s1", "s2", "s3", "s4"]),
+            graph_view=GraphDatasetView.from_records(
+                (
+                    GraphRecord(
+                        sample_id="s0",
+                        node_features=np.array([[1.0], [1.1]], dtype=float),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                    GraphRecord(
+                        sample_id="s1",
+                        node_features=np.array([[2.0], [2.1]], dtype=float),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                    GraphRecord(
+                        sample_id="s2",
+                        node_features=np.array([[3.0], [3.1]], dtype=float),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                    GraphRecord(
+                        sample_id="s3",
+                        node_features=np.array([[4.0], [4.1]], dtype=float),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                    GraphRecord(
+                        sample_id="s4",
+                        node_features=np.array([[5.0], [5.1]], dtype=float),
+                        edge_index=np.array([[0], [1]], dtype=np.int64),
+                    ),
+                )
+            ),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([4, 1, 0]),
+                    val_idx=np.array([3]),
+                    test_idx=np.array([2]),
+                ),
+            )
+        )
+        objective_graph_signatures: list[tuple[str, tuple[str, ...], tuple[tuple[float, ...], ...]]] = []
+        test_predict_signatures: list[tuple[str, ...]] = []
+
+        class ConstantPredictor:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+        def collate_graph_rows(rows: list[dict[str, object]]) -> dict[str, object]:
+            return {
+                "sample_ids": tuple(row["sample_id"] for row in rows),
+                "graph_ids": tuple(row["graph"].sample_id for row in rows),
+                "targets": np.array([row["target"] for row in rows], dtype=float),
+                "node_features": tuple(
+                    tuple(float(v) for v in np.ravel(row["graph"].node_features))
+                    for row in rows
+                ),
+            }
+
+        class FakeLearnedTrialTuningSpec:
+            class _LoaderAdapter:
+                def batching_for_split(self, *, split_name: str) -> LoaderBatching:
+                    if split_name == "train":
+                        return LoaderBatching(
+                            batch_size=2,
+                            shuffle=False,
+                            collate_fn=collate_graph_rows,
+                        )
+                    return LoaderBatching(
+                        batch_size=1,
+                        shuffle=False,
+                        collate_fn=collate_graph_rows,
+                    )
+
+                def build_loader(
+                    self,
+                    loader_input: LoaderAdapterInput,
+                ) -> list[dict[str, object]]:
+                    collate_fn = loader_input.batching.collate_fn
+                    if collate_fn is None:
+                        raise AssertionError("collate_fn is required")
+                    batch_size = loader_input.batching.batch_size or len(loader_input.dataset)
+                    rows = [
+                        {
+                            "sample_id": sample.sample_id,
+                            "target": sample.target,
+                            "graph": sample.graph_required(),
+                        }
+                        for sample in (
+                            loader_input.dataset.sample(i)
+                            for i in range(len(loader_input.dataset))
+                        )
+                    ]
+                    return [
+                        collate_fn(rows[start : start + batch_size])
+                        for start in range(0, len(rows), batch_size)
+                    ]
+
+            _loader_adapter = _LoaderAdapter()
+
+            def build_trial_objective(self, split):
+                loaders = split.loaders(self._loader_adapter)
+                for batch in loaders.train:
+                    objective_graph_signatures.append(
+                        (
+                            "train",
+                            batch["sample_ids"],
+                            batch["node_features"],
+                        )
+                    )
+                    self_ref = self
+                    self_ref.assertEqual(batch["sample_ids"], batch["graph_ids"])
+                for batch in loaders.val:
+                    objective_graph_signatures.append(
+                        (
+                            "val",
+                            batch["sample_ids"],
+                            batch["node_features"],
+                        )
+                    )
+                    self_ref = self
+                    self_ref.assertEqual(batch["sample_ids"], batch["graph_ids"])
+                y_val = np.concatenate([batch["targets"] for batch in loaders.val])
+
+                def objective(trial):
+                    preds = np.full(len(y_val), trial["constant"], dtype=float)
+                    return float(np.sqrt(np.mean((y_val - preds) ** 2)))
+
+                return objective
+
+            def fit_selected_model(self, split, best_trial, *, refit_policy):
+                del split, refit_policy
+                return ConstantPredictor(float(best_trial["constant"]))
+
+            def predict(self, model, dataset):
+                test_predict_signatures.append(tuple(dataset.sample_ids.tolist()))
+                return np.full(len(dataset), model.constant, dtype=float)
+
+            def trial_metadata(self, best_trial, model):
+                return {
+                    "constant": float(best_trial["constant"]),
+                    "selected_constant": float(model.constant),
+                }
+
+        spec = FakeLearnedTrialTuningSpec()
+        spec.assertEqual = self.assertEqual
+        self.assertIsInstance(spec, LearnedTrialTuningSpec)
+        trial_factory = lambda split: (  # noqa: E731
+            {"constant": 0.0},
+            {"constant": 4.0},
+        )
+
+        artifacts = sweep_learned_trial_model_selection(payload, spec, trial_factory)
+
+        self.assertEqual(
+            objective_graph_signatures,
+            [
+                ("train", ("s4", "s1"), ((5.0, 5.1), (2.0, 2.1))),
+                ("train", ("s0",), ((1.0, 1.1),)),
+                ("val", ("s3",), ((4.0, 4.1),)),
+            ],
+        )
+        self.assertEqual(test_predict_signatures, [("s2",)])
+        np.testing.assert_allclose(
+            artifacts.metrics["rmse_mean"].to_numpy(),
+            [1.0],
+            atol=1e-12,
+        )
+        self.assertEqual(
+            artifacts.selection_metadata["selected_constant"].tolist(),
+            [4.0],
         )
 
     def test_optuna_runner_objective_sees_only_train_and_val(self) -> None:
