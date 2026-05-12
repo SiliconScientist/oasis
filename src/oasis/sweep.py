@@ -1049,6 +1049,8 @@ class LearningCurveResults:
     graph_mean_df: pd.DataFrame | None = None
     graph_mean_selection_df: pd.DataFrame | None = None
     kernel_ridge_selection_df: pd.DataFrame | None = None
+    moe_df: pd.DataFrame | None = None
+    moe_selection_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:
@@ -1073,6 +1075,8 @@ class LearningCurveResults:
             graph_mean_df=frames.get("graph_mean_df"),
             graph_mean_selection_df=frames.get("graph_mean_selection_df"),
             kernel_ridge_selection_df=frames.get("kernel_ridge_selection_df"),
+            moe_df=frames.get("moe_df"),
+            moe_selection_df=frames.get("moe_selection_df"),
         )
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
@@ -1127,6 +1131,12 @@ class LearningCurveResults:
                 other.kernel_ridge_selection_df
                 if other.kernel_ridge_selection_df is not None
                 else self.kernel_ridge_selection_df
+            ),
+            moe_df=other.moe_df if other.moe_df is not None else self.moe_df,
+            moe_selection_df=(
+                other.moe_selection_df
+                if other.moe_selection_df is not None
+                else self.moe_selection_df
             ),
         )
 

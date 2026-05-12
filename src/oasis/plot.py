@@ -263,6 +263,22 @@ def learning_curve_plot(
             alpha=0.2,
             label="Graph mean +/- 1sd",
         )
+    if results.moe_df is not None:
+        ax.plot(
+            results.moe_df["n_train"],
+            results.moe_df["rmse_mean"],
+            marker="*",
+            color="tab:purple",
+            label="MoE mean",
+        )
+        ax.fill_between(
+            results.moe_df["n_train"],
+            results.moe_df["rmse_mean"] - results.moe_df["rmse_std"],
+            results.moe_df["rmse_mean"] + results.moe_df["rmse_std"],
+            color="tab:purple",
+            alpha=0.2,
+            label="MoE +/- 1sd",
+        )
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)

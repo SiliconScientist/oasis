@@ -92,15 +92,11 @@ use_graph_mean = false
 
 [experiment.learning_curve.models.moe]
 enabled = false
-gate_type = "mlp"
-gating_mode = "soft"
-hidden_dims = []
-
-[experiment.learning_curve.models.moe.tuning]
+gate_type = "mlip_baseline"
 
 [experiment.learning_curve.models.moe.tuning.optuna]
 # n_trials = 50
-# sampler = "tpe"
+# sampler = "tpe"   # "tpe" (default), "random", "cmaes"
 # pruner = "median"
 # timeout_s = 600
 # seed = 42
