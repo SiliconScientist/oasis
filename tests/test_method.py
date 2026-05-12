@@ -63,7 +63,6 @@ try:
     from oasis.learning_curve.runners import (
         ConfiguredSweepModelFamily,
         LearnedModelSweepRunner,
-        PlaceholderLearnedSweepModelFamily,
         SupervisedModelSweepRunner,
         SweepFamilySpec,
         ValidationAwareLearnedModelSweepRunner,
@@ -255,7 +254,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
-    def test_placeholder_moe_registration_instantiates_cleanly(self) -> None:
+    def test_moe_registration_instantiates_cleanly(self) -> None:
         registry = {
             registration.name: registration
             for registration in learning_curve_model_registry()
@@ -263,7 +262,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         moe_family = registry["moe"].family_factory()
 
-        self.assertIsInstance(moe_family, PlaceholderLearnedSweepModelFamily)
+        self.assertIsInstance(moe_family, ConfiguredSweepModelFamily)
         self.assertEqual(
             moe_family.capabilities(),
             SweepModelCapabilities(requires_validation=True),
