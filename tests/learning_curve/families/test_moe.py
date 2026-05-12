@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from oasis.learning_curve.families.moe import MoELearnedTrialTuningSpec, MoEModel
+from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
 from oasis.learning_curve.learned_specs import learned_family_registration_specs
 from oasis.learning_curve.registry import learned_family_registration
 from oasis.learning_curve.runners import ConfiguredSweepModelFamily
@@ -67,19 +67,19 @@ class MoEModelTests(unittest.TestCase):
         np.testing.assert_allclose(preds, [3.5])
 
 
-class MoELearnedTrialTuningSpecTests(unittest.TestCase):
+class MlipBaselineGateTuningSpecTests(unittest.TestCase):
     def test_is_learned_trial_tuning_spec(self) -> None:
-        self.assertIsInstance(MoELearnedTrialTuningSpec(), LearnedTrialTuningSpec)
+        self.assertIsInstance(MlipBaselineGateTuningSpec(), LearnedTrialTuningSpec)
 
     def test_build_trial_objective_returns_finite_rmse(self) -> None:
-        spec = MoELearnedTrialTuningSpec()
+        spec = MlipBaselineGateTuningSpec()
         objective = spec.build_trial_objective(_make_split())
         rmse = objective(_MockTrial([0.0, 0.0]))
         self.assertTrue(np.isfinite(rmse))
         self.assertGreater(rmse, 0.0)
 
     def test_round_trip_predict_shape_and_finiteness(self) -> None:
-        spec = MoELearnedTrialTuningSpec()
+        spec = MlipBaselineGateTuningSpec()
         split = _make_split()
         model = spec.fit_selected_model(
             split, _MockTrial([2.0, -2.0]), refit_policy="train_plus_val"
@@ -90,7 +90,7 @@ class MoELearnedTrialTuningSpecTests(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(preds)))
 
     def test_refit_policy_train_only_vs_train_plus_val_same_weights(self) -> None:
-        spec = MoELearnedTrialTuningSpec()
+        spec = MlipBaselineGateTuningSpec()
         split = _make_split()
         trial = _MockTrial([0.0, 0.0])
         m_train = spec.fit_selected_model(split, trial, refit_policy="train_only")
@@ -98,7 +98,7 @@ class MoELearnedTrialTuningSpecTests(unittest.TestCase):
         np.testing.assert_allclose(m_train.weights, m_both.weights)
 
     def test_trial_metadata_weights_sum_to_one(self) -> None:
-        spec = MoELearnedTrialTuningSpec()
+        spec = MlipBaselineGateTuningSpec()
         split = _make_split()
         model = spec.fit_selected_model(
             split, _MockTrial([1.0, -1.0]), refit_policy="train_plus_val"
@@ -120,7 +120,7 @@ class MoERegistrationTests(unittest.TestCase):
         specs = learned_family_registration_specs()
         moe_spec = next(s for s in specs if s.name == "moe")
         self.assertIsNone(moe_spec.family_factory)
-        self.assertIsInstance(moe_spec.learned_trial_tuning_spec, MoELearnedTrialTuningSpec)
+        self.assertIsInstance(moe_spec.learned_trial_tuning_spec, MlipBaselineGateTuningSpec)
 
 
 if __name__ == "__main__":

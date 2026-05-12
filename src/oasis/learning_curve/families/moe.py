@@ -28,7 +28,7 @@ def _weights_from_trial(params: dict[str, Any], n_experts: int) -> np.ndarray:
 
 
 @dataclass(frozen=True, slots=True)
-class MoELearnedTrialTuningSpec:
+class MlipBaselineGateTuningSpec:
     def build_trial_objective(
         self,
         split: TrainValTestSweepRunnerInput,

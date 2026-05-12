@@ -8,7 +8,7 @@ from oasis.learning_curve.families.graph_mean import (
     GraphMeanLearnedTrialTuningSpec,
     _graph_mean_study_factory,
 )
-from oasis.learning_curve.families.moe import MoELearnedTrialTuningSpec
+from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec
 from oasis.learning_curve.runners import (
     ConfiguredSweepModelFamily,
     FunctionalSweepRunner,
@@ -93,7 +93,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             name="moe",
             is_enabled=_moe_enabled,
             capabilities=SweepModelCapabilities(requires_validation=True),
-            learned_trial_tuning_spec=MoELearnedTrialTuningSpec(),
+            learned_trial_tuning_spec=MlipBaselineGateTuningSpec(),
             result_field="moe_df",
             selection_metadata_field="moe_selection_df",
             optuna_n_trials=10,

@@ -211,8 +211,7 @@ class ConfigParsingTests(unittest.TestCase):
                             "use_weighted_simplex": False,
                             "moe": {
                                 "enabled": False,
-                                "gate_type": "mlp",
-                                "gating_mode": "soft",
+                                "gate_type": "mlip_baseline",
                                 "hidden_dims": [16, 8],
                                 "training": {
                                     "batch_size": 64,
@@ -247,8 +246,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertTrue(cfg.experiment.learning_curve.models.use_ridge)
         self.assertTrue(cfg.experiment.learning_curve.models.use_lasso)
         self.assertTrue(cfg.experiment.learning_curve.models.use_weighted_linear)
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.gate_type, "mlp")
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.gating_mode, "soft")
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.gate_type, "mlip_baseline")
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [16, 8])
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.batch_size, 64)
         self.assertEqual(
