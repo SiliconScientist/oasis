@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,7 +10,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from oasis.sweep import GraphRecord
+from oasis.config import MoETrainingConfig
+from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
+from oasis.tune import SelectionRefitPolicy
 
 
 def collate_graphs(graphs: Sequence[GraphRecord]) -> tuple[Tensor, Tensor, Tensor]:
@@ -135,3 +137,154 @@ class GnnGateModel:
             logits = encoder(node_features, edge_index, batch_vector)  # (n_samples, n_experts)
         weights = torch.softmax(logits, dim=1).numpy()  # (n_samples, n_experts)
         return (X * weights).sum(axis=1) + self.bias
+
+
+def _graphs_from_dataset(dataset: SweepDataset) -> list[GraphRecord]:
+    return [dataset.graphs[sid] for sid in dataset.sample_ids.tolist()]
+
+
+def _train_encoder(
+    encoder: GnnEncoder,
+    node_features: Tensor,
+    edge_index: Tensor,
+    batch_vector: Tensor,
+    X: Tensor,
+    y: Tensor,
+    *,
+    epochs: int,
+    lr: float,
+    weight_decay: float,
+) -> None:
+    optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay)
+    encoder.train()
+    for _ in range(epochs):
+        optimizer.zero_grad()
+        logits = encoder(node_features, edge_index, batch_vector)
+        weights = torch.softmax(logits, dim=1)
+        preds = (X * weights).sum(dim=1)
+        loss = F.mse_loss(preds, y)
+        loss.backward()
+        optimizer.step()
+
+
+@dataclass(frozen=True, slots=True)
+class GnnGateTuningSpec:
+    training_cfg: MoETrainingConfig
+    hidden_dims: tuple[int, ...] = ()
+
+    def _arch_from_trial(self, trial: Any) -> tuple[int, int]:
+        """Return (hidden_dim, n_layers) from fixed config or Optuna suggestions."""
+        if self.hidden_dims:
+            return self.hidden_dims[0], len(self.hidden_dims)
+        hidden_dim: int = trial.suggest_categorical("hidden_dim", [32, 64, 128])
+        n_layers: int = trial.suggest_int("n_layers", 1, 3)
+        return hidden_dim, n_layers
+
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]:
+        subsets = split.dataset_subsets()
+        train_ds = subsets.train
+        val_ds = subsets.val
+
+        train_graphs = _graphs_from_dataset(train_ds)
+        val_graphs = _graphs_from_dataset(val_ds)
+        in_features = train_graphs[0].node_features.shape[1]
+        n_experts = train_ds.mlip_features.shape[1]
+
+        train_nf, train_ei, train_bv = collate_graphs(train_graphs)
+        val_nf, val_ei, val_bv = collate_graphs(val_graphs)
+        X_train = torch.tensor(train_ds.mlip_features, dtype=torch.float32)
+        y_train = torch.tensor(train_ds.targets, dtype=torch.float32)
+        X_val_np = val_ds.mlip_features
+        y_val_np = val_ds.targets
+
+        epochs = self.training_cfg.epochs
+        seed = self.training_cfg.seed
+
+        def objective(trial: Any) -> float:
+            hidden_dim, n_layers = self._arch_from_trial(trial)
+            lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+            weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+
+            if seed is not None:
+                torch.manual_seed(seed)
+            encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers)
+            _train_encoder(
+                encoder, train_nf, train_ei, train_bv, X_train, y_train,
+                epochs=epochs, lr=lr, weight_decay=weight_decay,
+            )
+
+            encoder.eval()
+            with torch.no_grad():
+                logits = encoder(val_nf, val_ei, val_bv)
+            weights = torch.softmax(logits, dim=1).numpy()
+            preds = (X_val_np * weights).sum(axis=1)
+            return float(np.sqrt(np.mean((y_val_np - preds) ** 2)))
+
+        return objective
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> GnnGateModel:
+        subsets = split.dataset_subsets()
+
+        if refit_policy == "train_only":
+            fit_graphs = _graphs_from_dataset(subsets.train)
+            X_np = subsets.train.mlip_features
+            y_np = subsets.train.targets
+        else:
+            fit_graphs = (
+                _graphs_from_dataset(subsets.train) + _graphs_from_dataset(subsets.val)
+            )
+            X_np = np.concatenate([subsets.train.mlip_features, subsets.val.mlip_features])
+            y_np = np.concatenate([subsets.train.targets, subsets.val.targets])
+
+        in_features = fit_graphs[0].node_features.shape[1]
+        n_experts = split.dataset.mlip_features.shape[1]
+        hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        lr: float = best_trial.params["lr"]
+        weight_decay: float = best_trial.params["weight_decay"]
+
+        nf, ei, bv = collate_graphs(fit_graphs)
+        X = torch.tensor(X_np, dtype=torch.float32)
+        y = torch.tensor(y_np, dtype=torch.float32)
+
+        if self.training_cfg.seed is not None:
+            torch.manual_seed(self.training_cfg.seed)
+        encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers)
+        _train_encoder(
+            encoder, nf, ei, bv, X, y,
+            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+        )
+
+        encoder.eval()
+        with torch.no_grad():
+            logits = encoder(nf, ei, bv)
+        weights = torch.softmax(logits, dim=1).detach().numpy()
+        preds = (X_np * weights).sum(axis=1)
+        bias = float(np.mean(y_np - preds))
+
+        return GnnGateModel(
+            state_dict=encoder.state_dict(),
+            n_experts=n_experts,
+            hidden_dim=hidden_dim,
+            n_layers=n_layers,
+            bias=bias,
+        )
+
+    def predict(self, model: GnnGateModel, dataset: SweepDataset) -> np.ndarray:
+        return model.predict(dataset.mlip_features, _graphs_from_dataset(dataset))
+
+    def trial_metadata(self, best_trial: Any, model: GnnGateModel) -> dict[str, Any]:
+        return {
+            "hidden_dim": model.hidden_dim,
+            "n_layers": model.n_layers,
+            "n_experts": model.n_experts,
+            "bias": model.bias,
+        }
