@@ -37,7 +37,15 @@ class LearnedFamilyRegistrationSpec:
     selection_metadata_field: str | None = None
     config_key: str | None = None
     is_enabled: Callable[[Any], bool] | None = None
+    config_tuning_spec_factory: Callable[[Any], LearnedTrialTuningSpec] | None = None
     default_enabled: bool = True
+
+
+def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
+    gate_type = getattr(getattr(model_cfg, "moe", None), "gate_type", "mlip_baseline")
+    if gate_type == "mlip_baseline":
+        return MlipBaselineGateTuningSpec()
+    raise ValueError(f"Unknown MoE gate type: {gate_type!r}")
 
 
 def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
@@ -94,6 +102,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             is_enabled=_moe_enabled,
             capabilities=SweepModelCapabilities(requires_validation=True),
             learned_trial_tuning_spec=MlipBaselineGateTuningSpec(),
+            config_tuning_spec_factory=_moe_config_tuning_spec_factory,
             result_field="moe_df",
             selection_metadata_field="moe_selection_df",
             optuna_n_trials=10,

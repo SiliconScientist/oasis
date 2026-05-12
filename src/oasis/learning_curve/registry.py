@@ -33,6 +33,7 @@ class LearningCurveModelRegistration:
     is_enabled: Callable[[Any], bool]
     family_factory: Callable[[], SweepModelFamily]
     default_enabled: bool = True
+    config_factory: Callable[[Any], SweepModelFamily] | None = None
 
 
 def _config_flag_enabled(config_key: str) -> Callable[[Any], bool]:
@@ -126,6 +127,39 @@ def _configured_trial_tuned_family_for_learned_family_spec(
     )
 
 
+def _config_factory_for_learned_family_spec(
+    spec: Any,
+) -> Callable[[Any], SweepModelFamily] | None:
+    if spec.config_tuning_spec_factory is None:
+        return None
+
+    def build_config_family(model_cfg: Any) -> SweepModelFamily:
+        tuning_spec = spec.config_tuning_spec_factory(model_cfg)
+        runner_kwargs: dict[str, Any] = {
+            "n_trials": spec.optuna_n_trials,
+            "timeout_s": spec.optuna_timeout_s,
+        }
+        if spec.optuna_study_factory is not None:
+            runner_kwargs["study_factory"] = spec.optuna_study_factory
+        runner = LearnedOptunaModelSelectionSweepRunner(tuning_spec, **runner_kwargs)
+        family = ConfiguredSweepModelFamily(
+            SweepFamilySpec(
+                result_field=spec.result_field,
+                runner=runner,
+                selection_metadata_field=spec.selection_metadata_field,
+                capabilities=spec.capabilities,
+            )
+        )
+        if family.capabilities() != spec.capabilities:
+            raise ValueError(
+                f"learned family registration '{spec.name}' declared capabilities "
+                f"{spec.capabilities!r} but config factory produced {family.capabilities()!r}"
+            )
+        return family
+
+    return build_config_family
+
+
 def learned_family_registration(
     spec: Any,
 ) -> LearningCurveModelRegistration:
@@ -133,12 +167,15 @@ def learned_family_registration(
         name=spec.name,
         is_enabled=_is_enabled_for_learned_family_spec(spec),
         family_factory=_family_factory_for_learned_family_spec(spec),
+        config_factory=_config_factory_for_learned_family_spec(spec),
         default_enabled=spec.default_enabled,
     )
 
 
 def default_sweep_model_families(
     enabled_model_names: Collection[str] | None = None,
+    *,
+    config: Any | None = None,
 ) -> tuple[SweepModelFamily, ...]:
     registrations = learning_curve_model_registry()
     enabled_names = (
@@ -151,7 +188,9 @@ def default_sweep_model_families(
         else set(enabled_model_names)
     )
     return tuple(
-        registration.family_factory()
+        registration.config_factory(config)
+        if registration.config_factory is not None and config is not None
+        else registration.family_factory()
         for registration in registrations
         if registration.name in enabled_names
     )

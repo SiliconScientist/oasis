@@ -494,6 +494,7 @@ def run_learning_curve_experiments_from_config(
         n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
+        model_cfg=model_cfg,
         validation_fraction=(
             getattr(experiment_cfg, "validation_fraction", 0.2)
             if experiment_cfg
@@ -537,6 +538,7 @@ def run_learning_curve_experiments(
     n_repeats: int,
     seed: int = 42,
     enabled_model_names: Sequence[str] | None = None,
+    model_cfg: Any | None = None,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
@@ -548,7 +550,7 @@ def run_learning_curve_experiments(
     if families is None:
         from oasis.learning_curve.registry import default_sweep_model_families
 
-        families = default_sweep_model_families(enabled_model_names)
+        families = default_sweep_model_families(enabled_model_names, config=model_cfg)
 
     results = LearningCurveResults.empty()
     for family in families:
