@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 GateType = Literal["mlip_baseline", "gnn"]
+GatingMode = Literal["dense", "top_k"]
 
 from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field
@@ -82,6 +83,8 @@ class MoETuningConfig(BaseModel):
 class MoEConfig(BaseModel):
     enabled: bool = False
     gate_type: GateType = "mlip_baseline"
+    gating_mode: GatingMode = "dense"
+    top_k: int = 2
     hidden_dims: List[int] = Field(default_factory=list)
     training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
     tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)

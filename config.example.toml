@@ -93,6 +93,8 @@ use_graph_mean = false
 [experiment.learning_curve.models.moe]
 enabled = false
 gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn"
+gating_mode = "dense"        # "dense" | "top_k"
+top_k = 2                    # number of experts to activate; only used when gating_mode = "top_k"
 # hidden_dims = [64, 64]     # GNN only: fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
 
 [experiment.learning_curve.models.moe.training]
