@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from oasis.config import MoETrainingConfig
+from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import SelectionRefitPolicy
 
@@ -117,6 +118,7 @@ class GnnGateModel:
     hidden_dim: int
     n_layers: int
     bias: float = 0.0
+    policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
 
     def _build_encoder(self, in_features: int) -> GnnEncoder:
         encoder = GnnEncoder(
@@ -135,7 +137,7 @@ class GnnGateModel:
         node_features, edge_index, batch_vector = collate_graphs(graphs)
         with torch.no_grad():
             logits = encoder(node_features, edge_index, batch_vector)  # (n_samples, n_experts)
-        weights = torch.softmax(logits, dim=1).numpy()  # (n_samples, n_experts)
+        weights = self.policy.apply(logits.numpy())  # (n_samples, n_experts)
         return (X * weights).sum(axis=1) + self.bias
 
 
@@ -171,6 +173,7 @@ def _train_encoder(
 class GnnGateTuningSpec:
     training_cfg: MoETrainingConfig
     hidden_dims: tuple[int, ...] = ()
+    policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
 
     def _arch_from_trial(self, trial: Any) -> tuple[int, int]:
         """Return (hidden_dim, n_layers) from fixed config or Optuna suggestions."""
@@ -202,6 +205,7 @@ class GnnGateTuningSpec:
 
         epochs = self.training_cfg.epochs
         seed = self.training_cfg.seed
+        policy = self.policy
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
@@ -219,7 +223,7 @@ class GnnGateTuningSpec:
             encoder.eval()
             with torch.no_grad():
                 logits = encoder(val_nf, val_ei, val_bv)
-            weights = torch.softmax(logits, dim=1).numpy()
+            weights = policy.apply(logits.numpy())
             preds = (X_val_np * weights).sum(axis=1)
             return float(np.sqrt(np.mean((y_val_np - preds) ** 2)))
 
@@ -266,7 +270,7 @@ class GnnGateTuningSpec:
         encoder.eval()
         with torch.no_grad():
             logits = encoder(nf, ei, bv)
-        weights = torch.softmax(logits, dim=1).detach().numpy()
+        weights = self.policy.apply(logits.numpy())
         preds = (X_np * weights).sum(axis=1)
         bias = float(np.mean(y_np - preds))
 
@@ -276,6 +280,7 @@ class GnnGateTuningSpec:
             hidden_dim=hidden_dim,
             n_layers=n_layers,
             bias=bias,
+            policy=self.policy,
         )
 
     def predict(self, model: GnnGateModel, dataset: SweepDataset) -> np.ndarray:
