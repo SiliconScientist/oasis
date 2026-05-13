@@ -35,3 +35,41 @@ def _load_json(path: Path) -> dict[str, object]:
 
 def _mlip_name_from_result_path(result_path: Path) -> str:
     return result_path.name.removesuffix("_result.json")
+
+
+def load_mlip_probe_energies(
+    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+) -> dict[str, dict[str, float]]:
+    """
+    Return:
+        {
+            "<mlip_name>": {
+                "<unique_probe_id>": <ads_eng_median>,
+                ...
+            },
+            ...
+        }
+    """
+    mlip_probe_energies: dict[str, dict[str, float]] = {}
+
+    for result_path in sorted(mlip_results_dir.glob("*_result.json")):
+        result_data = _load_json(result_path)
+        probe_energies: dict[str, float] = {}
+
+        for probe_key, probe_data in result_data.items():
+            if not probe_key.startswith("unique_probe_"):
+                continue
+
+            unique_probe_id = probe_key.removeprefix("unique_probe_")
+            final_data = probe_data.get("final", {})
+            ads_eng_median = final_data.get("ads_eng_median")
+            probe_energies[unique_probe_id] = (
+                float(ads_eng_median) if ads_eng_median is not None else np.nan
+            )
+
+        mlip_probe_energies[_mlip_name_from_result_path(result_path)] = probe_energies
+
+    if not mlip_probe_energies:
+        raise FileNotFoundError(f"No MLIP result files found in {mlip_results_dir}")
+
+    return mlip_probe_energies
