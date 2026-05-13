@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from oasis.config import MoETrainingConfig
+from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, TopKGatingPolicy
 from oasis.learning_curve.families.gnn_gate import GnnGateTuningSpec
 from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
 from oasis.learning_curve.learned_specs import (
@@ -236,6 +237,69 @@ class MoEOptunaConfigThreadingTests(unittest.TestCase):
         family = registration.config_factory(_model_cfg_with_optuna(3))
         self.assertIsInstance(family.spec.runner, LearnedOptunaModelSelectionSweepRunner)
         self.assertEqual(family.spec.runner.n_trials, 3)
+
+
+def _model_cfg_with_gating(
+    gate_type: str,
+    gating_mode: str,
+    top_k: int = 2,
+) -> object:
+    return types.SimpleNamespace(
+        moe=types.SimpleNamespace(
+            gate_type=gate_type,
+            gating_mode=gating_mode,
+            top_k=top_k,
+        )
+    )
+
+
+def _model_cfg_gnn_with_gating(gating_mode: str, top_k: int = 2) -> object:
+    return types.SimpleNamespace(
+        moe=types.SimpleNamespace(
+            gate_type="gnn",
+            gating_mode=gating_mode,
+            top_k=top_k,
+            training=MoETrainingConfig(epochs=2),
+            hidden_dims=[32],
+        )
+    )
+
+
+class MoEGatingModeDispatchTests(unittest.TestCase):
+    def test_dense_mode_mlip_baseline_produces_dense_policy(self) -> None:
+        spec = _moe_config_tuning_spec_factory(
+            _model_cfg_with_gating("mlip_baseline", "dense")
+        )
+        self.assertIsInstance(spec.policy, DenseGatingPolicy)
+
+    def test_top_k_mode_mlip_baseline_produces_top_k_policy(self) -> None:
+        spec = _moe_config_tuning_spec_factory(
+            _model_cfg_with_gating("mlip_baseline", "top_k", top_k=3)
+        )
+        self.assertIsInstance(spec.policy, TopKGatingPolicy)
+        self.assertEqual(spec.policy.k, 3)
+
+    def test_dense_mode_gnn_produces_dense_policy(self) -> None:
+        spec = _moe_config_tuning_spec_factory(_model_cfg_gnn_with_gating("dense"))
+        self.assertIsInstance(spec.policy, DenseGatingPolicy)
+
+    def test_top_k_mode_gnn_produces_top_k_policy(self) -> None:
+        spec = _moe_config_tuning_spec_factory(
+            _model_cfg_gnn_with_gating("top_k", top_k=2)
+        )
+        self.assertIsInstance(spec.policy, TopKGatingPolicy)
+        self.assertEqual(spec.policy.k, 2)
+
+    def test_missing_gating_mode_defaults_to_dense(self) -> None:
+        # Old-style config with no gating_mode attribute → should default to dense.
+        spec = _moe_config_tuning_spec_factory(_model_cfg("mlip_baseline"))
+        self.assertIsInstance(spec.policy, DenseGatingPolicy)
+
+    def test_top_k_value_is_threaded_correctly(self) -> None:
+        spec = _moe_config_tuning_spec_factory(
+            _model_cfg_with_gating("mlip_baseline", "top_k", top_k=1)
+        )
+        self.assertEqual(spec.policy.k, 1)
 
 
 if __name__ == "__main__":
