@@ -143,7 +143,7 @@ def add_mlip_feature_matrices_to_dataset(
         feature_matrix = feature_matrices[reaction]
         entry[field_name] = {
             "mlip_names": feature_matrix.mlip_names,
-            "matrix": feature_matrix.matrix.tolist(),
+            "matrix": feature_matrix.matrix.T.tolist(),
         }
 
     destination = output_path or dataset_path
