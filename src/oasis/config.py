@@ -144,6 +144,11 @@ class PlotConfig(BaseModel):
     filters: PlotFiltersConfig = Field(default_factory=PlotFiltersConfig)
 
 
+class ProbeFeatureConfig(BaseModel):
+    dataset_path: Path
+    mlip_results_dir: Path
+
+
 class Config(BaseModel):
     seed: Optional[int] = None
     dev_run: Optional[bool] = None
@@ -152,6 +157,7 @@ class Config(BaseModel):
     ingest: IngestConfig
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
+    probe_features: Optional[ProbeFeatureConfig] = None
     experiment: Optional[ExperimentConfig] = None
     plot: Optional[PlotConfig] = None
 
