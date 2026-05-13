@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
 
+@runtime_checkable
 class GatingPolicy(Protocol):
     def apply(self, logits: np.ndarray) -> np.ndarray: ...
     def regularization_loss(self, logits: np.ndarray) -> float: ...
@@ -31,7 +32,7 @@ class TopKGatingPolicy:
     regularization_loss uses the Switch Transformer auxiliary load-balance
     term: n_experts * sum_i(f_i * P_i), where f_i is the fraction of samples
     routed to expert i and P_i is the mean router probability for expert i.
-    The minimum value (perfectly balanced load) is 1.0.
+    The minimum value (perfectly balanced load) equals k.
     """
 
     k: int
