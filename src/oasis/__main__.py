@@ -14,6 +14,7 @@ from oasis.io import (
 )
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
+from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 
 def main() -> None:
@@ -23,6 +24,14 @@ def main() -> None:
         return
 
     cfg = get_config()
+    probe_cfg = cfg.probe_features
+    if probe_cfg is not None and probe_cfg.mlip_results_dir.exists():
+        add_mlip_feature_matrices_to_dataset(
+            dataset_path=probe_cfg.dataset_path,
+            mlip_results_dir=probe_cfg.mlip_results_dir,
+        )
+        print(f"Embedded probe feature matrices from {probe_cfg.mlip_results_dir}")
+
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
