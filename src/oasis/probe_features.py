@@ -73,3 +73,54 @@ def load_mlip_probe_energies(
         raise FileNotFoundError(f"No MLIP result files found in {mlip_results_dir}")
 
     return mlip_probe_energies
+
+
+def build_sample_mlip_feature_matrices(
+    dataset_path: Path = _DEFAULT_DATASET_PATH,
+    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+) -> dict[str, SampleMLIPFeatureMatrix]:
+    """
+    Build one matrix per sample where:
+    - rows are MLIPs from `mlip_results_dir`
+    - columns are the sample's probe sites in `unique_probe_ids` order
+    - values are the MLIP `ads_eng_median` values for those probes
+    """
+    dataset = _load_json(dataset_path)
+    mlip_probe_energies = load_mlip_probe_energies(mlip_results_dir)
+    mlip_names = sorted(mlip_probe_energies)
+
+    feature_matrices: dict[str, SampleMLIPFeatureMatrix] = {}
+
+    for reaction, entry in dataset.items():
+        unique_probe_ids = list(entry.get("unique_probe_ids", []))
+        matrix = np.full((len(mlip_names), len(unique_probe_ids)), np.nan, dtype=float)
+
+        for row_index, mlip_name in enumerate(mlip_names):
+            probe_energies = mlip_probe_energies[mlip_name]
+            for column_index, unique_probe_id in enumerate(unique_probe_ids):
+                matrix[row_index, column_index] = probe_energies.get(
+                    unique_probe_id, np.nan
+                )
+
+        feature_matrices[reaction] = SampleMLIPFeatureMatrix(
+            reaction=reaction,
+            mlip_names=mlip_names,
+            matrix=matrix,
+        )
+
+    return feature_matrices
+
+
+def build_feature_matrix(
+    reaction: str,
+    dataset_path: Path = _DEFAULT_DATASET_PATH,
+    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+) -> SampleMLIPFeatureMatrix:
+    feature_matrices = build_sample_mlip_feature_matrices(
+        dataset_path=dataset_path,
+        mlip_results_dir=mlip_results_dir,
+    )
+    try:
+        return feature_matrices[reaction]
+    except KeyError as exc:
+        raise KeyError(f"Reaction {reaction!r} not found in {dataset_path}") from exc
