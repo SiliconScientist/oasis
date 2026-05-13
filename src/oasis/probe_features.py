@@ -124,3 +124,28 @@ def build_feature_matrix(
         return feature_matrices[reaction]
     except KeyError as exc:
         raise KeyError(f"Reaction {reaction!r} not found in {dataset_path}") from exc
+
+
+def add_mlip_feature_matrices_to_dataset(
+    dataset_path: Path = _DEFAULT_DATASET_PATH,
+    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+    output_path: Path | None = None,
+    field_name: str = "mlip_feature_matrix",
+) -> dict[str, object]:
+    import json
+    dataset = _load_json(dataset_path)
+    feature_matrices = build_sample_mlip_feature_matrices(
+        dataset_path=dataset_path,
+        mlip_results_dir=mlip_results_dir,
+    )
+
+    for reaction, entry in dataset.items():
+        feature_matrix = feature_matrices[reaction]
+        entry[field_name] = {
+            "mlip_names": feature_matrix.mlip_names,
+            "matrix": feature_matrix.matrix.T.tolist(),
+        }
+
+    destination = output_path or dataset_path
+    destination.write_text(json.dumps(dataset, indent=2) + "\n")
+    return dataset
