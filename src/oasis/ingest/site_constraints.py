@@ -329,15 +329,31 @@ def index_by_height(atoms: Atoms, cutoff: float, below: bool = True) -> list[int
         return list(np.where(z_values >= cutoff)[0])
 
 
-def index_by_layers(atoms: Atoms, layers: tuple[int, ...] = (1, 2)) -> list[int]:
+def index_by_layers(
+    atoms: Atoms, layers: int | tuple[int, ...] = (1, 2)
+) -> list[int]:
+    """
+    Return atom indices for the requested slab layers.
+
+    Positive layer numbers are counted from the bottom, so ``1`` is the
+    bottom-most layer. Negative layer numbers are counted from the top, so
+    ``-1`` is the top-most layer and ``-2`` is the layer below it. ``layers``
+    may be a single integer or a tuple of layer numbers.
+    """
+    if isinstance(layers, int):
+        layers = (layers,)
+
     layer_indices = get_layer_indices(atoms)
+    n_layers = len(layer_indices)
     indices: list[int] = []
     for layer in layers:
-        if layer not in layer_indices:
+        resolved_layer = n_layers + layer + 1 if layer < 0 else layer
+        if resolved_layer not in layer_indices:
             raise ValueError(
-                f"Requested layer {layer}, but only layers 1..{len(layer_indices)} exist"
+                f"Requested layer {layer}, but only layers 1..{n_layers} or "
+                f"-1..{-n_layers} exist"
             )
-        indices.extend(layer_indices[layer])
+        indices.extend(layer_indices[resolved_layer])
     return sorted(indices)
 
 
@@ -396,6 +412,18 @@ def atoms_to_atoms_json_like_template(atoms: Atoms, template_atoms_json: str) ->
     row["positions"] = encoded["positions"]
     row["cell"] = encoded["cell"]
     row["pbc"] = encoded["pbc"]
+    row.pop("unique_id", None)
+    for key in (
+        "momenta",
+        "masses",
+        "tags",
+        "initial_charges",
+        "initial_magmoms",
+    ):
+        if key in encoded:
+            row[key] = encoded[key]
+        else:
+            row.pop(key, None)
     if "constraints" in encoded:
         row["constraints"] = encoded["constraints"]
     else:
@@ -618,6 +646,35 @@ def get_lowest_atom_indices(atoms: Atoms, z_tolerance: float = 0.5) -> list[int]
 
     lowest_indices = np.where(np.abs(z - z_min) <= z_tolerance)[0]
     return lowest_indices.tolist()
+
+
+def rewrap_slab_by_largest_gap(atoms: Atoms) -> Atoms:
+    """
+    Return a copy with fractional z rewrapped so the slab is contiguous.
+
+    The largest cyclic gap in fractional z is assumed to be the vacuum region.
+    The slab is shifted so the midpoint of that gap lies on the periodic
+    boundary, which keeps wrapped bottom-layer atoms from appearing at the top
+    of the cell.
+    """
+    if len(atoms) == 0:
+        return atoms.copy()
+
+    rewrapped = atoms.copy()
+    scaled_positions = rewrapped.get_scaled_positions(wrap=True)
+    fractional_z = np.mod(scaled_positions[:, 2], 1.0)
+    sorted_fractional_z = np.sort(fractional_z)
+
+    cyclic_gaps = np.diff(
+        np.concatenate((sorted_fractional_z, [sorted_fractional_z[0] + 1.0]))
+    )
+    largest_gap_index = int(np.argmax(cyclic_gaps))
+    gap_start = sorted_fractional_z[largest_gap_index]
+    gap_midpoint = (gap_start + 0.5 * cyclic_gaps[largest_gap_index]) % 1.0
+
+    scaled_positions[:, 2] = np.mod(fractional_z - gap_midpoint, 1.0)
+    rewrapped.set_scaled_positions(scaled_positions)
+    return rewrapped
 
 
 def plane_from_lowest_atoms(
