@@ -1,0 +1,125 @@
+model_key = "linear"
+target_feature = "adsorption_energy"
+params_output_dir = "fitted_params_JSON"
+
+low_theory_features = [
+    # "Z",
+    # "van_der_waals_radius",
+    # "atomic_radius_calculated",
+    # "electrical_resistivity",
+    # "thermal_conductivity",
+    # "melting_point",
+    # "density_of_solid",
+    # "youngs_modulus",
+    # "atomic_radius",
+    # "electron_affinity",
+    # "group",
+]
+
+high_theory_features = [
+    "sd_coupling",
+    "d_filling_n",
+    "e_conductivity_n",
+    "d_filling_mult",
+]
+
+# Maps dataset product keys to the star-name used to access them in reactionSystems.
+# guest_names stored in the DB are auto-derived from these using element-sorting logic.
+adsorbate_map = [
+    [
+        '{"Nstar": 1}',
+        "Nstar",
+    ],
+    [
+        '{"Cstar": 1}',
+        "Cstar",
+    ],
+    [
+        '{"Hstar": 1}',
+        "Hstar",
+    ],
+    [
+        '{"Ostar": 1}',
+        "Ostar",
+    ],
+    [
+        '{"CH3star": 1}',
+        "CH3star",
+    ],
+    [
+        '{"CH2star": 1}',
+        "CH2star",
+    ],
+    [
+        '{"CHstar": 1}',
+        "CHstar",
+    ],
+    [
+        '{"NHstar": 1}',
+        "NHstar",
+    ],
+    [
+        '{"OHstar": 1}',
+        "OHstar",
+    ],
+    [
+        '{"H2Ostar": 1}',
+        "H2Ostar",
+    ],
+    [
+        '{"SHstar": 1}',
+        "SHstar",
+    ],
+]
+
+guest_list = [
+    # "N",
+    # "C",
+    # "H",
+    # "O",
+    # "CH3",
+    # "CH2",
+    # "CH",
+    # "HN",
+    "HO",
+    # "HS",
+    # "H2O",
+]
+
+site_list = ["['FCCHollow']", "['bridge']", "['ontop']", "['HCPHollow']"]
+
+host_elements = [
+    "Ag",
+    # "Al",
+    "Au",
+    # "Bi",
+    # "Cd",
+    # "Co",
+    # "Cr",
+    "Cu",
+    # "Fe",
+    # "Ga",
+    # "Hf",
+    # "In",
+    # "Ir",
+    # "La",
+    # "Mn",
+    # "Nb",
+    # "Os",
+    # "Pb",
+    # "Pd",
+    # "Pt",
+    # "Re",
+    # "Rh",
+    # "Ru",
+    # "Sc",
+    # "Sn",
+    # "Ta",
+    # "Tc",
+    # "Tl",
+    # "V",
+    # "W",
+    # "Y",
+    # "Zn",
+    # "Zr",
+]

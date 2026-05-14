@@ -1,0 +1,119 @@
+model_key = "linear"
+target_feature = "adsorption_energy"
+params_output_dir = "fitted_params_pw91_JSON"
+
+low_theory_features = [
+    #"Z",
+    #"van_der_waals_radius",
+    "atomic_radius_calculated",
+    # "poissons_ratio",
+    # "critical_temperature",
+    # "superconduction_temperature",
+    # "bulk_modulus",
+    #"electrical_resistivity",
+    # "molar_volume",
+    #"thermal_conductivity",
+    # "boiling_point",
+    #"melting_point",
+    #"density_of_solid",
+    #"youngs_modulus",
+    # "brinell_hardness",
+    # "rigidity_modulus",
+    # "vickers_hardness",
+    # "mineral_hardness",
+    # "velocity_of_sound",
+    # "reflectivity",
+    # "refractive_index",
+    # "coefficient_of_linear_thermal_expansion",
+    # "ground_level",
+    # "X",
+    # "atomic_mass",
+    # "atomic_radius",
+    # "average_anionic_radius",
+    # "average_cationic_radius",
+    # "average_ionic_radius",
+    "electron_affinity",
+    "group",
+    # "ionization_energy",
+    # "max_oxidation_state",
+    # "min_oxidation_state",
+    # "row",
+]
+
+high_theory_features = [
+    "sd_coupling",
+    "d_filling_n",
+    "e_conductivity_n",
+    "d_filling_mult",
+]
+
+# Maps pw91 guest_name values to a star-name encoding used to identify guest elements.
+# First element must match guest_name stored in the database exactly.
+adsorbate_map = [
+    ["N",        "Nstar"  ],
+    ["O",        "Ostar"  ],
+    ["H",        "Hstar"  ],
+    ["C",        "Cstar"  ],
+    ["S",        "Sstar"  ],
+    # ["F",        "Fstar"  ],
+    # ["K",        "Kstar"  ],
+    # ["CO",       "COstar" ],
+    # ["SH",       "SHstar" ],
+    # ["NH2",      "NH2star"],
+    ["Hydroxyl", "OHstar" ],
+    # ["Methyl",     "CH3star" ],
+    # ["Methylene",  "CH2star" ],
+    # ["Methylidyne","CHstar"  ],
+    # ["Methoxy",    "CH3Ostar"],
+]
+
+# guest_name values must match the database exactly (see adsorbate_map above).
+guest_list = [
+    "N",
+    "O",
+    "H",
+    "C",
+    "S",
+    # "F",
+    # "K",
+    # "CO",
+    # "SH",
+    # "NH2",
+    "Hydroxyl",
+    # "Methyl",
+    # "Methylene",
+    # "Methylidyne",
+    # "Methoxy",
+]
+
+# site_name values must match the database exactly (plain strings, no brackets).
+site_list = [
+    "fcc_hollow",
+    "bridge",
+    "top",
+    # "hollow",
+    # "ontop",
+    # "FCCHollow",
+    # "fcc_hollow_staggered",
+    # "hollow_staggered",
+]
+
+host_elements = [
+    "Ag",
+    "Au",
+    "Cu",
+    "Co",
+    #"Fe",
+    "Hf",
+    "Ir",
+    "Ni",
+    "Os",
+    "Pd",
+    "Pt",
+    "Re",
+    "Rh",
+    "Ru",
+    "Sc",
+    "Ti",
+    "Zr",
+]

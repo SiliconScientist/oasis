@@ -90,6 +90,12 @@ class MoEConfig(BaseModel):
     tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
 
 
+class LatentModelConfig(BaseModel):
+    experiment_config_path: Path
+    cobyla_initial_guess: float = 0.1
+    cobyla_max_iter: int = 100
+
+
 class LearningCurveModelsConfig(BaseModel):
     use_ridge: bool
     use_kernel_ridge: bool
@@ -100,6 +106,8 @@ class LearningCurveModelsConfig(BaseModel):
     use_weighted_simplex: bool = False
     use_graph_mean: bool = False
     moe: MoEConfig = Field(default_factory=MoEConfig)
+    use_latent: bool = False
+    latent: Optional[LatentModelConfig] = None
 
 
 class PlotFiltersConfig(BaseModel):
