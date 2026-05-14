@@ -421,7 +421,9 @@ def build_sweep_dataset_from_frame(
     if graph_view is not None:
         from oasis.graphs import build_graph_sweep_dataset
 
-        return build_graph_sweep_dataset(df, graph_view, join_key=graph_join_key)
+        return build_graph_sweep_dataset(
+            df, graph_view, join_key=graph_join_key, auxiliary_views=auxiliary_views
+        )
 
     feature_cols = mlip_columns(df)
     if hasattr(df, "select"):
@@ -449,6 +451,7 @@ def build_sweep_dataset_from_config(
     cfg: Config | None,
     *,
     graph_view: GraphDatasetView | None = None,
+    auxiliary_views: dict[str, Any] | None = None,
 ) -> SweepDataset:
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     graph_dataset_cfg = getattr(experiment_cfg, "graph_dataset", None)
@@ -465,32 +468,19 @@ def build_sweep_dataset_from_config(
         return load_sweep_dataset_from_graph_artifact(
             graph_dataset_cfg.path,
             join_key=graph_join_key,
+            auxiliary_views=auxiliary_views or {},
+            filter_df=df,
         )
     if graph_view is None and experiment_cfg:
         from oasis.graphs import load_configured_graph_dataset_view
 
         graph_view = load_configured_graph_dataset_view(graph_dataset_cfg)
 
-    auxiliary_views: dict[str, Any] = {}
-    models_cfg = getattr(experiment_cfg, "models", None) if experiment_cfg else None
-    if models_cfg is not None and getattr(models_cfg, "use_latent", False):
-        latent_cfg = getattr(models_cfg, "latent", None)
-        if latent_cfg is not None:
-            from oasis.learning_curve.families.latent import load_latent_df
-
-            sample_ids = (
-                column_to_numpy(df, "reaction")
-                if "reaction" in getattr(df, "columns", ())
-                else None
-            )
-            if sample_ids is not None:
-                auxiliary_views["latent"] = load_latent_df(latent_cfg, sample_ids)
-
     return assemble_learning_curve_dataset_from_frame(
         df,
         graph_view=graph_view,
         graph_join_key=graph_join_key,
-        auxiliary_views=auxiliary_views,
+        auxiliary_views=auxiliary_views or {},
     )
 
 
@@ -500,13 +490,16 @@ def run_learning_curve_experiments_from_config(
     *,
     graph_view: GraphDatasetView | None = None,
     model_families: Sequence[Any] | None = None,
+    auxiliary_views: dict[str, Any] | None = None,
 ) -> LearningCurveResults:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
     _validate_learning_curve_frame(df)
-    dataset = build_sweep_dataset_from_config(df, cfg, graph_view=graph_view)
+    dataset = build_sweep_dataset_from_config(
+        df, cfg, graph_view=graph_view, auxiliary_views=auxiliary_views
+    )
     return run_learning_curve_experiments(
         dataset,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,

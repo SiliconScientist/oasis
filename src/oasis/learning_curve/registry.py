@@ -66,6 +66,11 @@ def _family_factory_for_learned_family_spec(
     def build_family() -> SweepModelFamily:
         if spec.family_factory is not None:
             family = spec.family_factory()
+        elif spec.config_family_factory is not None:
+            return PlaceholderLearnedSweepModelFamily(
+                name=spec.name,
+                declared_capabilities=spec.capabilities,
+            )
         else:
             family = _configured_trial_tuned_family_for_learned_family_spec(spec)
         if family.capabilities() != spec.capabilities:

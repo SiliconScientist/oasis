@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import pandas as pd
+
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.exp import run_learning_curve_experiments_from_config
@@ -41,12 +43,11 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
+
     plot_filters = cfg.plot.filters if cfg.plot else None
     adsorbate_filter = plot_filters.adsorbate if plot_filters else None
     anomaly_filter = plot_filters.anomaly_label if plot_filters else None
-    reaction_contains_filter = (
-        plot_filters.reaction_contains if plot_filters else None
-    )
+    reaction_contains_filter = plot_filters.reaction_contains if plot_filters else None
     if reaction_contains_filter is not None:
         reaction_contains_filter = [s for s in reaction_contains_filter if s]
         if not reaction_contains_filter:
@@ -57,6 +58,29 @@ def main() -> None:
         anomaly_filter=anomaly_filter,
         reaction_contains_filter=reaction_contains_filter,
     )
+
+    auxiliary_views: dict = {}
+    models_cfg = (
+        cfg.experiment.learning_curve.models
+        if cfg.experiment and cfg.experiment.learning_curve
+        else None
+    )
+    if models_cfg is not None and getattr(models_cfg, "use_latent", False):
+        latent_cfg = models_cfg.latent
+        if latent_cfg is not None:
+            latent_df = pd.read_csv(latent_cfg.csv_path)
+            csv_energies = set(latent_df["adsorption_energy"].tolist())
+            wide_df = wide_df.filter(
+                wide_df.get_column("reference_ads_eng").is_in(list(csv_energies))
+            )
+            energy_order = wide_df.get_column("reference_ads_eng").to_list()
+            latent_df = (
+                latent_df.set_index("adsorption_energy").loc[energy_order].reset_index()
+            )
+            auxiliary_views["latent"] = latent_df
+            print(
+                f"Latent filter: {len(wide_df)} samples aligned to {latent_cfg.csv_path.name}"
+            )
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix_parts: list[str] = []
@@ -85,8 +109,7 @@ def main() -> None:
         else None
     )
     reuse_existing_graph_dataset = (
-        graph_dataset_cfg is not None
-        and graph_dataset_cfg.path.is_file()
+        graph_dataset_cfg is not None and graph_dataset_cfg.path.is_file()
     )
     graph_view = None
     if reuse_existing_graph_dataset:
@@ -112,6 +135,7 @@ def main() -> None:
         wide_df,
         cfg,
         graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
     )
 
     learning_curve_plot(

@@ -89,6 +89,16 @@ use_residual = true
 use_weighted_linear = false
 use_weighted_simplex = false
 use_graph_mean = false
+use_latent = false
+
+# Latent variable model: physics-informed decomposition of adsorption energies.
+# Requires a pre-computed feature CSV (equation column used as the sample join key)
+# and the vendor latent experiment config for model construction.
+# [experiment.learning_curve.models.latent]
+# experiment_config_path = "vendor/latent/config.toml"
+# csv_path = "data/processed/data_6910487.csv"
+# cobyla_initial_guess = 0.1   # COBYLA guest-parameter optimisation initial guess
+# cobyla_max_iter = 100        # COBYLA iteration limit
 
 [experiment.learning_curve.models.moe]
 enabled = false

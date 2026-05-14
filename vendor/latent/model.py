@@ -9,7 +9,6 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBRegressor
 
 from latent.config import ExperimentConfig
 from latent.data import get_zippable_arrays
@@ -25,12 +24,18 @@ class LatentVariableModel:
     block_columns: tuple[str, str] = ("guest_name", "site_name")
 
     @classmethod
-    def from_config(cls, cfg: ExperimentConfig, df: pd.DataFrame | None = None) -> "LatentVariableModel":
+    def from_config(
+        cls, cfg: ExperimentConfig, df: pd.DataFrame | None = None
+    ) -> "LatentVariableModel":
         if df is not None:
-            host_elements = [el for el in cfg.host_elements if f"constant_{el}" in df.columns]
+            host_elements = [
+                el for el in cfg.host_elements if f"constant_{el}" in df.columns
+            ]
             dropped = set(cfg.host_elements) - set(host_elements)
             if dropped:
-                print(f"Warning: {dropped} in host_elements but not present as binding atoms in data; excluding from model.")
+                print(
+                    f"Warning: {dropped} in host_elements but not present as binding atoms in data; excluding from model."
+                )
         else:
             host_elements = cfg.host_elements
         return cls(

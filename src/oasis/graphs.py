@@ -169,17 +169,35 @@ def load_sweep_dataset_from_graph_artifact(
     path: str | Path,
     *,
     join_key: str = "reaction",
+    auxiliary_views: dict | None = None,
+    filter_df: Any | None = None,
 ) -> SweepDataset:
     """Load a saved aligned MLIP+graph artifact into a SweepDataset."""
 
     resolved_path = Path(path)
     pl = _require_polars()
     artifact_frame = pl.read_parquet(resolved_path)
+    if filter_df is not None and join_key in getattr(filter_df, "columns", ()):
+        keep_ids = filter_df.get_column(join_key).to_list()
+        keep_set = set(keep_ids)
+        artifact_ids = set(artifact_frame.get_column(join_key).to_list())
+        missing = keep_set - artifact_ids
+        print(f"[latent filter] filter_df rows={len(keep_ids)}, artifact rows before filter={len(artifact_frame)}, missing from artifact={len(missing)}")
+        if missing:
+            print(f"  first missing: {list(missing)[:3]}")
+        artifact_frame = artifact_frame.filter(
+            artifact_frame.get_column(join_key).is_in(list(keep_set))
+        )
+        id_to_row = {sid: i for i, sid in enumerate(artifact_frame.get_column(join_key).to_list())}
+        order = [id_to_row[sid] for sid in keep_ids if sid in id_to_row]
+        artifact_frame = artifact_frame[order]
+        print(f"[latent filter] artifact rows after filter={len(artifact_frame)}, auxiliary latent rows={auxiliary_views.get('latent') if auxiliary_views else None}")
     graph_view = load_graph_dataset_view(resolved_path)
     return build_graph_sweep_dataset(
         artifact_frame,
         graph_view,
         join_key=join_key,
+        auxiliary_views=auxiliary_views,
     )
 
 
@@ -247,6 +265,7 @@ def build_graph_sweep_dataset(
     graph_view: GraphDatasetView,
     *,
     join_key: str = "reaction",
+    auxiliary_views: dict | None = None,
 ) -> SweepDataset:
     """Build a SweepDataset by aligning wide-frame rows with structure graphs."""
 
@@ -289,15 +308,6 @@ def build_graph_sweep_dataset(
             f"{_format_sample_id_list(missing_graph_ids)}."
         )
 
-    extra_graph_ids = tuple(
-        sample_id for sample_id in graph_sample_ids if sample_id not in sample_id_set
-    )
-    if extra_graph_ids:
-        raise KeyError(
-            f"graph_view contains extra sample_ids with no matching {join_key}: "
-            f"{_format_sample_id_list(extra_graph_ids)}."
-        )
-
     if hasattr(wide_df, "select"):
         mlip_features = wide_df.select(feature_cols).to_numpy()
     else:
@@ -315,6 +325,7 @@ def build_graph_sweep_dataset(
         ),
         targets=targets,
         sample_ids=np.asarray(sample_ids),
+        auxiliary_views=auxiliary_views or {},
     )
 
 

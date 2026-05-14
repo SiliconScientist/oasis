@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -88,11 +89,13 @@ class TestLatentSweepRunner(unittest.TestCase):
         self._mock_model_module = MagicMock()
         self._mock_train_module = MagicMock()
         sys.modules.setdefault("latent", MagicMock())
+        sys.modules["latent.config"] = MagicMock()
+        sys.modules["latent.data"] = MagicMock()
         sys.modules["latent.model"] = self._mock_model_module
         sys.modules["latent.train"] = self._mock_train_module
 
     def tearDown(self) -> None:
-        for key in ["latent.model", "latent.train"]:
+        for key in ["latent.config", "latent.data", "latent.model", "latent.train"]:
             sys.modules.pop(key, None)
 
     def _setup_trained_mock(
@@ -114,7 +117,7 @@ class TestLatentSweepRunner(unittest.TestCase):
         preds = np.array([0.1, 0.2])
         self._setup_trained_mock(x_test, y_test, preds)
 
-        runner = LatentSweepRunner(exp_cfg=MagicMock())
+        runner = LatentSweepRunner(exp_cfg=MagicMock(), vendor_dir=Path("."))
         result = runner.run(_make_payload(_make_latent_df()))
 
         self.assertIsInstance(result, pd.DataFrame)
@@ -130,6 +133,7 @@ class TestLatentSweepRunner(unittest.TestCase):
         )
         runner = LatentSweepRunner(
             exp_cfg=MagicMock(),
+            vendor_dir=Path("."),
             cobyla_initial_guess=0.5,
             cobyla_max_iter=50,
         )
@@ -156,7 +160,7 @@ class TestLatentSweepRunner(unittest.TestCase):
 
         self._mock_train_module.train_model.side_effect = capture_train_df
 
-        runner = LatentSweepRunner(exp_cfg=MagicMock())
+        runner = LatentSweepRunner(exp_cfg=MagicMock(), vendor_dir=Path("."))
         runner.run(_make_payload(latent_df))
 
         self.assertEqual(len(captured), 1)

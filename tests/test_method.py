@@ -139,6 +139,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "weighted_simplex",
                 "graph_mean",
                 "moe",
+                "latent",
             ],
         )
 
@@ -199,6 +200,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(),
             ],
         )
         built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
@@ -214,6 +216,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(),
             ],
         )
 

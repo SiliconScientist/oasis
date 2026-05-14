@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
+import sys
+import types
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -10,16 +14,12 @@ from oasis.config import LatentModelConfig
 from oasis.learning_curve.execution import _assert_train_test_payload, sweep_results_frame
 from oasis.sweep import SweepRunnerPayload
 
-if TYPE_CHECKING:
-    from latent.config import ExperimentConfig
-
 
 def _align_df_to_sample_ids(
     df: pd.DataFrame,
     sample_ids: np.ndarray,
     reaction_column: str = "reaction",
 ) -> pd.DataFrame:
-    """Filter and reorder df rows to match the given sample_ids."""
     if reaction_column not in df.columns:
         return df
     return df.set_index(reaction_column).loc[sample_ids].reset_index()
@@ -28,29 +28,81 @@ def _align_df_to_sample_ids(
 def load_latent_df(
     latent_cfg: LatentModelConfig,
     sample_ids: np.ndarray,
-    *,
-    reaction_column: str = "reaction",
 ) -> pd.DataFrame:
-    """Load the vendor latent DataFrame and align it to the oasis sample_ids."""
-    from latent.config import get_config, get_experiment_config
-    from latent.data import make_data
+    df = pd.read_csv(latent_cfg.csv_path)
+    return _align_df_to_sample_ids(df, sample_ids, reaction_column="equation")
 
-    cfg = get_config(str(latent_cfg.experiment_config_path))
-    exp_cfg = get_experiment_config(cfg.experiment_path)
-    df = make_data(cfg, exp_cfg)
-    return _align_df_to_sample_ids(df, sample_ids, reaction_column)
+
+def _load_latent_vendor_modules(vendor_dir: Path) -> tuple[Any, Any]:
+    """Load LatentVariableModel and train_model from vendor files via sys.modules injection."""
+    # latent.config — load via importlib so it resolves as 'latent.config' in sys.modules
+    if "latent.config" not in sys.modules:
+        latent_pkg = types.ModuleType("latent")
+        latent_pkg.__path__ = [str(vendor_dir)]
+        latent_pkg.__package__ = "latent"
+        sys.modules.setdefault("latent", latent_pkg)
+
+        config_spec = importlib.util.spec_from_file_location(
+            "latent.config", vendor_dir / "config.py"
+        )
+        config_mod = importlib.util.module_from_spec(config_spec)
+        sys.modules["latent.config"] = config_mod
+        config_spec.loader.exec_module(config_mod)
+
+        ns = vars(config_mod)
+        for model in (
+            config_mod.XGBoostSearchOptions,
+            config_mod.XGBoostConfig,
+            config_mod.ExperimentConfig,
+        ):
+            model.model_rebuild(_types_namespace=ns)
+
+    # latent.data — stub with the one pure function model.py needs
+    if "latent.data" not in sys.modules:
+        def get_zippable_arrays(array1, array2):
+            a1, a2 = [], []
+            for x in array1:
+                for y in array2:
+                    a1.append(x)
+                    a2.append(y)
+            return a1, a2
+
+        data_stub = types.ModuleType("latent.data")
+        data_stub.get_zippable_arrays = get_zippable_arrays
+        sys.modules["latent.data"] = data_stub
+
+    if "latent.model" not in sys.modules:
+        model_spec = importlib.util.spec_from_file_location(
+            "latent.model", vendor_dir / "model.py"
+        )
+        model_mod = importlib.util.module_from_spec(model_spec)
+        sys.modules["latent.model"] = model_mod
+        model_spec.loader.exec_module(model_mod)
+
+    if "latent.train" not in sys.modules:
+        train_spec = importlib.util.spec_from_file_location(
+            "latent.train", vendor_dir / "train.py"
+        )
+        train_mod = importlib.util.module_from_spec(train_spec)
+        sys.modules["latent.train"] = train_mod
+        train_spec.loader.exec_module(train_mod)
+
+    LatentVariableModel = sys.modules["latent.model"].LatentVariableModel
+    train_model = sys.modules["latent.train"].train_model
+    return LatentVariableModel, train_model
 
 
 @dataclass(frozen=True, slots=True)
 class LatentSweepRunner:
-    exp_cfg: ExperimentConfig
+    exp_cfg: Any
+    vendor_dir: Path
     cobyla_initial_guess: float = 0.1
     cobyla_max_iter: int = 100
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        from latent.model import LatentVariableModel
-        from latent.train import train_model
         from sklearn.metrics import mean_squared_error
+
+        LatentVariableModel, train_model = _load_latent_vendor_modules(self.vendor_dir)
 
         rmses_by_size: dict[int, list[float]] = {}
         for split in _assert_train_test_payload(payload):
