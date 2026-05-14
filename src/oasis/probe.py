@@ -268,3 +268,95 @@ def add_adsorbates(
     visual = adslab.copy()
     visual.extend(probes)
     return visual
+
+
+def site_adsorbate_associations(
+    adsorption_sites: np.ndarray,
+    surface_positions: np.ndarray,
+    adsorbate_elements: list[str],
+    plane_centroid: np.ndarray,
+    plane_normal: np.ndarray,
+    tolerance: float = ADSORPTION_SITE_TOLERANCE,
+) -> list[tuple[np.ndarray, str]]:
+    """Associate each nearby adsorption site with the nearest bound adsorbate element."""
+    projected_sites = project_points_onto_plane(
+        adsorption_sites, plane_centroid, plane_normal
+    )
+    projected_surface_positions = project_points_onto_plane(
+        surface_positions, plane_centroid, plane_normal
+    )
+
+    associated_sites: list[tuple[np.ndarray, str]] = []
+    for site, projected_site in zip(adsorption_sites, projected_sites, strict=False):
+        distances = np.linalg.norm(projected_surface_positions - projected_site, axis=1)
+        closest_index = int(np.argmin(distances))
+        if distances[closest_index] <= tolerance:
+            associated_sites.append((site, adsorbate_elements[closest_index]))
+    return associated_sites
+
+
+def select_adsorbate_atoms_for_deduplication(
+    atoms: Atoms,
+    slab_atom_count: int,
+    dedup_atom_indices: tuple[int, ...],
+) -> Atoms:
+    """Return the slab plus selected atoms from the appended adsorbate."""
+    adsorbate_atom_count = len(atoms) - slab_atom_count
+    if adsorbate_atom_count <= 0:
+        raise ValueError("Expected appended adsorbate atoms for deduplication")
+    if not dedup_atom_indices:
+        raise ValueError("dedup_atom_indices must not be empty")
+    if any(index < 0 or index >= adsorbate_atom_count for index in dedup_atom_indices):
+        raise ValueError("dedup_atom_indices must refer to atoms within the adsorbate")
+
+    selected_indices = list(range(slab_atom_count))
+    selected_indices.extend(slab_atom_count + index for index in dedup_atom_indices)
+    return atoms[selected_indices]
+
+
+def deduplicate_probe_structures(
+    probe_atoms_list,
+    dedup_atom_indices_list,
+    adaptor,
+    matcher,
+    slab_atom_count: int,
+):
+    """Remove duplicate probe structures using selected adsorbate atoms only."""
+    if len(probe_atoms_list) != len(dedup_atom_indices_list):
+        raise ValueError("dedup_atom_indices_list must align with probe_atoms_list")
+
+    unique_atoms = []
+    unique_structures = []
+    for atoms, dedup_atom_indices in zip(
+        probe_atoms_list, dedup_atom_indices_list, strict=False
+    ):
+        structure = adaptor.get_structure(
+            select_adsorbate_atoms_for_deduplication(
+                atoms,
+                slab_atom_count=slab_atom_count,
+                dedup_atom_indices=dedup_atom_indices,
+            )
+        )
+        if any(matcher.fit(structure, other) for other in unique_structures):
+            continue
+        unique_atoms.append(atoms)
+        unique_structures.append(structure)
+    return unique_atoms
+
+
+def probe_matching_structure(
+    probe_atoms: Atoms,
+    slab_atom_count: int,
+    dedup_atom_indices: tuple[int, ...],
+) -> Atoms:
+    """Return the reduced probe structure used for global matching."""
+    return select_adsorbate_atoms_for_deduplication(
+        probe_atoms,
+        slab_atom_count=slab_atom_count,
+        dedup_atom_indices=dedup_atom_indices,
+    )
+
+
+def probe_match_signature(structure) -> tuple[str, int]:
+    """Return a cheap signature used to prefilter probe match candidates."""
+    return structure.composition.reduced_formula, len(structure)
