@@ -360,3 +360,124 @@ def probe_matching_structure(
 def probe_match_signature(structure) -> tuple[str, int]:
     """Return a cheap signature used to prefilter probe match candidates."""
     return structure.composition.reduced_formula, len(structure)
+
+
+def build_unique_probe_entry(
+    *,
+    unique_id: str,
+    bare_surface: Atoms,
+    probe_structure: Atoms,
+    star_template_atoms_json: str,
+    probe_template_atoms_json: str,
+    ch4_gas: Atoms,
+    h2_gas: Atoms,
+) -> dict[str, object]:
+    """Build one dataset entry for a newly discovered unique probe system."""
+    slab_atom_count = len(bare_surface)
+    probe_indices = list(range(slab_atom_count, len(probe_structure)))
+    constrained_probe_structure = fix_binding_atom_xy(probe_structure, slab_atom_count)
+
+    return {
+        "raw": {
+            "star": {
+                "stoi": -1,
+                "energy_ref": None,
+                "atoms_json": atoms_to_atoms_json_like_template(
+                    bare_surface, star_template_atoms_json
+                ),
+            },
+            "ch3star": {
+                "stoi": 1,
+                "energy_ref": None,
+                "atoms_json": atoms_to_atoms_json_like_template(
+                    constrained_probe_structure, probe_template_atoms_json
+                ),
+            },
+            "ch4gas": {
+                "stoi": -1,
+                "energy_ref": None,
+                "atoms_json": wrap_atoms_json(ch4_gas.copy()),
+            },
+            "h2gas": {
+                "stoi": 0.5,
+                "energy_ref": None,
+                "atoms_json": wrap_atoms_json(h2_gas.copy()),
+            },
+        },
+        "ref_ads_eng": None,
+        "adsorbate_indices": probe_indices,
+    }
+
+
+def load_tolstar_atoms(json_path=DEFAULT_JSON_PATH):
+    """
+    Build a list of ASE Atoms objects from the nested raw["Tolstar"] entries.
+
+    Returns:
+        list[ase.Atoms]: One Atoms object per Tolstar entry in the JSON file.
+    """
+    with Path(json_path).open() as handle:
+        data = json.load(handle)
+
+    atoms_list = []
+    for _, entry in data.items():
+        raw = entry.get("raw", {})
+        tolstar = raw.get("Tolstar")
+        if tolstar is None:
+            continue
+        atoms_list.append(atoms_from_ase_db_json(tolstar["atoms_json"]))
+
+    return atoms_list
+
+
+def build_entry_trajectory_frames(
+    *,
+    adsorbed_atoms: Atoms,
+    bare_surface_unwrapped: Atoms,
+    bare_surface_wrapped: Atoms,
+    adsorption_sites: np.ndarray,
+    nearby_site_adsorbates: list[tuple[np.ndarray, str]],
+    unique_probe_sequence: list[tuple[str, Atoms]],
+) -> list[Atoms]:
+    """Build the requested conceptual trajectory frames for one dataset entry."""
+    frames = [
+        adsorbed_atoms.copy(),
+        bare_surface_unwrapped.copy(),
+        bare_surface_wrapped.copy(),
+    ]
+
+    adsorption_site_markers = marker_atoms(bare_surface_wrapped, adsorption_sites)
+    adsorption_site_visual = append_atoms(bare_surface_wrapped, adsorption_site_markers)
+    frames.append(adsorption_site_visual)
+
+    nearby_site_positions = np.array(
+        [site for site, _ in nearby_site_adsorbates], dtype=float
+    ).reshape((-1, 3))
+    nearby_site_markers = marker_atoms(bare_surface_wrapped, nearby_site_positions)
+    nearby_site_visual = append_atoms(bare_surface_wrapped, nearby_site_markers)
+    frames.append(nearby_site_visual)
+
+    for _, probe_structure in unique_probe_sequence:
+        frames.append(probe_structure.copy())
+
+    return frames
+
+
+def ordered_dataset_entry(entry: dict[str, object]) -> dict[str, object]:
+    """Keep commonly used fields in a stable, readable order when writing JSON."""
+    preferred_order = [
+        "raw",
+        "ref_ads_eng",
+        "adsorbate_indices",
+        "bound_surface_indices",
+        "unique_probe_ids",
+        "mlip_feature_matrix",
+    ]
+    ordered: dict[str, object] = {}
+    for key in preferred_order:
+        if key in entry:
+            ordered[key] = entry[key]
+    for key, value in entry.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
