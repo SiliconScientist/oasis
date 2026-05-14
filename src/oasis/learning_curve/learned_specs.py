@@ -39,6 +39,7 @@ class LearnedFamilyRegistrationSpec:
     is_enabled: Callable[[Any], bool] | None = None
     config_tuning_spec_factory: Callable[[Any], LearnedTrialTuningSpec] | None = None
     config_runner_kwargs_factory: Callable[[Any], dict[str, Any]] | None = None
+    config_family_factory: Callable[[Any], SweepModelFamily] | None = None
     default_enabled: bool = True
 
 

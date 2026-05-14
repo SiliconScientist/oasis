@@ -743,6 +743,44 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_config_family_factory_bypasses_trial_tuning_pathway(self) -> None:
+        from oasis.learning_curve.registry import _config_factory_for_learned_family_spec
+
+        sentinel_family = object()
+
+        def stub_factory(model_cfg: Any) -> Any:
+            return sentinel_family
+
+        spec = LearnedFamilyRegistrationSpec(
+            name="stub_config_factory",
+            config_key="use_stub",
+            capabilities=SweepModelCapabilities(),
+            config_family_factory=stub_factory,
+        )
+        factory = _config_factory_for_learned_family_spec(spec)
+        self.assertIs(factory, stub_factory)
+        self.assertIs(factory(SimpleNamespace()), sentinel_family)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_config_factory_returns_none_when_no_factory_fields_set(self) -> None:
+        from oasis.learning_curve.registry import _config_factory_for_learned_family_spec
+        from oasis.learning_curve.execution import residual_sweep
+        from oasis.learning_curve.runners import FunctionalSweepRunner
+
+        spec = LearnedFamilyRegistrationSpec(
+            name="no_config_factory",
+            config_key="use_no_config",
+            capabilities=SweepModelCapabilities(),
+            family_factory=lambda: ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="resid_df",
+                    runner=FunctionalSweepRunner(base_runner=residual_sweep),
+                )
+            ),
+        )
+        self.assertIsNone(_config_factory_for_learned_family_spec(spec))
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_default_built_in_families_still_instantiate_and_run(self) -> None:
         X, y = self._regression_dataset()
 

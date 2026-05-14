@@ -44,6 +44,10 @@ def _moe_enabled(config_section: Any) -> bool:
     return bool(getattr(getattr(config_section, "moe", None), "enabled", False))
 
 
+def _latent_enabled(config_section: Any) -> bool:
+    return bool(getattr(config_section, "use_latent", False))
+
+
 def _is_enabled_for_learned_family_spec(
     spec: Any,
 ) -> Callable[[Any], bool]:
@@ -130,6 +134,8 @@ def _configured_trial_tuned_family_for_learned_family_spec(
 def _config_factory_for_learned_family_spec(
     spec: Any,
 ) -> Callable[[Any], SweepModelFamily] | None:
+    if spec.config_family_factory is not None:
+        return spec.config_family_factory
     if spec.config_tuning_spec_factory is None:
         return None
 
