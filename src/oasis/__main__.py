@@ -14,6 +14,7 @@ from oasis.io import (
 )
 from oasis.plot import learning_curve_plot, parity_plot
 from oasis.mlip.cli import main as mlip_main
+from oasis.probe import build_probe_dataset, updated_dataset_output_path
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 
@@ -24,6 +25,11 @@ def main() -> None:
         return
 
     cfg = get_config()
+    dataset_path = Path(cfg.mlip.dataset)
+    if not updated_dataset_output_path(dataset_path).exists():
+        build_probe_dataset(cfg)
+        print(f"Built probe dataset from {dataset_path}")
+
     probe_cfg = cfg.probe_features
     if probe_cfg is not None and probe_cfg.mlip_results_dir.exists():
         add_mlip_feature_matrices_to_dataset(
