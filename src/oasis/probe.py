@@ -106,3 +106,165 @@ def gas_reference_atoms(formula: str, cell_length: float = GAS_CELL_LENGTH) -> A
     gas.center()
     gas.set_pbc(True)
     return gas
+
+
+def project_points_onto_plane(
+    points: np.ndarray, plane_centroid: np.ndarray, plane_normal: np.ndarray
+) -> np.ndarray:
+    """Project Cartesian points onto a plane."""
+    displacements = np.asarray(points, dtype=float) - np.asarray(
+        plane_centroid, dtype=float
+    )
+    distances = displacements @ np.asarray(plane_normal, dtype=float)
+    return np.asarray(points, dtype=float) - np.outer(distances, plane_normal)
+
+
+def orthonormal_basis_from_axis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Build two unit vectors orthogonal to a given unit axis."""
+    helper_axis = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(float(np.dot(helper_axis, axis))) > 0.9:
+        helper_axis = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    basis_1 = np.cross(axis, helper_axis)
+    basis_1 /= np.linalg.norm(basis_1)
+    basis_2 = np.cross(axis, basis_1)
+    basis_2 /= np.linalg.norm(basis_2)
+    return basis_1, basis_2
+
+
+def rotation_matrix_from_vectors(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Return a rotation matrix that maps one vector onto another."""
+    source = np.asarray(source, dtype=float)
+    target = np.asarray(target, dtype=float)
+    source /= np.linalg.norm(source)
+    target /= np.linalg.norm(target)
+
+    cross = np.cross(source, target)
+    sin_theta = np.linalg.norm(cross)
+    cos_theta = float(np.dot(source, target))
+
+    if sin_theta < 1e-12:
+        if cos_theta > 0.0:
+            return np.eye(3)
+        helper = np.array([1.0, 0.0, 0.0], dtype=float)
+        if abs(float(np.dot(source, helper))) > 0.9:
+            helper = np.array([0.0, 1.0, 0.0], dtype=float)
+        axis = np.cross(source, helper)
+        axis /= np.linalg.norm(axis)
+        return -np.eye(3) + 2.0 * np.outer(axis, axis)
+
+    skew = np.array(
+        [
+            [0.0, -cross[2], cross[1]],
+            [cross[2], 0.0, -cross[0]],
+            [-cross[1], cross[0], 0.0],
+        ],
+        dtype=float,
+    )
+    return np.eye(3) + skew + skew @ skew * ((1.0 - cos_theta) / (sin_theta**2))
+
+
+def methyl_adsorbate_geometry() -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """
+    Return local methyl geometry derived from ASE methane.
+
+    The carbon is at the origin. The removed methane hydrogen defines the
+    implicit surface-C bond direction, which is aligned with local -z.
+    """
+    methane = molecule("CH4")
+    symbols = methane.get_chemical_symbols()
+    positions = methane.get_positions()
+
+    carbon_index = symbols.index("C")
+    carbon_position = positions[carbon_index]
+    hydrogen_indices = [i for i, symbol in enumerate(symbols) if symbol == "H"]
+    removed_hydrogen_index = min(
+        hydrogen_indices,
+        key=lambda index: positions[index][2],
+    )
+
+    centered_positions = positions - carbon_position
+    removed_direction = centered_positions[removed_hydrogen_index]
+    rotation = rotation_matrix_from_vectors(
+        removed_direction, np.array([0.0, 0.0, -1.0], dtype=float)
+    )
+    rotated_positions = centered_positions @ rotation.T
+
+    kept_indices = [carbon_index] + [
+        index for index in hydrogen_indices if index != removed_hydrogen_index
+    ]
+    return (
+        [symbols[index] for index in kept_indices],
+        rotated_positions[kept_indices],
+        (0,),
+    )
+
+
+def monatomic_adsorbate_geometry(
+    element: str,
+) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """Return a single-atom adsorbate template anchored at the adsorption site."""
+    return [element], np.zeros((1, 3), dtype=float), (0,)
+
+
+def adsorbate_geometry_template(
+    adsorbate_element: str,
+) -> tuple[list[str], np.ndarray, tuple[int, ...]]:
+    """Return a visualization adsorbate template for a bound adsorbate element."""
+    if adsorbate_element == "C":
+        return methyl_adsorbate_geometry()
+    return monatomic_adsorbate_geometry(adsorbate_element)
+
+
+def add_adsorbates(
+    adslab: Atoms,
+    adsorption_sites: np.ndarray,
+    adsorbate_symbols: list[str],
+    adsorbate_positions: np.ndarray,
+    plane_centroid: np.ndarray,
+    plane_normal: np.ndarray,
+    anchor_index: int = 0,
+) -> Atoms:
+    """
+    Return a visualization structure with a local adsorbate template at each site.
+
+    `adsorbate_positions` are local coordinates. The atom at `anchor_index` is
+    translated onto each adsorption site, and the local +z direction is aligned
+    with the outward surface normal.
+    """
+    local_positions = np.asarray(adsorbate_positions, dtype=float)
+    if local_positions.ndim != 2 or local_positions.shape[1] != 3:
+        raise ValueError("adsorbate_positions must have shape (n_atoms, 3)")
+    if len(adsorbate_symbols) != len(local_positions):
+        raise ValueError("adsorbate_symbols must match adsorbate_positions")
+    if anchor_index < 0 or anchor_index >= len(local_positions):
+        raise ValueError("anchor_index is out of range for the adsorbate template")
+
+    axis = np.asarray(plane_normal, dtype=float)
+    axis /= np.linalg.norm(axis)
+    centered_positions = local_positions - local_positions[anchor_index]
+
+    probe_symbols: list[str] = []
+    probe_positions: list[np.ndarray] = []
+    for site in np.asarray(adsorption_sites, dtype=float):
+        local_axis = axis.copy()
+        if float(np.dot(site - plane_centroid, local_axis)) < 0.0:
+            local_axis = -local_axis
+        local_basis_1, local_basis_2 = orthonormal_basis_from_axis(local_axis)
+        rotation = np.column_stack((local_basis_1, local_basis_2, local_axis))
+        rotated_positions = centered_positions @ rotation.T
+        for symbol, position in zip(
+            adsorbate_symbols, site + rotated_positions, strict=False
+        ):
+            probe_symbols.append(symbol)
+            probe_positions.append(position)
+
+    probes = Atoms(
+        symbols=probe_symbols,
+        positions=np.asarray(probe_positions, dtype=float),
+        cell=adslab.cell,
+        pbc=adslab.pbc,
+    )
+    visual = adslab.copy()
+    visual.extend(probes)
+    return visual
