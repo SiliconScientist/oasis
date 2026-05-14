@@ -427,6 +427,73 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
         self.assertEqual(mock_load_dataset.call_args.kwargs["join_key"], "reaction")
         mock_load_graphs.assert_not_called()
 
+    def test_build_sweep_dataset_from_frame_passes_auxiliary_views(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-a", "rxn-b"],
+                "reference_ads_eng": [1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [1.1, 2.2],
+            }
+        )
+        extra = pd.DataFrame({"x": [10.0, 20.0]})
+
+        dataset = build_sweep_dataset_from_frame(df, auxiliary_views={"latent": extra})
+
+        self.assertIn("latent", dataset.auxiliary_views)
+        pd.testing.assert_frame_equal(dataset.auxiliary_views["latent"], extra)
+
+    def test_build_sweep_dataset_from_config_injects_latent_auxiliary_view(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-a", "rxn-b"],
+                "reference_ads_eng": [1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [1.1, 2.2],
+            }
+        )
+        latent_df = pd.DataFrame({"feature": [0.5, 0.6]})
+        latent_cfg = SimpleNamespace(experiment_config_path="vendor/latent/config.toml")
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=None,
+                    models=SimpleNamespace(use_latent=True, latent=latent_cfg),
+                )
+            )
+        )
+
+        with patch(
+            "oasis.learning_curve.families.latent.load_latent_df",
+            return_value=latent_df,
+        ) as mock_load:
+            with patch("oasis.graphs.load_configured_graph_dataset_view", return_value=None):
+                dataset = build_sweep_dataset_from_config(df, cfg)
+
+        mock_load.assert_called_once()
+        self.assertIn("latent", dataset.auxiliary_views)
+        pd.testing.assert_frame_equal(dataset.auxiliary_views["latent"], latent_df)
+
+    def test_build_sweep_dataset_from_config_skips_latent_when_disabled(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-a"],
+                "reference_ads_eng": [1.0],
+                "model_a_mlip_ads_eng_median": [1.1],
+            }
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=None,
+                    models=SimpleNamespace(use_latent=False, latent=None),
+                )
+            )
+        )
+
+        with patch("oasis.graphs.load_configured_graph_dataset_view", return_value=None):
+            dataset = build_sweep_dataset_from_config(df, cfg)
+
+        self.assertNotIn("latent", dataset.auxiliary_views or {})
+
 
 class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
     def test_inner_validation_size_for_sweep_uses_fraction_policy(self) -> None:
