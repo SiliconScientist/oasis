@@ -4,12 +4,19 @@ from functools import partial
 from itertools import islice
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from ase import Atoms
 from ase.build import molecule
 from ase.db.row import AtomsRow
 from ase.io import jsonio
+from pymatgen.analysis.local_env import JmolNN
+from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.io.ase import AseAtomsAdaptor
+
+if TYPE_CHECKING:
+    from oasis.config import Config
 
 from oasis.ingest.site_constraints import (
     atoms_to_atoms_json_like_template,
@@ -481,3 +488,151 @@ def ordered_dataset_entry(entry: dict[str, object]) -> dict[str, object]:
         if key not in ordered:
             ordered[key] = value
     return ordered
+
+
+def build_probe_dataset(cfg: Config) -> None:
+    """
+    Build unique probe structures and augment the mlip dataset with unique_probe_ids.
+
+    Produces two output files derived from cfg.mlip.dataset:
+    - unique_probe_output_path(dataset_path): unique probe dataset entries
+    - updated_dataset_output_path(dataset_path): original dataset with unique_probe_ids
+    """
+    dataset_path = Path(cfg.mlip.dataset)
+    index_fn = partial(index_by_layers, layers=-1)
+    adaptor = AseAtomsAdaptor()
+    jmol_nn = JmolNN()
+    structure_matcher = StructureMatcher()
+    dataset = load_mlip_dataset(cfg)
+    dataset_items = islice(dataset.items(), 50) if cfg.mlip.dev_run else dataset.items()
+    updated_dataset: dict[str, dict[str, object]] = {}
+    unique_probe_structures: dict[str, Atoms] = {}
+    unique_probe_match_structures = {}
+    unique_probe_buckets: dict[tuple[str, int], list[str]] = {}
+    unique_probe_dataset: dict[str, dict[str, object]] = {}
+    next_unique_probe_id = 0
+    ch4_gas = gas_reference_atoms("CH4")
+    h2_gas = gas_reference_atoms("H2")
+
+    for reaction, entry in dataset_items:
+        adsorbed_atoms = extract_adsorbed_atom(entry, reaction)
+        adsorbate_indices = extract_adsorbate_indices(entry, reaction)
+        bare_surface_unwrapped = strip_adsorbate_from_adslab(
+            adsorbed_atoms, adsorbate_indices
+        )
+        bare_surface = rewrap_slab_by_largest_gap(bare_surface_unwrapped)
+        adsorption_sites = find_adsorption_sites_on_slab(bare_surface)
+        top_layer_indices = index_fn(bare_surface)
+        adsorbate_index_set = set(adsorbate_indices)
+        slab_indices = [
+            i for i in range(len(adsorbed_atoms)) if i not in adsorbate_index_set
+        ]
+        adsorbed_top_layer_indices = [slab_indices[i] for i in top_layer_indices]
+        structure = adaptor.get_structure(adsorbed_atoms)
+        saturated_atoms = []
+        bound_surface_indices = []
+        for surface_index in adsorbed_top_layer_indices:
+            adsorbate_neighbors = [
+                int(neighbor["site_index"])
+                for neighbor in jmol_nn.get_nn_info(structure, surface_index)
+                if neighbor["site_index"] in adsorbate_index_set
+            ]
+            if not adsorbate_neighbors:
+                continue
+            adsorbate_index = int(adsorbate_neighbors[0])
+            saturated_atoms.append(
+                {
+                    "surface_index": int(surface_index),
+                    "adsorbate_index": adsorbate_index,
+                    "adsorbate_element": adsorbed_atoms[adsorbate_index].symbol,
+                }
+            )
+            bound_surface_indices.append(slab_indices.index(surface_index))
+
+        entry_unique_probe_ids: list[str] = []
+        if len(bound_surface_indices) == 0:
+            entry["bound_surface_indices"] = bound_surface_indices
+            entry["unique_probe_ids"] = entry_unique_probe_ids
+            updated_dataset[reaction] = ordered_dataset_entry(entry)
+            continue
+
+        plane_centroid, plane_normal, _ = plane_from_lowest_atoms(bare_surface)
+        surface_positions = bare_surface.positions[bound_surface_indices]
+        adsorbate_elements = [
+            saturated_atom["adsorbate_element"] for saturated_atom in saturated_atoms
+        ]
+        nearby_site_adsorbates = site_adsorbate_associations(
+            adsorption_sites=adsorption_sites,
+            surface_positions=surface_positions,
+            adsorbate_elements=adsorbate_elements,
+            plane_centroid=plane_centroid,
+            plane_normal=plane_normal,
+        )
+        entry_unique_probe_sequence: list[tuple[str, Atoms]] = []
+        entry_seen_unique_ids: set[str] = set()
+        for adsorption_site, adsorbate_element in nearby_site_adsorbates:
+            adsorbate_symbols, adsorbate_positions, dedup_atom_indices = (
+                adsorbate_geometry_template(adsorbate_element)
+            )
+            probe_structure = add_adsorbates(
+                bare_surface,
+                np.array([adsorption_site]),
+                adsorbate_symbols=adsorbate_symbols,
+                adsorbate_positions=adsorbate_positions,
+                plane_centroid=plane_centroid,
+                plane_normal=plane_normal,
+            )
+            match_structure = adaptor.get_structure(
+                probe_matching_structure(
+                    probe_structure,
+                    slab_atom_count=len(bare_surface),
+                    dedup_atom_indices=dedup_atom_indices,
+                )
+            )
+            signature = probe_match_signature(match_structure)
+
+            matching_unique_id = None
+            for unique_id in unique_probe_buckets.get(signature, []):
+                if structure_matcher.fit(
+                    match_structure, unique_probe_match_structures[unique_id]
+                ):
+                    matching_unique_id = unique_id
+                    break
+
+            if matching_unique_id is None:
+                matching_unique_id = str(next_unique_probe_id)
+                next_unique_probe_id += 1
+                unique_probe_structures[matching_unique_id] = probe_structure
+                unique_probe_match_structures[matching_unique_id] = match_structure
+                unique_probe_buckets.setdefault(signature, []).append(
+                    matching_unique_id
+                )
+                unique_probe_dataset[f"unique_probe_{matching_unique_id}"] = (
+                    build_unique_probe_entry(
+                        unique_id=matching_unique_id,
+                        bare_surface=bare_surface,
+                        probe_structure=probe_structure,
+                        star_template_atoms_json=entry["raw"]["star"]["atoms_json"],
+                        probe_template_atoms_json=entry["raw"]["Tolstar"]["atoms_json"],
+                        ch4_gas=ch4_gas,
+                        h2_gas=h2_gas,
+                    )
+                )
+
+            entry_unique_probe_ids.append(matching_unique_id)
+            if matching_unique_id not in entry_seen_unique_ids:
+                entry_seen_unique_ids.add(matching_unique_id)
+                entry_unique_probe_sequence.append(
+                    (matching_unique_id, probe_structure)
+                )
+
+        entry["bound_surface_indices"] = bound_surface_indices
+        entry["unique_probe_ids"] = entry_unique_probe_ids
+        updated_dataset[reaction] = ordered_dataset_entry(entry)
+
+    output_path = unique_probe_output_path(dataset_path)
+    output_path.write_text(json.dumps(unique_probe_dataset, indent=2) + "\n")
+    updated_output_path = updated_dataset_output_path(dataset_path)
+    updated_output_path.write_text(json.dumps(updated_dataset, indent=2) + "\n")
+    print(f"  {len(unique_probe_structures)} unique probe structures -> {output_path}")
+    print(f"  Updated dataset -> {updated_output_path}")
