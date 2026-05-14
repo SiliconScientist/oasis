@@ -43,6 +43,28 @@ class LearnedFamilyRegistrationSpec:
     default_enabled: bool = True
 
 
+def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
+    from latent.config import get_config, get_experiment_config
+
+    latent_cfg = model_cfg.latent
+    cfg = get_config(str(latent_cfg.experiment_config_path))
+    exp_cfg = get_experiment_config(cfg.experiment_path)
+    from oasis.learning_curve.families.latent import LatentSweepRunner
+
+    runner = LatentSweepRunner(
+        exp_cfg=exp_cfg,
+        cobyla_initial_guess=latent_cfg.cobyla_initial_guess,
+        cobyla_max_iter=latent_cfg.cobyla_max_iter,
+    )
+    return ConfiguredSweepModelFamily(
+        SweepFamilySpec(
+            result_field="latent_df",
+            runner=runner,
+            capabilities=SweepModelCapabilities(),
+        )
+    )
+
+
 def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
     from oasis.tune import study_factory_from_optuna_cfg
 
@@ -84,7 +106,7 @@ def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
 
 def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
     from oasis.learning_curve.execution import residual_sweep
-    from oasis.learning_curve.registry import _moe_enabled
+    from oasis.learning_curve.registry import _latent_enabled, _moe_enabled
 
     return (
         LearnedFamilyRegistrationSpec(
@@ -141,6 +163,14 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             result_field="moe_df",
             selection_metadata_field="moe_selection_df",
             optuna_n_trials=10,
+            default_enabled=False,
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="latent",
+            is_enabled=_latent_enabled,
+            capabilities=SweepModelCapabilities(),
+            config_family_factory=_latent_config_family_factory,
+            result_field="latent_df",
             default_enabled=False,
         ),
     )

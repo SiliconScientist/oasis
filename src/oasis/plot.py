@@ -279,6 +279,22 @@ def learning_curve_plot(
             alpha=0.2,
             label="MoE +/- 1sd",
         )
+    if results.latent_df is not None:
+        ax.plot(
+            results.latent_df["n_train"],
+            results.latent_df["rmse_mean"],
+            marker="v",
+            color="tab:brown",
+            label="Latent mean",
+        )
+        ax.fill_between(
+            results.latent_df["n_train"],
+            results.latent_df["rmse_mean"] - results.latent_df["rmse_std"],
+            results.latent_df["rmse_mean"] + results.latent_df["rmse_std"],
+            color="tab:brown",
+            alpha=0.2,
+            label="Latent +/- 1sd",
+        )
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
