@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 
+from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.rbf import GaussianRBF
-from oasis.learning_curve.families.schnet_gate import SchNetEncoder, SchNetInteraction
+from oasis.learning_curve.families.schnet_gate import (
+    SchNetEncoder,
+    SchNetGateModel,
+    SchNetGateTuningSpec,
+    SchNetInteraction,
+)
+from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
+from oasis.tune import LearnedTrialTuningSpec
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +303,223 @@ class SchNetEncoderRBFConsistencyTests(unittest.TestCase):
         self.assertAlmostEqual(centers[0].item(), 0.0, places=6)
         self.assertAlmostEqual(centers[-1].item(), r_max, places=6)
         self.assertEqual(centers.shape[0], n_rbf)
+
+
+# ---------------------------------------------------------------------------
+# Dataset helpers for gate framework tests
+# ---------------------------------------------------------------------------
+
+def _make_schnet_graph(sample_id: int, n_nodes: int, n_edges: int) -> GraphRecord:
+    """GraphRecord with atomic-number node_features and distance edge_features."""
+    rng = np.random.default_rng(sample_id)
+    # node_features stores atomic numbers as float (n_atoms, 1) — same as atoms_to_graph_record
+    atomic_nums = rng.integers(1, 10, size=n_nodes).astype(float)
+    node_features = atomic_nums.reshape(-1, 1)
+    if n_edges > 0:
+        src = rng.integers(0, n_nodes, size=n_edges)
+        dst = rng.integers(0, n_nodes, size=n_edges)
+        edge_index = np.stack([src, dst], axis=0).astype(np.int64)
+        distances = rng.uniform(0.5, 5.0, size=n_edges).astype(np.float32)
+        edge_features = distances.reshape(-1, 1)
+    else:
+        edge_index = np.zeros((2, 0), dtype=np.int64)
+        edge_features = np.zeros((0, 1), dtype=np.float32)
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=node_features,
+        edge_index=edge_index,
+        edge_features=edge_features,
+    )
+
+
+def _make_split_with_schnet_graphs(
+    n_samples: int = 6,
+    n_experts: int = 2,
+) -> TrainValTestSweepRunnerInput:
+    rng = np.random.default_rng(42)
+    graphs = [_make_schnet_graph(i, n_nodes=4, n_edges=6) for i in range(n_samples)]
+    graph_view = GraphDatasetView.from_records(graphs)
+    dataset = SweepDataset(
+        mlip_features=rng.random((n_samples, n_experts)).astype(np.float32),
+        targets=rng.random(n_samples).astype(np.float32),
+        sample_ids=np.arange(n_samples),
+        graph_view=graph_view,
+    )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=4,
+        train_idx=np.array([0, 1, 2]),
+        val_idx=np.array([3]),
+        test_idx=np.array([4, 5]),
+    )
+
+
+def _make_schnet_gate_model(
+    n_experts: int = 2,
+    hidden_dim: int = 8,
+    n_layers: int = 1,
+    n_rbf: int = 8,
+    bias: float = 0.0,
+) -> SchNetGateModel:
+    encoder = SchNetEncoder(
+        hidden_dim=hidden_dim,
+        out_features=n_experts,
+        n_layers=n_layers,
+        n_rbf=n_rbf,
+    )
+    return SchNetGateModel(
+        state_dict=encoder.state_dict(),
+        n_experts=n_experts,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_rbf=n_rbf,
+        bias=bias,
+    )
+
+
+@dataclass
+class _SchNetMockTrial:
+    """Minimal Optuna trial stub for SchNetGateTuningSpec tests."""
+
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+    hidden_dim: int = 8
+    n_layers: int = 1
+
+    def __post_init__(self) -> None:
+        self.params: dict[str, Any] = {
+            "lr": self.lr,
+            "weight_decay": self.weight_decay,
+            "hidden_dim": self.hidden_dim,
+            "n_layers": self.n_layers,
+        }
+
+    def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
+        del low, high, kwargs
+        return self.params[name]
+
+    def suggest_categorical(self, name: str, choices: list[Any]) -> Any:
+        del choices
+        return self.params[name]
+
+    def suggest_int(self, name: str, low: int, high: int) -> int:
+        del low, high
+        return self.params[name]
+
+
+def _fast_spec(hidden_dims: tuple[int, ...] = (8,)) -> SchNetGateTuningSpec:
+    return SchNetGateTuningSpec(
+        training_cfg=MoETrainingConfig(epochs=2, seed=0),
+        hidden_dims=hidden_dims,
+        n_rbf=8,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SchNetGateModel tests
+# ---------------------------------------------------------------------------
+
+class SchNetGateModelTests(unittest.TestCase):
+    def test_predict_output_shape(self) -> None:
+        n_samples, n_experts = 4, 2
+        graphs = [_make_schnet_graph(i, n_nodes=3, n_edges=4) for i in range(n_samples)]
+        X = np.random.default_rng(0).random((n_samples, n_experts)).astype(np.float32)
+        model = _make_schnet_gate_model(n_experts=n_experts)
+        preds = model.predict(X, graphs)
+        self.assertEqual(preds.shape, (n_samples,))
+
+    def test_predict_output_finite(self) -> None:
+        n_samples, n_experts = 5, 3
+        graphs = [_make_schnet_graph(i, n_nodes=4, n_edges=5) for i in range(n_samples)]
+        X = np.random.default_rng(1).random((n_samples, n_experts)).astype(np.float32)
+        model = _make_schnet_gate_model(n_experts=n_experts)
+        preds = model.predict(X, graphs)
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_bias_applied(self) -> None:
+        n_samples = 3
+        graphs = [_make_schnet_graph(i, n_nodes=3, n_edges=3) for i in range(n_samples)]
+        X = np.zeros((n_samples, 2), dtype=np.float32)
+        base = _make_schnet_gate_model(n_experts=2, bias=0.0)
+        shifted = SchNetGateModel(
+            state_dict=base.state_dict,
+            n_experts=base.n_experts,
+            hidden_dim=base.hidden_dim,
+            n_layers=base.n_layers,
+            n_rbf=base.n_rbf,
+            bias=2.5,
+        )
+        preds_base = base.predict(X, graphs)
+        preds_shifted = shifted.predict(X, graphs)
+        np.testing.assert_allclose(preds_shifted, preds_base + 2.5, atol=1e-5)
+
+    def test_weights_sum_to_one_per_sample(self) -> None:
+        n_samples, n_experts = 4, 3
+        graphs = [_make_schnet_graph(i, n_nodes=3, n_edges=4) for i in range(n_samples)]
+        # X = ones → prediction = sum(weights) + bias = 1.0 + 0.0
+        X = np.ones((n_samples, n_experts), dtype=np.float32)
+        model = _make_schnet_gate_model(n_experts=n_experts, bias=0.0)
+        preds = model.predict(X, graphs)
+        np.testing.assert_allclose(preds, np.ones(n_samples), atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# SchNetGateTuningSpec tests
+# ---------------------------------------------------------------------------
+
+class SchNetGateTuningSpecTests(unittest.TestCase):
+    def test_is_learned_trial_tuning_spec(self) -> None:
+        self.assertIsInstance(_fast_spec(), LearnedTrialTuningSpec)
+
+    def test_build_trial_objective_returns_finite_rmse(self) -> None:
+        split = _make_split_with_schnet_graphs()
+        objective = _fast_spec().build_trial_objective(split)
+        rmse = objective(_SchNetMockTrial())
+        self.assertTrue(np.isfinite(rmse))
+        self.assertGreater(rmse, 0.0)
+
+    def test_build_trial_objective_search_arch_returns_finite_rmse(self) -> None:
+        # hidden_dims=() exercises the suggest_categorical / suggest_int path.
+        split = _make_split_with_schnet_graphs()
+        objective = _fast_spec(hidden_dims=()).build_trial_objective(split)
+        rmse = objective(_SchNetMockTrial(hidden_dim=32, n_layers=1))
+        self.assertTrue(np.isfinite(rmse))
+
+    def test_round_trip_predict_shape_and_finite(self) -> None:
+        split = _make_split_with_schnet_graphs()
+        spec = _fast_spec()
+        trial = _SchNetMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertIsInstance(model, SchNetGateModel)
+        preds = spec.predict(model, split.dataset_subsets().test)
+        self.assertEqual(preds.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_refit_policy_train_only_returns_schnet_gate_model(self) -> None:
+        split = _make_split_with_schnet_graphs()
+        model = _fast_spec().fit_selected_model(
+            split, _SchNetMockTrial(), refit_policy="train_only"
+        )
+        self.assertIsInstance(model, SchNetGateModel)
+
+    def test_trial_metadata_has_expected_keys(self) -> None:
+        split = _make_split_with_schnet_graphs()
+        spec = _fast_spec()
+        trial = _SchNetMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        metadata = spec.trial_metadata(trial, model)
+        for key in ("hidden_dim", "n_layers", "n_experts", "n_rbf", "r_max", "bias"):
+            self.assertIn(key, metadata)
+
+    def test_trial_metadata_n_experts_matches_dataset(self) -> None:
+        split = _make_split_with_schnet_graphs(n_experts=3)
+        spec = SchNetGateTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0),
+            hidden_dims=(8,),
+            n_rbf=8,
+        )
+        model = spec.fit_selected_model(split, _SchNetMockTrial(), refit_policy="train_plus_val")
+        self.assertEqual(spec.trial_metadata(_SchNetMockTrial(), model)["n_experts"], 3)
 
 
 if __name__ == "__main__":

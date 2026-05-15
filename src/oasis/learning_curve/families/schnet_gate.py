@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
+
+from oasis.config import MoETrainingConfig
+from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
+from oasis.learning_curve.families.gnn_gate import collate_graphs_with_distances
+from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
+from oasis.tune import SelectionRefitPolicy
 
 
 def _global_mean_pool(x: Tensor, batch: Tensor, n_graphs: int) -> Tensor:
@@ -119,3 +130,232 @@ class SchNetEncoder(nn.Module):
 
         pooled = _global_mean_pool(h, batch_vector, n_graphs)  # (n_graphs, hidden_dim)
         return self.output_proj(pooled)                         # (n_graphs, out_features)
+
+
+# ---------------------------------------------------------------------------
+# Collation helpers
+# ---------------------------------------------------------------------------
+
+def _collate_schnet(
+    graphs: Sequence[GraphRecord],
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Collate GraphRecords into SchNetEncoder inputs.
+
+    node_features[:, 0] holds atomic numbers (float from atoms_to_graph_record);
+    converts them to long for the embedding table.
+
+    Returns:
+        atomic_numbers: (total_nodes,) long
+        edge_index:     (2, total_edges) long, with per-graph node offsets
+        edge_distances: (total_edges,) float32
+        batch_vector:   (total_nodes,) long
+    """
+    node_features, edge_index, batch_vector, edge_distances = collate_graphs_with_distances(graphs)
+    atomic_numbers = node_features[:, 0].long()
+    return atomic_numbers, edge_index, edge_distances, batch_vector
+
+
+def _graphs_from_dataset(dataset: SweepDataset) -> list[GraphRecord]:
+    return [dataset.graphs[sid] for sid in dataset.sample_ids.tolist()]
+
+
+# ---------------------------------------------------------------------------
+# Training loop
+# ---------------------------------------------------------------------------
+
+def _train_schnet_encoder(
+    encoder: SchNetEncoder,
+    atomic_numbers: Tensor,
+    edge_index: Tensor,
+    edge_distances: Tensor,
+    batch_vector: Tensor,
+    X: Tensor,
+    y: Tensor,
+    *,
+    epochs: int,
+    lr: float,
+    weight_decay: float,
+) -> None:
+    optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay)
+    encoder.train()
+    for _ in range(epochs):
+        optimizer.zero_grad()
+        logits = encoder(atomic_numbers, edge_index, edge_distances, batch_vector)
+        weights = torch.softmax(logits, dim=1)
+        preds = (X * weights).sum(dim=1)
+        loss = F.mse_loss(preds, y)
+        loss.backward()
+        optimizer.step()
+
+
+# ---------------------------------------------------------------------------
+# Gate model and tuning spec
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class SchNetGateModel:
+    """Frozen snapshot of a trained SchNetEncoder used for MoE gating."""
+
+    state_dict: dict[str, Any]
+    n_experts: int
+    hidden_dim: int
+    n_layers: int
+    n_rbf: int = 20
+    r_max: float = 6.0
+    max_atomic_num: int = 100
+    bias: float = 0.0
+    policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
+
+    def _build_encoder(self) -> SchNetEncoder:
+        encoder = SchNetEncoder(
+            hidden_dim=self.hidden_dim,
+            out_features=self.n_experts,
+            n_layers=self.n_layers,
+            n_rbf=self.n_rbf,
+            r_max=self.r_max,
+            max_atomic_num=self.max_atomic_num,
+        )
+        encoder.load_state_dict(self.state_dict)
+        encoder.eval()
+        return encoder
+
+    def predict(self, X: np.ndarray, graphs: Sequence[GraphRecord]) -> np.ndarray:
+        encoder = self._build_encoder()
+        atomic_numbers, edge_index, edge_distances, batch_vector = _collate_schnet(graphs)
+        with torch.no_grad():
+            logits = encoder(atomic_numbers, edge_index, edge_distances, batch_vector)
+        weights = self.policy.apply(logits.numpy())
+        return (X * weights).sum(axis=1) + self.bias
+
+
+@dataclass(frozen=True, slots=True)
+class SchNetGateTuningSpec:
+    """Tune a SchNetEncoder-based MoE gate via Optuna trial objectives."""
+
+    training_cfg: MoETrainingConfig
+    hidden_dims: tuple[int, ...] = ()   # non-empty = fixed arch; empty = search
+    n_rbf: int = 20
+    r_max: float = 6.0
+    policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
+
+    def _arch_from_trial(self, trial: Any) -> tuple[int, int]:
+        """Return (hidden_dim, n_layers) from fixed config or Optuna suggestions."""
+        if self.hidden_dims:
+            return self.hidden_dims[0], len(self.hidden_dims)
+        hidden_dim: int = trial.suggest_categorical("hidden_dim", [32, 64, 128])
+        n_layers: int = trial.suggest_int("n_layers", 1, 3)
+        return hidden_dim, n_layers
+
+    def build_trial_objective(
+        self,
+        split: TrainValTestSweepRunnerInput,
+    ) -> Callable[[Any], float]:
+        subsets = split.dataset_subsets()
+        train_ds = subsets.train
+        val_ds = subsets.val
+
+        train_graphs = _graphs_from_dataset(train_ds)
+        val_graphs = _graphs_from_dataset(val_ds)
+        n_experts = train_ds.mlip_features.shape[1]
+
+        train_z, train_ei, train_ed, train_bv = _collate_schnet(train_graphs)
+        val_z, val_ei, val_ed, val_bv = _collate_schnet(val_graphs)
+        X_train = torch.tensor(train_ds.mlip_features, dtype=torch.float32)
+        y_train = torch.tensor(train_ds.targets, dtype=torch.float32)
+        X_val_np = val_ds.mlip_features
+        y_val_np = val_ds.targets
+
+        epochs = self.training_cfg.epochs
+        seed = self.training_cfg.seed
+        n_rbf = self.n_rbf
+        r_max = self.r_max
+        policy = self.policy
+
+        def objective(trial: Any) -> float:
+            hidden_dim, n_layers = self._arch_from_trial(trial)
+            lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+            weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+
+            if seed is not None:
+                torch.manual_seed(seed)
+            encoder = SchNetEncoder(hidden_dim, n_experts, n_layers, n_rbf=n_rbf, r_max=r_max)
+            _train_schnet_encoder(
+                encoder, train_z, train_ei, train_ed, train_bv, X_train, y_train,
+                epochs=epochs, lr=lr, weight_decay=weight_decay,
+            )
+            encoder.eval()
+            with torch.no_grad():
+                logits = encoder(val_z, val_ei, val_ed, val_bv)
+            weights = policy.apply(logits.numpy())
+            preds = (X_val_np * weights).sum(axis=1)
+            return float(np.sqrt(np.mean((y_val_np - preds) ** 2)))
+
+        return objective
+
+    def fit_selected_model(
+        self,
+        split: TrainValTestSweepRunnerInput,
+        best_trial: Any,
+        *,
+        refit_policy: SelectionRefitPolicy,
+    ) -> SchNetGateModel:
+        subsets = split.dataset_subsets()
+
+        if refit_policy == "train_only":
+            fit_graphs = _graphs_from_dataset(subsets.train)
+            X_np = subsets.train.mlip_features
+            y_np = subsets.train.targets
+        else:
+            fit_graphs = (
+                _graphs_from_dataset(subsets.train) + _graphs_from_dataset(subsets.val)
+            )
+            X_np = np.concatenate([subsets.train.mlip_features, subsets.val.mlip_features])
+            y_np = np.concatenate([subsets.train.targets, subsets.val.targets])
+
+        n_experts = split.dataset.mlip_features.shape[1]
+        hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        lr: float = best_trial.params["lr"]
+        weight_decay: float = best_trial.params["weight_decay"]
+
+        z, ei, ed, bv = _collate_schnet(fit_graphs)
+        X = torch.tensor(X_np, dtype=torch.float32)
+        y = torch.tensor(y_np, dtype=torch.float32)
+
+        if self.training_cfg.seed is not None:
+            torch.manual_seed(self.training_cfg.seed)
+        encoder = SchNetEncoder(hidden_dim, n_experts, n_layers, n_rbf=self.n_rbf, r_max=self.r_max)
+        _train_schnet_encoder(
+            encoder, z, ei, ed, bv, X, y,
+            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+        )
+
+        encoder.eval()
+        with torch.no_grad():
+            logits = encoder(z, ei, ed, bv)
+        weights = self.policy.apply(logits.numpy())
+        preds = (X_np * weights).sum(axis=1)
+        bias = float(np.mean(y_np - preds))
+
+        return SchNetGateModel(
+            state_dict=encoder.state_dict(),
+            n_experts=n_experts,
+            hidden_dim=hidden_dim,
+            n_layers=n_layers,
+            n_rbf=self.n_rbf,
+            r_max=self.r_max,
+            bias=bias,
+            policy=self.policy,
+        )
+
+    def predict(self, model: SchNetGateModel, dataset: SweepDataset) -> np.ndarray:
+        return model.predict(dataset.mlip_features, _graphs_from_dataset(dataset))
+
+    def trial_metadata(self, best_trial: Any, model: SchNetGateModel) -> dict[str, Any]:
+        return {
+            "hidden_dim": model.hidden_dim,
+            "n_layers": model.n_layers,
+            "n_experts": model.n_experts,
+            "n_rbf": model.n_rbf,
+            "r_max": model.r_max,
+            "bias": model.bias,
+        }
