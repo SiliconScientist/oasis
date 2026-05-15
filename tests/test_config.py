@@ -485,3 +485,94 @@ class ConfigParsingTests(unittest.TestCase):
         )
 
         self.assertIsNone(cfg.plot)
+
+    def test_probe_gnn_config_parses(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": False,
+                            "probe_gnn": {
+                                "enabled": True,
+                                "hidden_dims": [32, 32],
+                                "training": {"epochs": 25, "seed": 7},
+                            },
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        probe = cfg.experiment.learning_curve.models.probe_gnn
+        self.assertTrue(probe.enabled)
+        self.assertEqual(probe.hidden_dims, [32, 32])
+        self.assertEqual(probe.training.epochs, 25)
+        self.assertEqual(probe.training.seed, 7)
+
+    def test_probe_gnn_config_defaults(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": False,
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        probe = cfg.experiment.learning_curve.models.probe_gnn
+        self.assertFalse(probe.enabled)
+        self.assertEqual(probe.hidden_dims, [])

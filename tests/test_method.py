@@ -139,6 +139,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "weighted_simplex",
                 "graph_mean",
                 "moe",
+                "probe_gnn",
                 "latent",
             ],
         )
@@ -200,6 +201,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(),
             ],
         )
@@ -214,6 +216,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
+                SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(),

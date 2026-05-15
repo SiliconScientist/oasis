@@ -11,6 +11,7 @@ from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, TopKGatingPolicy
 from oasis.learning_curve.families.gnn_gate import GnnGateTuningSpec
 from oasis.learning_curve.families.moe import MlipBaselineGateTuningSpec, MoEModel
+from oasis.learning_curve.families.probe_gnn import ProbeGnnTuningSpec
 from oasis.learning_curve.families.schnet_gate import SchNetGateTuningSpec
 from oasis.learning_curve.learned_specs import (
     _moe_config_runner_kwargs,
@@ -467,6 +468,112 @@ class SchNetGateIntegrationTests(unittest.TestCase):
         spec = _moe_config_tuning_spec_factory(_model_cfg_schnet())
         model = spec.fit_selected_model(
             split, _SchNetMockTrial(), refit_policy="train_only"
+        )
+        preds = spec.predict(model, split.dataset_subsets().test)
+        self.assertEqual(preds.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+
+# ---------------------------------------------------------------------------
+# probe_gnn family helpers
+# ---------------------------------------------------------------------------
+
+def _model_cfg_probe_gnn(hidden_dims: list[int] | None = None) -> object:
+    return types.SimpleNamespace(
+        probe_gnn=types.SimpleNamespace(
+            enabled=True,
+            training=MoETrainingConfig(epochs=2),
+            hidden_dims=hidden_dims if hidden_dims is not None else [8],
+            tuning=types.SimpleNamespace(optuna=None),
+        )
+    )
+
+
+def _make_probe_graph(sample_id: int, n_nodes: int = 4, n_features: int = 6, n_edges: int = 5) -> GraphRecord:
+    rng = np.random.default_rng(sample_id)
+    node_features = rng.random((n_nodes, n_features)).astype(np.float32)
+    if n_edges > 0:
+        src = rng.integers(0, n_nodes, size=n_edges)
+        dst = rng.integers(0, n_nodes, size=n_edges)
+        edge_index = np.stack([src, dst], axis=0).astype(np.int64)
+    else:
+        edge_index = np.zeros((2, 0), dtype=np.int64)
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=node_features,
+        edge_index=edge_index,
+    )
+
+
+def _make_probe_split(n_samples: int = 6, n_features: int = 6) -> TrainValTestSweepRunnerInput:
+    rng = np.random.default_rng(77)
+    graphs = [_make_probe_graph(i, n_features=n_features) for i in range(n_samples)]
+    graph_view = GraphDatasetView.from_records(graphs)
+    dataset = SweepDataset(
+        mlip_features=rng.random((n_samples, 2)).astype(np.float32),
+        targets=rng.random(n_samples).astype(np.float32),
+        sample_ids=np.arange(n_samples),
+        graph_view=graph_view,
+    )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=4,
+        train_idx=np.array([0, 1, 2]),
+        val_idx=np.array([3]),
+        test_idx=np.array([4, 5]),
+    )
+
+
+from oasis.learning_curve.learned_specs import _probe_gnn_config_tuning_spec_factory
+
+
+# ---------------------------------------------------------------------------
+# probe_gnn family dispatch tests
+# ---------------------------------------------------------------------------
+
+class ProbeGnnFamilyDispatchTests(unittest.TestCase):
+    def _probe_gnn_registration(self) -> object:
+        specs = learned_family_registration_specs()
+        spec = next(s for s in specs if s.name == "probe_gnn")
+        return learned_family_registration(spec)
+
+    def test_probe_gnn_config_produces_configured_family(self) -> None:
+        registration = self._probe_gnn_registration()
+        family = registration.config_factory(_model_cfg_probe_gnn())
+        self.assertIsInstance(family, ConfiguredSweepModelFamily)
+
+    def test_probe_gnn_config_uses_probe_gnn_tuning_spec(self) -> None:
+        registration = self._probe_gnn_registration()
+        family = registration.config_factory(_model_cfg_probe_gnn())
+        self.assertIsInstance(family.spec.runner.tuning_spec, ProbeGnnTuningSpec)
+
+    def test_probe_gnn_config_threads_hidden_dims(self) -> None:
+        registration = self._probe_gnn_registration()
+        family = registration.config_factory(_model_cfg_probe_gnn(hidden_dims=[16, 16]))
+        self.assertEqual(family.spec.runner.tuning_spec.hidden_dims, (16, 16))
+
+    def test_probe_gnn_factory_direct(self) -> None:
+        spec = _probe_gnn_config_tuning_spec_factory(_model_cfg_probe_gnn())
+        self.assertIsInstance(spec, ProbeGnnTuningSpec)
+
+
+# ---------------------------------------------------------------------------
+# probe_gnn end-to-end integration test
+# ---------------------------------------------------------------------------
+
+class ProbeGnnIntegrationTests(unittest.TestCase):
+    def test_end_to_end_train_predict_via_config_dispatch(self) -> None:
+        split = _make_probe_split()
+        spec = _probe_gnn_config_tuning_spec_factory(_model_cfg_probe_gnn())
+        self.assertIsInstance(spec, ProbeGnnTuningSpec)
+
+        objective = spec.build_trial_objective(split)
+        rmse = objective(_SchNetMockTrial())
+        self.assertTrue(np.isfinite(rmse))
+        self.assertGreater(rmse, 0.0)
+
+        model = spec.fit_selected_model(
+            split, _SchNetMockTrial(), refit_policy="train_plus_val"
         )
         preds = spec.predict(model, split.dataset_subsets().test)
         self.assertEqual(preds.shape, (2,))

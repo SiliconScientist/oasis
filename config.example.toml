@@ -127,6 +127,24 @@ epochs = 100
 # timeout_s = 600
 # seed = 42
 
+[experiment.learning_curve.models.probe_gnn]
+enabled = false              # set true to run probe-GNN direct regression
+# hidden_dims = [64, 64]    # fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
+
+[experiment.learning_curve.models.probe_gnn.training]
+epochs = 100
+# lr = 1e-3
+# weight_decay = 0.0
+# device = "cpu"
+# seed = 42
+
+[experiment.learning_curve.models.probe_gnn.tuning.optuna]
+# n_trials = 50
+# sampler = "tpe"   # "tpe" (default), "random", "cmaes"
+# pruner = "median"
+# timeout_s = 600
+# seed = 42
+
 [analysis]
 run_adsorption_analysis = false
 # calculating_path = "data/mlips/example_run"

@@ -99,6 +99,13 @@ class LatentModelConfig(BaseModel):
     cobyla_max_iter: int = 100
 
 
+class ProbeGnnConfig(BaseModel):
+    enabled: bool = False
+    hidden_dims: List[int] = Field(default_factory=list)
+    training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
+    tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
+
+
 class LearningCurveModelsConfig(BaseModel):
     use_ridge: bool
     use_kernel_ridge: bool
@@ -109,6 +116,7 @@ class LearningCurveModelsConfig(BaseModel):
     use_weighted_simplex: bool = False
     use_graph_mean: bool = False
     moe: MoEConfig = Field(default_factory=MoEConfig)
+    probe_gnn: ProbeGnnConfig = Field(default_factory=ProbeGnnConfig)
     use_latent: bool = False
     latent: Optional[LatentModelConfig] = None
 

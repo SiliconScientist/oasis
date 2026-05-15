@@ -21,6 +21,33 @@ from oasis.sweep import SweepModelCapabilities, TrainValTestSweepRunnerInput
 from oasis.tune import LearnedTrialTuningSpec, TrialTuningSpec
 
 
+def _probe_gnn_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
+    from oasis.learning_curve.families.probe_gnn import ProbeGnnTuningSpec
+
+    probe_cfg = getattr(model_cfg, "probe_gnn", None)
+    training_cfg = getattr(probe_cfg, "training", None)
+    hidden_dims_list = getattr(probe_cfg, "hidden_dims", [])
+    return ProbeGnnTuningSpec(
+        training_cfg=training_cfg,
+        hidden_dims=tuple(hidden_dims_list),
+    )
+
+
+def _probe_gnn_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
+    from oasis.tune import study_factory_from_optuna_cfg
+
+    optuna_cfg = getattr(
+        getattr(getattr(model_cfg, "probe_gnn", None), "tuning", None), "optuna", None
+    )
+    if optuna_cfg is None:
+        return {"n_trials": 10}
+    return {
+        "n_trials": optuna_cfg.n_trials,
+        "timeout_s": optuna_cfg.timeout_s,
+        "study_factory": study_factory_from_optuna_cfg(optuna_cfg),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class LearnedFamilyRegistrationSpec:
     """Registry spec for non-sklearn learning-curve families."""
@@ -147,8 +174,10 @@ def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
 
 
 def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
+    from oasis.config import MoETrainingConfig
     from oasis.learning_curve.execution import residual_sweep
-    from oasis.learning_curve.registry import _latent_enabled, _moe_enabled
+    from oasis.learning_curve.families.probe_gnn import ProbeGnnTuningSpec
+    from oasis.learning_curve.registry import _latent_enabled, _moe_enabled, _probe_gnn_enabled
 
     return (
         LearnedFamilyRegistrationSpec(
@@ -204,6 +233,18 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             config_runner_kwargs_factory=_moe_config_runner_kwargs,
             result_field="moe_df",
             selection_metadata_field="moe_selection_df",
+            optuna_n_trials=10,
+            default_enabled=False,
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="probe_gnn",
+            is_enabled=_probe_gnn_enabled,
+            capabilities=SweepModelCapabilities(requires_validation=True),
+            learned_trial_tuning_spec=ProbeGnnTuningSpec(training_cfg=MoETrainingConfig()),
+            config_tuning_spec_factory=_probe_gnn_config_tuning_spec_factory,
+            config_runner_kwargs_factory=_probe_gnn_config_runner_kwargs,
+            result_field="probe_gnn_df",
+            selection_metadata_field="probe_gnn_selection_df",
             optuna_n_trials=10,
             default_enabled=False,
         ),
