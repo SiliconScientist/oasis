@@ -25,6 +25,7 @@ from oasis.graphs import (
     dump_graph_dataset_view,
     load_configured_graph_dataset_view,
     load_graph_dataset_view,
+    load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
     save_graph_dataset_view,
 )
@@ -817,6 +818,190 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
                 r"duplicate sample_ids: 'rxn-a'",
             ):
                 build_graph_sweep_dataset(wide_df, graph_view)
+
+
+def _atoms_to_probe_json(atoms: "Atoms") -> str:
+    """Serialize an ASE Atoms object into the wrapped ASE DB row format.
+
+    Strips ``__ase_objtype__`` so that ``jsonio.decode`` returns a plain dict
+    rather than reconstructing the Atoms in-place, which is what
+    ``atoms_from_ase_db_json`` expects.
+    """
+    from ase.io import jsonio
+
+    row = json.loads(jsonio.encode(atoms))
+    row.pop("__ase_objtype__", None)
+    return json.dumps({"1": row, "ids": [1], "nextid": 2})
+
+
+def _make_probe_dataset_json(entries: list[dict]) -> str:
+    """Build a minimal probe-annotated dataset JSON string from entry dicts.
+
+    Each dict must supply: reaction, n_atoms, bound_surface_indices,
+    mlip_names, matrix (list-of-lists).
+    """
+    dataset: dict[str, object] = {}
+    for e in entries:
+        atoms = Atoms(
+            "H" * e["n_atoms"],
+            positions=[[float(i), 0.0, 0.0] for i in range(e["n_atoms"])],
+        )
+        dataset[e["reaction"]] = {
+            "raw": {
+                "Tolstar": {
+                    "stoi": 1,
+                    "energy_ref": 0.0,
+                    "atoms_json": _atoms_to_probe_json(atoms),
+                }
+            },
+            "ref_ads_eng": -1.0,
+            "bound_surface_indices": e["bound_surface_indices"],
+            "mlip_feature_matrix": {
+                "mlip_names": e["mlip_names"],
+                "matrix": e["matrix"],
+            },
+        }
+    return json.dumps(dataset)
+
+
+class LoadProbeGraphDatasetViewTests(unittest.TestCase):
+    def _write_json(self, tmp_dir: str, entries: list[dict]) -> Path:
+        path = Path(tmp_dir) / "probe_dataset.json"
+        path.write_text(_make_probe_dataset_json(entries), encoding="utf-8")
+        return path
+
+    def test_returns_one_record_per_entry(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=3, bound_surface_indices=[0],
+                 mlip_names=["m1", "m2"], matrix=[[1.0, 2.0]]),
+            dict(reaction="rxn-b", n_atoms=4, bound_surface_indices=[1, 2],
+                 mlip_names=["m1", "m2"], matrix=[[3.0, 4.0], [5.0, 6.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        self.assertEqual(len(view.sample_ids), 2)
+
+    def test_sample_ids_match_reaction_keys(self) -> None:
+        entries = [
+            dict(reaction="rxn-x", n_atoms=2, bound_surface_indices=[],
+                 mlip_names=["m1"], matrix=[]),
+            dict(reaction="rxn-y", n_atoms=2, bound_surface_indices=[],
+                 mlip_names=["m1"], matrix=[]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        self.assertIn("rxn-x", view.sample_ids)
+        self.assertIn("rxn-y", view.sample_ids)
+
+    def test_node_feature_width_is_one_plus_n_mlips(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=3, bound_surface_indices=[1],
+                 mlip_names=["m1", "m2", "m3"], matrix=[[1.0, 2.0, 3.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        self.assertEqual(view["rxn-a"].node_features.shape[1], 1 + 3)
+
+    def test_node_feature_width_uniform_across_graphs(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=3, bound_surface_indices=[0],
+                 mlip_names=["m1", "m2"], matrix=[[1.0, 2.0]]),
+            dict(reaction="rxn-b", n_atoms=5, bound_surface_indices=[1, 3],
+                 mlip_names=["m1", "m2"], matrix=[[3.0, 4.0], [5.0, 6.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        widths = {view[sid].node_features.shape[1] for sid in view.sample_ids}
+        self.assertEqual(len(widths), 1)
+
+    def test_bound_nodes_have_correct_probe_values(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=4, bound_surface_indices=[1, 3],
+                 mlip_names=["m1", "m2"], matrix=[[10.0, 20.0], [30.0, 40.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        record = view["rxn-a"]
+        np.testing.assert_array_equal(record.node_features[1, 1:], [10.0, 20.0])
+        np.testing.assert_array_equal(record.node_features[3, 1:], [30.0, 40.0])
+
+    def test_nonbound_nodes_have_zero_probe_features(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=4, bound_surface_indices=[1],
+                 mlip_names=["m1", "m2"], matrix=[[10.0, 20.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        record = view["rxn-a"]
+        np.testing.assert_array_equal(record.node_features[0, 1:], [0.0, 0.0])
+        np.testing.assert_array_equal(record.node_features[2, 1:], [0.0, 0.0])
+        np.testing.assert_array_equal(record.node_features[3, 1:], [0.0, 0.0])
+
+    def test_atomic_number_column_preserved_at_index_zero(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=2, bound_surface_indices=[0],
+                 mlip_names=["m1"], matrix=[[99.0]]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        # All atoms are H (atomic number 1)
+        np.testing.assert_array_equal(view["rxn-a"].node_features[:, 0], [1.0, 1.0])
+
+    def test_no_bound_atoms_appends_zero_columns(self) -> None:
+        entries = [
+            dict(reaction="rxn-a", n_atoms=3, bound_surface_indices=[],
+                 mlip_names=["m1", "m2"], matrix=[]),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._write_json(tmp_dir, entries)
+            view = load_probe_graph_dataset_view(path)
+
+        record = view["rxn-a"]
+        self.assertEqual(record.node_features.shape, (3, 3))
+        np.testing.assert_array_equal(record.node_features[:, 1:], 0.0)
+
+    def test_raises_on_missing_tolstar(self) -> None:
+        dataset = {
+            "rxn-a": {
+                "raw": {},
+                "bound_surface_indices": [],
+                "mlip_feature_matrix": {"mlip_names": [], "matrix": []},
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "bad.json"
+            path.write_text(json.dumps(dataset), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "missing 'raw.Tolstar'"):
+                load_probe_graph_dataset_view(path)
+
+    def test_raises_on_missing_mlip_feature_matrix(self) -> None:
+        atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dataset = {
+            "rxn-a": {
+                "raw": {"Tolstar": {"stoi": 1, "energy_ref": 0.0,
+                                    "atoms_json": _atoms_to_probe_json(atoms)}},
+                "bound_surface_indices": [],
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "bad.json"
+            path.write_text(json.dumps(dataset), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "missing 'mlip_feature_matrix'"):
+                load_probe_graph_dataset_view(path)
 
 
 class AugmentGraphWithProbeFeaturesTests(unittest.TestCase):

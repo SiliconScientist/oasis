@@ -337,6 +337,68 @@ def build_graph_sweep_dataset(
     )
 
 
+def load_probe_graph_dataset_view(
+    path: str | Path,
+    *,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphDatasetView:
+    """Load a GraphDatasetView from a probe-annotated adsorption dataset JSON.
+
+    Each entry must have been produced by ``build_probe_dataset`` and include
+    ``bound_surface_indices`` and ``mlip_feature_matrix``.  The graph for each
+    sample is built from ``raw.Tolstar``; bound-atom node features are augmented
+    with the corresponding rows of ``mlip_feature_matrix.matrix``.
+
+    Args:
+        path: Path to the JSON dataset file
+            (e.g. ``KHLOHC_origin_tolstar_adsorption_with_probe_ids.json``).
+        policy: Graph construction policy applied to each Tolstar Atoms object.
+
+    Returns:
+        A GraphDatasetView where every record has node_features of shape
+        ``(n_atoms, 1 + n_mlips)``: column 0 is the atomic number; columns
+        1..n_mlips are the MLIP probe adsorption energies (zero for non-binding
+        atoms).
+    """
+    from oasis.probe import atoms_from_ase_db_json
+
+    resolved_path = Path(path)
+    with resolved_path.open("r", encoding="utf-8") as fh:
+        dataset = json.load(fh)
+
+    if not isinstance(dataset, dict):
+        raise TypeError("probe dataset JSON must be a top-level object.")
+
+    records: list[GraphRecord] = []
+    for reaction, entry in dataset.items():
+        tolstar = entry.get("raw", {}).get("Tolstar")
+        if tolstar is None:
+            raise ValueError(f"Entry {reaction!r} is missing 'raw.Tolstar'.")
+
+        atoms = atoms_from_ase_db_json(tolstar["atoms_json"])
+        base_record = atoms_to_graph_record(atoms, sample_id=reaction, policy=policy)
+
+        bound_surface_indices: list[int] = list(entry.get("bound_surface_indices", []))
+
+        mlip_payload = entry.get("mlip_feature_matrix")
+        if mlip_payload is None:
+            raise ValueError(f"Entry {reaction!r} is missing 'mlip_feature_matrix'.")
+
+        n_mlips = len(mlip_payload.get("mlip_names", []))
+        matrix_raw = mlip_payload.get("matrix", [])
+        if matrix_raw:
+            probe_matrix = np.asarray(matrix_raw, dtype=float)
+        else:
+            probe_matrix = np.empty((0, n_mlips), dtype=float)
+
+        augmented = augment_graph_with_probe_features(
+            base_record, bound_surface_indices, probe_matrix
+        )
+        records.append(augmented)
+
+    return GraphDatasetView.from_records(tuple(records))
+
+
 def augment_graph_with_probe_features(
     record: GraphRecord,
     bound_surface_indices: Sequence[int],
