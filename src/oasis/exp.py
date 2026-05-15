@@ -94,6 +94,7 @@ def generate_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
     *,
+    step: int = 1,
     min_test_size: int = 1,
 ) -> Iterator[SweepSplit]:
     """Yield repeated outer train/test splits for each sweep size in the range.
@@ -107,7 +108,7 @@ def generate_sweep_splits(
 
     idx = np.arange(n_samples)
     max_train = min(max_train, n_samples - min_test_size)
-    for n_train in range(min_train, max_train + 1):
+    for n_train in range(min_train, max_train + 1, step):
         for _ in range(n_repeats):
             train_idx = rng.choice(idx, size=n_train, replace=False)
             test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
@@ -170,6 +171,7 @@ def generate_inner_validation_sweep_splits(
     n_repeats: int,
     rng: np.random.Generator,
     *,
+    step: int = 1,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
@@ -191,7 +193,7 @@ def generate_inner_validation_sweep_splits(
         raise ValueError("min_test_size must be positive.")
 
     max_train = min(max_train, n_samples - min_test_size)
-    for sweep_size in range(min_train, max_train + 1):
+    for sweep_size in range(min_train, max_train + 1, step):
         n_val = validation_size_if_sweep_feasible(
             sweep_size,
             validation_fraction=validation_fraction,
@@ -218,6 +220,7 @@ def build_sweep_split_collection(
     *,
     min_train: int,
     max_train: int,
+    step: int = 1,
     n_repeats: int,
     seed: int,
     requirements: SweepFamilyRequirements | None = None,
@@ -278,7 +281,7 @@ def build_sweep_split_collection(
         first_feasible_train = next(
             (
                 sweep_size
-                for sweep_size in range(effective_min_train, feasible_max_train + 1)
+                for sweep_size in range(effective_min_train, feasible_max_train + 1, step)
                 if validation_size_if_sweep_feasible(
                     sweep_size,
                     validation_fraction=validation_fraction,
@@ -303,6 +306,7 @@ def build_sweep_split_collection(
                 feasible_max_train,
                 n_repeats,
                 rng,
+                step=step,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
                 min_tuning_val_size=min_tuning_val_size,
@@ -318,6 +322,7 @@ def build_sweep_split_collection(
                 feasible_max_train,
                 n_repeats,
                 rng,
+                step=step,
                 min_test_size=min_test_size,
             )
         )
@@ -504,6 +509,7 @@ def run_learning_curve_experiments_from_config(
         dataset,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,
         max_train=experiment_cfg.max_train if experiment_cfg else 10,
+        step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
         n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
         seed=cfg.seed if cfg and cfg.seed is not None else 42,
         enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
@@ -548,6 +554,7 @@ def run_learning_curve_experiments(
     *,
     min_train: int,
     max_train: int,
+    step: int = 1,
     n_repeats: int,
     seed: int = 42,
     enabled_model_names: Sequence[str] | None = None,
@@ -580,6 +587,7 @@ def run_learning_curve_experiments(
                 dataset.n_samples,
                 min_train=min_train,
                 max_train=max_train,
+                step=step,
                 n_repeats=n_repeats,
                 seed=seed,
                 requirements=requirements,

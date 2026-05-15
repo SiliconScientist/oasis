@@ -54,6 +54,7 @@ output_dir = "data/results/plots"
 # Validation-aware points are skipped when these minima cannot all fit together.
 min_train = 5
 max_train = 25
+step = 1
 validation_fraction = 0.2
 # Minimum validation samples to carve out at all.
 min_val_size = 1

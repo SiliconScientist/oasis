@@ -132,6 +132,7 @@ class LearningCurveExperimentConfig(BaseModel):
 
     min_train: int
     max_train: int
+    step: int = 1
     n_repeats: int
     validation_fraction: float = 0.2
     min_val_size: int = 1
