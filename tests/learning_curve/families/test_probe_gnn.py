@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 
+from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gnn_gate import collate_graphs
-from oasis.learning_curve.families.probe_gnn import ProbeGnnEncoder
-from oasis.sweep import GraphRecord
+from oasis.learning_curve.families.probe_gnn import ProbeGnnEncoder, ProbeGnnModel, ProbeGnnTuningSpec
+from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
+from oasis.tune import LearnedTrialTuningSpec
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +168,172 @@ class ProbeGnnEncoderTests(unittest.TestCase):
             out = enc(node_features, edge_index, batch_vector)
             self.assertEqual(out.shape, (2, 1))
             self.assertFalse(torch.isnan(out).any().item())
+
+
+# ---------------------------------------------------------------------------
+# Dataset helpers for ProbeGnnModel / ProbeGnnTuningSpec tests
+# ---------------------------------------------------------------------------
+
+def _make_probe_graph_for_split(sample_id: int, n_nodes: int = 4, n_features: int = 6, n_edges: int = 5) -> GraphRecord:
+    return _make_probe_graph(sample_id, n_nodes=n_nodes, n_features=n_features, n_edges=n_edges, rng_seed=sample_id)
+
+
+def _make_split_with_probe_graphs(
+    n_samples: int = 6,
+    n_features: int = 6,
+) -> TrainValTestSweepRunnerInput:
+    rng = np.random.default_rng(42)
+    graphs = [_make_probe_graph_for_split(i, n_features=n_features) for i in range(n_samples)]
+    graph_view = GraphDatasetView.from_records(graphs)
+    dataset = SweepDataset(
+        mlip_features=rng.random((n_samples, 2)).astype(np.float32),
+        targets=rng.random(n_samples).astype(np.float32),
+        sample_ids=np.arange(n_samples),
+        graph_view=graph_view,
+    )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=4,
+        train_idx=np.array([0, 1, 2]),
+        val_idx=np.array([3]),
+        test_idx=np.array([4, 5]),
+    )
+
+
+def _make_probe_gnn_model(
+    n_features: int = 6,
+    hidden_dim: int = 8,
+    n_layers: int = 1,
+    bias: float = 0.0,
+) -> ProbeGnnModel:
+    encoder = ProbeGnnEncoder(in_features=n_features, hidden_dim=hidden_dim, n_layers=n_layers)
+    return ProbeGnnModel(
+        state_dict=encoder.state_dict(),
+        in_features=n_features,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        bias=bias,
+    )
+
+
+@dataclass
+class _ProbeGnnMockTrial:
+    """Minimal Optuna trial stub for ProbeGnnTuningSpec tests."""
+
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+    hidden_dim: int = 8
+    n_layers: int = 1
+
+    def __post_init__(self) -> None:
+        self.params: dict[str, Any] = {
+            "lr": self.lr,
+            "weight_decay": self.weight_decay,
+            "hidden_dim": self.hidden_dim,
+            "n_layers": self.n_layers,
+        }
+
+    def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
+        del low, high, kwargs
+        return self.params[name]
+
+    def suggest_categorical(self, name: str, choices: list[Any]) -> Any:
+        del choices
+        return self.params[name]
+
+    def suggest_int(self, name: str, low: int, high: int) -> int:
+        del low, high
+        return self.params[name]
+
+
+def _fast_probe_spec(hidden_dims: tuple[int, ...] = (8,)) -> ProbeGnnTuningSpec:
+    return ProbeGnnTuningSpec(
+        training_cfg=MoETrainingConfig(epochs=2, seed=0),
+        hidden_dims=hidden_dims,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ProbeGnnModel tests
+# ---------------------------------------------------------------------------
+
+class ProbeGnnModelTests(unittest.TestCase):
+    def test_predict_output_shape(self) -> None:
+        n_samples = 4
+        graphs = [_make_probe_graph_for_split(i) for i in range(n_samples)]
+        model = _make_probe_gnn_model()
+        preds = model.predict(graphs)
+        self.assertEqual(preds.shape, (n_samples,))
+
+    def test_predict_output_finite(self) -> None:
+        n_samples = 5
+        graphs = [_make_probe_graph_for_split(i) for i in range(n_samples)]
+        model = _make_probe_gnn_model()
+        preds = model.predict(graphs)
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_bias_applied(self) -> None:
+        n_samples = 3
+        graphs = [_make_probe_graph_for_split(i) for i in range(n_samples)]
+        base = _make_probe_gnn_model(bias=0.0)
+        shifted = ProbeGnnModel(
+            state_dict=base.state_dict,
+            in_features=base.in_features,
+            hidden_dim=base.hidden_dim,
+            n_layers=base.n_layers,
+            bias=2.5,
+        )
+        preds_base = base.predict(graphs)
+        preds_shifted = shifted.predict(graphs)
+        np.testing.assert_allclose(preds_shifted, preds_base + 2.5, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# ProbeGnnTuningSpec tests
+# ---------------------------------------------------------------------------
+
+class ProbeGnnTuningSpecTests(unittest.TestCase):
+    def test_is_learned_trial_tuning_spec(self) -> None:
+        self.assertIsInstance(_fast_probe_spec(), LearnedTrialTuningSpec)
+
+    def test_build_trial_objective_returns_finite_rmse(self) -> None:
+        split = _make_split_with_probe_graphs()
+        objective = _fast_probe_spec().build_trial_objective(split)
+        rmse = objective(_ProbeGnnMockTrial())
+        self.assertTrue(np.isfinite(rmse))
+        self.assertGreater(rmse, 0.0)
+
+    def test_build_trial_objective_search_arch_returns_finite_rmse(self) -> None:
+        split = _make_split_with_probe_graphs()
+        objective = _fast_probe_spec(hidden_dims=()).build_trial_objective(split)
+        rmse = objective(_ProbeGnnMockTrial(hidden_dim=32, n_layers=1))
+        self.assertTrue(np.isfinite(rmse))
+
+    def test_round_trip_predict_shape_and_finite(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = _fast_probe_spec()
+        trial = _ProbeGnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertIsInstance(model, ProbeGnnModel)
+        preds = spec.predict(model, split.dataset_subsets().test)
+        self.assertEqual(preds.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_refit_policy_train_only_returns_probe_gnn_model(self) -> None:
+        split = _make_split_with_probe_graphs()
+        model = _fast_probe_spec().fit_selected_model(
+            split, _ProbeGnnMockTrial(), refit_policy="train_only"
+        )
+        self.assertIsInstance(model, ProbeGnnModel)
+
+    def test_trial_metadata_has_expected_keys(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = _fast_probe_spec()
+        trial = _ProbeGnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        metadata = spec.trial_metadata(trial, model)
+        for key in ("in_features", "hidden_dim", "n_layers", "bias"):
+            self.assertIn(key, metadata)
 
 
 if __name__ == "__main__":
