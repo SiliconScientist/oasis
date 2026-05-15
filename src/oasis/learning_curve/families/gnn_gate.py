@@ -46,6 +46,47 @@ def collate_graphs(graphs: Sequence[GraphRecord]) -> tuple[Tensor, Tensor, Tenso
     return node_features, edge_index, batch_vector
 
 
+def collate_graphs_with_distances(
+    graphs: Sequence[GraphRecord],
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Batch GraphRecords into sparse tensors, including per-edge distances.
+
+    Like collate_graphs but also extracts scalar distances from
+    GraphRecord.edge_features (shape (n_edges, 1) or (n_edges,)).
+    Raises ValueError if any graph is missing edge_features or if
+    edge_features has more than one column.
+
+    Returns:
+        node_features:  (total_nodes, n_features) float32
+        edge_index:     (2, total_edges) long, with per-graph node offsets
+        batch_vector:   (total_nodes,) long, graph index for each node
+        edge_distances: (total_edges,) float32
+    """
+    for g in graphs:
+        if g.edge_features is None:
+            raise ValueError(
+                f"Graph {g.sample_id!r} has no edge_features; distances are required."
+            )
+        ef = np.asarray(g.edge_features)
+        squeezed = ef.squeeze(-1) if ef.ndim == 2 else ef
+        if squeezed.ndim != 1:
+            raise ValueError(
+                f"Graph {g.sample_id!r} edge_features must be 1-D or (n_edges, 1); "
+                f"got shape {ef.shape}."
+            )
+
+    node_features, edge_index, batch_vector = collate_graphs(graphs)
+
+    dist_parts: list[Tensor] = []
+    for g in graphs:
+        ef = np.asarray(g.edge_features)
+        d = ef.squeeze(-1) if ef.ndim == 2 else ef
+        dist_parts.append(torch.tensor(d, dtype=torch.float32))
+
+    edge_distances = torch.cat(dist_parts) if dist_parts else torch.zeros(0, dtype=torch.float32)
+    return node_features, edge_index, batch_vector, edge_distances
+
+
 def _scatter_mean_nodes(
     src_features: Tensor,
     dst_indices: Tensor,

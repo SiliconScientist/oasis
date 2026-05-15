@@ -13,6 +13,7 @@ from oasis.learning_curve.families.gnn_gate import (
     GnnGateModel,
     GnnGateTuningSpec,
     collate_graphs,
+    collate_graphs_with_distances,
 )
 from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import LearnedTrialTuningSpec
@@ -31,6 +32,28 @@ def _make_graph(sample_id: int, n_nodes: int, n_features: int, n_edges: int) -> 
         sample_id=sample_id,
         node_features=node_features,
         edge_index=edge_index,
+    )
+
+
+def _make_graph_with_distances(
+    sample_id: int, n_nodes: int, n_edges: int, *, rng_seed: int | None = None
+) -> GraphRecord:
+    rng = np.random.default_rng(rng_seed if rng_seed is not None else sample_id)
+    node_features = rng.random((n_nodes, 1)).astype(np.float32)
+    if n_edges > 0:
+        src = rng.integers(0, n_nodes, size=n_edges)
+        dst = rng.integers(0, n_nodes, size=n_edges)
+        edge_index = np.stack([src, dst], axis=0).astype(np.int64)
+        distances = (rng.random(n_edges) * 5.0).astype(np.float32)
+        edge_features = distances.reshape(-1, 1)
+    else:
+        edge_index = np.zeros((2, 0), dtype=np.int64)
+        edge_features = np.zeros((0, 1), dtype=np.float32)
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=node_features,
+        edge_index=edge_index,
+        edge_features=edge_features,
     )
 
 
@@ -321,6 +344,121 @@ class GnnGateTuningSpecTests(unittest.TestCase):
         trial = _GnnMockTrial()
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         self.assertEqual(spec.trial_metadata(trial, model)["n_experts"], 3)
+
+
+class CollateGraphsWithDistancesTests(unittest.TestCase):
+    # --- return shape ---
+
+    def test_returns_four_tensors(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=2)
+        result = collate_graphs_with_distances([g0])
+        self.assertEqual(len(result), 4)
+
+    def test_edge_distances_shape_single_graph(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=5)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0])
+        self.assertEqual(edge_distances.shape, (5,))
+
+    def test_edge_distances_shape_multi_graph(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=2)
+        g1 = _make_graph_with_distances(1, n_nodes=4, n_edges=4)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0, g1])
+        self.assertEqual(edge_distances.shape, (6,))
+
+    def test_edge_distances_dtype_is_float32(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=3)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0])
+        self.assertEqual(edge_distances.dtype, torch.float32)
+
+    def test_empty_edges(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=0)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0])
+        self.assertEqual(edge_distances.shape, (0,))
+
+    # --- distance values are preserved and ordered correctly ---
+
+    def test_distances_match_source_graph_single(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=4)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0])
+        expected = torch.tensor(g0.edge_features.squeeze(-1), dtype=torch.float32)
+        torch.testing.assert_close(edge_distances, expected)
+
+    def test_distances_first_graph_unaffected_by_second(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=3)
+        g1 = _make_graph_with_distances(1, n_nodes=4, n_edges=5)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0, g1])
+        expected_g0 = torch.tensor(g0.edge_features.squeeze(-1), dtype=torch.float32)
+        torch.testing.assert_close(edge_distances[:3], expected_g0)
+
+    def test_distances_second_graph_appended_correctly(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=3)
+        g1 = _make_graph_with_distances(1, n_nodes=4, n_edges=5)
+        _, _, _, edge_distances = collate_graphs_with_distances([g0, g1])
+        expected_g1 = torch.tensor(g1.edge_features.squeeze(-1), dtype=torch.float32)
+        torch.testing.assert_close(edge_distances[3:], expected_g1)
+
+    # --- node_features / edge_index / batch_vector match collate_graphs ---
+
+    def test_node_features_match_collate_graphs(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=2)
+        g1 = _make_graph_with_distances(1, n_nodes=4, n_edges=3)
+        nf_with, ei_with, bv_with, _ = collate_graphs_with_distances([g0, g1])
+        nf_base, ei_base, bv_base = collate_graphs([g0, g1])
+        torch.testing.assert_close(nf_with, nf_base)
+        self.assertTrue(torch.equal(ei_with, ei_base))
+        self.assertTrue(torch.equal(bv_with, bv_base))
+
+    def test_node_offset_applied_to_edge_index(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=2)
+        g1 = _make_graph_with_distances(1, n_nodes=5, n_edges=4)
+        _, edge_index, _, _ = collate_graphs_with_distances([g0, g1])
+        # g0 has 3 nodes; all g1 edge indices must be >= 3.
+        g1_edges = edge_index[:, 2:]
+        self.assertTrue((g1_edges >= 3).all().item())
+
+    # --- 1-D edge_features (already flat) ---
+
+    def test_accepts_1d_edge_features(self) -> None:
+        rng = np.random.default_rng(7)
+        node_features = rng.random((4, 1)).astype(np.float32)
+        edge_index = np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int64)
+        distances_1d = rng.random(3).astype(np.float32)
+        g = GraphRecord(
+            sample_id=99,
+            node_features=node_features,
+            edge_index=edge_index,
+            edge_features=distances_1d,  # 1-D, not (n, 1)
+        )
+        _, _, _, edge_distances = collate_graphs_with_distances([g])
+        self.assertEqual(edge_distances.shape, (3,))
+        torch.testing.assert_close(edge_distances, torch.tensor(distances_1d))
+
+    # --- error handling ---
+
+    def test_raises_if_edge_features_none(self) -> None:
+        g = _make_graph(0, n_nodes=3, n_features=1, n_edges=2)  # no edge_features
+        with self.assertRaises(ValueError):
+            collate_graphs_with_distances([g])
+
+    def test_raises_if_any_graph_missing_edge_features(self) -> None:
+        g0 = _make_graph_with_distances(0, n_nodes=3, n_edges=2)
+        g1 = _make_graph(1, n_nodes=3, n_features=1, n_edges=2)
+        with self.assertRaises(ValueError):
+            collate_graphs_with_distances([g0, g1])
+
+    def test_raises_if_edge_features_multi_column(self) -> None:
+        rng = np.random.default_rng(0)
+        node_features = rng.random((3, 1)).astype(np.float32)
+        edge_index = np.array([[0, 1], [1, 2]], dtype=np.int64)
+        edge_features = rng.random((2, 3)).astype(np.float32)  # (n_edges, 3) — invalid
+        g = GraphRecord(
+            sample_id=0,
+            node_features=node_features,
+            edge_index=edge_index,
+            edge_features=edge_features,
+        )
+        with self.assertRaises(ValueError):
+            collate_graphs_with_distances([g])
 
 
 if __name__ == "__main__":
