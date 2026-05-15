@@ -1497,7 +1497,7 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.sample_ids,
             np.array(["rxn-0", "rxn-1", "rxn-2", "rxn-3", "rxn-4", "rxn-5"]),
         )
-        self.assertEqual(dataset.auxiliary_views, {})
+        self.assertIsNone(dataset.auxiliary_views)
         self.assertEqual(dataset.mlip_features.shape, (6, 2))
         self.assertIs(dataset.inputs.mlip_features, dataset.mlip_features)
         np.testing.assert_array_equal(

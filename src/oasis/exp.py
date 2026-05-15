@@ -447,7 +447,7 @@ def build_sweep_dataset_from_frame(
         ),
         targets=y,
         sample_ids=sample_ids,
-        auxiliary_views=auxiliary_views or {},
+        auxiliary_views=auxiliary_views,
     )
 
 
@@ -473,7 +473,7 @@ def build_sweep_dataset_from_config(
         return load_sweep_dataset_from_graph_artifact(
             graph_dataset_cfg.path,
             join_key=graph_join_key,
-            auxiliary_views=auxiliary_views or {},
+            auxiliary_views=auxiliary_views,
             filter_df=df,
         )
     if graph_view is None and experiment_cfg:
@@ -485,7 +485,7 @@ def build_sweep_dataset_from_config(
         df,
         graph_view=graph_view,
         graph_join_key=graph_join_key,
-        auxiliary_views=auxiliary_views or {},
+        auxiliary_views=auxiliary_views,
     )
 
 

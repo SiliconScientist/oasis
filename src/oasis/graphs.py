@@ -178,7 +178,7 @@ def load_sweep_dataset_from_graph_artifact(
     pl = _require_polars()
     artifact_frame = pl.read_parquet(resolved_path)
     if filter_df is not None and join_key in getattr(filter_df, "columns", ()):
-        keep_ids = filter_df.get_column(join_key).to_list()
+        keep_ids = list(filter_df[join_key])
         keep_set = set(keep_ids)
         artifact_ids = set(artifact_frame.get_column(join_key).to_list())
         missing = keep_set - artifact_ids
@@ -307,6 +307,14 @@ def build_graph_sweep_dataset(
             f"missing graphs for {join_key} values: "
             f"{_format_sample_id_list(missing_graph_ids)}."
         )
+    extra_graph_ids = tuple(
+        sample_id for sample_id in graph_view.sample_ids if sample_id not in sample_id_set
+    )
+    if extra_graph_ids:
+        raise KeyError(
+            f"extra sample_ids with no matching {join_key}: "
+            f"{_format_sample_id_list(extra_graph_ids)}."
+        )
 
     if hasattr(wide_df, "select"):
         mlip_features = wide_df.select(feature_cols).to_numpy()
@@ -325,7 +333,7 @@ def build_graph_sweep_dataset(
         ),
         targets=targets,
         sample_ids=np.asarray(sample_ids),
-        auxiliary_views=auxiliary_views or {},
+        auxiliary_views=auxiliary_views,
     )
 
 
