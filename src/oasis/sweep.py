@@ -1051,6 +1051,8 @@ class LearningCurveResults:
     kernel_ridge_selection_df: pd.DataFrame | None = None
     moe_df: pd.DataFrame | None = None
     moe_selection_df: pd.DataFrame | None = None
+    probe_gnn_df: pd.DataFrame | None = None
+    probe_gnn_selection_df: pd.DataFrame | None = None
     latent_df: pd.DataFrame | None = None
 
     @classmethod
@@ -1078,6 +1080,8 @@ class LearningCurveResults:
             kernel_ridge_selection_df=frames.get("kernel_ridge_selection_df"),
             moe_df=frames.get("moe_df"),
             moe_selection_df=frames.get("moe_selection_df"),
+            probe_gnn_df=frames.get("probe_gnn_df"),
+            probe_gnn_selection_df=frames.get("probe_gnn_selection_df"),
             latent_df=frames.get("latent_df"),
         )
 
@@ -1139,6 +1143,14 @@ class LearningCurveResults:
                 other.moe_selection_df
                 if other.moe_selection_df is not None
                 else self.moe_selection_df
+            ),
+            probe_gnn_df=(
+                other.probe_gnn_df if other.probe_gnn_df is not None else self.probe_gnn_df
+            ),
+            probe_gnn_selection_df=(
+                other.probe_gnn_selection_df
+                if other.probe_gnn_selection_df is not None
+                else self.probe_gnn_selection_df
             ),
             latent_df=other.latent_df if other.latent_df is not None else self.latent_df,
         )

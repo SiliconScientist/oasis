@@ -124,6 +124,9 @@ def _train_probe_encoder(
 
 
 def _graphs_from_dataset(dataset: SweepDataset) -> list[GraphRecord]:
+    probe_records = (dataset.auxiliary_views or {}).get("probe_gnn_records")
+    if probe_records is not None:
+        return list(probe_records)
     return [dataset.graphs[sid] for sid in dataset.sample_ids.tolist()]
 
 

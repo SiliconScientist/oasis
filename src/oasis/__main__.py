@@ -8,7 +8,7 @@ import pandas as pd
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.exp import run_learning_curve_experiments_from_config
-from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
+from oasis.graphs import atoms_to_graph_dataset_view, load_probe_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.io import (
     find_result_files,
     load_sample_atoms_for_wide_df,
@@ -80,6 +80,23 @@ def main() -> None:
             auxiliary_views["latent"] = latent_df
             print(
                 f"Latent filter: {len(wide_df)} samples aligned to {latent_cfg.csv_path.name}"
+            )
+
+    probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
+    if getattr(probe_gnn_cfg, "enabled", False):
+        if probe_cfg is None or not probe_cfg.dataset_path.exists():
+            print(
+                "Warning: probe_gnn.enabled=true but probe_features.dataset_path is "
+                "not configured or does not exist — probe graphs not loaded."
+            )
+        else:
+            probe_graph_view = load_probe_graph_dataset_view(probe_cfg.dataset_path)
+            reactions = wide_df.get_column("reaction").to_list()
+            auxiliary_views["probe_gnn_records"] = [
+                probe_graph_view[r] for r in reactions
+            ]
+            print(
+                f"Loaded {len(reactions)} probe-augmented graphs from {probe_cfg.dataset_path}"
             )
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
