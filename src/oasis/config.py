@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-GateType = Literal["mlip_baseline", "gnn"]
+GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
 
 from oasis.tune import OptunaTuningConfig
@@ -86,6 +86,8 @@ class MoEConfig(BaseModel):
     gating_mode: GatingMode = "dense"
     top_k: int = 2
     hidden_dims: List[int] = Field(default_factory=list)
+    n_rbf: int = 20
+    r_max: float = 6.0
     training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
     tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
 

@@ -103,13 +103,17 @@ use_latent = false
 
 [experiment.learning_curve.models.moe]
 enabled = false
-gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn"
+gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn" | "schnet"
 gating_mode = "dense"        # "dense" | "top_k"
 top_k = 2                    # number of experts to activate; only used when gating_mode = "top_k"
-# hidden_dims = [64, 64]     # GNN only: fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
+# hidden_dims = [64, 64]     # gnn/schnet: fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
+
+# SchNet-specific settings (ignored for mlip_baseline and gnn).
+# n_rbf = 20                 # number of Gaussian RBF basis functions for distance encoding
+# r_max = 6.0                # distance cutoff in Å; should match your graph_dataset cutoff
 
 [experiment.learning_curve.models.moe.training]
-# GNN gate training settings (ignored for mlip_baseline).
+# GNN / SchNet gate training settings (ignored for mlip_baseline).
 epochs = 100
 # lr = 1e-3
 # weight_decay = 0.0

@@ -129,6 +129,20 @@ def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
             hidden_dims=tuple(hidden_dims_list),
             policy=policy,
         )
+    if gate_type == "schnet":
+        from oasis.learning_curve.families.schnet_gate import SchNetGateTuningSpec
+
+        training_cfg = getattr(moe_cfg, "training", None)
+        hidden_dims_list = getattr(moe_cfg, "hidden_dims", [])
+        n_rbf = getattr(moe_cfg, "n_rbf", 20)
+        r_max = getattr(moe_cfg, "r_max", 6.0)
+        return SchNetGateTuningSpec(
+            training_cfg=training_cfg,
+            hidden_dims=tuple(hidden_dims_list),
+            n_rbf=n_rbf,
+            r_max=r_max,
+            policy=policy,
+        )
     raise ValueError(f"Unknown MoE gate type: {gate_type!r}")
 
 
