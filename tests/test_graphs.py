@@ -20,6 +20,7 @@ from oasis.graphs import (
     AtomsToGraphPolicy,
     atoms_to_graph_dataset_view,
     atoms_to_graph_record,
+    augment_graph_with_probe_features,
     build_graph_sweep_dataset,
     dump_graph_dataset_view,
     load_configured_graph_dataset_view,
@@ -816,6 +817,120 @@ class BuildGraphSweepDatasetTests(unittest.TestCase):
                 r"duplicate sample_ids: 'rxn-a'",
             ):
                 build_graph_sweep_dataset(wide_df, graph_view)
+
+
+class AugmentGraphWithProbeFeaturesTests(unittest.TestCase):
+    def _make_record(self, n_nodes: int = 5) -> GraphRecord:
+        return GraphRecord(
+            sample_id="rxn-test",
+            node_features=np.arange(n_nodes, dtype=float).reshape(n_nodes, 1),
+            edge_index=np.array([[0], [1]], dtype=np.int64),
+            node_positions=np.zeros((n_nodes, 3), dtype=float),
+            edge_features=np.array([[1.0]]),
+        )
+
+    def test_non_bound_nodes_get_zero_probe_columns(self) -> None:
+        record = self._make_record(n_nodes=4)
+        probe_matrix = np.array([[10.0, 20.0], [30.0, 40.0]])
+
+        result = augment_graph_with_probe_features(record, [1, 3], probe_matrix)
+
+        np.testing.assert_array_equal(result.node_features[0], [0.0, 0.0, 0.0])
+        np.testing.assert_array_equal(result.node_features[2], [2.0, 0.0, 0.0])
+
+    def test_bound_nodes_get_their_probe_row(self) -> None:
+        record = self._make_record(n_nodes=4)
+        probe_matrix = np.array([[10.0, 20.0], [30.0, 40.0]])
+
+        result = augment_graph_with_probe_features(record, [1, 3], probe_matrix)
+
+        np.testing.assert_array_equal(result.node_features[1], [1.0, 10.0, 20.0])
+        np.testing.assert_array_equal(result.node_features[3], [3.0, 30.0, 40.0])
+
+    def test_output_shape_is_n_nodes_by_original_plus_n_mlips(self) -> None:
+        record = self._make_record(n_nodes=5)
+        probe_matrix = np.ones((2, 7))
+
+        result = augment_graph_with_probe_features(record, [0, 4], probe_matrix)
+
+        self.assertEqual(result.node_features.shape, (5, 8))
+
+    def test_original_atomic_number_column_is_preserved(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([[99.0]])
+
+        result = augment_graph_with_probe_features(record, [2], probe_matrix)
+
+        np.testing.assert_array_equal(
+            result.node_features[:, 0], record.node_features[:, 0]
+        )
+
+    def test_all_nodes_bound_fills_all_rows(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+        result = augment_graph_with_probe_features(record, [0, 1, 2], probe_matrix)
+
+        np.testing.assert_array_equal(result.node_features[0, 1:], [1.0, 2.0])
+        np.testing.assert_array_equal(result.node_features[1, 1:], [3.0, 4.0])
+        np.testing.assert_array_equal(result.node_features[2, 1:], [5.0, 6.0])
+
+    def test_no_bound_nodes_appends_all_zeros(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.empty((0, 4))
+
+        result = augment_graph_with_probe_features(record, [], probe_matrix)
+
+        self.assertEqual(result.node_features.shape, (3, 5))
+        np.testing.assert_array_equal(result.node_features[:, 1:], 0.0)
+
+    def test_non_node_fields_are_preserved_unchanged(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([[1.0]])
+
+        result = augment_graph_with_probe_features(record, [0], probe_matrix)
+
+        self.assertEqual(result.sample_id, record.sample_id)
+        np.testing.assert_array_equal(result.edge_index, record.edge_index)
+        np.testing.assert_array_equal(result.node_positions, record.node_positions)
+        np.testing.assert_array_equal(result.edge_features, record.edge_features)
+        self.assertIsNone(result.graph_features)
+
+    def test_rejects_out_of_range_bound_index(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([[1.0]])
+
+        with self.assertRaisesRegex(IndexError, "out of range"):
+            augment_graph_with_probe_features(record, [5], probe_matrix)
+
+    def test_rejects_duplicate_bound_indices(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([[1.0], [2.0]])
+
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            augment_graph_with_probe_features(record, [1, 1], probe_matrix)
+
+    def test_rejects_bound_indices_probe_matrix_length_mismatch(self) -> None:
+        record = self._make_record(n_nodes=4)
+        probe_matrix = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            augment_graph_with_probe_features(record, [0], probe_matrix)
+
+    def test_rejects_1d_probe_matrix(self) -> None:
+        record = self._make_record(n_nodes=3)
+        probe_matrix = np.array([1.0, 2.0])
+
+        with self.assertRaisesRegex(ValueError, "2-D"):
+            augment_graph_with_probe_features(record, [0], probe_matrix)
+
+    def test_output_dtype_is_float(self) -> None:
+        record = self._make_record(n_nodes=2)
+        probe_matrix = np.array([[1, 2]], dtype=int)
+
+        result = augment_graph_with_probe_features(record, [0], probe_matrix)
+
+        self.assertEqual(result.node_features.dtype, float)
 
 
 class _Frame:

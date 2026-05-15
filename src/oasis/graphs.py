@@ -337,6 +337,67 @@ def build_graph_sweep_dataset(
     )
 
 
+def augment_graph_with_probe_features(
+    record: GraphRecord,
+    bound_surface_indices: Sequence[int],
+    probe_matrix: np.ndarray,
+) -> GraphRecord:
+    """Return a new GraphRecord with per-atom MLIP probe vectors appended to node features.
+
+    Every node gets its feature vector extended by `n_mlips` dimensions.  Nodes
+    listed in `bound_surface_indices` receive the corresponding row of
+    `probe_matrix`; all other nodes receive zeros in those positions.
+
+    Args:
+        record: Source graph.  Its node_features have shape (n_nodes, f).
+        bound_surface_indices: Indices of the binding-site atoms, in the same
+            order as rows of `probe_matrix`.  Must be unique and in-range.
+        probe_matrix: Shape (n_bound, n_mlips).  Row i contains the MLIP
+            adsorption-energy predictions for bound atom i.
+
+    Returns:
+        A new GraphRecord with node_features shape (n_nodes, f + n_mlips).
+        All other fields are copied from `record` unchanged.
+    """
+    probe_matrix = np.asarray(probe_matrix, dtype=float)
+    if probe_matrix.ndim != 2:
+        raise ValueError(
+            f"probe_matrix must be 2-D, got shape {probe_matrix.shape}."
+        )
+    n_bound, n_mlips = probe_matrix.shape
+    if len(bound_surface_indices) != n_bound:
+        raise ValueError(
+            f"len(bound_surface_indices)={len(bound_surface_indices)} does not match "
+            f"probe_matrix.shape[0]={n_bound}."
+        )
+
+    n_nodes = record.n_nodes
+    for idx in bound_surface_indices:
+        if idx < 0 or idx >= n_nodes:
+            raise IndexError(
+                f"bound_surface_index {idx} is out of range for a graph with "
+                f"{n_nodes} nodes."
+            )
+    if len(set(bound_surface_indices)) != len(bound_surface_indices):
+        raise ValueError("bound_surface_indices contains duplicate node indices.")
+
+    probe_block = np.zeros((n_nodes, n_mlips), dtype=float)
+    for row, node_idx in enumerate(bound_surface_indices):
+        probe_block[node_idx] = probe_matrix[row]
+
+    augmented_features = np.concatenate(
+        [record.node_features, probe_block], axis=1
+    )
+    return GraphRecord(
+        sample_id=record.sample_id,
+        node_features=augmented_features,
+        edge_index=record.edge_index,
+        node_positions=record.node_positions,
+        edge_features=record.edge_features,
+        graph_features=record.graph_features,
+    )
+
+
 def _graph_record_from_mapping(payload: Any) -> GraphRecord:
     if not isinstance(payload, dict):
         raise TypeError("each graph record must be a JSON object.")
