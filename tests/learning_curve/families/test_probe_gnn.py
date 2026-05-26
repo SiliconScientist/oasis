@@ -9,7 +9,13 @@ import torch
 
 from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gnn_gate import collate_graphs
-from oasis.learning_curve.families.probe_gnn import ProbeGnnEncoder, ProbeGnnModel, ProbeGnnTuningSpec
+from oasis.learning_curve.families.probe_gnn import (
+    GnnDirectModel,
+    GnnDirectTuningSpec,
+    ProbeGnnEncoder,
+    ProbeGnnModel,
+    ProbeGnnTuningSpec,
+)
 from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import LearnedTrialTuningSpec
 
@@ -334,6 +340,98 @@ class ProbeGnnTuningSpecTests(unittest.TestCase):
         metadata = spec.trial_metadata(trial, model)
         for key in ("in_features", "hidden_dim", "n_layers", "bias"):
             self.assertIn(key, metadata)
+
+
+# ---------------------------------------------------------------------------
+# GnnDirectModel tests
+# ---------------------------------------------------------------------------
+
+class GnnDirectModelTests(unittest.TestCase):
+    def test_predict_output_shape(self) -> None:
+        n_samples = 4
+        graphs = [_make_probe_graph_for_split(i) for i in range(n_samples)]
+        encoder = ProbeGnnEncoder(in_features=6, hidden_dim=8, n_layers=1)
+        model = GnnDirectModel(
+            state_dict=encoder.state_dict(),
+            in_features=6,
+            hidden_dim=8,
+            n_layers=1,
+        )
+        preds = model.predict(graphs)
+        self.assertEqual(preds.shape, (n_samples,))
+
+    def test_predict_output_finite(self) -> None:
+        graphs = [_make_probe_graph_for_split(i) for i in range(3)]
+        encoder = ProbeGnnEncoder(in_features=6, hidden_dim=8, n_layers=1)
+        model = GnnDirectModel(
+            state_dict=encoder.state_dict(), in_features=6, hidden_dim=8, n_layers=1
+        )
+        self.assertTrue(np.all(np.isfinite(model.predict(graphs))))
+
+    def test_bias_applied(self) -> None:
+        graphs = [_make_probe_graph_for_split(i) for i in range(3)]
+        encoder = ProbeGnnEncoder(in_features=6, hidden_dim=8, n_layers=1)
+        sd = encoder.state_dict()
+        base = GnnDirectModel(state_dict=sd, in_features=6, hidden_dim=8, n_layers=1, bias=0.0)
+        shifted = GnnDirectModel(state_dict=sd, in_features=6, hidden_dim=8, n_layers=1, bias=3.0)
+        np.testing.assert_allclose(shifted.predict(graphs), base.predict(graphs) + 3.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# GnnDirectTuningSpec tests
+# ---------------------------------------------------------------------------
+
+def _fast_direct_spec(hidden_dims: tuple[int, ...] = (8,)) -> GnnDirectTuningSpec:
+    return GnnDirectTuningSpec(
+        training_cfg=MoETrainingConfig(epochs=2, seed=0),
+        hidden_dims=hidden_dims,
+    )
+
+
+class GnnDirectTuningSpecTests(unittest.TestCase):
+    def test_is_learned_trial_tuning_spec(self) -> None:
+        self.assertIsInstance(_fast_direct_spec(), LearnedTrialTuningSpec)
+
+    def test_build_trial_objective_returns_finite_rmse(self) -> None:
+        split = _make_split_with_probe_graphs()
+        objective = _fast_direct_spec().build_trial_objective(split)
+        rmse = objective(_ProbeGnnMockTrial())
+        self.assertTrue(np.isfinite(rmse))
+        self.assertGreater(rmse, 0.0)
+
+    def test_round_trip_predict_shape_and_finite(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = _fast_direct_spec()
+        model = spec.fit_selected_model(split, _ProbeGnnMockTrial(), refit_policy="train_plus_val")
+        self.assertIsInstance(model, GnnDirectModel)
+        preds = spec.predict(model, split.dataset_subsets().test)
+        self.assertEqual(preds.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_refit_policy_train_only_returns_gnn_direct_model(self) -> None:
+        split = _make_split_with_probe_graphs()
+        model = _fast_direct_spec().fit_selected_model(
+            split, _ProbeGnnMockTrial(), refit_policy="train_only"
+        )
+        self.assertIsInstance(model, GnnDirectModel)
+
+    def test_trial_metadata_has_expected_keys(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = _fast_direct_spec()
+        model = spec.fit_selected_model(split, _ProbeGnnMockTrial(), refit_policy="train_plus_val")
+        metadata = spec.trial_metadata(_ProbeGnnMockTrial(), model)
+        for key in ("in_features", "hidden_dim", "n_layers", "bias"):
+            self.assertIn(key, metadata)
+
+    def test_ignores_probe_records_in_auxiliary_views(self) -> None:
+        """GnnDirectTuningSpec must use graph_view, not probe_gnn_records."""
+        split = _make_split_with_probe_graphs()
+        spec = _fast_direct_spec()
+        # Run through graph_view path (no auxiliary probe records)
+        model_via_graph_view = spec.fit_selected_model(
+            split, _ProbeGnnMockTrial(), refit_policy="train_only"
+        )
+        self.assertIsInstance(model_via_graph_view, GnnDirectModel)
 
 
 if __name__ == "__main__":

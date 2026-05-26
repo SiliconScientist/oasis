@@ -52,6 +52,10 @@ def _probe_gnn_enabled(config_section: Any) -> bool:
     return bool(getattr(getattr(config_section, "probe_gnn", None), "enabled", False))
 
 
+def _gnn_direct_enabled(config_section: Any) -> bool:
+    return bool(getattr(getattr(config_section, "gnn_direct", None), "enabled", False))
+
+
 def _is_enabled_for_learned_family_spec(
     spec: Any,
 ) -> Callable[[Any], bool]:

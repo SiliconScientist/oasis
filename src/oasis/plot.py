@@ -279,6 +279,22 @@ def learning_curve_plot(
             alpha=0.2,
             label="MoE +/- 1sd",
         )
+    if results.gnn_direct_df is not None:
+        ax.plot(
+            results.gnn_direct_df["n_train"],
+            results.gnn_direct_df["rmse_mean"],
+            marker="s",
+            color="tab:cyan",
+            label="GNN direct mean",
+        )
+        ax.fill_between(
+            results.gnn_direct_df["n_train"],
+            results.gnn_direct_df["rmse_mean"] - results.gnn_direct_df["rmse_std"],
+            results.gnn_direct_df["rmse_mean"] + results.gnn_direct_df["rmse_std"],
+            color="tab:cyan",
+            alpha=0.2,
+            label="GNN direct +/- 1sd",
+        )
     if results.probe_gnn_df is not None:
         ax.plot(
             results.probe_gnn_df["n_train"],

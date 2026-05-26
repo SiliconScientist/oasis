@@ -140,6 +140,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "graph_mean",
                 "moe",
                 "probe_gnn",
+                "gnn_direct",
                 "latent",
             ],
         )
@@ -202,6 +203,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(),
             ],
         )
@@ -216,6 +218,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
+                SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),

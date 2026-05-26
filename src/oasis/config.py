@@ -106,6 +106,13 @@ class ProbeGnnConfig(BaseModel):
     tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
 
 
+class GnnDirectConfig(BaseModel):
+    enabled: bool = False
+    hidden_dims: List[int] = Field(default_factory=list)
+    training: MoETrainingConfig = Field(default_factory=MoETrainingConfig)
+    tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
+
+
 class LearningCurveModelsConfig(BaseModel):
     use_ridge: bool
     use_kernel_ridge: bool
@@ -117,6 +124,7 @@ class LearningCurveModelsConfig(BaseModel):
     use_graph_mean: bool = False
     moe: MoEConfig = Field(default_factory=MoEConfig)
     probe_gnn: ProbeGnnConfig = Field(default_factory=ProbeGnnConfig)
+    gnn_direct: GnnDirectConfig = Field(default_factory=GnnDirectConfig)
     use_latent: bool = False
     latent: Optional[LatentModelConfig] = None
 
