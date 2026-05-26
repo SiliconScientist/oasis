@@ -35,9 +35,7 @@ from oasis.exp import (
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
-    load_learning_curve_method_artifact,
     load_learning_curve_results_artifact,
-    save_learning_curve_method_artifacts,
     save_learning_curve_results_artifact,
 )
 from oasis.plot import learning_curve_plot
@@ -198,7 +196,9 @@ class GenerateSweepSplitsTests(unittest.TestCase):
 
 
 class BuildSweepDatasetFromFrameTests(unittest.TestCase):
-    def test_build_sweep_dataset_from_frame_without_graphs_uses_frame_order(self) -> None:
+    def test_build_sweep_dataset_from_frame_without_graphs_uses_frame_order(
+        self,
+    ) -> None:
         df = pd.DataFrame(
             {
                 "reaction": ["rxn-b", "rxn-a"],
@@ -429,7 +429,9 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
                 "oasis.graphs.load_sweep_dataset_from_graph_artifact",
                 return_value=dataset,
             ) as mock_load_dataset:
-                with patch("oasis.graphs.load_configured_graph_dataset_view") as mock_load_graphs:
+                with patch(
+                    "oasis.graphs.load_configured_graph_dataset_view"
+                ) as mock_load_graphs:
                     built_dataset = build_sweep_dataset_from_config(df, cfg)
 
         self.assertIs(built_dataset, dataset)
@@ -451,7 +453,9 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
         self.assertIn("latent", dataset.auxiliary_views)
         pd.testing.assert_frame_equal(dataset.auxiliary_views["latent"], extra)
 
-    def test_build_sweep_dataset_from_config_passes_auxiliary_views_through(self) -> None:
+    def test_build_sweep_dataset_from_config_passes_auxiliary_views_through(
+        self,
+    ) -> None:
         df = pd.DataFrame(
             {
                 "reaction": ["rxn-a", "rxn-b"],
@@ -466,7 +470,9 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
             )
         )
 
-        with patch("oasis.graphs.load_configured_graph_dataset_view", return_value=None):
+        with patch(
+            "oasis.graphs.load_configured_graph_dataset_view", return_value=None
+        ):
             dataset = build_sweep_dataset_from_config(
                 df, cfg, auxiliary_views={"latent": latent_df}
             )
@@ -491,7 +497,9 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
             )
         )
 
-        with patch("oasis.graphs.load_configured_graph_dataset_view", return_value=None):
+        with patch(
+            "oasis.graphs.load_configured_graph_dataset_view", return_value=None
+        ):
             dataset = build_sweep_dataset_from_config(df, cfg)
 
         self.assertNotIn("latent", dataset.auxiliary_views or {})
@@ -685,9 +693,7 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             )
             np.testing.assert_array_equal(
                 np.sort(
-                    np.concatenate(
-                        [split.train_idx, split.val_idx, split.test_idx]
-                    )
+                    np.concatenate([split.train_idx, split.val_idx, split.test_idx])
                 ),
                 full_idx,
             )
@@ -907,8 +913,12 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual([split.sweep_size for split in splits], [4, 5, 6, 7, 8, 9, 10])
-        self.assertEqual([len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2])
-        self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(
+            [len(split.val_idx) for split in splits], [2, 2, 2, 2, 2, 2, 2]
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in splits], [2, 3, 4, 5, 6, 7, 8]
+        )
 
     def test_generate_inner_validation_sweep_splits_honors_tuning_validation_minimum(
         self,
@@ -927,8 +937,12 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual([split.sweep_size for split in splits], [4, 5, 6, 7, 8, 9, 10])
-        self.assertEqual([len(split.val_idx) for split in splits], [3, 3, 3, 3, 3, 3, 3])
-        self.assertEqual([len(split.train_idx) for split in splits], [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(
+            [len(split.val_idx) for split in splits], [3, 3, 3, 3, 3, 3, 3]
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in splits], [1, 2, 3, 4, 5, 6, 7]
+        )
 
     def test_generate_inner_validation_sweep_splits_exposes_one_point_validation_pathology(
         self,
@@ -988,7 +1002,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual([len(split.val_idx) for split in splits], [1, 1, 1, 1])
         self.assertEqual([len(split.train_idx) for split in splits], [2, 3, 4, 5])
 
-    def test_generate_inner_validation_sweep_splits_keeps_outer_test_disjoint(self) -> None:
+    def test_generate_inner_validation_sweep_splits_keeps_outer_test_disjoint(
+        self,
+    ) -> None:
         splits = list(
             generate_inner_validation_sweep_splits(
                 n_samples=8,
@@ -1009,7 +1025,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             self.assertEqual(len(np.intersect1d(split.val_idx, split.test_idx)), 0)
             self.assertEqual(len(np.intersect1d(split.train_idx, split.val_idx)), 0)
             np.testing.assert_array_equal(
-                np.sort(np.concatenate([split.train_idx, split.val_idx, split.test_idx])),
+                np.sort(
+                    np.concatenate([split.train_idx, split.val_idx, split.test_idx])
+                ),
                 full_idx,
             )
 
@@ -1109,8 +1127,12 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             min_test_size=2,
         )
 
-        self.assertEqual([split.sweep_size for split in split_collection.splits], [4, 5])
-        self.assertEqual([len(split.test_idx) for split in split_collection.splits], [3, 2])
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits], [4, 5]
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in split_collection.splits], [3, 2]
+        )
 
     def test_build_sweep_split_collection_rejects_invalid_planner_inputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "n_samples must be positive"):
@@ -1159,7 +1181,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 min_test_size=0,
             )
 
-    def test_build_sweep_split_collection_preserves_train_only_requirements(self) -> None:
+    def test_build_sweep_split_collection_preserves_train_only_requirements(
+        self,
+    ) -> None:
         requirements = SweepFamilyRequirements(
             min_train_size=5,
             requires_inner_validation=False,
@@ -1176,7 +1200,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(split_collection.planning_requirements, requirements)
-        self.assertEqual([split.sweep_size for split in split_collection.splits], [5, 6, 7])
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits], [5, 6, 7]
+        )
         self.assertTrue(all(split.val_idx is None for split in split_collection.splits))
 
     def test_build_sweep_split_collection_returns_empty_train_only_region_when_test_minimum_blocks_all_splits(
@@ -1232,7 +1258,9 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
                 min_val_size=2,
             )
             self.assertEqual(len(split.val_idx), expected_n_val)
-            self.assertEqual(len(split.train_idx) + len(split.val_idx), split.sweep_size)
+            self.assertEqual(
+                len(split.train_idx) + len(split.val_idx), split.sweep_size
+            )
 
     def test_build_sweep_split_collection_honors_tuning_validation_minimum(
         self,
@@ -1401,7 +1429,10 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             [3, 4, 5],
         )
         self.assertEqual(
-            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.train_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [2, 3, 4],
         )
 
@@ -1449,10 +1480,12 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             [4, 5],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.val_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [3, 3],
         )
-
 
 
 @unittest.skipUnless(HAS_METHOD, "requires method dependencies")
@@ -1692,7 +1725,10 @@ class ExpIntegrationTests(unittest.TestCase):
             [2, 3, 4],
         )
         self.assertTrue(
-            all(split.val_idx is None for split in family.last_payload.split_collection.splits)
+            all(
+                split.val_idx is None
+                for split in family.last_payload.split_collection.splits
+            )
         )
 
     def test_run_learning_curve_experiments_combines_capabilities_first(self) -> None:
@@ -1770,9 +1806,7 @@ class ExpIntegrationTests(unittest.TestCase):
             def run(self, payload):
                 self.calls += 1
                 self.last_payload = payload
-                return LearningCurveResults.from_mapping(
-                    {self.field_name: result_df}
-                )
+                return LearningCurveResults.from_mapping({self.field_name: result_df})
 
         ridge_family = StubFamily("ridge_df")
         weighted_family = StubFamily("weighted_linear_df")
@@ -1793,7 +1827,10 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(weighted_family.calls, 1)
         self.assertIsInstance(ridge_family.last_payload, SweepRunPayload)
         self.assertEqual(
-            [split.sweep_size for split in ridge_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in ridge_family.last_payload.split_collection.splits
+            ],
             [2, 3, 4],
         )
 
@@ -1848,14 +1885,23 @@ class ExpIntegrationTests(unittest.TestCase):
             [4, 5],
         )
         self.assertTrue(
-            all(split.val_idx is not None for split in family.last_payload.split_collection.splits)
+            all(
+                split.val_idx is not None
+                for split in family.last_payload.split_collection.splits
+            )
         )
         self.assertEqual(
-            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.train_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [3, 4],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.val_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [1, 1],
         )
         self.assertEqual(
@@ -1885,7 +1931,9 @@ class ExpIntegrationTests(unittest.TestCase):
             [split.sweep_size for split in split_collection.splits],
             [4, 5],
         )
-        self.assertTrue(all(split.val_idx is not None for split in split_collection.splits))
+        self.assertTrue(
+            all(split.val_idx is not None for split in split_collection.splits)
+        )
 
     def test_build_sweep_split_collection_heavy_family_minimum_dominates(self) -> None:
         split_collection = build_sweep_split_collection(
@@ -2085,18 +2133,30 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIs(results.ridge_df, baseline_result)
         self.assertIs(results.weighted_linear_df, validation_result)
         self.assertEqual(
-            [split.sweep_size for split in baseline_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in baseline_family.last_payload.split_collection.splits
+            ],
             [2, 3, 4, 5],
         )
         self.assertTrue(
-            all(split.val_idx is None for split in baseline_family.last_payload.split_collection.splits)
+            all(
+                split.val_idx is None
+                for split in baseline_family.last_payload.split_collection.splits
+            )
         )
         self.assertEqual(
-            [split.sweep_size for split in validation_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in validation_family.last_payload.split_collection.splits
+            ],
             [4, 5],
         )
         self.assertTrue(
-            all(split.val_idx is not None for split in validation_family.last_payload.split_collection.splits)
+            all(
+                split.val_idx is not None
+                for split in validation_family.last_payload.split_collection.splits
+            )
         )
 
     def test_run_learning_curve_experiments_honors_split_policy_knobs(self) -> None:
@@ -2141,11 +2201,17 @@ class ExpIntegrationTests(unittest.TestCase):
             [4, 5],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.val_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [2, 2],
         )
         self.assertEqual(
-            [len(split.test_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.test_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [3, 2],
         )
 
@@ -2194,7 +2260,9 @@ class ExpIntegrationTests(unittest.TestCase):
 
             def run(self, payload):
                 self.last_payload = payload
-                return LearningCurveResults.from_mapping({"weighted_simplex_df": heavy_result})
+                return LearningCurveResults.from_mapping(
+                    {"weighted_simplex_df": heavy_result}
+                )
 
         baseline_family = BaselineFamily()
         guarded_family = GuardedValidationFamily()
@@ -2216,15 +2284,24 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIs(results.weighted_linear_df, guarded_result)
         self.assertIs(results.weighted_simplex_df, heavy_result)
         self.assertEqual(
-            [split.sweep_size for split in baseline_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in baseline_family.last_payload.split_collection.splits
+            ],
             [2, 3, 4, 5],
         )
         self.assertEqual(
-            [split.sweep_size for split in guarded_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in guarded_family.last_payload.split_collection.splits
+            ],
             [3, 4, 5],
         )
         self.assertEqual(
-            [split.sweep_size for split in heavy_family.last_payload.split_collection.splits],
+            [
+                split.sweep_size
+                for split in heavy_family.last_payload.split_collection.splits
+            ],
             [5],
         )
         for payload in (
@@ -2234,10 +2311,16 @@ class ExpIntegrationTests(unittest.TestCase):
         ):
             for split in payload.split_collection.splits:
                 self.assertGreaterEqual(len(split.test_idx), 3)
-                self.assertEqual(len(np.intersect1d(split.train_idx, split.test_idx)), 0)
+                self.assertEqual(
+                    len(np.intersect1d(split.train_idx, split.test_idx)), 0
+                )
                 if split.val_idx is not None:
-                    self.assertEqual(len(np.intersect1d(split.val_idx, split.test_idx)), 0)
-                    self.assertEqual(len(np.intersect1d(split.train_idx, split.val_idx)), 0)
+                    self.assertEqual(
+                        len(np.intersect1d(split.val_idx, split.test_idx)), 0
+                    )
+                    self.assertEqual(
+                        len(np.intersect1d(split.train_idx, split.val_idx)), 0
+                    )
 
     def test_run_learning_curve_experiments_family_requirements_compose_with_new_guards(
         self,
@@ -2285,15 +2368,24 @@ class ExpIntegrationTests(unittest.TestCase):
             [5, 6, 7, 8],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.val_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [3, 3, 3, 3],
         )
         self.assertEqual(
-            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.train_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [2, 3, 4, 5],
         )
         self.assertTrue(
-            all(len(split.test_idx) >= 2 for split in family.last_payload.split_collection.splits)
+            all(
+                len(split.test_idx) >= 2
+                for split in family.last_payload.split_collection.splits
+            )
         )
         self.assertEqual(
             family.last_payload.split_collection.planning_requirements,
@@ -2408,7 +2500,9 @@ class ExpIntegrationTests(unittest.TestCase):
             model_families=[baseline_family, validation_family],
         )
 
-        self.assertEqual(results.ridge_df.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"])
+        self.assertEqual(
+            results.ridge_df.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"]
+        )
         self.assertEqual(
             results.ridge_df["n_train"].tolist(),
             [2, 3, 4, 5],
@@ -2556,7 +2650,9 @@ class ExpIntegrationTests(unittest.TestCase):
             ) -> pd.DataFrame:
                 self.payloads.append(payload)
                 if payload.splits != ():
-                    raise AssertionError("expected skipped validation family to receive no splits")
+                    raise AssertionError(
+                        "expected skipped validation family to receive no splits"
+                    )
                 return sweep_results_frame({})
 
         X = np.arange(18, dtype=float).reshape(6, 3)
@@ -2613,7 +2709,9 @@ class ExpIntegrationTests(unittest.TestCase):
             ) -> pd.DataFrame:
                 self.payloads.append(payload)
                 if payload.splits != ():
-                    raise AssertionError("expected no valid validation-aware sweep sizes")
+                    raise AssertionError(
+                        "expected no valid validation-aware sweep sizes"
+                    )
                 return sweep_results_frame({})
 
         validation_runner = EmptyAwareValidationRunner()
@@ -2903,7 +3001,7 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(results.lasso_df)
         self.assertIsNone(results.resid_df)
 
-    def test_run_learning_curve_experiments_from_config_saves_method_artifacts(
+    def test_run_learning_curve_experiments_from_config_saves_bundle_artifact(
         self,
     ) -> None:
         df = pd.DataFrame(
@@ -2943,7 +3041,7 @@ class ExpIntegrationTests(unittest.TestCase):
         family = RecordingFamily()
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
             cfg = SimpleNamespace(
                 seed=23,
                 plot=SimpleNamespace(
@@ -2964,7 +3062,7 @@ class ExpIntegrationTests(unittest.TestCase):
                         min_tuning_val_size=1,
                         min_inner_train_size=1,
                         min_test_size=1,
-                        results_artifact_dir=artifact_dir,
+                        results_bundle_path=bundle_path,
                         models=SimpleNamespace(
                             use_ridge=True,
                             use_kernel_ridge=False,
@@ -2989,9 +3087,8 @@ class ExpIntegrationTests(unittest.TestCase):
                 model_families=[family],
             )
 
-            artifact_path = artifact_dir / "ridge.json"
-            self.assertTrue(artifact_path.is_file())
-            artifact = load_learning_curve_method_artifact(artifact_path)
+            self.assertTrue(bundle_path.is_file())
+            artifact = load_learning_curve_results_artifact(bundle_path)
 
         pd.testing.assert_frame_equal(results.ridge_df, result_df)
         pd.testing.assert_frame_equal(artifact.results.ridge_df, result_df)
@@ -2999,163 +3096,10 @@ class ExpIntegrationTests(unittest.TestCase):
             artifact.results.ridge_selection_df,
             selection_df,
         )
-        self.assertEqual(artifact.method_name, "ridge")
         self.assertEqual(artifact.metadata.seed, 23)
         self.assertEqual(artifact.metadata.enabled_models, ("ridge",))
         self.assertEqual(artifact.metadata.adsorbate_filter, "OH")
         self.assertEqual(artifact.metadata.reaction_contains_filter, ("Pt",))
-
-    def test_load_or_run_learning_curve_results_from_config_reuses_saved_artifacts(
-        self,
-    ) -> None:
-        df = pd.DataFrame(
-            {
-                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
-            }
-        )
-        result_df = pd.DataFrame(
-            {
-                "n_train": [2, 3],
-                "rmse_mean": [0.4, 0.3],
-                "rmse_std": [0.05, 0.04],
-            }
-        )
-        saved_results = LearningCurveResults.from_mapping({"ridge_df": result_df})
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
-            metadata = LearningCurveSweepMetadata(
-                seed=23,
-                min_train=2,
-                max_train=3,
-                step=1,
-                n_repeats=1,
-                enabled_models=("ridge",),
-                adsorbate_filter="OH",
-                reaction_contains_filter=("Pt",),
-            )
-            save_learning_curve_method_artifacts(
-                saved_results,
-                metadata,
-                artifact_dir,
-            )
-            cfg = SimpleNamespace(
-                seed=23,
-                plot=SimpleNamespace(
-                    filters=SimpleNamespace(
-                        adsorbate="OH",
-                        anomaly_label=None,
-                        reaction_contains=["Pt"],
-                    )
-                ),
-                experiment=SimpleNamespace(
-                    learning_curve=SimpleNamespace(
-                        min_train=2,
-                        max_train=3,
-                        step=1,
-                        n_repeats=1,
-                        validation_fraction=0.2,
-                        min_val_size=1,
-                        min_tuning_val_size=1,
-                        min_inner_train_size=1,
-                        min_test_size=1,
-                        results_artifact_dir=artifact_dir,
-                        reuse_results=True,
-                        models=SimpleNamespace(
-                            use_ridge=True,
-                            use_kernel_ridge=False,
-                            use_lasso=False,
-                            use_elastic_net=False,
-                            use_residual=False,
-                            use_weighted_linear=False,
-                            use_weighted_simplex=False,
-                            use_graph_mean=False,
-                            use_latent=False,
-                            moe=SimpleNamespace(enabled=False),
-                            probe_gnn=SimpleNamespace(enabled=False),
-                            gnn_direct=SimpleNamespace(enabled=False),
-                        ),
-                    )
-                ),
-            )
-
-            with patch("oasis.exp.run_learning_curve_experiments_from_config") as mock_run:
-                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
-
-        pd.testing.assert_frame_equal(results.ridge_df, result_df)
-        self.assertFalse(mock_run.called)
-
-    def test_load_or_run_learning_curve_results_from_config_reuses_subset_of_saved_methods(
-        self,
-    ) -> None:
-        df = pd.DataFrame(
-            {
-                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
-            }
-        )
-        ridge_df = pd.DataFrame(
-            {
-                "n_train": [2, 3],
-                "rmse_mean": [0.4, 0.3],
-                "rmse_std": [0.05, 0.04],
-            }
-        )
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
-            save_learning_curve_method_artifacts(
-                LearningCurveResults.from_mapping({"ridge_df": ridge_df}),
-                LearningCurveSweepMetadata(
-                    seed=23,
-                    min_train=2,
-                    max_train=3,
-                    step=1,
-                    n_repeats=1,
-                    enabled_models=("ridge", "weighted_linear"),
-                ),
-                artifact_dir,
-            )
-            cfg = SimpleNamespace(
-                seed=23,
-                plot=SimpleNamespace(filters=None),
-                experiment=SimpleNamespace(
-                    learning_curve=SimpleNamespace(
-                        min_train=2,
-                        max_train=3,
-                        step=1,
-                        n_repeats=1,
-                        validation_fraction=0.2,
-                        min_val_size=1,
-                        min_tuning_val_size=1,
-                        min_inner_train_size=1,
-                        min_test_size=1,
-                        results_artifact_dir=artifact_dir,
-                        reuse_results=True,
-                        models=SimpleNamespace(
-                            use_ridge=True,
-                            use_kernel_ridge=False,
-                            use_lasso=False,
-                            use_elastic_net=False,
-                            use_residual=False,
-                            use_weighted_linear=False,
-                            use_weighted_simplex=False,
-                            use_graph_mean=False,
-                            use_latent=False,
-                            moe=SimpleNamespace(enabled=False),
-                            probe_gnn=SimpleNamespace(enabled=False),
-                            gnn_direct=SimpleNamespace(enabled=False),
-                        ),
-                    )
-                ),
-            )
-
-            with patch("oasis.exp.run_learning_curve_experiments_from_config") as mock_run:
-                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
-
-        pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
-        self.assertFalse(mock_run.called)
 
     def test_load_or_run_learning_curve_results_from_config_reuses_bundle_artifact(
         self,
@@ -3232,13 +3176,15 @@ class ExpIntegrationTests(unittest.TestCase):
                 ),
             )
 
-            with patch("oasis.exp.run_learning_curve_experiments_from_config") as mock_run:
+            with patch(
+                "oasis.exp.run_learning_curve_experiments_from_config"
+            ) as mock_run:
                 results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
 
         pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
         self.assertFalse(mock_run.called)
 
-    def test_run_learning_curve_experiments_from_config_reuses_partial_method_cache(
+    def test_run_learning_curve_experiments_from_config_reuses_partial_bundle_cache(
         self,
     ) -> None:
         df = pd.DataFrame(
@@ -3293,8 +3239,8 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
-            save_learning_curve_method_artifacts(
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
                 LearningCurveResults.from_mapping({"ridge_df": ridge_df}),
                 LearningCurveSweepMetadata(
                     seed=23,
@@ -3304,7 +3250,7 @@ class ExpIntegrationTests(unittest.TestCase):
                     n_repeats=1,
                     enabled_models=("ridge", "weighted_linear"),
                 ),
-                artifact_dir,
+                bundle_path,
             )
             cfg = SimpleNamespace(
                 seed=23,
@@ -3320,7 +3266,7 @@ class ExpIntegrationTests(unittest.TestCase):
                         min_tuning_val_size=1,
                         min_inner_train_size=1,
                         min_test_size=1,
-                        results_artifact_dir=artifact_dir,
+                        results_bundle_path=bundle_path,
                         reuse_results=True,
                         models=SimpleNamespace(
                             use_ridge=True,
@@ -3354,7 +3300,7 @@ class ExpIntegrationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
         pd.testing.assert_frame_equal(results.weighted_linear_df, weighted_linear_df)
 
-    def test_run_learning_curve_experiments_from_config_force_refreshes_selected_methods(
+    def test_run_learning_curve_experiments_from_config_force_refreshes_selected_methods_in_bundle(
         self,
     ) -> None:
         df = pd.DataFrame(
@@ -3416,8 +3362,8 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
-            save_learning_curve_method_artifacts(
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
                 LearningCurveResults(
                     ridge_df=cached_ridge_df,
                     weighted_linear_df=cached_weighted_linear_df,
@@ -3430,7 +3376,7 @@ class ExpIntegrationTests(unittest.TestCase):
                     n_repeats=1,
                     enabled_models=("ridge", "weighted_linear"),
                 ),
-                artifact_dir,
+                bundle_path,
             )
             cfg = SimpleNamespace(
                 seed=23,
@@ -3446,7 +3392,7 @@ class ExpIntegrationTests(unittest.TestCase):
                         min_tuning_val_size=1,
                         min_inner_train_size=1,
                         min_test_size=1,
-                        results_artifact_dir=artifact_dir,
+                        results_bundle_path=bundle_path,
                         reuse_results=True,
                         force_refresh_methods=["ridge"],
                         models=SimpleNamespace(
@@ -3472,12 +3418,7 @@ class ExpIntegrationTests(unittest.TestCase):
                 cfg=cfg,
                 model_families=[ridge_family, weighted_linear_family],
             )
-            refreshed_ridge_artifact = load_learning_curve_method_artifact(
-                artifact_dir / "ridge.json"
-            )
-            reused_weighted_linear_artifact = load_learning_curve_method_artifact(
-                artifact_dir / "weighted_linear.json"
-            )
+            bundle_artifact = load_learning_curve_results_artifact(bundle_path)
 
         self.assertEqual(ridge_family.calls, 1)
         self.assertEqual(weighted_linear_family.calls, 0)
@@ -3487,12 +3428,121 @@ class ExpIntegrationTests(unittest.TestCase):
             cached_weighted_linear_df,
         )
         pd.testing.assert_frame_equal(
-            refreshed_ridge_artifact.results.ridge_df,
+            bundle_artifact.results.ridge_df,
             refreshed_ridge_df,
         )
         pd.testing.assert_frame_equal(
-            reused_weighted_linear_artifact.results.weighted_linear_df,
+            bundle_artifact.results.weighted_linear_df,
             cached_weighted_linear_df,
+        )
+
+    def test_run_learning_curve_experiments_from_config_preserves_prior_bundle_methods(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "linear_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        weighted_simplex_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.32, 0.27],
+                "rmse_std": [0.04, 0.03],
+            }
+        )
+
+        class StubFamily:
+            def __init__(self, result_df: pd.DataFrame) -> None:
+                self.calls = 0
+                self.result_df = result_df
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                return LearningCurveResults.from_mapping(
+                    {"weighted_simplex_df": self.result_df}
+                )
+
+        family = StubFamily(weighted_simplex_df)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults.from_mapping({"ridge_df": ridge_df}),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=2,
+                    max_train=3,
+                    step=1,
+                    n_repeats=1,
+                    enabled_models=("ridge",),
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=False,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=True,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(family.calls, 1)
+        self.assertIsNone(results.ridge_df)
+        pd.testing.assert_frame_equal(results.weighted_simplex_df, weighted_simplex_df)
+        pd.testing.assert_frame_equal(artifact.results.ridge_df, ridge_df)
+        pd.testing.assert_frame_equal(
+            artifact.results.weighted_simplex_df,
+            weighted_simplex_df,
+        )
+        self.assertEqual(
+            artifact.metadata.enabled_models,
+            ("ridge", "weighted_simplex"),
         )
 
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
@@ -3554,19 +3604,30 @@ class ExpIntegrationTests(unittest.TestCase):
             [5],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.val_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [3],
         )
         self.assertEqual(
-            [len(split.train_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.train_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [2],
         )
         self.assertEqual(
-            [len(split.test_idx) for split in family.last_payload.split_collection.splits],
+            [
+                len(split.test_idx)
+                for split in family.last_payload.split_collection.splits
+            ],
             [2],
         )
 
-    def test_run_learning_curve_experiments_from_config_forwards_graph_view(self) -> None:
+    def test_run_learning_curve_experiments_from_config_forwards_graph_view(
+        self,
+    ) -> None:
         df = pd.DataFrame(
             {
                 "reaction": ["s0", "s1", "s2", "s3", "s4", "s5"],
@@ -3782,7 +3843,9 @@ class ExpIntegrationTests(unittest.TestCase):
             dataset.sample_ids,
             np.array(["s0", "s1", "s2", "s3", "s4", "s5"]),
         )
-        self.assertEqual(dataset.graphs.sample_ids, ("s0", "s1", "s2", "s3", "s4", "s5"))
+        self.assertEqual(
+            dataset.graphs.sample_ids, ("s0", "s1", "s2", "s3", "s4", "s5")
+        )
         np.testing.assert_allclose(
             dataset.graphs["s3"].node_positions,
             np.array([[3.0, 0.0, 0.0]]),

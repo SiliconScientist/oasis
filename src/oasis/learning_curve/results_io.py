@@ -115,16 +115,21 @@ class LearningCurveSweepMetadata:
         other: LearningCurveSweepMetadata,
         *,
         allow_enabled_model_superset: bool = False,
+        ignore_enabled_models: bool = False,
     ) -> None:
         this_mapping = self.to_mapping()
         other_mapping = other.to_mapping()
         mismatches = [
             f"{key}: expected {this_mapping[key]!r}, got {other_mapping[key]!r}"
             for key in this_mapping
-            if key != "enabled_models" or not allow_enabled_model_superset
+            if key != "enabled_models"
+            or (
+                not allow_enabled_model_superset
+                and not ignore_enabled_models
+            )
             if this_mapping[key] != other_mapping.get(key)
         ]
-        if allow_enabled_model_superset:
+        if allow_enabled_model_superset and not ignore_enabled_models:
             expected_models = set(self.enabled_models)
             actual_models = set(other.enabled_models)
             if not expected_models.issubset(actual_models):
@@ -259,6 +264,7 @@ def load_learning_curve_results_artifact_mapping(
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
     allow_enabled_model_superset: bool = False,
+    ignore_enabled_models: bool = False,
 ) -> LearningCurveResultsArtifact:
     version = payload.get("version")
     if version != _RESULTS_BUNDLE_ARTIFACT_VERSION:
@@ -275,6 +281,7 @@ def load_learning_curve_results_artifact_mapping(
         expected_metadata.assert_compatible(
             metadata,
             allow_enabled_model_superset=allow_enabled_model_superset,
+            ignore_enabled_models=ignore_enabled_models,
         )
 
     results_payload = payload.get("results")
@@ -306,12 +313,14 @@ def load_learning_curve_results_artifact(
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
     allow_enabled_model_superset: bool = False,
+    ignore_enabled_models: bool = False,
 ) -> LearningCurveResultsArtifact:
     resolved_path = Path(path)
     return load_learning_curve_results_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
         allow_enabled_model_superset=allow_enabled_model_superset,
+        ignore_enabled_models=ignore_enabled_models,
     )
 
 

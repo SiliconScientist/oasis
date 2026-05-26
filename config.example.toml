@@ -70,14 +70,12 @@ min_inner_train_size = 1
 min_test_size = 1
 # Repeats are independent outer splits at each training-budget value.
 n_repeats = 10
-# Optional directory for per-method cached learning-curve result artifacts.
+# Optional single-file bundle for one dataset's cached learning-curve results.
 # Typical workflow:
 # 1. Run once with this path set to persist sweep results.
 # 2. Keep `reuse_results = true` to regenerate plots from cache without retraining.
 # 3. Use `force_refresh_methods` to rerun only selected methods and overwrite
-#    just those artifacts.
-# results_artifact_dir = "data/results/learning_curve"
-# Optional single-file bundle for one dataset's saved learning-curve results.
+#    just those bundle entries.
 # results_bundle_path = "data/results/learning_curve/example_dataset.json"
 # If true, reuse compatible saved result artifacts when available.
 # reuse_results = true

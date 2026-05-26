@@ -31,18 +31,10 @@ PYTHONPATH=src python -m unittest tests.test_config
 
 ## Learning-Curve Result Artifacts
 
-Learning-curve runs can persist one artifact per method so you do not need to
-retrain every model just to regenerate plots.
+Learning-curve runs can persist one bundle file per dataset so you do not need
+to retrain every model just to regenerate plots.
 
 Enable this in `config.toml`:
-
-```toml
-[experiment.learning_curve]
-results_artifact_dir = "data/results/learning_curve"
-reuse_results = true
-```
-
-If you prefer one file per dataset instead of one file per method:
 
 ```toml
 [experiment.learning_curve]
@@ -52,24 +44,24 @@ reuse_results = true
 
 Workflow:
 
-- Run once with `results_artifact_dir` set. Oasis writes one JSON artifact per
-  enabled method after the sweep completes.
+- Run once with `results_bundle_path` set. Oasis writes one JSON bundle for the
+  dataset after the sweep completes.
 - Regenerate plots later with `reuse_results = true`. If the saved artifact
   metadata matches the current sweep definition, Oasis reloads cached
   `LearningCurveResults` instead of retraining.
 - Partial cache hits are supported. If only some enabled methods are cached,
-  Oasis reuses those artifacts and trains only the missing methods.
-- Reuse also tolerates cached supersets. If a saved artifact contains results
+  Oasis reuses those results and trains only the missing methods.
+- Reuse tolerates cached supersets. If a saved artifact contains results
   for more methods than are currently enabled, Oasis reuses the matching subset
   instead of failing.
 - Selective refresh is supported through `force_refresh_methods`. This reruns
-  only the named enabled methods and overwrites just their artifacts.
+  only the named enabled methods and overwrites just those bundle entries.
 
 Example selective refresh:
 
 ```toml
 [experiment.learning_curve]
-results_artifact_dir = "data/results/learning_curve"
+results_bundle_path = "data/results/learning_curve/khlohc_tol.json"
 reuse_results = true
 force_refresh_methods = ["moe", "probe_gnn"]
 ```

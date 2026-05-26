@@ -157,7 +157,6 @@ class LearningCurveExperimentConfig(BaseModel):
     min_tuning_val_size: int = 1
     min_inner_train_size: int = 1
     min_test_size: int = 1
-    results_artifact_dir: Optional[Path] = None
     results_bundle_path: Optional[Path] = None
     reuse_results: bool = False
     force_refresh_methods: list[str] = Field(default_factory=list)
