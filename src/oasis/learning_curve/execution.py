@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,11 @@ from oasis.tune import SweepRunnerArtifacts, ValidationAwareEstimator
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 
+try:
+    from sklearn.exceptions import ConvergenceWarning
+except ImportError:
+    ConvergenceWarning = Warning
+
 if TYPE_CHECKING:
     from oasis.learning_curve.runners import (
         SweepExperimentRunner,
@@ -25,6 +31,12 @@ if TYPE_CHECKING:
 
 
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+
+
+def _fit_model_safely(model: object, X: np.ndarray, y: np.ndarray) -> None:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=ConvergenceWarning)
+        model.fit(X, y)
 
 
 def _as_runner_payload(
@@ -114,7 +126,7 @@ def sweep_model(
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = model_factory()
-        model.fit(X[split.train_idx], y[split.train_idx])
+        _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
         X_test = X[split.test_idx]
         preds = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
@@ -221,7 +233,7 @@ def weighted_linear_sweep(
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = LinearRegression(fit_intercept=fit_intercept)
-        model.fit(X[split.train_idx], y[split.train_idx])
+        _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
         preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
@@ -233,7 +245,7 @@ def _simplex_weights(
     y_train: np.ndarray,
 ) -> np.ndarray:
     model = LinearRegression(fit_intercept=False, positive=True)
-    model.fit(X_train, y_train)
+    _fit_model_safely(model, X_train, y_train)
     weights = np.clip(np.asarray(model.coef_, dtype=float), 0.0, None)
     weight_sum = float(weights.sum())
     if weight_sum <= 0.0:

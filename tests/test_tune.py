@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -55,6 +56,11 @@ try:
     HAS_SKLEARN = True
 except ModuleNotFoundError:
     HAS_SKLEARN = False
+
+try:
+    from sklearn.exceptions import ConvergenceWarning
+except ModuleNotFoundError:
+    ConvergenceWarning = Warning
 
 
 @unittest.skipUnless(HAS_TUNE, "requires oasis.tune dependencies")
@@ -146,6 +152,46 @@ class TuneTests(unittest.TestCase):
             atol=1e-12,
         )
         pd.testing.assert_frame_equal(result, runner_result.metrics)
+
+    def test_supervised_model_selection_suppresses_convergence_warnings(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[1.0], [2.0], [3.0], [4.0]]),
+            targets=np.array([1.0, 2.0, 3.0, 4.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2]),
+                    test_idx=np.array([3]),
+                ),
+            )
+        )
+
+        class WarningModel:
+            def __init__(self, constant: float) -> None:
+                self.constant = constant
+
+            def fit(self, X, y) -> WarningModel:
+                del X, y
+                warnings.warn("expected test warning", ConvergenceWarning)
+                return self
+
+            def predict(self, X):
+                return np.full(len(X), self.constant, dtype=float)
+
+        spec = FactoryListHyperparameterSpec(
+            factories=(lambda: WarningModel(3.0),)
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = sweep_supervised_model_selection(payload, spec)
+
+        self.assertEqual(len(caught), 0)
+        self.assertEqual(result.metrics["n_train"].tolist(), [3])
 
     def test_supervised_model_selection_uses_val_idx_not_test_idx(self) -> None:
         dataset = SweepDataset(

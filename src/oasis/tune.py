@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from itertools import product
 from typing import Any, Literal, Protocol, runtime_checkable
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -34,6 +35,11 @@ except ModuleNotFoundError:
                     value = getattr(type(self), field_name)
                 setattr(self, field_name, value)
 
+try:
+    from sklearn.exceptions import ConvergenceWarning
+except ImportError:
+    ConvergenceWarning = Warning
+
 SelectionRefitPolicy = Literal["train_only", "train_plus_val"]
 
 
@@ -51,6 +57,12 @@ def _mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     if y_true_arr.shape != y_pred_arr.shape:
         raise ValueError("y_true and y_pred must have the same shape.")
     return float(np.mean((y_true_arr - y_pred_arr) ** 2))
+
+
+def _fit_model_safely(model: object, X: np.ndarray, y: np.ndarray) -> None:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=ConvergenceWarning)
+        model.fit(X, y)
 
 
 @runtime_checkable
@@ -451,7 +463,7 @@ def _select_candidate_factory_by_validation(
     best_rmse = np.inf
     for candidate_factory in hyperparameter_spec.candidate_factories():
         model = candidate_factory()
-        model.fit(X[split.train_idx], y[split.train_idx])
+        _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
         val_preds = model.predict(X[split.val_idx])
         val_rmse = np.sqrt(_mean_squared_error(y[split.val_idx], val_preds))
         if val_rmse < best_rmse:
@@ -482,7 +494,7 @@ def _fit_selected_supervised_model(
         fit_idx = split.train_idx
     else:
         fit_idx = np.concatenate([split.train_idx, split.val_idx])
-    model.fit(X[fit_idx], y[fit_idx])
+    _fit_model_safely(model, X[fit_idx], y[fit_idx])
     return model, hyperparameter_spec.selection_metadata(model)
 
 

@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import PropertyMock, patch
 
 import numpy as np
+import pandas as pd
 
 from oasis.sweep import (
     build_sweep_batches,
@@ -14,6 +15,7 @@ from oasis.sweep import (
     DatasetLoaderFactory,
     GraphDatasetView,
     GraphRecord,
+    LearningCurveResults,
     LoaderAdapterInput,
     LoaderBatching,
     SweepDataset,
@@ -1545,3 +1547,24 @@ class SweepPayloadTests(unittest.TestCase):
                 "graph_ids": ("s4", "s0", "s3"),
             },
         )
+
+
+class LearningCurveResultsTests(unittest.TestCase):
+    def test_to_mapping_exposes_all_result_fields(self) -> None:
+        ridge_df = pd.DataFrame(
+            {"n_train": [4, 8], "rmse_mean": [0.4, 0.3], "rmse_std": [0.05, 0.02]}
+        )
+        probe_gnn_selection_df = pd.DataFrame(
+            {"n_train": [8], "hidden_dim": [32], "best_validation_score": [0.12]}
+        )
+        results = LearningCurveResults(
+            ridge_df=ridge_df,
+            probe_gnn_selection_df=probe_gnn_selection_df,
+        )
+
+        mapping = results.to_mapping()
+
+        self.assertIs(mapping["ridge_df"], ridge_df)
+        self.assertIs(mapping["probe_gnn_selection_df"], probe_gnn_selection_df)
+        self.assertIn("latent_df", mapping)
+        self.assertIsNone(mapping["latent_df"])

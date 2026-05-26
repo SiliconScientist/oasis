@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
@@ -1061,33 +1061,18 @@ class LearningCurveResults:
     def empty(cls) -> LearningCurveResults:
         return cls()
 
+    def to_mapping(self) -> dict[str, pd.DataFrame | None]:
+        return {
+            field_def.name: getattr(self, field_def.name)
+            for field_def in fields(self)
+        }
+
     @classmethod
     def from_mapping(
         cls,
         frames: Mapping[str, pd.DataFrame | None],
     ) -> LearningCurveResults:
-        return cls(
-            ridge_df=frames.get("ridge_df"),
-            kernel_ridge_df=frames.get("kernel_ridge_df"),
-            ridge_selection_df=frames.get("ridge_selection_df"),
-            lasso_df=frames.get("lasso_df"),
-            lasso_selection_df=frames.get("lasso_selection_df"),
-            elastic_df=frames.get("elastic_df"),
-            elastic_selection_df=frames.get("elastic_selection_df"),
-            resid_df=frames.get("resid_df"),
-            weighted_linear_df=frames.get("weighted_linear_df"),
-            weighted_simplex_df=frames.get("weighted_simplex_df"),
-            graph_mean_df=frames.get("graph_mean_df"),
-            graph_mean_selection_df=frames.get("graph_mean_selection_df"),
-            kernel_ridge_selection_df=frames.get("kernel_ridge_selection_df"),
-            moe_df=frames.get("moe_df"),
-            moe_selection_df=frames.get("moe_selection_df"),
-            probe_gnn_df=frames.get("probe_gnn_df"),
-            probe_gnn_selection_df=frames.get("probe_gnn_selection_df"),
-            gnn_direct_df=frames.get("gnn_direct_df"),
-            gnn_direct_selection_df=frames.get("gnn_direct_selection_df"),
-            latent_df=frames.get("latent_df"),
-        )
+        return cls(**{field_def.name: frames.get(field_def.name) for field_def in fields(cls)})
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
         return LearningCurveResults(
