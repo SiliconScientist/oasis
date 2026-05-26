@@ -508,7 +508,9 @@ def run_learning_curve_experiments_from_config(
         learning_curve_method_names,
         learning_curve_sweep_metadata_from_config,
         learning_curve_method_name_for_result_field,
+        learning_curve_result_field_for_method_name,
         learning_curve_results_has_method,
+        learning_curve_selection_field_for_method_name,
         load_learning_curve_results_artifact,
         save_learning_curve_results_artifact,
         select_learning_curve_results_methods,
@@ -558,6 +560,15 @@ def run_learning_curve_experiments_from_config(
                     ignore_repeat_count=True,
                 ).results,
                 enabled_model_names,
+            )
+        if force_refresh_methods:
+            cached_results = select_learning_curve_results_methods(
+                cached_results,
+                tuple(
+                    method_name
+                    for method_name in enabled_model_names
+                    if method_name not in force_refresh_methods
+                ),
             )
         cached_method_names = {
             method_name
@@ -632,7 +643,19 @@ def run_learning_curve_experiments_from_config(
                     existing_bundle_metadata = existing_bundle.metadata
                 except ValueError:
                     pass
-            bundle_results = existing_bundle_results.merge(results)
+            overwrite_fields = {
+                field_name
+                for method_name in force_refresh_methods
+                for field_name in (
+                    learning_curve_result_field_for_method_name(method_name),
+                    learning_curve_selection_field_for_method_name(method_name),
+                )
+                if field_name is not None
+            }
+            bundle_results = existing_bundle_results.merge(
+                fresh_results,
+                overwrite_fields=overwrite_fields,
+            )
             results = select_learning_curve_results_methods(
                 bundle_results,
                 enabled_model_names,

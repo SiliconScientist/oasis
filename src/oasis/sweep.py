@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Hashable, Mapping, Sequence
+from collections.abc import Callable, Collection, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
@@ -1074,12 +1074,20 @@ class LearningCurveResults:
     ) -> LearningCurveResults:
         return cls(**{field_def.name: frames.get(field_def.name) for field_def in fields(cls)})
 
-    def merge(self, other: LearningCurveResults) -> LearningCurveResults:
+    def merge(
+        self,
+        other: LearningCurveResults,
+        *,
+        overwrite_fields: Collection[str] = (),
+    ) -> LearningCurveResults:
+        overwrite_field_names = set(overwrite_fields)
         return LearningCurveResults.from_mapping(
             {
                 field_def.name: _merge_learning_curve_frame(
+                    field_def.name,
                     getattr(self, field_def.name),
                     getattr(other, field_def.name),
+                    allow_overlap=field_def.name in overwrite_field_names,
                 )
                 for field_def in fields(self)
             }
@@ -1087,8 +1095,11 @@ class LearningCurveResults:
 
 
 def _merge_learning_curve_frame(
+    field_name: str,
     left: pd.DataFrame | None,
     right: pd.DataFrame | None,
+    *,
+    allow_overlap: bool = False,
 ) -> pd.DataFrame | None:
     if left is None:
         return right
@@ -1096,6 +1107,13 @@ def _merge_learning_curve_frame(
         return left
     if "n_train" not in left.columns or "n_train" not in right.columns:
         raise ValueError("learning-curve result frames must contain an n_train column.")
+    overlapping_train_sizes = sorted(
+        set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
+    )
+    if overlapping_train_sizes and not allow_overlap:
+        raise ValueError(
+            f"{field_name} contains duplicate n_train rows: {overlapping_train_sizes!r}."
+        )
     merged = pd.concat([left, right], ignore_index=True)
     merged = merged.drop_duplicates(subset=["n_train"], keep="last")
     return merged.sort_values("n_train").reset_index(drop=True)

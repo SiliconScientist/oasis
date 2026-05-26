@@ -1582,9 +1582,9 @@ class LearningCurveResultsTests(unittest.TestCase):
         update = LearningCurveResults(
             ridge_df=pd.DataFrame(
                 {
-                    "n_train": [20, 30, 40],
-                    "rmse_mean": [0.39, 0.35, 0.3],
-                    "rmse_std": [0.045, 0.04, 0.03],
+                    "n_train": [30, 40],
+                    "rmse_mean": [0.35, 0.3],
+                    "rmse_std": [0.04, 0.03],
                 }
             )
         )
@@ -1596,8 +1596,8 @@ class LearningCurveResultsTests(unittest.TestCase):
             pd.DataFrame(
                 {
                     "n_train": [1, 10, 20, 30, 40],
-                    "rmse_mean": [0.8, 0.5, 0.39, 0.35, 0.3],
-                    "rmse_std": [0.1, 0.07, 0.045, 0.04, 0.03],
+                    "rmse_mean": [0.8, 0.5, 0.4, 0.35, 0.3],
+                    "rmse_std": [0.1, 0.07, 0.05, 0.04, 0.03],
                 }
             ),
         )
@@ -1614,8 +1614,8 @@ class LearningCurveResultsTests(unittest.TestCase):
         update = LearningCurveResults(
             ridge_selection_df=pd.DataFrame(
                 {
-                    "n_train": [20, 30, 40],
-                    "alpha": [5.0, 7.5, 10.0],
+                    "n_train": [30, 40],
+                    "alpha": [7.5, 10.0],
                 }
             )
         )
@@ -1627,7 +1627,66 @@ class LearningCurveResultsTests(unittest.TestCase):
             pd.DataFrame(
                 {
                     "n_train": [1, 10, 20, 30, 40],
-                    "alpha": [0.1, 1.0, 5.0, 7.5, 10.0],
+                    "alpha": [0.1, 1.0, 10.0, 7.5, 10.0],
+                }
+            ),
+        )
+
+    def test_merge_rejects_duplicate_metric_rows_without_overwrite(self) -> None:
+        base = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [10, 20],
+                    "rmse_mean": [0.5, 0.4],
+                    "rmse_std": [0.07, 0.05],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [20, 30],
+                    "rmse_mean": [0.39, 0.35],
+                    "rmse_std": [0.045, 0.04],
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"ridge_df contains duplicate n_train rows: \[20\]",
+        ):
+            base.merge(update)
+
+    def test_merge_allows_duplicate_metric_rows_with_overwrite(self) -> None:
+        base = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [10, 20],
+                    "rmse_mean": [0.5, 0.4],
+                    "rmse_std": [0.07, 0.05],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [20, 30],
+                    "rmse_mean": [0.39, 0.35],
+                    "rmse_std": [0.045, 0.04],
+                }
+            )
+        )
+
+        merged = base.merge(update, overwrite_fields={"ridge_df"})
+
+        pd.testing.assert_frame_equal(
+            merged.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [10, 20, 30],
+                    "rmse_mean": [0.5, 0.39, 0.35],
+                    "rmse_std": [0.07, 0.045, 0.04],
                 }
             ),
         )
