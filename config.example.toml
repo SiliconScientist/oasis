@@ -38,11 +38,15 @@ mlip_name = "mace-mh-1"
 checkpoint = "medium"
 # output_model = "optional-output-name"
 # model_version = "optional-version"
+# [mlip.rootstock.models.mace.metadata]
+# provider = "acme"
 
 [mlip.rootstock.models.mattersim]
 model = "mattersim"
 mlip_name = "mattersim-v1-5m"
 checkpoint = "models/mattersim/mattersim-v1.0.0-5M.pth"
+# [mlip.rootstock.models.mattersim.metadata]
+# provider = "acme"
 
 [plot]
 output_dir = "data/results/plots"
@@ -66,6 +70,17 @@ min_inner_train_size = 1
 min_test_size = 1
 # Repeats are independent outer splits at each training-budget value.
 n_repeats = 10
+# Optional directory for per-method cached learning-curve result artifacts.
+# Typical workflow:
+# 1. Run once with this path set to persist sweep results.
+# 2. Keep `reuse_results = true` to regenerate plots from cache without retraining.
+# 3. Use `force_refresh_methods` to rerun only selected methods and overwrite
+#    just those artifacts.
+# results_artifact_dir = "data/results/learning_curve"
+# If true, reuse compatible saved result artifacts when available.
+# reuse_results = true
+# Optional subset of enabled methods to rerun even if compatible artifacts exist.
+# force_refresh_methods = ["moe", "probe_gnn"]
 
 [experiment.learning_curve.graph_dataset]
 # Reuse this aligned MLIP+graph artifact if it already exists; otherwise Oasis
@@ -114,9 +129,12 @@ top_k = 2                    # number of experts to activate; only used when gat
 
 [experiment.learning_curve.models.moe.training]
 # GNN / SchNet gate training settings (ignored for mlip_baseline).
+batch_size = 32
+# eval_batch_size = 64
 epochs = 100
 # lr = 1e-3
 # weight_decay = 0.0
+# num_workers = 0
 # device = "cpu"
 # seed = 42
 
@@ -132,9 +150,12 @@ enabled = false              # set true to run GNN direct regression (no probe f
 # hidden_dims = [64, 64]    # fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
 
 [experiment.learning_curve.models.gnn_direct.training]
+batch_size = 32
+# eval_batch_size = 64
 epochs = 100
 # lr = 1e-3
 # weight_decay = 0.0
+# num_workers = 0
 # device = "cpu"
 # seed = 42
 
@@ -150,11 +171,19 @@ enabled = false              # set true to run probe-GNN direct regression
 # hidden_dims = [64, 64]    # fixes hidden_dim=64, n_layers=2; if empty Optuna searches both
 
 [experiment.learning_curve.models.probe_gnn.training]
+batch_size = 32
+# eval_batch_size = 64
 epochs = 100
 # lr = 1e-3
 # weight_decay = 0.0
+# num_workers = 0
 # device = "cpu"
 # seed = 42
+
+# Optional probe-feature workflow config.
+# [probe_features]
+# dataset_path = "data/raw_data/example_adsorption.json"
+# mlip_results_dir = "data/mlips/example_run"
 
 [experiment.learning_curve.models.probe_gnn.tuning.optuna]
 # n_trials = 50

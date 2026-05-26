@@ -29,6 +29,44 @@ PYTHONPATH=src python -m unittest tests.test_graphs tests.test_exp
 PYTHONPATH=src python -m unittest tests.test_config
 ```
 
+## Learning-Curve Result Artifacts
+
+Learning-curve runs can persist one artifact per method so you do not need to
+retrain every model just to regenerate plots.
+
+Enable this in `config.toml`:
+
+```toml
+[experiment.learning_curve]
+results_artifact_dir = "data/results/learning_curve"
+reuse_results = true
+```
+
+Workflow:
+
+- Run once with `results_artifact_dir` set. Oasis writes one JSON artifact per
+  enabled method after the sweep completes.
+- Regenerate plots later with `reuse_results = true`. If the saved artifact
+  metadata matches the current sweep definition, Oasis reloads cached
+  `LearningCurveResults` instead of retraining.
+- Partial cache hits are supported. If only some enabled methods are cached,
+  Oasis reuses those artifacts and trains only the missing methods.
+- Selective refresh is supported through `force_refresh_methods`. This reruns
+  only the named enabled methods and overwrites just their artifacts.
+
+Example selective refresh:
+
+```toml
+[experiment.learning_curve]
+results_artifact_dir = "data/results/learning_curve"
+reuse_results = true
+force_refresh_methods = ["moe", "probe_gnn"]
+```
+
+Artifact compatibility is strict. Reuse happens only when the saved artifact
+matches the current sweep metadata, including seed, min/max train, step,
+repeats, enabled methods, and active plot filters.
+
 ## Graph Artifact Contract
 
 Configured graph-backed learning-curve runs use
