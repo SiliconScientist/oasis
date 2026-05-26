@@ -552,6 +552,57 @@ def run_learning_curve_experiments_from_config(
     return results
 
 
+def load_or_run_learning_curve_results_from_config(
+    df: Any,
+    cfg: Config | None,
+    *,
+    graph_view: GraphDatasetView | None = None,
+    model_families: Sequence[Any] | None = None,
+    auxiliary_views: dict[str, Any] | None = None,
+) -> LearningCurveResults:
+    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+    from oasis.learning_curve.results_io import (
+        learning_curve_sweep_metadata_from_config,
+        load_learning_curve_method_artifacts,
+        load_learning_curve_results_from_method_artifacts,
+    )
+
+    experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
+    results_artifact_dir = (
+        getattr(experiment_cfg, "results_artifact_dir", None)
+        if experiment_cfg is not None
+        else None
+    )
+    reuse_results = (
+        bool(getattr(experiment_cfg, "reuse_results", False))
+        if experiment_cfg is not None
+        else False
+    )
+    if cfg is not None and experiment_cfg is not None and reuse_results and results_artifact_dir is not None:
+        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        enabled_model_names = expected_metadata.enabled_models
+        artifacts = load_learning_curve_method_artifacts(
+            results_artifact_dir,
+            expected_metadata=expected_metadata,
+            method_names=enabled_model_names,
+        )
+        loaded_method_names = {artifact.method_name for artifact in artifacts}
+        if loaded_method_names == set(enabled_model_names):
+            return load_learning_curve_results_from_method_artifacts(
+                results_artifact_dir,
+                expected_metadata=expected_metadata,
+                method_names=enabled_model_names,
+            )
+
+    return run_learning_curve_experiments_from_config(
+        df,
+        cfg,
+        graph_view=graph_view,
+        model_families=model_families,
+        auxiliary_views=auxiliary_views,
+    )
+
+
 def _validate_learning_curve_frame(df: Any) -> None:
     feature_cols = mlip_columns(df)
     if not feature_cols:

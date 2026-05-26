@@ -7,7 +7,9 @@ import pandas as pd
 
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
-from oasis.exp import run_learning_curve_experiments_from_config
+from oasis.exp import (
+    load_or_run_learning_curve_results_from_config,
+)
 from oasis.graphs import atoms_to_graph_dataset_view, load_probe_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.io import (
     find_result_files,
@@ -143,7 +145,7 @@ def main() -> None:
             )
             print(f"Saved aligned graph dataset to {saved_graph_dataset_path}")
 
-    learning_curve_results = run_learning_curve_experiments_from_config(
+    learning_curve_results = load_or_run_learning_curve_results_from_config(
         wide_df,
         cfg,
         graph_view=graph_view,

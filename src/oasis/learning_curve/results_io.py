@@ -18,7 +18,7 @@ _METHOD_RESULT_FIELDS = {
     "kernel_ridge": "kernel_ridge_df",
     "lasso": "lasso_df",
     "elastic": "elastic_df",
-    "resid": "resid_df",
+    "residual": "resid_df",
     "weighted_linear": "weighted_linear_df",
     "weighted_simplex": "weighted_simplex_df",
     "graph_mean": "graph_mean_df",

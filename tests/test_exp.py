@@ -22,6 +22,7 @@ from oasis.exp import (
     build_sweep_dataset_from_frame,
     build_sweep_split_collection,
     generate_inner_validation_sweep_splits,
+    load_or_run_learning_curve_results_from_config,
     generate_sweep_splits,
     generate_sweep_splits_with_validation,
     inner_validation_size_for_sweep,
@@ -32,7 +33,11 @@ from oasis.exp import (
     validation_size_if_sweep_feasible,
 )
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
-from oasis.learning_curve.results_io import load_learning_curve_method_artifact
+from oasis.learning_curve.results_io import (
+    LearningCurveSweepMetadata,
+    load_learning_curve_method_artifact,
+    save_learning_curve_method_artifacts,
+)
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -2996,6 +3001,87 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(artifact.metadata.enabled_models, ("ridge",))
         self.assertEqual(artifact.metadata.adsorbate_filter, "OH")
         self.assertEqual(artifact.metadata.reaction_contains_filter, ("Pt",))
+
+    def test_load_or_run_learning_curve_results_from_config_reuses_saved_artifacts(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        saved_results = LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
+            metadata = LearningCurveSweepMetadata(
+                seed=23,
+                min_train=2,
+                max_train=3,
+                step=1,
+                n_repeats=1,
+                enabled_models=("ridge",),
+                adsorbate_filter="OH",
+                reaction_contains_filter=("Pt",),
+            )
+            save_learning_curve_method_artifacts(
+                saved_results,
+                metadata,
+                artifact_dir,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(
+                    filters=SimpleNamespace(
+                        adsorbate="OH",
+                        anomaly_label=None,
+                        reaction_contains=["Pt"],
+                    )
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_artifact_dir=artifact_dir,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with patch("oasis.exp.run_learning_curve_experiments_from_config") as mock_run:
+                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
+
+        pd.testing.assert_frame_equal(results.ridge_df, result_df)
+        self.assertFalse(mock_run.called)
 
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
         self,
