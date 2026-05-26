@@ -1568,3 +1568,66 @@ class LearningCurveResultsTests(unittest.TestCase):
         self.assertIs(mapping["probe_gnn_selection_df"], probe_gnn_selection_df)
         self.assertIn("latent_df", mapping)
         self.assertIsNone(mapping["latent_df"])
+
+    def test_merge_unions_metric_frames_by_n_train(self) -> None:
+        base = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20],
+                    "rmse_mean": [0.8, 0.5, 0.4],
+                    "rmse_std": [0.1, 0.07, 0.05],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [20, 30, 40],
+                    "rmse_mean": [0.39, 0.35, 0.3],
+                    "rmse_std": [0.045, 0.04, 0.03],
+                }
+            )
+        )
+
+        merged = base.merge(update)
+
+        pd.testing.assert_frame_equal(
+            merged.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20, 30, 40],
+                    "rmse_mean": [0.8, 0.5, 0.39, 0.35, 0.3],
+                    "rmse_std": [0.1, 0.07, 0.045, 0.04, 0.03],
+                }
+            ),
+        )
+
+    def test_merge_unions_selection_frames_by_n_train(self) -> None:
+        base = LearningCurveResults(
+            ridge_selection_df=pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20],
+                    "alpha": [0.1, 1.0, 10.0],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_selection_df=pd.DataFrame(
+                {
+                    "n_train": [20, 30, 40],
+                    "alpha": [5.0, 7.5, 10.0],
+                }
+            )
+        )
+
+        merged = base.merge(update)
+
+        pd.testing.assert_frame_equal(
+            merged.ridge_selection_df,
+            pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20, 30, 40],
+                    "alpha": [0.1, 1.0, 5.0, 7.5, 10.0],
+                }
+            ),
+        )

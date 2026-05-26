@@ -1075,82 +1075,30 @@ class LearningCurveResults:
         return cls(**{field_def.name: frames.get(field_def.name) for field_def in fields(cls)})
 
     def merge(self, other: LearningCurveResults) -> LearningCurveResults:
-        return LearningCurveResults(
-            ridge_df=other.ridge_df if other.ridge_df is not None else self.ridge_df,
-            kernel_ridge_df=(
-                other.kernel_ridge_df
-                if other.kernel_ridge_df is not None
-                else self.kernel_ridge_df
-            ),
-            ridge_selection_df=(
-                other.ridge_selection_df
-                if other.ridge_selection_df is not None
-                else self.ridge_selection_df
-            ),
-            lasso_df=other.lasso_df if other.lasso_df is not None else self.lasso_df,
-            lasso_selection_df=(
-                other.lasso_selection_df
-                if other.lasso_selection_df is not None
-                else self.lasso_selection_df
-            ),
-            elastic_df=(
-                other.elastic_df if other.elastic_df is not None else self.elastic_df
-            ),
-            elastic_selection_df=(
-                other.elastic_selection_df
-                if other.elastic_selection_df is not None
-                else self.elastic_selection_df
-            ),
-            resid_df=other.resid_df if other.resid_df is not None else self.resid_df,
-            weighted_linear_df=(
-                other.weighted_linear_df
-                if other.weighted_linear_df is not None
-                else self.weighted_linear_df
-            ),
-            weighted_simplex_df=(
-                other.weighted_simplex_df
-                if other.weighted_simplex_df is not None
-                else self.weighted_simplex_df
-            ),
-            graph_mean_df=(
-                other.graph_mean_df
-                if other.graph_mean_df is not None
-                else self.graph_mean_df
-            ),
-            graph_mean_selection_df=(
-                other.graph_mean_selection_df
-                if other.graph_mean_selection_df is not None
-                else self.graph_mean_selection_df
-            ),
-            kernel_ridge_selection_df=(
-                other.kernel_ridge_selection_df
-                if other.kernel_ridge_selection_df is not None
-                else self.kernel_ridge_selection_df
-            ),
-            moe_df=other.moe_df if other.moe_df is not None else self.moe_df,
-            moe_selection_df=(
-                other.moe_selection_df
-                if other.moe_selection_df is not None
-                else self.moe_selection_df
-            ),
-            probe_gnn_df=(
-                other.probe_gnn_df if other.probe_gnn_df is not None else self.probe_gnn_df
-            ),
-            probe_gnn_selection_df=(
-                other.probe_gnn_selection_df
-                if other.probe_gnn_selection_df is not None
-                else self.probe_gnn_selection_df
-            ),
-            gnn_direct_df=(
-                other.gnn_direct_df if other.gnn_direct_df is not None else self.gnn_direct_df
-            ),
-            gnn_direct_selection_df=(
-                other.gnn_direct_selection_df
-                if other.gnn_direct_selection_df is not None
-                else self.gnn_direct_selection_df
-            ),
-            latent_df=other.latent_df if other.latent_df is not None else self.latent_df,
+        return LearningCurveResults.from_mapping(
+            {
+                field_def.name: _merge_learning_curve_frame(
+                    getattr(self, field_def.name),
+                    getattr(other, field_def.name),
+                )
+                for field_def in fields(self)
+            }
         )
+
+
+def _merge_learning_curve_frame(
+    left: pd.DataFrame | None,
+    right: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    if "n_train" not in left.columns or "n_train" not in right.columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    merged = pd.concat([left, right], ignore_index=True)
+    merged = merged.drop_duplicates(subset=["n_train"], keep="last")
+    return merged.sort_values("n_train").reset_index(drop=True)
 
 
 def combine_sweep_family_requirements(

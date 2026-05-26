@@ -633,6 +633,10 @@ def run_learning_curve_experiments_from_config(
                 except ValueError:
                     pass
             bundle_results = existing_bundle_results.merge(results)
+            results = select_learning_curve_results_methods(
+                bundle_results,
+                enabled_model_names,
+            )
             save_learning_curve_results_artifact(
                 bundle_results,
                 _metadata_for_available_results(

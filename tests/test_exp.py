@@ -3705,6 +3705,113 @@ class ExpIntegrationTests(unittest.TestCase):
             ("ridge", "weighted_simplex"),
         )
 
+    def test_run_learning_curve_experiments_from_config_merges_method_rows_across_bounds(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        cached_ridge_df = pd.DataFrame(
+            {
+                "n_train": [1, 10, 20],
+                "rmse_mean": [0.8, 0.5, 0.4],
+                "rmse_std": [0.1, 0.07, 0.05],
+            }
+        )
+        fresh_ridge_df = pd.DataFrame(
+            {
+                "n_train": [20, 30, 40],
+                "rmse_mean": [0.39, 0.35, 0.3],
+                "rmse_std": [0.045, 0.04, 0.03],
+            }
+        )
+
+        class StubFamily:
+            def __init__(self, result_df: pd.DataFrame) -> None:
+                self.calls = 0
+                self.result_df = result_df
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                return LearningCurveResults.from_mapping({"ridge_df": self.result_df})
+
+        family = StubFamily(fresh_ridge_df)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults.from_mapping({"ridge_df": cached_ridge_df}),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=1,
+                    max_train=20,
+                    step=1,
+                    n_repeats=30,
+                    enabled_models=("ridge",),
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=20,
+                        max_train=40,
+                        step=10,
+                        n_repeats=10,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=False,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(family.calls, 1)
+        pd.testing.assert_frame_equal(
+            results.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20, 30, 40],
+                    "rmse_mean": [0.8, 0.5, 0.39, 0.35, 0.3],
+                    "rmse_std": [0.1, 0.07, 0.045, 0.04, 0.03],
+                }
+            ),
+        )
+        pd.testing.assert_frame_equal(artifact.results.ridge_df, results.ridge_df)
+
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
         self,
     ) -> None:
