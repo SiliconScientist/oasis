@@ -187,15 +187,23 @@ def _make_probe_graph_for_split(sample_id: int, n_nodes: int = 4, n_features: in
 def _make_split_with_probe_graphs(
     n_samples: int = 6,
     n_features: int = 6,
+    *,
+    include_probe_auxiliary: bool = True,
 ) -> TrainValTestSweepRunnerInput:
     rng = np.random.default_rng(42)
     graphs = [_make_probe_graph_for_split(i, n_features=n_features) for i in range(n_samples)]
     graph_view = GraphDatasetView.from_records(graphs)
+    auxiliary_views = (
+        {"probe_gnn_records": list(graphs)}
+        if include_probe_auxiliary
+        else None
+    )
     dataset = SweepDataset(
         mlip_features=rng.random((n_samples, 2)).astype(np.float32),
         targets=rng.random(n_samples).astype(np.float32),
         sample_ids=np.arange(n_samples),
         graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
     )
     return TrainValTestSweepRunnerInput(
         dataset=dataset,
@@ -301,6 +309,14 @@ class ProbeGnnModelTests(unittest.TestCase):
 class ProbeGnnTuningSpecTests(unittest.TestCase):
     def test_is_learned_trial_tuning_spec(self) -> None:
         self.assertIsInstance(_fast_probe_spec(), LearnedTrialTuningSpec)
+
+    def test_requires_probe_augmented_auxiliary_records(self) -> None:
+        split = _make_split_with_probe_graphs(include_probe_auxiliary=False)
+        with self.assertRaisesRegex(
+            ValueError,
+            "probe_gnn requires probe-augmented graph records",
+        ):
+            _fast_probe_spec().build_trial_objective(split)
 
     def test_build_trial_objective_returns_finite_rmse(self) -> None:
         split = _make_split_with_probe_graphs()

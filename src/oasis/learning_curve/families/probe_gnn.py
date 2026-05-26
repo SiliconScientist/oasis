@@ -125,9 +125,13 @@ def _train_probe_encoder(
 
 def _graphs_from_dataset(dataset: SweepDataset) -> list[GraphRecord]:
     probe_records = (dataset.auxiliary_views or {}).get("probe_gnn_records")
-    if probe_records is not None:
-        return list(probe_records)
-    return [dataset.graphs[sid] for sid in dataset.sample_ids.tolist()]
+    if probe_records is None:
+        raise ValueError(
+            "probe_gnn requires probe-augmented graph records in "
+            "dataset.auxiliary_views['probe_gnn_records']; configure "
+            "probe_features.dataset_path so the method can load them."
+        )
+    return list(probe_records)
 
 
 def _direct_graphs_from_dataset(dataset: SweepDataset) -> list[GraphRecord]:

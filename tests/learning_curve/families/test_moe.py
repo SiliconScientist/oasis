@@ -514,6 +514,7 @@ def _make_probe_split(n_samples: int = 6, n_features: int = 6) -> TrainValTestSw
         targets=rng.random(n_samples).astype(np.float32),
         sample_ids=np.arange(n_samples),
         graph_view=graph_view,
+        auxiliary_views={"probe_gnn_records": list(graphs)},
     )
     return TrainValTestSweepRunnerInput(
         dataset=dataset,

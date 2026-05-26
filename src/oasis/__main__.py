@@ -84,12 +84,7 @@ def main() -> None:
 
     probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
     if getattr(probe_gnn_cfg, "enabled", False):
-        if probe_cfg is None or not probe_cfg.dataset_path.exists():
-            print(
-                "Warning: probe_gnn.enabled=true but probe_features.dataset_path is "
-                "not configured or does not exist — probe graphs not loaded."
-            )
-        else:
+        if probe_cfg is not None and probe_cfg.dataset_path.exists():
             probe_graph_view = load_probe_graph_dataset_view(probe_cfg.dataset_path)
             reactions = wide_df.get_column("reaction").to_list()
             auxiliary_views["probe_gnn_records"] = [
