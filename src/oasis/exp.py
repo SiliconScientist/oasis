@@ -498,6 +498,10 @@ def run_learning_curve_experiments_from_config(
     auxiliary_views: dict[str, Any] | None = None,
 ) -> LearningCurveResults:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+    from oasis.learning_curve.results_io import (
+        learning_curve_sweep_metadata_from_config,
+        save_learning_curve_method_artifacts,
+    )
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
@@ -505,7 +509,7 @@ def run_learning_curve_experiments_from_config(
     dataset = build_sweep_dataset_from_config(
         df, cfg, graph_view=graph_view, auxiliary_views=auxiliary_views
     )
-    return run_learning_curve_experiments(
+    results = run_learning_curve_experiments(
         dataset,
         min_train=experiment_cfg.min_train if experiment_cfg else 5,
         max_train=experiment_cfg.max_train if experiment_cfg else 10,
@@ -535,6 +539,17 @@ def run_learning_curve_experiments_from_config(
         ),
         model_families=model_families,
     )
+    if (
+        cfg is not None
+        and experiment_cfg is not None
+        and getattr(experiment_cfg, "results_artifact_dir", None) is not None
+    ):
+        save_learning_curve_method_artifacts(
+            results,
+            learning_curve_sweep_metadata_from_config(cfg),
+            getattr(experiment_cfg, "results_artifact_dir"),
+        )
+    return results
 
 
 def _validate_learning_curve_frame(df: Any) -> None:

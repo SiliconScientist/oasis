@@ -32,6 +32,7 @@ from oasis.exp import (
     validation_size_if_sweep_feasible,
 )
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
+from oasis.learning_curve.results_io import load_learning_curve_method_artifact
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -2893,6 +2894,108 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(results.weighted_simplex_df)
         self.assertIsNone(results.lasso_df)
         self.assertIsNone(results.resid_df)
+
+    def test_run_learning_curve_experiments_from_config_saves_method_artifacts(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        selection_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "alpha": [0.1, 1.0],
+            }
+        )
+
+        class RecordingFamily:
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.last_payload = payload
+                del payload
+                return LearningCurveResults.from_mapping(
+                    {
+                        "ridge_df": result_df,
+                        "ridge_selection_df": selection_df,
+                    }
+                )
+
+        family = RecordingFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(
+                    filters=SimpleNamespace(
+                        adsorbate="OH",
+                        anomaly_label=None,
+                        reaction_contains=["Pt"],
+                    )
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_artifact_dir=artifact_dir,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+
+            artifact_path = artifact_dir / "ridge.json"
+            self.assertTrue(artifact_path.is_file())
+            artifact = load_learning_curve_method_artifact(artifact_path)
+
+        pd.testing.assert_frame_equal(results.ridge_df, result_df)
+        pd.testing.assert_frame_equal(artifact.results.ridge_df, result_df)
+        pd.testing.assert_frame_equal(
+            artifact.results.ridge_selection_df,
+            selection_df,
+        )
+        self.assertEqual(artifact.method_name, "ridge")
+        self.assertEqual(artifact.metadata.seed, 23)
+        self.assertEqual(artifact.metadata.enabled_models, ("ridge",))
+        self.assertEqual(artifact.metadata.adsorbate_filter, "OH")
+        self.assertEqual(artifact.metadata.reaction_contains_filter, ("Pt",))
 
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
         self,
