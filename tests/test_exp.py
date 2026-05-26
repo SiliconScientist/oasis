@@ -38,6 +38,7 @@ from oasis.learning_curve.results_io import (
     load_learning_curve_method_artifact,
     save_learning_curve_method_artifacts,
 )
+from oasis.plot import learning_curve_plot
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -3082,6 +3083,122 @@ class ExpIntegrationTests(unittest.TestCase):
 
         pd.testing.assert_frame_equal(results.ridge_df, result_df)
         self.assertFalse(mock_run.called)
+
+    def test_run_learning_curve_experiments_from_config_reuses_partial_method_cache(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "linear_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        weighted_linear_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.35, 0.25],
+                "rmse_std": [0.04, 0.03],
+            }
+        )
+
+        class StubFamily:
+            def __init__(
+                self,
+                method_name: str,
+                result_field: str,
+                result_df: pd.DataFrame,
+            ) -> None:
+                self.method_name = method_name
+                self.result_field = result_field
+                self.result_df = result_df
+                self.calls = 0
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                return LearningCurveResults.from_mapping(
+                    {self.result_field: self.result_df}
+                )
+
+        ridge_family = StubFamily("ridge", "ridge_df", ridge_df)
+        weighted_linear_family = StubFamily(
+            "weighted_linear",
+            "weighted_linear_df",
+            weighted_linear_df,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir) / "learning_curve_artifacts"
+            save_learning_curve_method_artifacts(
+                LearningCurveResults.from_mapping({"ridge_df": ridge_df}),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=2,
+                    max_train=3,
+                    step=1,
+                    n_repeats=1,
+                    enabled_models=("ridge", "weighted_linear"),
+                ),
+                artifact_dir,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_artifact_dir=artifact_dir,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=True,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[ridge_family, weighted_linear_family],
+            )
+            plot_path = Path(tmp_dir) / "learning_curve.png"
+            learning_curve_plot(results, output_path=plot_path)
+            self.assertTrue(plot_path.exists())
+
+        self.assertEqual(ridge_family.calls, 0)
+        self.assertEqual(weighted_linear_family.calls, 1)
+        pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
+        pd.testing.assert_frame_equal(results.weighted_linear_df, weighted_linear_df)
 
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
         self,

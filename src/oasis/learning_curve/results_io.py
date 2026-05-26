@@ -37,6 +37,10 @@ _METHOD_SELECTION_FIELDS = {
     "probe_gnn": "probe_gnn_selection_df",
     "gnn_direct": "gnn_direct_selection_df",
 }
+_RESULT_FIELD_TO_METHOD = {
+    result_field: method_name
+    for method_name, result_field in _METHOD_RESULT_FIELDS.items()
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +370,14 @@ def load_learning_curve_results_from_method_artifacts(
     ):
         results = results.merge(artifact.results)
     return results
+
+
+def learning_curve_method_name_for_result_field(result_field: str) -> str | None:
+    return _RESULT_FIELD_TO_METHOD.get(result_field)
+
+
+def learning_curve_result_field_for_method_name(method_name: str) -> str | None:
+    return _METHOD_RESULT_FIELDS.get(method_name)
 
 
 def _method_metrics_field(method_name: str) -> str:

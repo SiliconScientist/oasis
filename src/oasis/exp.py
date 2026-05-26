@@ -500,6 +500,9 @@ def run_learning_curve_experiments_from_config(
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
     from oasis.learning_curve.results_io import (
         learning_curve_sweep_metadata_from_config,
+        learning_curve_method_name_for_result_field,
+        learning_curve_result_field_for_method_name,
+        load_learning_curve_results_from_method_artifacts,
         save_learning_curve_method_artifacts,
     )
 
@@ -509,45 +512,100 @@ def run_learning_curve_experiments_from_config(
     dataset = build_sweep_dataset_from_config(
         df, cfg, graph_view=graph_view, auxiliary_views=auxiliary_views
     )
-    results = run_learning_curve_experiments(
-        dataset,
-        min_train=experiment_cfg.min_train if experiment_cfg else 5,
-        max_train=experiment_cfg.max_train if experiment_cfg else 10,
-        step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
-        n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
-        seed=cfg.seed if cfg and cfg.seed is not None else 42,
-        enabled_model_names=enabled_learning_curve_model_names_from_config(model_cfg),
-        model_cfg=model_cfg,
-        validation_fraction=(
-            getattr(experiment_cfg, "validation_fraction", 0.2)
-            if experiment_cfg
-            else 0.2
-        ),
-        min_val_size=getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1,
-        min_tuning_val_size=(
-            getattr(experiment_cfg, "min_tuning_val_size", 1)
-            if experiment_cfg
-            else 1
-        ),
-        min_inner_train_size=(
-            getattr(experiment_cfg, "min_inner_train_size", 1)
-            if experiment_cfg
-            else 1
-        ),
-        min_test_size=(
-            getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
-        ),
-        model_families=model_families,
+    enabled_model_names = enabled_learning_curve_model_names_from_config(model_cfg)
+    results_artifact_dir = (
+        getattr(experiment_cfg, "results_artifact_dir", None)
+        if experiment_cfg is not None
+        else None
     )
+    reuse_results = (
+        bool(getattr(experiment_cfg, "reuse_results", False))
+        if experiment_cfg is not None
+        else False
+    )
+
+    cached_results = LearningCurveResults.empty()
+    cached_method_names: set[str] = set()
+    families_to_run = model_families
+    enabled_model_names_to_run = enabled_model_names
     if (
         cfg is not None
         and experiment_cfg is not None
-        and getattr(experiment_cfg, "results_artifact_dir", None) is not None
+        and reuse_results
+        and results_artifact_dir is not None
     ):
+        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        cached_results = load_learning_curve_results_from_method_artifacts(
+            results_artifact_dir,
+            expected_metadata=expected_metadata,
+            method_names=enabled_model_names,
+        )
+        cached_method_names = {
+            method_name
+            for method_name in enabled_model_names
+            if (
+                learning_curve_result_field_for_method_name(method_name) is not None
+                and getattr(
+                    cached_results,
+                    learning_curve_result_field_for_method_name(method_name),
+                )
+                is not None
+            )
+        }
+        enabled_model_names_to_run = tuple(
+            method_name
+            for method_name in enabled_model_names
+            if method_name not in cached_method_names
+        )
+        if model_families is not None:
+            families_to_run = tuple(
+                family
+                for family in model_families
+                if _family_method_name(family, learning_curve_method_name_for_result_field)
+                not in cached_method_names
+            )
+
+    fresh_results = LearningCurveResults.empty()
+    if (families_to_run is None and enabled_model_names_to_run) or families_to_run:
+        fresh_results = run_learning_curve_experiments(
+            dataset,
+            min_train=experiment_cfg.min_train if experiment_cfg else 5,
+            max_train=experiment_cfg.max_train if experiment_cfg else 10,
+            step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
+            n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
+            seed=cfg.seed if cfg and cfg.seed is not None else 42,
+            enabled_model_names=enabled_model_names_to_run,
+            model_cfg=model_cfg,
+            validation_fraction=(
+                getattr(experiment_cfg, "validation_fraction", 0.2)
+                if experiment_cfg
+                else 0.2
+            ),
+            min_val_size=(
+                getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1
+            ),
+            min_tuning_val_size=(
+                getattr(experiment_cfg, "min_tuning_val_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            min_inner_train_size=(
+                getattr(experiment_cfg, "min_inner_train_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            min_test_size=(
+                getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
+            ),
+            model_families=families_to_run,
+        )
+
+    results = cached_results.merge(fresh_results)
+    if cfg is not None and experiment_cfg is not None and results_artifact_dir is not None:
         save_learning_curve_method_artifacts(
             results,
             learning_curve_sweep_metadata_from_config(cfg),
-            getattr(experiment_cfg, "results_artifact_dir"),
+            results_artifact_dir,
         )
     return results
 
@@ -613,6 +671,20 @@ def _validate_learning_curve_frame(df: Any) -> None:
     n_rows = getattr(df, "height", len(df))
     if n_rows <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
+def _family_method_name(
+    family: Any,
+    resolve_result_field: Any,
+) -> str | None:
+    if hasattr(family, "method_name") and isinstance(family.method_name, str):
+        return family.method_name
+    spec = getattr(family, "spec", None)
+    result_field = getattr(spec, "result_field", None)
+    if isinstance(result_field, str):
+        return resolve_result_field(result_field)
+    result_field = getattr(family, "result_field", None)
+    if isinstance(result_field, str):
+        return resolve_result_field(result_field)
+    return None
 
 
 def run_learning_curve_experiments(
