@@ -309,6 +309,96 @@ class LearningCurveResultsIoTests(unittest.TestCase):
 
         pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
 
+    def test_results_bundle_artifact_can_ignore_train_grid(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            )
+        )
+        stored_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=1,
+            max_train=20,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+            adsorbate_filter="OH",
+        )
+        expected_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=20,
+            max_train=40,
+            step=5,
+            n_repeats=3,
+            enabled_models=("weighted_simplex",),
+            adsorbate_filter="OH",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                results,
+                stored_metadata,
+                bundle_path,
+            )
+            restored = load_learning_curve_results_artifact(
+                bundle_path,
+                expected_metadata=expected_metadata,
+                ignore_enabled_models=True,
+                ignore_train_grid=True,
+            )
+
+        pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
+
+    def test_results_bundle_artifact_can_ignore_repeat_count(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            )
+        )
+        stored_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=1,
+            max_train=20,
+            step=1,
+            n_repeats=30,
+            enabled_models=("ridge",),
+            adsorbate_filter="OH",
+        )
+        expected_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=1,
+            max_train=20,
+            step=1,
+            n_repeats=10,
+            enabled_models=("weighted_simplex",),
+            adsorbate_filter="OH",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                results,
+                stored_metadata,
+                bundle_path,
+            )
+            restored = load_learning_curve_results_artifact(
+                bundle_path,
+                expected_metadata=expected_metadata,
+                ignore_enabled_models=True,
+                ignore_repeat_count=True,
+            )
+
+        pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
+
     def test_results_bundle_artifact_allows_enabled_model_superset(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(

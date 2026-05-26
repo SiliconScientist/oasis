@@ -116,20 +116,26 @@ class LearningCurveSweepMetadata:
         *,
         allow_enabled_model_superset: bool = False,
         ignore_enabled_models: bool = False,
+        ignore_train_grid: bool = False,
+        ignore_repeat_count: bool = False,
     ) -> None:
         this_mapping = self.to_mapping()
         other_mapping = other.to_mapping()
+        ignored_keys = set()
+        if ignore_enabled_models:
+            ignored_keys.add("enabled_models")
+        if ignore_train_grid:
+            ignored_keys.update({"min_train", "max_train", "step"})
+        if ignore_repeat_count:
+            ignored_keys.add("n_repeats")
         mismatches = [
             f"{key}: expected {this_mapping[key]!r}, got {other_mapping[key]!r}"
             for key in this_mapping
-            if key != "enabled_models"
-            or (
-                not allow_enabled_model_superset
-                and not ignore_enabled_models
-            )
+            if key not in ignored_keys
+            if key != "enabled_models" or not allow_enabled_model_superset
             if this_mapping[key] != other_mapping.get(key)
         ]
-        if allow_enabled_model_superset and not ignore_enabled_models:
+        if allow_enabled_model_superset and "enabled_models" not in ignored_keys:
             expected_models = set(self.enabled_models)
             actual_models = set(other.enabled_models)
             if not expected_models.issubset(actual_models):
@@ -265,6 +271,8 @@ def load_learning_curve_results_artifact_mapping(
     expected_metadata: LearningCurveSweepMetadata | None = None,
     allow_enabled_model_superset: bool = False,
     ignore_enabled_models: bool = False,
+    ignore_train_grid: bool = False,
+    ignore_repeat_count: bool = False,
 ) -> LearningCurveResultsArtifact:
     version = payload.get("version")
     if version != _RESULTS_BUNDLE_ARTIFACT_VERSION:
@@ -282,6 +290,8 @@ def load_learning_curve_results_artifact_mapping(
             metadata,
             allow_enabled_model_superset=allow_enabled_model_superset,
             ignore_enabled_models=ignore_enabled_models,
+            ignore_train_grid=ignore_train_grid,
+            ignore_repeat_count=ignore_repeat_count,
         )
 
     results_payload = payload.get("results")
@@ -314,6 +324,8 @@ def load_learning_curve_results_artifact(
     expected_metadata: LearningCurveSweepMetadata | None = None,
     allow_enabled_model_superset: bool = False,
     ignore_enabled_models: bool = False,
+    ignore_train_grid: bool = False,
+    ignore_repeat_count: bool = False,
 ) -> LearningCurveResultsArtifact:
     resolved_path = Path(path)
     return load_learning_curve_results_artifact_mapping(
@@ -321,6 +333,8 @@ def load_learning_curve_results_artifact(
         expected_metadata=expected_metadata,
         allow_enabled_model_superset=allow_enabled_model_superset,
         ignore_enabled_models=ignore_enabled_models,
+        ignore_train_grid=ignore_train_grid,
+        ignore_repeat_count=ignore_repeat_count,
     )
 
 

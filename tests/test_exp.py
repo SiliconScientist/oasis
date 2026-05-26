@@ -3184,6 +3184,166 @@ class ExpIntegrationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
         self.assertFalse(mock_run.called)
 
+    def test_load_or_run_learning_curve_results_from_config_reuses_bundle_across_bounds(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults(ridge_df=ridge_df),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=1,
+                    max_train=20,
+                    step=1,
+                    n_repeats=1,
+                    enabled_models=("ridge",),
+                    adsorbate_filter="OH",
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(
+                    filters=SimpleNamespace(
+                        adsorbate="OH",
+                        anomaly_label=None,
+                        reaction_contains=None,
+                    )
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=20,
+                        max_train=40,
+                        step=5,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with patch(
+                "oasis.exp.run_learning_curve_experiments_from_config"
+            ) as mock_run:
+                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
+
+        pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
+        self.assertFalse(mock_run.called)
+
+    def test_load_or_run_learning_curve_results_from_config_reuses_bundle_across_repeat_counts(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults(ridge_df=ridge_df),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=1,
+                    max_train=20,
+                    step=1,
+                    n_repeats=30,
+                    enabled_models=("ridge",),
+                    adsorbate_filter="OH",
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(
+                    filters=SimpleNamespace(
+                        adsorbate="OH",
+                        anomaly_label=None,
+                        reaction_contains=None,
+                    )
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=1,
+                        max_train=20,
+                        step=1,
+                        n_repeats=10,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with patch(
+                "oasis.exp.run_learning_curve_experiments_from_config"
+            ) as mock_run:
+                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
+
+        pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
+        self.assertFalse(mock_run.called)
+
     def test_run_learning_curve_experiments_from_config_reuses_partial_bundle_cache(
         self,
     ) -> None:

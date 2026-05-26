@@ -554,6 +554,8 @@ def run_learning_curve_experiments_from_config(
                     results_bundle_path,
                     expected_metadata=expected_metadata,
                     ignore_enabled_models=True,
+                    ignore_train_grid=True,
+                    ignore_repeat_count=True,
                 ).results,
                 enabled_model_names,
             )
@@ -623,6 +625,8 @@ def run_learning_curve_experiments_from_config(
                         results_bundle_path,
                         expected_metadata=expected_metadata,
                         ignore_enabled_models=True,
+                        ignore_train_grid=True,
+                        ignore_repeat_count=True,
                     )
                     existing_bundle_results = existing_bundle.results
                     existing_bundle_metadata = existing_bundle.metadata
@@ -690,6 +694,8 @@ def load_or_run_learning_curve_results_from_config(
                     results_bundle_path,
                     expected_metadata=expected_metadata,
                     ignore_enabled_models=True,
+                    ignore_train_grid=True,
+                    ignore_repeat_count=True,
                 ).results,
                 enabled_model_names,
             )
