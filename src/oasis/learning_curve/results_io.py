@@ -12,6 +12,7 @@ from oasis.sweep import LearningCurveResults
 
 
 _RESULTS_ARTIFACT_VERSION = 1
+_RESULTS_BUNDLE_ARTIFACT_VERSION = 1
 _METHOD_RESULTS_ARTIFACT_VERSION = 1
 _METHOD_RESULT_FIELDS = {
     "ridge": "ridge_df",
@@ -109,14 +110,28 @@ class LearningCurveSweepMetadata:
             ),
         )
 
-    def assert_compatible(self, other: LearningCurveSweepMetadata) -> None:
+    def assert_compatible(
+        self,
+        other: LearningCurveSweepMetadata,
+        *,
+        allow_enabled_model_superset: bool = False,
+    ) -> None:
         this_mapping = self.to_mapping()
         other_mapping = other.to_mapping()
         mismatches = [
             f"{key}: expected {this_mapping[key]!r}, got {other_mapping[key]!r}"
             for key in this_mapping
+            if key != "enabled_models" or not allow_enabled_model_superset
             if this_mapping[key] != other_mapping.get(key)
         ]
+        if allow_enabled_model_superset:
+            expected_models = set(self.enabled_models)
+            actual_models = set(other.enabled_models)
+            if not expected_models.issubset(actual_models):
+                mismatches.append(
+                    "enabled_models: expected subset "
+                    f"{sorted(expected_models)!r}, got {sorted(actual_models)!r}"
+                )
         if mismatches:
             raise ValueError(
                 "learning-curve sweep metadata is incompatible: "
@@ -131,6 +146,12 @@ class LearningCurveMethodArtifact:
     results: LearningCurveResults
 
 
+@dataclass(frozen=True, slots=True)
+class LearningCurveResultsArtifact:
+    metadata: LearningCurveSweepMetadata
+    results: LearningCurveResults
+
+
 def learning_curve_sweep_metadata_from_config(
     cfg: Any,
 ) -> LearningCurveSweepMetadata:
@@ -139,7 +160,8 @@ def learning_curve_sweep_metadata_from_config(
     experiment_cfg = cfg.experiment.learning_curve if cfg.experiment else None
     if experiment_cfg is None:
         raise ValueError("config does not define experiment.learning_curve.")
-    plot_filters = cfg.plot.filters if cfg.plot else None
+    plot_cfg = getattr(cfg, "plot", None)
+    plot_filters = getattr(plot_cfg, "filters", None)
     reaction_contains_filter = (
         None
         if plot_filters is None or plot_filters.reaction_contains is None
@@ -149,7 +171,7 @@ def learning_curve_sweep_metadata_from_config(
         seed=cfg.seed,
         min_train=experiment_cfg.min_train,
         max_train=experiment_cfg.max_train,
-        step=experiment_cfg.step,
+        step=getattr(experiment_cfg, "step", 1),
         n_repeats=experiment_cfg.n_repeats,
         enabled_models=enabled_learning_curve_model_names_from_config(
             experiment_cfg.models
@@ -221,6 +243,78 @@ def load_learning_curve_results(
     )
 
 
+def dump_learning_curve_results_artifact(
+    results: LearningCurveResults,
+    metadata: LearningCurveSweepMetadata,
+) -> dict[str, Any]:
+    return {
+        "version": _RESULTS_BUNDLE_ARTIFACT_VERSION,
+        "metadata": metadata.to_mapping(),
+        "results": dump_learning_curve_results(results),
+    }
+
+
+def load_learning_curve_results_artifact_mapping(
+    payload: dict[str, Any],
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    allow_enabled_model_superset: bool = False,
+) -> LearningCurveResultsArtifact:
+    version = payload.get("version")
+    if version != _RESULTS_BUNDLE_ARTIFACT_VERSION:
+        raise ValueError(
+            "unsupported learning-curve results bundle artifact version: "
+            f"{version!r}."
+        )
+
+    metadata_payload = payload.get("metadata")
+    if not isinstance(metadata_payload, dict):
+        raise TypeError("learning-curve results bundle artifact must contain metadata.")
+    metadata = LearningCurveSweepMetadata.from_mapping(metadata_payload)
+    if expected_metadata is not None:
+        expected_metadata.assert_compatible(
+            metadata,
+            allow_enabled_model_superset=allow_enabled_model_superset,
+        )
+
+    results_payload = payload.get("results")
+    if not isinstance(results_payload, dict):
+        raise TypeError("learning-curve results bundle artifact must contain results.")
+    results = load_learning_curve_results_mapping(results_payload)
+    return LearningCurveResultsArtifact(metadata=metadata, results=results)
+
+
+def save_learning_curve_results_artifact(
+    results: LearningCurveResults,
+    metadata: LearningCurveSweepMetadata,
+    path: str | Path,
+) -> Path:
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
+        json.dumps(
+            dump_learning_curve_results_artifact(results, metadata),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return resolved_path
+
+
+def load_learning_curve_results_artifact(
+    path: str | Path,
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    allow_enabled_model_superset: bool = False,
+) -> LearningCurveResultsArtifact:
+    resolved_path = Path(path)
+    return load_learning_curve_results_artifact_mapping(
+        json.loads(resolved_path.read_text(encoding="utf-8")),
+        expected_metadata=expected_metadata,
+        allow_enabled_model_superset=allow_enabled_model_superset,
+    )
+
+
 def dump_learning_curve_method_artifact(
     method_name: str,
     results: LearningCurveResults,
@@ -244,6 +338,7 @@ def load_learning_curve_method_artifact_mapping(
     payload: dict[str, Any],
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    allow_enabled_model_superset: bool = False,
 ) -> LearningCurveMethodArtifact:
     version = payload.get("version")
     if version != _METHOD_RESULTS_ARTIFACT_VERSION:
@@ -263,7 +358,10 @@ def load_learning_curve_method_artifact_mapping(
         raise TypeError("learning-curve method artifact must contain metadata.")
     metadata = LearningCurveSweepMetadata.from_mapping(metadata_payload)
     if expected_metadata is not None:
-        expected_metadata.assert_compatible(metadata)
+        expected_metadata.assert_compatible(
+            metadata,
+            allow_enabled_model_superset=allow_enabled_model_superset,
+        )
 
     results_payload = payload.get("results")
     if not isinstance(results_payload, dict):
@@ -302,11 +400,13 @@ def load_learning_curve_method_artifact(
     path: str | Path,
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    allow_enabled_model_superset: bool = False,
 ) -> LearningCurveMethodArtifact:
     resolved_path = Path(path)
     return load_learning_curve_method_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
+        allow_enabled_model_superset=allow_enabled_model_superset,
     )
 
 
@@ -335,6 +435,7 @@ def load_learning_curve_method_artifacts(
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
     method_names: tuple[str, ...] | None = None,
+    allow_enabled_model_superset: bool = False,
 ) -> tuple[LearningCurveMethodArtifact, ...]:
     resolved_dir = Path(directory)
     selected_method_names = (
@@ -351,6 +452,7 @@ def load_learning_curve_method_artifacts(
             load_learning_curve_method_artifact(
                 path,
                 expected_metadata=expected_metadata,
+                allow_enabled_model_superset=allow_enabled_model_superset,
             )
         )
     return tuple(artifacts)
@@ -361,12 +463,14 @@ def load_learning_curve_results_from_method_artifacts(
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
     method_names: tuple[str, ...] | None = None,
+    allow_enabled_model_superset: bool = False,
 ) -> LearningCurveResults:
     results = LearningCurveResults.empty()
     for artifact in load_learning_curve_method_artifacts(
         directory,
         expected_metadata=expected_metadata,
         method_names=method_names,
+        allow_enabled_model_superset=allow_enabled_model_superset,
     ):
         results = results.merge(artifact.results)
     return results
@@ -378,6 +482,29 @@ def learning_curve_method_name_for_result_field(result_field: str) -> str | None
 
 def learning_curve_result_field_for_method_name(method_name: str) -> str | None:
     return _METHOD_RESULT_FIELDS.get(method_name)
+
+
+def learning_curve_method_names() -> tuple[str, ...]:
+    return tuple(_METHOD_RESULT_FIELDS)
+
+
+def learning_curve_results_has_method(
+    results: LearningCurveResults,
+    method_name: str,
+) -> bool:
+    result_field = learning_curve_result_field_for_method_name(method_name)
+    return result_field is not None and getattr(results, result_field) is not None
+
+
+def select_learning_curve_results_methods(
+    results: LearningCurveResults,
+    method_names: tuple[str, ...],
+) -> LearningCurveResults:
+    selected = LearningCurveResults.empty()
+    for method_name in method_names:
+        if learning_curve_results_has_method(results, method_name):
+            selected = selected.merge(_extract_method_results(results, method_name))
+    return selected
 
 
 def _method_metrics_field(method_name: str) -> str:

@@ -499,11 +499,16 @@ def run_learning_curve_experiments_from_config(
 ) -> LearningCurveResults:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
     from oasis.learning_curve.results_io import (
+        LearningCurveSweepMetadata,
+        learning_curve_method_names,
         learning_curve_sweep_metadata_from_config,
         learning_curve_method_name_for_result_field,
-        learning_curve_result_field_for_method_name,
+        learning_curve_results_has_method,
+        load_learning_curve_results_artifact,
         load_learning_curve_results_from_method_artifacts,
+        save_learning_curve_results_artifact,
         save_learning_curve_method_artifacts,
+        select_learning_curve_results_methods,
     )
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
@@ -515,6 +520,11 @@ def run_learning_curve_experiments_from_config(
     enabled_model_names = enabled_learning_curve_model_names_from_config(model_cfg)
     results_artifact_dir = (
         getattr(experiment_cfg, "results_artifact_dir", None)
+        if experiment_cfg is not None
+        else None
+    )
+    results_bundle_path = (
+        getattr(experiment_cfg, "results_bundle_path", None)
         if experiment_cfg is not None
         else None
     )
@@ -537,26 +547,30 @@ def run_learning_curve_experiments_from_config(
         cfg is not None
         and experiment_cfg is not None
         and reuse_results
-        and results_artifact_dir is not None
+        and (results_bundle_path is not None or results_artifact_dir is not None)
     ):
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
-        cached_results = load_learning_curve_results_from_method_artifacts(
-            results_artifact_dir,
-            expected_metadata=expected_metadata,
-            method_names=enabled_model_names,
-        )
+        if results_bundle_path is not None and Path(results_bundle_path).is_file():
+            cached_results = select_learning_curve_results_methods(
+                load_learning_curve_results_artifact(
+                    results_bundle_path,
+                    expected_metadata=expected_metadata,
+                    allow_enabled_model_superset=True,
+                ).results,
+                enabled_model_names,
+            )
+        elif results_artifact_dir is not None:
+            cached_results = load_learning_curve_results_from_method_artifacts(
+                results_artifact_dir,
+                expected_metadata=expected_metadata,
+                method_names=enabled_model_names,
+                allow_enabled_model_superset=True,
+            )
         cached_method_names = {
             method_name
             for method_name in enabled_model_names
             if method_name not in force_refresh_methods
-            if (
-                learning_curve_result_field_for_method_name(method_name) is not None
-                and getattr(
-                    cached_results,
-                    learning_curve_result_field_for_method_name(method_name),
-                )
-                is not None
-            )
+            if learning_curve_results_has_method(cached_results, method_name)
         }
         enabled_model_names_to_run = tuple(
             method_name
@@ -607,12 +621,38 @@ def run_learning_curve_experiments_from_config(
         )
 
     results = cached_results.merge(fresh_results)
-    if cfg is not None and experiment_cfg is not None and results_artifact_dir is not None:
-        save_learning_curve_method_artifacts(
-            results,
-            learning_curve_sweep_metadata_from_config(cfg),
-            results_artifact_dir,
-        )
+    if cfg is not None and experiment_cfg is not None:
+        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        if results_artifact_dir is not None:
+            save_learning_curve_method_artifacts(
+                results,
+                expected_metadata,
+                results_artifact_dir,
+            )
+        if results_bundle_path is not None:
+            existing_bundle_results = LearningCurveResults.empty()
+            existing_bundle_metadata = expected_metadata
+            if Path(results_bundle_path).is_file():
+                try:
+                    existing_bundle = load_learning_curve_results_artifact(
+                        results_bundle_path,
+                        expected_metadata=expected_metadata,
+                        allow_enabled_model_superset=True,
+                    )
+                    existing_bundle_results = existing_bundle.results
+                    existing_bundle_metadata = existing_bundle.metadata
+                except ValueError:
+                    pass
+            bundle_results = existing_bundle_results.merge(results)
+            save_learning_curve_results_artifact(
+                bundle_results,
+                _metadata_for_available_results(
+                    expected_metadata,
+                    bundle_results,
+                    existing_bundle_metadata,
+                ),
+                results_bundle_path,
+            )
     return results
 
 
@@ -626,14 +666,22 @@ def load_or_run_learning_curve_results_from_config(
 ) -> LearningCurveResults:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
     from oasis.learning_curve.results_io import (
+        learning_curve_results_has_method,
+        load_learning_curve_results_artifact,
         learning_curve_sweep_metadata_from_config,
         load_learning_curve_method_artifacts,
         load_learning_curve_results_from_method_artifacts,
+        select_learning_curve_results_methods,
     )
 
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     results_artifact_dir = (
         getattr(experiment_cfg, "results_artifact_dir", None)
+        if experiment_cfg is not None
+        else None
+    )
+    results_bundle_path = (
+        getattr(experiment_cfg, "results_bundle_path", None)
         if experiment_cfg is not None
         else None
     )
@@ -654,22 +702,39 @@ def load_or_run_learning_curve_results_from_config(
         and experiment_cfg is not None
         and reuse_results
         and not force_refresh_methods
-        and results_artifact_dir is not None
+        and (results_bundle_path is not None or results_artifact_dir is not None)
     ):
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
         enabled_model_names = expected_metadata.enabled_models
-        artifacts = load_learning_curve_method_artifacts(
-            results_artifact_dir,
-            expected_metadata=expected_metadata,
-            method_names=enabled_model_names,
-        )
-        loaded_method_names = {artifact.method_name for artifact in artifacts}
-        if loaded_method_names == set(enabled_model_names):
-            return load_learning_curve_results_from_method_artifacts(
+        if results_bundle_path is not None and Path(results_bundle_path).is_file():
+            cached_results = select_learning_curve_results_methods(
+                load_learning_curve_results_artifact(
+                    results_bundle_path,
+                    expected_metadata=expected_metadata,
+                    allow_enabled_model_superset=True,
+                ).results,
+                enabled_model_names,
+            )
+            if all(
+                learning_curve_results_has_method(cached_results, method_name)
+                for method_name in enabled_model_names
+            ):
+                return cached_results
+        if results_artifact_dir is not None:
+            artifacts = load_learning_curve_method_artifacts(
                 results_artifact_dir,
                 expected_metadata=expected_metadata,
                 method_names=enabled_model_names,
+                allow_enabled_model_superset=True,
             )
+            loaded_method_names = {artifact.method_name for artifact in artifacts}
+            if loaded_method_names == set(enabled_model_names):
+                return load_learning_curve_results_from_method_artifacts(
+                    results_artifact_dir,
+                    expected_metadata=expected_metadata,
+                    method_names=enabled_model_names,
+                    allow_enabled_model_superset=True,
+                )
 
     return run_learning_curve_experiments_from_config(
         df,
@@ -690,6 +755,32 @@ def _validate_learning_curve_frame(df: Any) -> None:
     n_rows = getattr(df, "height", len(df))
     if n_rows <= 5:
         raise ValueError("Not enough data to evaluate (need >5 samples).")
+
+
+def _metadata_for_available_results(
+    expected_metadata: Any,
+    results: LearningCurveResults,
+    existing_metadata: LearningCurveSweepMetadata | None = None,
+) -> LearningCurveSweepMetadata:
+    candidate_methods = set(learning_curve_method_names())
+    if existing_metadata is not None:
+        candidate_methods.update(existing_metadata.enabled_models)
+    enabled_models = tuple(
+        method_name
+        for method_name in sorted(candidate_methods)
+        if learning_curve_results_has_method(results, method_name)
+    )
+    return LearningCurveSweepMetadata(
+        seed=expected_metadata.seed,
+        min_train=expected_metadata.min_train,
+        max_train=expected_metadata.max_train,
+        step=expected_metadata.step,
+        n_repeats=expected_metadata.n_repeats,
+        enabled_models=enabled_models,
+        adsorbate_filter=expected_metadata.adsorbate_filter,
+        anomaly_filter=expected_metadata.anomaly_filter,
+        reaction_contains_filter=expected_metadata.reaction_contains_filter,
+    )
 def _family_method_name(
     family: Any,
     resolve_result_field: Any,

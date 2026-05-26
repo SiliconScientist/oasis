@@ -42,6 +42,14 @@ results_artifact_dir = "data/results/learning_curve"
 reuse_results = true
 ```
 
+If you prefer one file per dataset instead of one file per method:
+
+```toml
+[experiment.learning_curve]
+results_bundle_path = "data/results/learning_curve/khlohc_tol.json"
+reuse_results = true
+```
+
 Workflow:
 
 - Run once with `results_artifact_dir` set. Oasis writes one JSON artifact per
@@ -51,6 +59,9 @@ Workflow:
   `LearningCurveResults` instead of retraining.
 - Partial cache hits are supported. If only some enabled methods are cached,
   Oasis reuses those artifacts and trains only the missing methods.
+- Reuse also tolerates cached supersets. If a saved artifact contains results
+  for more methods than are currently enabled, Oasis reuses the matching subset
+  instead of failing.
 - Selective refresh is supported through `force_refresh_methods`. This reruns
   only the named enabled methods and overwrites just their artifacts.
 

@@ -158,6 +158,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "max_train": 4,
                         "n_repeats": 3,
                         "results_artifact_dir": "data/results/learning_curve",
+                        "results_bundle_path": "data/results/learning_curve/example.json",
                         "reuse_results": True,
                         "force_refresh_methods": ["moe", "probe_gnn"],
                     }
@@ -170,6 +171,10 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(
             cfg.experiment.learning_curve.results_artifact_dir,
             Path("data/results/learning_curve"),
+        )
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/example.json"),
         )
         self.assertTrue(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(
@@ -213,6 +218,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 1)
         self.assertIsNone(cfg.experiment.learning_curve.results_artifact_dir)
+        self.assertIsNone(cfg.experiment.learning_curve.results_bundle_path)
         self.assertFalse(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
 

@@ -77,6 +77,8 @@ n_repeats = 10
 # 3. Use `force_refresh_methods` to rerun only selected methods and overwrite
 #    just those artifacts.
 # results_artifact_dir = "data/results/learning_curve"
+# Optional single-file bundle for one dataset's saved learning-curve results.
+# results_bundle_path = "data/results/learning_curve/example_dataset.json"
 # If true, reuse compatible saved result artifacts when available.
 # reuse_results = true
 # Optional subset of enabled methods to rerun even if compatible artifacts exist.

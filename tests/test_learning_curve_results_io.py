@@ -14,10 +14,12 @@ from oasis.learning_curve.results_io import (
     learning_curve_sweep_metadata_from_config,
     load_learning_curve_method_artifact,
     load_learning_curve_method_artifact_mapping,
+    load_learning_curve_results_artifact,
     load_learning_curve_results,
     load_learning_curve_results_from_method_artifacts,
     load_learning_curve_results_mapping,
     save_learning_curve_method_artifacts,
+    save_learning_curve_results_artifact,
     save_learning_curve_results,
 )
 from oasis.sweep import LearningCurveResults
@@ -227,6 +229,88 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     tmp_dir,
                     expected_metadata=expected_metadata,
                 )
+
+    def test_method_artifact_load_allows_enabled_model_superset(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            )
+        )
+        stored_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge", "weighted_linear"),
+        )
+        expected_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            save_learning_curve_method_artifacts(results, stored_metadata, tmp_dir)
+            restored = load_learning_curve_results_from_method_artifacts(
+                tmp_dir,
+                expected_metadata=expected_metadata,
+                allow_enabled_model_superset=True,
+            )
+
+        pd.testing.assert_frame_equal(restored.ridge_df, results.ridge_df)
+
+    def test_results_bundle_artifact_allows_enabled_model_superset(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            ),
+            weighted_linear_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.33],
+                    "rmse_std": [0.04],
+                }
+            ),
+        )
+        stored_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge", "weighted_linear"),
+        )
+        expected_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(results, stored_metadata, artifact_path)
+            restored = load_learning_curve_results_artifact(
+                artifact_path,
+                expected_metadata=expected_metadata,
+                allow_enabled_model_superset=True,
+            )
+
+        pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
 
     def test_sweep_metadata_from_config_collects_enabled_models_and_filters(self) -> None:
         cfg = SimpleNamespace(
