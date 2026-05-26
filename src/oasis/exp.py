@@ -523,6 +523,11 @@ def run_learning_curve_experiments_from_config(
         if experiment_cfg is not None
         else False
     )
+    force_refresh_methods = {
+        method_name
+        for method_name in getattr(experiment_cfg, "force_refresh_methods", ())
+        if method_name in enabled_model_names
+    }
 
     cached_results = LearningCurveResults.empty()
     cached_method_names: set[str] = set()
@@ -543,6 +548,7 @@ def run_learning_curve_experiments_from_config(
         cached_method_names = {
             method_name
             for method_name in enabled_model_names
+            if method_name not in force_refresh_methods
             if (
                 learning_curve_result_field_for_method_name(method_name) is not None
                 and getattr(
@@ -636,7 +642,20 @@ def load_or_run_learning_curve_results_from_config(
         if experiment_cfg is not None
         else False
     )
-    if cfg is not None and experiment_cfg is not None and reuse_results and results_artifact_dir is not None:
+    force_refresh_methods = {
+        method_name
+        for method_name in getattr(experiment_cfg, "force_refresh_methods", ())
+        if method_name in enabled_learning_curve_model_names_from_config(
+            experiment_cfg.models
+        )
+    }
+    if (
+        cfg is not None
+        and experiment_cfg is not None
+        and reuse_results
+        and not force_refresh_methods
+        and results_artifact_dir is not None
+    ):
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
         enabled_model_names = expected_metadata.enabled_models
         artifacts = load_learning_curve_method_artifacts(

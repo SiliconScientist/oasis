@@ -159,6 +159,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "n_repeats": 3,
                         "results_artifact_dir": "data/results/learning_curve",
                         "reuse_results": True,
+                        "force_refresh_methods": ["moe", "probe_gnn"],
                     }
                 },
             }
@@ -171,6 +172,10 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/learning_curve"),
         )
         self.assertTrue(cfg.experiment.learning_curve.reuse_results)
+        self.assertEqual(
+            cfg.experiment.learning_curve.force_refresh_methods,
+            ["moe", "probe_gnn"],
+        )
 
     def test_learning_curve_split_sizing_defaults_parse(self) -> None:
         cfg = Config(
@@ -209,6 +214,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 1)
         self.assertIsNone(cfg.experiment.learning_curve.results_artifact_dir)
         self.assertFalse(cfg.experiment.learning_curve.reuse_results)
+        self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
 
     def test_learning_curve_models_section_parses(self) -> None:
         cfg = Config(
