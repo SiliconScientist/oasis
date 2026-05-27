@@ -145,6 +145,86 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/plots/mamun_oh_mae_comparison.png"),
         )
 
+    def test_named_dataset_profile_derives_real_mamun_oh_paths(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {
+                    "tag": "mamun_oh",
+                },
+                "datasets": {
+                    "mamun_oh": {
+                        "raw_dataset_filename": "MamunHighT2019_oh_adsorption.json",
+                        "processed_basename": "mamun_oh",
+                        "mlip_run_dirname": "oh_mamun",
+                        "analysis_run_dirname": "ch3_oh_mamun",
+                        "summary_run_dirname": "ch3_oh_shifted_mamun",
+                    }
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        self.assertEqual(
+            cfg.mlip.dataset,
+            "data/raw_data/MamunHighT2019_oh_adsorption.json",
+        )
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/mamun_oh.json"),
+        )
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/mamun_oh.parquet"),
+        )
+        assert cfg.probe_features is not None
+        self.assertEqual(
+            cfg.probe_features.dataset_path,
+            Path("data/raw_data/MamunHighT2019_oh_adsorption_with_probe_ids.json"),
+        )
+        assert cfg.analysis is not None
+        self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/oh_mamun"))
+        self.assertEqual(
+            cfg.analysis.calculating_path,
+            Path("data/mlips/ch3_oh_mamun"),
+        )
+        self.assertEqual(
+            cfg.analysis.summary_workbook_path,
+            Path("data/results/ch3_oh_shifted_mamun/oasis_Benchmarking_Analysis.xlsx"),
+        )
+        self.assertEqual(
+            cfg.analysis.comparison_workbook_path,
+            Path("data/results/ch3_oh_mamun/oasis_Benchmarking_Analysis.xlsx"),
+        )
+
     def test_dataset_profile_explicit_paths_override_defaults(self) -> None:
         cfg = Config(
             **{
@@ -219,6 +299,87 @@ class ConfigParsingTests(unittest.TestCase):
             cfg.analysis.comparison_plot_path,
             Path("data/results/plots/explicit.png"),
         )
+
+    def test_get_config_loads_named_dataset_profile_from_toml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            experiment_path = tmp / "experiment.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "mamun_oh"',
+                        "",
+                        "[datasets.mamun_oh]",
+                        'raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"',
+                        'processed_basename = "mamun_oh"',
+                        'mlip_run_dirname = "oh_mamun"',
+                        'analysis_run_dirname = "ch3_oh_mamun"',
+                        'summary_run_dirname = "ch3_oh_shifted_mamun"',
+                        "",
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                        "",
+                        "[analysis]",
+                        "run_adsorption_analysis = false",
+                        'out_dir = "data/mlips_by_prefix"',
+                        'prefixes = ["ol"]',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[experiment]",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config([mlip_path, experiment_path])
+
+        self.assertEqual(
+            cfg.mlip.dataset,
+            "data/raw_data/MamunHighT2019_oh_adsorption.json",
+        )
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/mamun_oh.json"),
+        )
+        assert cfg.analysis is not None
+        self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/oh_mamun"))
 
     def test_learning_curve_graph_dataset_section_parses(self) -> None:
         cfg = Config(

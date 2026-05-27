@@ -68,6 +68,15 @@ class DatasetProfilePathsConfig(BaseModel):
     analysis_base_dir: Optional[Path] = None
 
 
+class NamedDatasetConfig(BaseModel):
+    raw_dataset_filename: Optional[str] = None
+    processed_basename: Optional[str] = None
+    probe_results_dirname: Optional[str] = None
+    mlip_run_dirname: Optional[str] = None
+    analysis_run_dirname: Optional[str] = None
+    summary_run_dirname: Optional[str] = None
+
+
 class DatasetProfileConfig(BaseModel):
     tag: str
     paths: DatasetProfilePathsConfig = Field(default_factory=DatasetProfilePathsConfig)
@@ -207,6 +216,7 @@ class Config(BaseModel):
     evaluate: Optional[bool] = None
     ingest: IngestConfig
     dataset_profile: Optional[DatasetProfileConfig] = None
+    datasets: dict[str, NamedDatasetConfig] = Field(default_factory=dict)
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
     probe_features: Optional[ProbeFeatureConfig] = None
@@ -229,7 +239,8 @@ class Config(BaseModel):
         if profile is None:
             return
 
-        derived_paths = self._derived_dataset_profile_paths(profile.tag)
+        named_profile = self.datasets.get(profile.tag)
+        derived_paths = self._derived_dataset_profile_paths(profile.tag, named_profile)
         profile_paths = derived_paths.model_copy(
             update=profile.paths.model_dump(exclude_none=True)
         )
@@ -314,18 +325,62 @@ class Config(BaseModel):
         setattr(model, field_name, value)
 
     @staticmethod
-    def _derived_dataset_profile_paths(tag: str) -> DatasetProfilePathsConfig:
+    def _derived_dataset_profile_paths(
+        tag: str,
+        named_profile: NamedDatasetConfig | None = None,
+    ) -> DatasetProfilePathsConfig:
+        raw_dataset_filename = (
+            named_profile.raw_dataset_filename
+            if named_profile is not None and named_profile.raw_dataset_filename is not None
+            else f"{tag}.json"
+        )
+        processed_basename = (
+            named_profile.processed_basename
+            if named_profile is not None and named_profile.processed_basename is not None
+            else tag
+        )
+        probe_results_dirname = (
+            named_profile.probe_results_dirname
+            if named_profile is not None and named_profile.probe_results_dirname is not None
+            else f"{tag}_unique_probes"
+        )
+        mlip_run_dirname = (
+            named_profile.mlip_run_dirname
+            if named_profile is not None and named_profile.mlip_run_dirname is not None
+            else tag
+        )
+        analysis_run_dirname = (
+            named_profile.analysis_run_dirname
+            if named_profile is not None and named_profile.analysis_run_dirname is not None
+            else mlip_run_dirname
+        )
+        summary_run_dirname = (
+            named_profile.summary_run_dirname
+            if named_profile is not None and named_profile.summary_run_dirname is not None
+            else analysis_run_dirname
+        )
+
+        raw_dataset_path = Path("data/raw_data") / raw_dataset_filename
+        probe_dataset_filename = (
+            f"{Path(raw_dataset_filename).stem}_with_probe_ids"
+            f"{Path(raw_dataset_filename).suffix or '.json'}"
+        )
+
         return DatasetProfilePathsConfig(
-            dataset=Path("data/raw_data") / f"{tag}.json",
-            probe_dataset_path=Path("data/raw_data") / f"{tag}_with_probe_ids.json",
-            probe_mlip_results_dir=Path("data/mlips") / f"{tag}_unique_probes",
-            results_bundle_path=Path("data/results/learning_curve") / f"{tag}.json",
-            graph_dataset_path=Path("data/processed") / f"{tag}.parquet",
-            calculating_path=Path("data/mlips") / tag,
-            summary_workbook_path=Path("data/results") / tag / "oasis_Benchmarking_Analysis.xlsx",
-            comparison_workbook_path=Path("data/results") / tag / "oasis_Benchmarking_Analysis.xlsx",
+            dataset=raw_dataset_path,
+            probe_dataset_path=Path("data/raw_data") / probe_dataset_filename,
+            probe_mlip_results_dir=Path("data/mlips") / probe_results_dirname,
+            results_bundle_path=Path("data/results/learning_curve") / f"{processed_basename}.json",
+            graph_dataset_path=Path("data/processed") / f"{processed_basename}.parquet",
+            calculating_path=Path("data/mlips") / analysis_run_dirname,
+            summary_workbook_path=Path("data/results")
+            / summary_run_dirname
+            / "oasis_Benchmarking_Analysis.xlsx",
+            comparison_workbook_path=Path("data/results")
+            / analysis_run_dirname
+            / "oasis_Benchmarking_Analysis.xlsx",
             comparison_plot_path=Path("data/results/plots") / f"{tag}_mae_comparison.png",
-            analysis_base_dir=Path("data/mlips") / tag,
+            analysis_base_dir=Path("data/mlips") / mlip_run_dirname,
         )
 
     def _inherit_global_seed(self) -> None:
