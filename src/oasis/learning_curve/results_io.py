@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import json
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
@@ -12,8 +14,10 @@ from oasis.sweep import LearningCurveResults
 
 
 _RESULTS_ARTIFACT_VERSION = 1
-_RESULTS_BUNDLE_ARTIFACT_VERSION = 1
-_METHOD_RESULTS_ARTIFACT_VERSION = 1
+_RESULTS_BUNDLE_ARTIFACT_VERSION = 2
+_METHOD_RESULTS_ARTIFACT_VERSION = 2
+_SUPPORTED_RESULTS_BUNDLE_ARTIFACT_VERSIONS = {1, 2}
+_SUPPORTED_METHOD_RESULTS_ARTIFACT_VERSIONS = {1, 2}
 _METHOD_RESULT_FIELDS = {
     "ridge": "ridge_df",
     "kernel_ridge": "kernel_ridge_df",
@@ -42,6 +46,16 @@ _RESULT_FIELD_TO_METHOD = {
     result_field: method_name
     for method_name, result_field in _METHOD_RESULT_FIELDS.items()
 }
+_PROVENANCE_COLUMNS = [
+    "n_train",
+    "seed",
+    "n_repeats",
+    "sweep_min_train",
+    "sweep_max_train",
+    "sweep_step",
+    "run_id",
+    "run_timestamp_utc",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,12 +169,14 @@ class LearningCurveMethodArtifact:
     method_name: str
     metadata: LearningCurveSweepMetadata
     results: LearningCurveResults
+    point_provenance: dict[str, pd.DataFrame] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class LearningCurveResultsArtifact:
     metadata: LearningCurveSweepMetadata
     results: LearningCurveResults
+    point_provenance: dict[str, pd.DataFrame] = field(default_factory=dict)
 
 
 def learning_curve_sweep_metadata_from_config(
@@ -257,11 +273,23 @@ def load_learning_curve_results(
 def dump_learning_curve_results_artifact(
     results: LearningCurveResults,
     metadata: LearningCurveSweepMetadata,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None = None,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
 ) -> dict[str, Any]:
+    resolved_point_provenance = _resolve_point_provenance(
+        results,
+        metadata,
+        point_provenance=point_provenance,
+        run_id=run_id,
+        run_timestamp_utc=run_timestamp_utc,
+    )
     return {
         "version": _RESULTS_BUNDLE_ARTIFACT_VERSION,
         "metadata": metadata.to_mapping(),
         "results": dump_learning_curve_results(results),
+        "point_provenance": _dump_frame_mapping(resolved_point_provenance),
     }
 
 
@@ -275,7 +303,7 @@ def load_learning_curve_results_artifact_mapping(
     ignore_repeat_count: bool = False,
 ) -> LearningCurveResultsArtifact:
     version = payload.get("version")
-    if version != _RESULTS_BUNDLE_ARTIFACT_VERSION:
+    if version not in _SUPPORTED_RESULTS_BUNDLE_ARTIFACT_VERSIONS:
         raise ValueError(
             "unsupported learning-curve results bundle artifact version: "
             f"{version!r}."
@@ -298,19 +326,43 @@ def load_learning_curve_results_artifact_mapping(
     if not isinstance(results_payload, dict):
         raise TypeError("learning-curve results bundle artifact must contain results.")
     results = load_learning_curve_results_mapping(results_payload)
-    return LearningCurveResultsArtifact(metadata=metadata, results=results)
+    point_provenance = (
+        build_learning_curve_point_provenance(
+            results,
+            metadata,
+            run_id="legacy-artifact",
+            run_timestamp_utc="",
+        )
+        if payload.get("point_provenance") is None
+        else _load_point_provenance_mapping(payload.get("point_provenance"))
+    )
+    return LearningCurveResultsArtifact(
+        metadata=metadata,
+        results=results,
+        point_provenance=point_provenance,
+    )
 
 
 def save_learning_curve_results_artifact(
     results: LearningCurveResults,
     metadata: LearningCurveSweepMetadata,
     path: str | Path,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None = None,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
 ) -> Path:
     resolved_path = Path(path)
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     resolved_path.write_text(
         json.dumps(
-            dump_learning_curve_results_artifact(results, metadata),
+            dump_learning_curve_results_artifact(
+                results,
+                metadata,
+                point_provenance=point_provenance,
+                run_id=run_id,
+                run_timestamp_utc=run_timestamp_utc,
+            ),
             indent=2,
         ),
         encoding="utf-8",
@@ -342,6 +394,10 @@ def dump_learning_curve_method_artifact(
     method_name: str,
     results: LearningCurveResults,
     metadata: LearningCurveSweepMetadata,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None = None,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
 ) -> dict[str, Any]:
     method_results = _extract_method_results(results, method_name)
     metrics_field = _method_metrics_field(method_name)
@@ -349,11 +405,22 @@ def dump_learning_curve_method_artifact(
         raise ValueError(
             f"learning-curve results do not contain metrics for method {method_name!r}."
         )
+    resolved_point_provenance = _extract_method_point_provenance(
+        _resolve_point_provenance(
+            results,
+            metadata,
+            point_provenance=point_provenance,
+            run_id=run_id,
+            run_timestamp_utc=run_timestamp_utc,
+        ),
+        method_name,
+    )
     return {
         "version": _METHOD_RESULTS_ARTIFACT_VERSION,
         "method_name": method_name,
         "metadata": metadata.to_mapping(),
         "results": dump_learning_curve_results(method_results),
+        "point_provenance": _dump_frame_mapping(resolved_point_provenance),
     }
 
 
@@ -364,7 +431,7 @@ def load_learning_curve_method_artifact_mapping(
     allow_enabled_model_superset: bool = False,
 ) -> LearningCurveMethodArtifact:
     version = payload.get("version")
-    if version != _METHOD_RESULTS_ARTIFACT_VERSION:
+    if version not in _SUPPORTED_METHOD_RESULTS_ARTIFACT_VERSIONS:
         raise ValueError(
             "unsupported learning-curve method artifact version: "
             f"{version!r}."
@@ -390,10 +457,21 @@ def load_learning_curve_method_artifact_mapping(
     if not isinstance(results_payload, dict):
         raise TypeError("learning-curve method artifact must contain results.")
     results = load_learning_curve_results_mapping(results_payload)
+    point_provenance = (
+        build_learning_curve_point_provenance(
+            results,
+            metadata,
+            run_id="legacy-artifact",
+            run_timestamp_utc="",
+        )
+        if payload.get("point_provenance") is None
+        else _load_point_provenance_mapping(payload.get("point_provenance"))
+    )
     return LearningCurveMethodArtifact(
         method_name=method_name,
         metadata=metadata,
         results=results,
+        point_provenance=point_provenance,
     )
 
 
@@ -402,6 +480,10 @@ def save_learning_curve_method_artifact(
     results: LearningCurveResults,
     metadata: LearningCurveSweepMetadata,
     path: str | Path,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None = None,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
 ) -> Path:
     resolved_path = Path(path)
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -411,6 +493,9 @@ def save_learning_curve_method_artifact(
                 method_name,
                 results,
                 metadata,
+                point_provenance=point_provenance,
+                run_id=run_id,
+                run_timestamp_utc=run_timestamp_utc,
             ),
             indent=2,
         ),
@@ -437,6 +522,10 @@ def save_learning_curve_method_artifacts(
     results: LearningCurveResults,
     metadata: LearningCurveSweepMetadata,
     directory: str | Path,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None = None,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
 ) -> dict[str, Path]:
     resolved_dir = Path(directory)
     resolved_dir.mkdir(parents=True, exist_ok=True)
@@ -449,6 +538,9 @@ def save_learning_curve_method_artifacts(
             results,
             metadata,
             resolved_dir / f"{method_name}.json",
+            point_provenance=point_provenance,
+            run_id=run_id,
+            run_timestamp_utc=run_timestamp_utc,
         )
     return saved_paths
 
@@ -554,3 +646,158 @@ def _extract_method_results(
     if selection_field is not None:
         field_mapping[selection_field] = getattr(results, selection_field)
     return LearningCurveResults.from_mapping(field_mapping)
+
+
+def build_learning_curve_point_provenance(
+    results: LearningCurveResults,
+    metadata: LearningCurveSweepMetadata,
+    *,
+    run_id: str | None = None,
+    run_timestamp_utc: str | None = None,
+) -> dict[str, pd.DataFrame]:
+    resolved_run_id = run_id or uuid4().hex
+    resolved_timestamp = run_timestamp_utc or datetime.now(timezone.utc).isoformat()
+    point_provenance: dict[str, pd.DataFrame] = {}
+    for field_name, frame in results.to_mapping().items():
+        if frame is None:
+            continue
+        if "n_train" not in frame.columns:
+            raise ValueError("learning-curve result frames must contain an n_train column.")
+        point_provenance[field_name] = pd.DataFrame(
+            {
+                "n_train": frame["n_train"].tolist(),
+                "seed": [metadata.seed] * len(frame),
+                "n_repeats": [metadata.n_repeats] * len(frame),
+                "sweep_min_train": [metadata.min_train] * len(frame),
+                "sweep_max_train": [metadata.max_train] * len(frame),
+                "sweep_step": [metadata.step] * len(frame),
+                "run_id": [resolved_run_id] * len(frame),
+                "run_timestamp_utc": [resolved_timestamp] * len(frame),
+            }
+        )
+    return point_provenance
+
+
+def merge_learning_curve_point_provenance(
+    left: dict[str, pd.DataFrame],
+    right: dict[str, pd.DataFrame],
+    *,
+    overwrite_fields: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, pd.DataFrame]:
+    merged: dict[str, pd.DataFrame] = {}
+    for field_name in set(left) | set(right):
+        merged_frame = _merge_provenance_frame(
+            field_name,
+            left.get(field_name),
+            right.get(field_name),
+            allow_overlap=field_name in overwrite_fields,
+        )
+        if merged_frame is not None:
+            merged[field_name] = merged_frame
+    return merged
+
+
+def _resolve_point_provenance(
+    results: LearningCurveResults,
+    metadata: LearningCurveSweepMetadata,
+    *,
+    point_provenance: dict[str, pd.DataFrame] | None,
+    run_id: str | None,
+    run_timestamp_utc: str | None,
+) -> dict[str, pd.DataFrame]:
+    return (
+        build_learning_curve_point_provenance(
+            results,
+            metadata,
+            run_id=run_id,
+            run_timestamp_utc=run_timestamp_utc,
+        )
+        if point_provenance is None
+        else _normalize_point_provenance(point_provenance)
+    )
+
+
+def _normalize_point_provenance(
+    point_provenance: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    return {
+        field_name: _normalize_provenance_frame(frame)
+        for field_name, frame in point_provenance.items()
+    }
+
+
+def _dump_frame_mapping(frames: dict[str, pd.DataFrame]) -> dict[str, str]:
+    return {
+        field_name: frame.to_json(orient="table")
+        for field_name, frame in frames.items()
+    }
+
+
+def _load_point_provenance_mapping(
+    payload: Any,
+) -> dict[str, pd.DataFrame]:
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise TypeError("learning-curve point_provenance must be a mapping.")
+    frames: dict[str, pd.DataFrame] = {}
+    for field_name, frame_payload in payload.items():
+        if not isinstance(frame_payload, str):
+            raise TypeError(
+                "learning-curve provenance frame payloads must be JSON strings."
+            )
+        frames[field_name] = _normalize_provenance_frame(
+            pd.read_json(StringIO(frame_payload), orient="table")
+        )
+    return frames
+
+
+def _normalize_provenance_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if "n_train" not in frame.columns:
+        raise ValueError("learning-curve provenance frames must contain an n_train column.")
+    missing_columns = [column for column in _PROVENANCE_COLUMNS if column not in frame.columns]
+    if missing_columns:
+        raise ValueError(
+            "learning-curve provenance frames are missing required columns: "
+            f"{missing_columns!r}."
+        )
+    return frame.loc[:, _PROVENANCE_COLUMNS].sort_values("n_train").reset_index(drop=True)
+
+
+def _merge_provenance_frame(
+    field_name: str,
+    left: pd.DataFrame | None,
+    right: pd.DataFrame | None,
+    *,
+    allow_overlap: bool,
+) -> pd.DataFrame | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    overlapping_train_sizes = sorted(
+        set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
+    )
+    if overlapping_train_sizes and not allow_overlap:
+        raise ValueError(
+            f"{field_name} contains duplicate provenance rows for n_train: "
+            f"{overlapping_train_sizes!r}."
+        )
+    merged = pd.concat([left, right], ignore_index=True)
+    merged = merged.drop_duplicates(subset=["n_train"], keep="last")
+    return merged.sort_values("n_train").reset_index(drop=True)
+
+
+def _extract_method_point_provenance(
+    point_provenance: dict[str, pd.DataFrame],
+    method_name: str,
+) -> dict[str, pd.DataFrame]:
+    selected: dict[str, pd.DataFrame] = {}
+    metrics_field = _METHOD_RESULT_FIELDS[method_name]
+    metrics_provenance = point_provenance.get(metrics_field)
+    if metrics_provenance is not None:
+        selected[metrics_field] = metrics_provenance
+    selection_field = _METHOD_SELECTION_FIELDS.get(method_name)
+    if selection_field is not None and selection_field in point_provenance:
+        selected[selection_field] = point_provenance[selection_field]
+    return selected

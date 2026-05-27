@@ -9,6 +9,7 @@ import pandas as pd
 
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
+    build_learning_curve_point_provenance,
     dump_learning_curve_method_artifact,
     dump_learning_curve_results,
     learning_curve_sweep_metadata_from_config,
@@ -443,6 +444,103 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             )
 
         pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
+
+    def test_results_bundle_artifact_preserves_point_provenance(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.41, 0.32],
+                    "rmse_std": [0.06, 0.03],
+                }
+            ),
+            ridge_selection_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "alpha": [0.1, 1.0],
+                }
+            ),
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=2,
+            n_repeats=3,
+            enabled_models=("ridge",),
+        )
+        point_provenance = build_learning_curve_point_provenance(
+            results,
+            metadata,
+            run_id="run-a",
+            run_timestamp_utc="2026-05-26T00:00:00+00:00",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                results,
+                metadata,
+                artifact_path,
+                point_provenance=point_provenance,
+            )
+            restored = load_learning_curve_results_artifact(artifact_path)
+
+        pd.testing.assert_frame_equal(
+            restored.point_provenance["ridge_df"],
+            point_provenance["ridge_df"],
+        )
+        pd.testing.assert_frame_equal(
+            restored.point_provenance["ridge_selection_df"],
+            point_provenance["ridge_selection_df"],
+        )
+
+    def test_single_method_artifact_file_round_trip_preserves_point_provenance(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            ),
+            ridge_selection_df=pd.DataFrame({"n_train": [4], "alpha": [0.1]}),
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+        )
+        point_provenance = build_learning_curve_point_provenance(
+            results,
+            metadata,
+            run_id="run-b",
+            run_timestamp_utc="2026-05-26T01:00:00+00:00",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            save_learning_curve_method_artifacts(
+                results,
+                metadata,
+                tmp_dir,
+                point_provenance=point_provenance,
+            )
+            artifact = load_learning_curve_method_artifact(
+                Path(tmp_dir) / "ridge.json",
+                expected_metadata=metadata,
+            )
+
+        pd.testing.assert_frame_equal(
+            artifact.point_provenance["ridge_df"],
+            point_provenance["ridge_df"],
+        )
+        pd.testing.assert_frame_equal(
+            artifact.point_provenance["ridge_selection_df"],
+            point_provenance["ridge_selection_df"],
+        )
 
     def test_sweep_metadata_from_config_collects_enabled_models_and_filters(self) -> None:
         cfg = SimpleNamespace(

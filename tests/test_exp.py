@@ -3757,6 +3757,8 @@ class ExpIntegrationTests(unittest.TestCase):
                     enabled_models=("ridge",),
                 ),
                 bundle_path,
+                run_id="cached-run",
+                run_timestamp_utc="2026-05-26T00:00:00+00:00",
             )
             cfg = SimpleNamespace(
                 seed=23,
@@ -3812,6 +3814,26 @@ class ExpIntegrationTests(unittest.TestCase):
             ),
         )
         pd.testing.assert_frame_equal(artifact.results.ridge_df, results.ridge_df)
+        provenance = artifact.point_provenance["ridge_df"]
+        self.assertEqual(provenance["n_train"].tolist(), [1, 10, 20, 30, 40])
+        self.assertEqual(provenance["seed"].tolist(), [23, 23, 23, 23, 23])
+        self.assertEqual(provenance["n_repeats"].tolist(), [30, 30, 10, 10, 10])
+        self.assertEqual(provenance["sweep_min_train"].tolist(), [1, 1, 20, 20, 20])
+        self.assertEqual(provenance["sweep_max_train"].tolist(), [20, 20, 40, 40, 40])
+        self.assertEqual(provenance["sweep_step"].tolist(), [1, 1, 10, 10, 10])
+        self.assertEqual(provenance["run_id"].iloc[0], "cached-run")
+        self.assertEqual(provenance["run_id"].iloc[1], "cached-run")
+        self.assertEqual(
+            provenance["run_timestamp_utc"].iloc[0],
+            "2026-05-26T00:00:00+00:00",
+        )
+        self.assertEqual(
+            provenance["run_timestamp_utc"].iloc[1],
+            "2026-05-26T00:00:00+00:00",
+        )
+        self.assertNotEqual(provenance["run_id"].iloc[2], "cached-run")
+        self.assertEqual(len(set(provenance["run_id"].iloc[2:])), 1)
+        self.assertEqual(len(set(provenance["run_timestamp_utc"].iloc[2:])), 1)
 
     def test_run_learning_curve_experiments_from_config_rejects_duplicate_points_without_force_refresh(
         self,

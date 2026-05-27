@@ -505,6 +505,7 @@ def run_learning_curve_experiments_from_config(
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
     from oasis.learning_curve.results_io import (
         LearningCurveSweepMetadata,
+        build_learning_curve_point_provenance,
         learning_curve_method_names,
         learning_curve_sweep_metadata_from_config,
         learning_curve_method_name_for_result_field,
@@ -512,6 +513,7 @@ def run_learning_curve_experiments_from_config(
         learning_curve_results_has_method,
         learning_curve_selection_field_for_method_name,
         load_learning_curve_results_artifact,
+        merge_learning_curve_point_provenance,
         save_learning_curve_results_artifact,
         select_learning_curve_results_methods,
     )
@@ -629,6 +631,7 @@ def run_learning_curve_experiments_from_config(
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
         if results_bundle_path is not None:
             existing_bundle_results = LearningCurveResults.empty()
+            existing_bundle_point_provenance: dict[str, pd.DataFrame] = {}
             existing_bundle_metadata = expected_metadata
             if Path(results_bundle_path).is_file():
                 try:
@@ -640,6 +643,7 @@ def run_learning_curve_experiments_from_config(
                         ignore_repeat_count=True,
                     )
                     existing_bundle_results = existing_bundle.results
+                    existing_bundle_point_provenance = existing_bundle.point_provenance
                     existing_bundle_metadata = existing_bundle.metadata
                 except ValueError:
                     pass
@@ -656,6 +660,14 @@ def run_learning_curve_experiments_from_config(
                 fresh_results,
                 overwrite_fields=overwrite_fields,
             )
+            bundle_point_provenance = merge_learning_curve_point_provenance(
+                existing_bundle_point_provenance,
+                build_learning_curve_point_provenance(
+                    fresh_results,
+                    expected_metadata,
+                ),
+                overwrite_fields=overwrite_fields,
+            )
             results = select_learning_curve_results_methods(
                 bundle_results,
                 enabled_model_names,
@@ -668,6 +680,7 @@ def run_learning_curve_experiments_from_config(
                     existing_bundle_metadata,
                 ),
                 results_bundle_path,
+                point_provenance=bundle_point_provenance,
             )
     return results
 
