@@ -10,7 +10,12 @@ from oasis.config import get_config
 from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
 )
-from oasis.graphs import atoms_to_graph_dataset_view, load_probe_graph_dataset_view, save_aligned_graph_dataset_parquet
+from oasis.graphs import (
+    atoms_to_graph_dataset_view,
+    load_graph_dataset_view,
+    load_probe_graph_dataset_view,
+    save_aligned_graph_dataset_parquet,
+)
 from oasis.io import (
     find_result_files,
     load_sample_atoms_for_wide_df,
@@ -22,6 +27,21 @@ from oasis.probe import build_probe_dataset, updated_dataset_output_path
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 
+def _frame_height(frame: object) -> int:
+    return int(getattr(frame, "height", len(frame)))
+
+
+def _can_reuse_graph_artifact(
+    artifact_path: Path,
+    *,
+    reaction_ids: list[str],
+) -> bool:
+    if not artifact_path.is_file():
+        return False
+    artifact_graph_view = load_graph_dataset_view(artifact_path)
+    return tuple(artifact_graph_view.sample_ids) == tuple(reaction_ids)
+
+
 def main() -> None:
     if len(sys.argv) >= 2 and sys.argv[1] == "mlip":
         # Forward remaining args to mlip CLI
@@ -30,12 +50,21 @@ def main() -> None:
 
     cfg = get_config()
     dataset_path = Path(cfg.mlip.dataset)
-    if not updated_dataset_output_path(dataset_path).exists():
-        build_probe_dataset(cfg)
-        print(f"Built probe dataset from {dataset_path}")
-
     probe_cfg = cfg.probe_features
-    if probe_cfg is not None and probe_cfg.mlip_results_dir.exists():
+    models_cfg = (
+        cfg.experiment.learning_curve.models
+        if cfg.experiment and cfg.experiment.learning_curve
+        else None
+    )
+    probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
+    probe_gnn_enabled = bool(getattr(probe_gnn_cfg, "enabled", False))
+
+    if probe_gnn_enabled and probe_cfg is not None:
+        if not updated_dataset_output_path(dataset_path).exists():
+            build_probe_dataset(cfg)
+            print(f"Built probe dataset from {dataset_path}")
+
+    if probe_gnn_enabled and probe_cfg is not None and probe_cfg.mlip_results_dir.exists():
         add_mlip_feature_matrices_to_dataset(
             dataset_path=probe_cfg.dataset_path,
             mlip_results_dir=probe_cfg.mlip_results_dir,
@@ -45,6 +74,7 @@ def main() -> None:
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
+    print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows before filters")
 
     plot_filters = cfg.plot.filters if cfg.plot else None
     adsorbate_filter = plot_filters.adsorbate if plot_filters else None
@@ -54,24 +84,28 @@ def main() -> None:
         reaction_contains_filter = [s for s in reaction_contains_filter if s]
         if not reaction_contains_filter:
             reaction_contains_filter = None
+    pre_filter_rows = _frame_height(wide_df)
     wide_df = filter_wide_predictions(
         wide_df,
         adsorbate_filter=adsorbate_filter,
         anomaly_filter=anomaly_filter,
         reaction_contains_filter=reaction_contains_filter,
     )
+    print(
+        "Applied plot filters"
+        f" adsorbate={adsorbate_filter!r}"
+        f" anomaly_label={anomaly_filter!r}"
+        f" reaction_contains={reaction_contains_filter!r}"
+        f": {pre_filter_rows} -> {_frame_height(wide_df)} rows"
+    )
 
     auxiliary_views: dict = {}
-    models_cfg = (
-        cfg.experiment.learning_curve.models
-        if cfg.experiment and cfg.experiment.learning_curve
-        else None
-    )
     if models_cfg is not None and getattr(models_cfg, "use_latent", False):
         latent_cfg = models_cfg.latent
         if latent_cfg is not None:
             latent_df = pd.read_csv(latent_cfg.csv_path)
             csv_energies = set(latent_df["adsorption_energy"].tolist())
+            pre_latent_rows = _frame_height(wide_df)
             wide_df = wide_df.filter(
                 wide_df.get_column("reference_ads_eng").is_in(list(csv_energies))
             )
@@ -81,11 +115,12 @@ def main() -> None:
             )
             auxiliary_views["latent"] = latent_df
             print(
-                f"Latent filter: {len(wide_df)} samples aligned to {latent_cfg.csv_path.name}"
+                "Applied latent alignment filter"
+                f" against {latent_cfg.csv_path.name}:"
+                f" {pre_latent_rows} -> {_frame_height(wide_df)} rows"
             )
 
-    probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
-    if getattr(probe_gnn_cfg, "enabled", False):
+    if probe_gnn_enabled:
         if probe_cfg is not None and probe_cfg.dataset_path.exists():
             probe_graph_view = load_probe_graph_dataset_view(probe_cfg.dataset_path)
             reactions = wide_df.get_column("reaction").to_list()
@@ -122,16 +157,26 @@ def main() -> None:
         if cfg.experiment and cfg.experiment.learning_curve
         else None
     )
+    reaction_ids = wide_df.get_column("reaction").to_list()
     reuse_existing_graph_dataset = (
-        graph_dataset_cfg is not None and graph_dataset_cfg.path.is_file()
+        graph_dataset_cfg is not None
+        and _can_reuse_graph_artifact(
+            graph_dataset_cfg.path,
+            reaction_ids=reaction_ids,
+        )
     )
     graph_view = None
     if reuse_existing_graph_dataset:
         print(f"Using existing aligned graph dataset from {graph_dataset_cfg.path}")
     else:
+        if graph_dataset_cfg is not None and graph_dataset_cfg.path.is_file():
+            print(
+                "Existing aligned graph dataset does not match the current filtered "
+                f"rows; rebuilding {graph_dataset_cfg.path}"
+            )
         sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
         graph_view = atoms_to_graph_dataset_view(
-            wide_df.get_column("reaction").to_list(),
+            reaction_ids,
             sample_atoms,
         )
         print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
