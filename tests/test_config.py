@@ -409,6 +409,7 @@ class ConfigParsingTests(unittest.TestCase):
     def test_learning_curve_models_moe_defaults_parse(self) -> None:
         cfg = Config(
             **{
+                "seed": 23,
                 "ingest": {
                     "source": "data/raw_vasp/systems",
                     "dataset_name": "test",
@@ -458,12 +459,13 @@ class ConfigParsingTests(unittest.TestCase):
         )
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.num_workers, 0)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.device)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.seed)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.seed, 23)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna)
 
     def test_learning_curve_models_moe_optuna_defaults_parse(self) -> None:
         cfg = Config(
             **{
+                "seed": 29,
                 "ingest": {
                     "source": "data/raw_vasp/systems",
                     "dataset_name": "test",
@@ -512,7 +514,56 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.sampler)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.pruner)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.timeout_s)
-        self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.seed)
+        self.assertEqual(cfg.experiment.learning_curve.models.moe.tuning.optuna.seed, 29)
+
+    def test_learning_curve_model_seeds_preserve_explicit_overrides(self) -> None:
+        cfg = Config(
+            **{
+                "seed": 23,
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": True,
+                            "probe_gnn": {
+                                "enabled": True,
+                                "training": {"epochs": 25, "seed": 7},
+                                "tuning": {"optuna": {"n_trials": 5, "seed": 11}},
+                            },
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        probe = cfg.experiment.learning_curve.models.probe_gnn
+        self.assertEqual(probe.training.seed, 7)
+        assert probe.tuning.optuna is not None
+        self.assertEqual(probe.tuning.optuna.seed, 11)
 
     def test_plot_can_parse_without_model_toggles(self) -> None:
         cfg = Config(

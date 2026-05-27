@@ -194,11 +194,37 @@ class Config(BaseModel):
     experiment: Optional[ExperimentConfig] = None
     plot: Optional[PlotConfig] = None
 
+    def model_post_init(self, __context: Any) -> None:
+        self.init_paths()
+
     def init_paths(self):
         catbench_folder = (
             self.ingest.source.parent / f"{self.ingest.source.name}_catbench"
         )
         self.ingest.catbench_folder = catbench_folder
+        self._inherit_global_seed()
+
+    def _inherit_global_seed(self) -> None:
+        if self.seed is None or self.experiment is None:
+            return
+        learning_curve = self.experiment.learning_curve
+        if learning_curve is None or learning_curve.models is None:
+            return
+
+        models_cfg = learning_curve.models
+        for family_cfg_name in ("moe", "probe_gnn", "gnn_direct"):
+            family_cfg = getattr(models_cfg, family_cfg_name, None)
+            if family_cfg is None:
+                continue
+
+            training_cfg = getattr(family_cfg, "training", None)
+            if training_cfg is not None and training_cfg.seed is None:
+                training_cfg.seed = self.seed
+
+            tuning_cfg = getattr(family_cfg, "tuning", None)
+            optuna_cfg = getattr(tuning_cfg, "optuna", None)
+            if optuna_cfg is not None and optuna_cfg.seed is None:
+                optuna_cfg.seed = self.seed
 
 
 DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
@@ -249,6 +275,4 @@ def load_config_data(
 def get_config(
     config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
 ) -> Config:
-    cfg = Config(**load_config_data(config_paths))
-    cfg.init_paths()
-    return cfg
+    return Config(**load_config_data(config_paths))

@@ -1,7 +1,6 @@
 # Example MLIP-side configuration.
 # Copy to `mlip.toml` and replace paths/model specs for your environment.
 
-seed = 42
 dev_run = false
 train = true
 evaluate = true
