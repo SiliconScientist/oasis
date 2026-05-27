@@ -683,6 +683,7 @@ def merge_learning_curve_point_provenance(
     right: dict[str, pd.DataFrame],
     *,
     overwrite_fields: set[str] | frozenset[str] = frozenset(),
+    overwrite_train_sizes_by_field: dict[str, set[int]] | None = None,
 ) -> dict[str, pd.DataFrame]:
     merged: dict[str, pd.DataFrame] = {}
     for field_name in set(left) | set(right):
@@ -691,6 +692,11 @@ def merge_learning_curve_point_provenance(
             left.get(field_name),
             right.get(field_name),
             allow_overlap=field_name in overwrite_fields,
+            allowed_overlap_train_sizes=(
+                set()
+                if overwrite_train_sizes_by_field is None
+                else overwrite_train_sizes_by_field.get(field_name, set())
+            ),
         )
         if merged_frame is not None:
             merged[field_name] = merged_frame
@@ -770,6 +776,7 @@ def _merge_provenance_frame(
     right: pd.DataFrame | None,
     *,
     allow_overlap: bool,
+    allowed_overlap_train_sizes: set[int],
 ) -> pd.DataFrame | None:
     if left is None:
         return right
@@ -778,10 +785,15 @@ def _merge_provenance_frame(
     overlapping_train_sizes = sorted(
         set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
     )
-    if overlapping_train_sizes and not allow_overlap:
+    disallowed_overlap_sizes = [
+        sweep_size
+        for sweep_size in overlapping_train_sizes
+        if sweep_size not in allowed_overlap_train_sizes
+    ]
+    if disallowed_overlap_sizes and not allow_overlap:
         raise ValueError(
             f"{field_name} contains duplicate provenance rows for n_train: "
-            f"{overlapping_train_sizes!r}."
+            f"{disallowed_overlap_sizes!r}."
         )
     merged = pd.concat([left, right], ignore_index=True)
     merged = merged.drop_duplicates(subset=["n_train"], keep="last")

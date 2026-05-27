@@ -1079,8 +1079,13 @@ class LearningCurveResults:
         other: LearningCurveResults,
         *,
         overwrite_fields: Collection[str] = (),
+        overwrite_train_sizes_by_field: Mapping[str, Collection[int]] | None = None,
     ) -> LearningCurveResults:
         overwrite_field_names = set(overwrite_fields)
+        overwrite_sizes_mapping = {
+            field_name: {int(value) for value in sweep_sizes}
+            for field_name, sweep_sizes in (overwrite_train_sizes_by_field or {}).items()
+        }
         return LearningCurveResults.from_mapping(
             {
                 field_def.name: _merge_learning_curve_frame(
@@ -1088,6 +1093,10 @@ class LearningCurveResults:
                     getattr(self, field_def.name),
                     getattr(other, field_def.name),
                     allow_overlap=field_def.name in overwrite_field_names,
+                    allowed_overlap_train_sizes=overwrite_sizes_mapping.get(
+                        field_def.name,
+                        set(),
+                    ),
                 )
                 for field_def in fields(self)
             }
@@ -1100,6 +1109,7 @@ def _merge_learning_curve_frame(
     right: pd.DataFrame | None,
     *,
     allow_overlap: bool = False,
+    allowed_overlap_train_sizes: Collection[int] = (),
 ) -> pd.DataFrame | None:
     if left is None:
         return right
@@ -1110,9 +1120,15 @@ def _merge_learning_curve_frame(
     overlapping_train_sizes = sorted(
         set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
     )
-    if overlapping_train_sizes and not allow_overlap:
+    allowed_overlap_sizes = {int(value) for value in allowed_overlap_train_sizes}
+    disallowed_overlap_sizes = [
+        sweep_size
+        for sweep_size in overlapping_train_sizes
+        if sweep_size not in allowed_overlap_sizes
+    ]
+    if disallowed_overlap_sizes and not allow_overlap:
         raise ValueError(
-            f"{field_name} contains duplicate n_train rows: {overlapping_train_sizes!r}."
+            f"{field_name} contains duplicate n_train rows: {disallowed_overlap_sizes!r}."
         )
     merged = pd.concat([left, right], ignore_index=True)
     merged = merged.drop_duplicates(subset=["n_train"], keep="last")

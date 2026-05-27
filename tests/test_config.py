@@ -160,6 +160,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "results_bundle_path": "data/results/learning_curve/example.json",
                         "reuse_results": True,
                         "force_refresh_methods": ["moe", "probe_gnn"],
+                        "force_refresh_train_sizes": {"ridge": [5, 10]},
                     }
                 },
             }
@@ -175,6 +176,10 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(
             cfg.experiment.learning_curve.force_refresh_methods,
             ["moe", "probe_gnn"],
+        )
+        self.assertEqual(
+            cfg.experiment.learning_curve.force_refresh_train_sizes,
+            {"ridge": [5, 10]},
         )
 
     def test_learning_curve_split_sizing_defaults_parse(self) -> None:
@@ -215,6 +220,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertIsNone(cfg.experiment.learning_curve.results_bundle_path)
         self.assertFalse(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
+        self.assertEqual(cfg.experiment.learning_curve.force_refresh_train_sizes, {})
 
     def test_learning_curve_models_section_parses(self) -> None:
         cfg = Config(

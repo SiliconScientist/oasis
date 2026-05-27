@@ -160,6 +160,7 @@ class LearningCurveExperimentConfig(BaseModel):
     results_bundle_path: Optional[Path] = None
     reuse_results: bool = False
     force_refresh_methods: list[str] = Field(default_factory=list)
+    force_refresh_train_sizes: dict[str, list[int]] = Field(default_factory=dict)
     graph_dataset: Optional[GraphDatasetInputConfig] = None
     models: Optional[LearningCurveModelsConfig] = None
 

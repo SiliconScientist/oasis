@@ -74,13 +74,15 @@ n_repeats = 10
 # Typical workflow:
 # 1. Run once with this path set to persist sweep results.
 # 2. Keep `reuse_results = true` to regenerate plots from cache without retraining.
-# 3. Use `force_refresh_methods` to rerun only selected methods and overwrite
-#    just those bundle entries.
+# 3. Use `force_refresh_methods` to rerun whole methods, or
+#    `force_refresh_train_sizes` to rerun only selected `n_train` points.
 # results_bundle_path = "data/results/learning_curve/example_dataset.json"
 # If true, reuse compatible saved result artifacts when available.
 # reuse_results = true
 # Optional subset of enabled methods to rerun even if compatible artifacts exist.
 # force_refresh_methods = ["moe", "probe_gnn"]
+# Optional per-method `n_train` points to rerun even if compatible cached rows exist.
+# force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
 [experiment.learning_curve.graph_dataset]
 # Reuse this aligned MLIP+graph artifact if it already exists; otherwise Oasis

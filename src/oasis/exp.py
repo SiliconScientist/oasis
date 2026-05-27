@@ -16,6 +16,7 @@ from oasis.learning_curve.results_io import (
     learning_curve_method_names,
     learning_curve_result_field_for_method_name,
     learning_curve_results_has_method,
+    learning_curve_selection_field_for_method_name,
 )
 from oasis.sweep import (
     GraphDatasetView,
@@ -546,9 +547,22 @@ def run_learning_curve_experiments_from_config(
         if experiment_cfg is not None
         else False
     )
+    configured_force_refresh_train_sizes = (
+        getattr(experiment_cfg, "force_refresh_train_sizes", {})
+        if experiment_cfg is not None
+        else {}
+    )
     force_refresh_methods = {
         method_name
         for method_name in getattr(experiment_cfg, "force_refresh_methods", ())
+        if method_name in enabled_model_names
+    }
+    force_refresh_train_sizes = {
+        method_name: {
+            int(value)
+            for value in sweep_sizes
+        }
+        for method_name, sweep_sizes in configured_force_refresh_train_sizes.items()
         if method_name in enabled_model_names
     }
 
@@ -576,15 +590,24 @@ def run_learning_curve_experiments_from_config(
                 ).results,
                 enabled_model_names,
             )
-        if force_refresh_methods:
-            cached_results = select_learning_curve_results_methods(
-                cached_results,
-                tuple(
-                    method_name
-                    for method_name in enabled_model_names
-                    if method_name not in force_refresh_methods
-                ),
-            )
+        if force_refresh_methods or force_refresh_train_sizes:
+            for method_name in force_refresh_methods:
+                cached_results = select_learning_curve_results_methods(
+                    cached_results,
+                    tuple(
+                        enabled_method_name
+                        for enabled_method_name in enabled_model_names
+                        if enabled_method_name != method_name
+                    ),
+                )
+            for method_name, sweep_sizes in force_refresh_train_sizes.items():
+                if method_name in force_refresh_methods:
+                    continue
+                cached_results = _remove_method_train_sizes_from_results(
+                    cached_results,
+                    method_name,
+                    sweep_sizes,
+                )
         if available_families:
             selected_families: list[Any] = []
             for family in available_families:
@@ -621,8 +644,16 @@ def run_learning_curve_experiments_from_config(
                     for sweep_size in requested_sizes
                     if sweep_size not in cached_sizes
                 )
-                if missing_sizes:
-                    missing_sweep_sizes_by_method[method_name] = missing_sizes
+                refresh_sizes = tuple(
+                    sweep_size
+                    for sweep_size in requested_sizes
+                    if sweep_size in force_refresh_train_sizes.get(method_name, set())
+                )
+                requested_run_sizes = tuple(
+                    sorted(dict.fromkeys((*missing_sizes, *refresh_sizes)))
+                )
+                if requested_run_sizes:
+                    missing_sweep_sizes_by_method[method_name] = requested_run_sizes
                     selected_families.append(family)
                 else:
                     cached_method_names.add(method_name)
@@ -699,9 +730,22 @@ def run_learning_curve_experiments_from_config(
                 )
                 if field_name is not None
             }
+            overwrite_train_sizes_by_field = {
+                field_name: {
+                    int(value)
+                    for value in force_refresh_train_sizes.get(method_name, set())
+                }
+                for method_name in force_refresh_train_sizes
+                for field_name in (
+                    learning_curve_result_field_for_method_name(method_name),
+                    learning_curve_selection_field_for_method_name(method_name),
+                )
+                if field_name is not None
+            }
             bundle_results = existing_bundle_results.merge(
                 fresh_results,
                 overwrite_fields=overwrite_fields,
+                overwrite_train_sizes_by_field=overwrite_train_sizes_by_field,
             )
             bundle_point_provenance = merge_learning_curve_point_provenance(
                 existing_bundle_point_provenance,
@@ -710,6 +754,7 @@ def run_learning_curve_experiments_from_config(
                     expected_metadata,
                 ),
                 overwrite_fields=overwrite_fields,
+                overwrite_train_sizes_by_field=overwrite_train_sizes_by_field,
             )
             results = select_learning_curve_results_methods(
                 bundle_results,
@@ -758,6 +803,11 @@ def load_or_run_learning_curve_results_from_config(
         if experiment_cfg is not None
         else False
     )
+    force_refresh_train_sizes = (
+        getattr(experiment_cfg, "force_refresh_train_sizes", {})
+        if experiment_cfg is not None
+        else {}
+    )
     force_refresh_methods = {
         method_name
         for method_name in getattr(experiment_cfg, "force_refresh_methods", ())
@@ -770,6 +820,7 @@ def load_or_run_learning_curve_results_from_config(
         and experiment_cfg is not None
         and reuse_results
         and not force_refresh_methods
+        and not force_refresh_train_sizes
         and results_bundle_path is not None
     ):
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
@@ -952,6 +1003,48 @@ def _result_frame_train_sizes(
     if frame is None or "n_train" not in frame.columns:
         return set()
     return {int(value) for value in frame["n_train"].tolist()}
+
+
+def _filter_learning_curve_frame_by_train_sizes(
+    frame: Any,
+    allowed_train_sizes: Collection[int],
+) -> Any:
+    if frame is None:
+        return None
+    allowed_sizes = {int(value) for value in allowed_train_sizes}
+    if "n_train" not in frame.columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    return (
+        frame.loc[frame["n_train"].isin(sorted(allowed_sizes))]
+        .sort_values("n_train")
+        .reset_index(drop=True)
+    )
+
+
+def _remove_method_train_sizes_from_results(
+    results: LearningCurveResults,
+    method_name: str,
+    train_sizes_to_remove: Collection[int],
+) -> LearningCurveResults:
+    if not train_sizes_to_remove:
+        return results
+    allowed_sizes = {int(value) for value in train_sizes_to_remove}
+    field_mapping = results.to_mapping()
+    metrics_field = learning_curve_result_field_for_method_name(method_name)
+    selection_field = learning_curve_selection_field_for_method_name(method_name)
+    for field_name in (metrics_field, selection_field):
+        if field_name is None:
+            continue
+        frame = field_mapping[field_name]
+        if frame is None:
+            continue
+        filtered_frame = (
+            frame.loc[~frame["n_train"].isin(sorted(allowed_sizes))]
+            .sort_values("n_train")
+            .reset_index(drop=True)
+        )
+        field_mapping[field_name] = None if filtered_frame.empty else filtered_frame
+    return LearningCurveResults.from_mapping(field_mapping)
 
 
 def run_learning_curve_experiments(

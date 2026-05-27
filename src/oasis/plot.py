@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
+
+if "MPLCONFIGDIR" not in os.environ:
+    mplconfigdir = Path(tempfile.gettempdir()) / "oasis-matplotlib"
+    mplconfigdir.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(mplconfigdir)
 
 import matplotlib
 if "MPLBACKEND" not in os.environ:
