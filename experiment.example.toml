@@ -1,0 +1,126 @@
+# Example experiment-side configuration.
+# Copy to `experiment.toml` and tune per study.
+
+[plot]
+output_dir = "data/results/plots"
+
+[plot.filters]
+# adsorbate = "OH"
+# anomaly_label = "normal"
+# anomaly_label = "inference_anomaly"
+# anomaly_label = "!adsorbate_migration"
+# reaction_contains = ["Pt", "OH"]
+
+[experiment.learning_curve]
+# Learning-curve sweep sizes refer to the outer training budget.
+# Models that require validation spend part of that budget on inner validation.
+# The test split is always an outer holdout used only for final evaluation.
+# Validation-aware points are skipped when these minima cannot all fit together.
+min_train = 5
+max_train = 25
+step = 1
+validation_fraction = 0.2
+min_val_size = 1
+min_tuning_val_size = 1
+min_inner_train_size = 1
+min_test_size = 1
+n_repeats = 10
+# results_bundle_path = "data/results/learning_curve/example_dataset.json"
+# reuse_results = true
+# force_refresh_methods = ["moe", "probe_gnn"]
+# force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
+
+[experiment.learning_curve.graph_dataset]
+# Reuse this aligned MLIP+graph artifact if it already exists; otherwise Oasis
+# builds it from `mlip.dataset` atoms and saves it here.
+path = "data/graphs/example_reactions.parquet"
+join_key = "reaction"
+
+[experiment.learning_curve.models]
+use_ridge = true
+use_kernel_ridge = false
+use_lasso = false
+use_elastic_net = false
+use_residual = true
+use_weighted_linear = false
+use_weighted_simplex = false
+use_graph_mean = false
+use_latent = false
+
+# [experiment.learning_curve.models.latent]
+# experiment_config_path = "vendor/latent/config.toml"
+# csv_path = "data/processed/data_6910487.csv"
+# cobyla_initial_guess = 0.1
+# cobyla_max_iter = 100
+
+[experiment.learning_curve.models.moe]
+enabled = false
+gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn" | "schnet"
+gating_mode = "dense"        # "dense" | "top_k"
+top_k = 2
+# hidden_dims = [64, 64]
+# n_rbf = 20
+# r_max = 6.0
+
+[experiment.learning_curve.models.moe.training]
+batch_size = 32
+# eval_batch_size = 64
+epochs = 100
+# lr = 1e-3
+# weight_decay = 0.0
+# num_workers = 0
+# device = "cpu"
+# seed = 42
+
+[experiment.learning_curve.models.moe.tuning.optuna]
+# n_trials = 50
+# sampler = "tpe"
+# pruner = "median"
+# timeout_s = 600
+# seed = 42
+
+[experiment.learning_curve.models.gnn_direct]
+enabled = false
+# hidden_dims = [64, 64]
+
+[experiment.learning_curve.models.gnn_direct.training]
+batch_size = 32
+# eval_batch_size = 64
+epochs = 100
+# lr = 1e-3
+# weight_decay = 0.0
+# num_workers = 0
+# device = "cpu"
+# seed = 42
+
+[experiment.learning_curve.models.gnn_direct.tuning.optuna]
+# n_trials = 50
+# sampler = "tpe"
+# pruner = "median"
+# timeout_s = 600
+# seed = 42
+
+[experiment.learning_curve.models.probe_gnn]
+enabled = false
+# hidden_dims = [64, 64]
+
+[experiment.learning_curve.models.probe_gnn.training]
+batch_size = 32
+# eval_batch_size = 64
+epochs = 100
+# lr = 1e-3
+# weight_decay = 0.0
+# num_workers = 0
+# device = "cpu"
+# seed = 42
+
+# [probe_features]
+# dataset_path = "data/raw_data/example_adsorption.json"
+# mlip_results_dir = "data/mlips/example_run"
+
+[experiment.learning_curve.models.probe_gnn.tuning.optuna]
+# n_trials = 50
+# sampler = "tpe"
+# pruner = "median"
+# timeout_s = 600
+# seed = 42

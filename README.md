@@ -34,7 +34,7 @@ PYTHONPATH=src python -m unittest tests.test_config
 Learning-curve runs can persist one bundle file per dataset so you do not need
 to retrain every model just to regenerate plots.
 
-Enable this in `config.toml`:
+Enable this in `experiment.toml`:
 
 ```toml
 [experiment.learning_curve]
@@ -90,7 +90,7 @@ artifact so you can audit how each row was produced.
 ## Graph Artifact Contract
 
 Configured graph-backed learning-curve runs use
-`experiment.learning_curve.graph_dataset` in `config.toml`.
+`experiment.learning_curve.graph_dataset` in `experiment.toml`.
 
 Example:
 

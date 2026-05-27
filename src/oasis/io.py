@@ -173,7 +173,7 @@ def load_sample_atoms_for_wide_df(
     """
     dataset_path = cfg.mlip.dataset
     if not dataset_path:
-        raise ValueError("cfg.mlip.dataset is not set in config.toml")
+        raise ValueError("cfg.mlip.dataset is not set in mlip.toml")
 
     path = Path(dataset_path)
     if not path.is_file():

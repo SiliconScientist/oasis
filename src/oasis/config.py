@@ -1,5 +1,6 @@
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
@@ -200,9 +201,54 @@ class Config(BaseModel):
         self.ingest.catbench_folder = catbench_folder
 
 
-def get_config():
-    with open("config.toml", "rb") as f:
-        cfg_data = tomllib.load(f)
-        cfg = Config(**cfg_data)
-        cfg.init_paths()
+DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
+
+
+def _load_toml_file(path: Path) -> dict[str, Any]:
+    with path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _deep_merge_dicts(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in overlay.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, Mapping):
+            merged[key] = _deep_merge_dicts(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config_data(
+    config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
+) -> dict[str, Any]:
+    raw_paths = config_paths if config_paths is not None else DEFAULT_CONFIG_PATHS
+    if isinstance(raw_paths, (str, Path)):
+        path_list = [Path(raw_paths)]
+    else:
+        path_list = [Path(path) for path in raw_paths]
+
+    merged: dict[str, Any] = {}
+    missing: list[Path] = []
+    for path in path_list:
+        if not path.exists():
+            missing.append(path)
+            continue
+        merged = _deep_merge_dicts(merged, _load_toml_file(path))
+
+    if not merged:
+        searched = ", ".join(str(path) for path in path_list)
+        raise FileNotFoundError(f"No config files found. Looked for: {searched}")
+    if missing and config_paths is not None:
+        missing_str = ", ".join(str(path) for path in missing)
+        raise FileNotFoundError(f"Config file(s) not found: {missing_str}")
+    return merged
+
+
+def get_config(
+    config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
+) -> Config:
+    cfg = Config(**load_config_data(config_paths))
+    cfg.init_paths()
     return cfg

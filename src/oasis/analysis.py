@@ -315,14 +315,14 @@ def run_summary_analysis(cfg: Config | None = None) -> Path | None:
         return None
 
     if cfg.analysis.summary_workbook_path is None:
-        raise ValueError("config.toml must define analysis.summary_workbook_path")
+        raise ValueError("mlip.toml must define analysis.summary_workbook_path")
     if cfg.analysis.comparison_workbook_path is None:
-        raise ValueError("config.toml must define analysis.comparison_workbook_path")
+        raise ValueError("mlip.toml must define analysis.comparison_workbook_path")
     if cfg.analysis.comparison_plot_path is None:
-        raise ValueError("config.toml must define analysis.comparison_plot_path")
+        raise ValueError("mlip.toml must define analysis.comparison_plot_path")
     if cfg.analysis.run_adsorption_analysis and cfg.analysis.calculating_path is None:
         raise ValueError(
-            "config.toml must define analysis.calculating_path when "
+            "mlip.toml must define analysis.calculating_path when "
             "run_adsorption_analysis is true"
         )
 
