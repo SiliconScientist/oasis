@@ -157,7 +157,7 @@ def learning_curve_plot(
             results.ridge_df["rmse_mean"],
             marker="o",
             color="tab:blue",
-            label="Ridge (alpha=0.1) mean",
+            label="Ridge mean",
         )
         ax.fill_between(
             results.ridge_df["n_train"],
@@ -165,7 +165,7 @@ def learning_curve_plot(
             results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
             color="tab:blue",
             alpha=0.2,
-            label="Ridge (alpha=0.1) +/- 1sd",
+            label="Ridge +/- 1sd",
         )
     if results.kernel_ridge_df is not None:
         ax.plot(

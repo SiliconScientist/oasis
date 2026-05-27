@@ -873,11 +873,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         expected = {
-            "ridge_df": sweep_model_with_optuna_selection(
+            "ridge_df": sweep_model_with_hyperparameter_selection(
                 validation_payload,
-                sklearn_specs["ridge"].trial_tuning_spec,
-                n_trials=sklearn_specs["ridge"].optuna_n_trials,
-                study_factory=sklearn_specs["ridge"].optuna_study_factory,
+                sklearn_specs["ridge"].hyperparameter_spec,
             ),
             "kernel_ridge_df": sweep_model_with_hyperparameter_selection(
                 validation_payload,
@@ -937,7 +935,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertIsInstance(
             ridge_family.spec.runner,
-            OptunaModelSelectionSweepRunner,
+            SupervisedModelSelectionSweepRunner,
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1060,10 +1058,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
             [
                 "n_train",
                 "alpha",
-                "best_validation_score",
-                "pruner",
-                "sampler",
-                "trial_count",
             ],
         )
         self.assertEqual(
@@ -1072,15 +1066,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertTrue(
             set(results.ridge_selection_df["alpha"]).issubset({0.01, 0.1, 1.0, 10.0})
-        )
-        self.assertEqual(set(results.ridge_selection_df["sampler"]), {"GridSampler"})
-        self.assertEqual(len(set(results.ridge_selection_df["pruner"])), 1)
-
-        self.assertTrue(
-            all(
-                count == 4
-                for count in results.ridge_selection_df["trial_count"].tolist()
-            )
         )
 
         self.assertIsNotNone(results.kernel_ridge_selection_df)
@@ -1258,7 +1243,7 @@ class BoundaryTests(unittest.TestCase):
     def test_sklearn_specs_declare_validation_search_spaces(self) -> None:
         specs = {name: spec for name, _, spec in sklearn_sweep_model_specs()}
 
-        self.assertIsNotNone(specs["ridge"].trial_tuning_spec)
+        self.assertIsNotNone(specs["ridge"].hyperparameter_spec)
         self.assertIsNotNone(specs["kernel_ridge"].hyperparameter_spec)
         self.assertIsNotNone(specs["lasso"].hyperparameter_spec)
         self.assertIsNotNone(specs["elastic"].hyperparameter_spec)
