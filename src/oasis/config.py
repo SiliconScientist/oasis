@@ -55,13 +55,31 @@ class MLIPConfig(BaseModel):
     rootstock: RootstockConfig
 
 
+class DatasetProfilePathsConfig(BaseModel):
+    dataset: Optional[Path] = None
+    probe_dataset_path: Optional[Path] = None
+    probe_mlip_results_dir: Optional[Path] = None
+    results_bundle_path: Optional[Path] = None
+    graph_dataset_path: Optional[Path] = None
+    calculating_path: Optional[Path] = None
+    summary_workbook_path: Optional[Path] = None
+    comparison_workbook_path: Optional[Path] = None
+    comparison_plot_path: Optional[Path] = None
+    analysis_base_dir: Optional[Path] = None
+
+
+class DatasetProfileConfig(BaseModel):
+    tag: str
+    paths: DatasetProfilePathsConfig = Field(default_factory=DatasetProfilePathsConfig)
+
+
 class AnalysisConfig(BaseModel):
     calculating_path: Optional[Path] = None
     summary_workbook_path: Optional[Path] = None
     comparison_workbook_path: Optional[Path] = None
     comparison_plot_path: Optional[Path] = None
     run_adsorption_analysis: bool = False
-    base_dir: Path
+    base_dir: Optional[Path] = None
     out_dir: Path
     prefixes: List[str]
 
@@ -188,6 +206,7 @@ class Config(BaseModel):
     train: Optional[bool] = None
     evaluate: Optional[bool] = None
     ingest: IngestConfig
+    dataset_profile: Optional[DatasetProfileConfig] = None
     mlip: MLIPConfig
     analysis: Optional[AnalysisConfig] = None
     probe_features: Optional[ProbeFeatureConfig] = None
@@ -202,7 +221,112 @@ class Config(BaseModel):
             self.ingest.source.parent / f"{self.ingest.source.name}_catbench"
         )
         self.ingest.catbench_folder = catbench_folder
+        self._apply_dataset_profile()
         self._inherit_global_seed()
+
+    def _apply_dataset_profile(self) -> None:
+        profile = self.dataset_profile
+        if profile is None:
+            return
+
+        derived_paths = self._derived_dataset_profile_paths(profile.tag)
+        profile_paths = derived_paths.model_copy(
+            update=profile.paths.model_dump(exclude_none=True)
+        )
+
+        if self.mlip.dataset is None and profile_paths.dataset is not None:
+            self.mlip.dataset = str(profile_paths.dataset)
+
+        learning_curve = (
+            self.experiment.learning_curve
+            if self.experiment is not None
+            else None
+        )
+        if learning_curve is not None:
+            if (
+                learning_curve.results_bundle_path is None
+                and profile_paths.results_bundle_path is not None
+            ):
+                learning_curve.results_bundle_path = profile_paths.results_bundle_path
+
+            if profile_paths.graph_dataset_path is not None:
+                if learning_curve.graph_dataset is None:
+                    learning_curve.graph_dataset = GraphDatasetInputConfig(
+                        path=profile_paths.graph_dataset_path
+                    )
+                elif learning_curve.graph_dataset.path is None:
+                    learning_curve.graph_dataset.path = profile_paths.graph_dataset_path
+
+        if (
+            self.probe_features is None
+            and profile_paths.probe_dataset_path is not None
+            and profile_paths.probe_mlip_results_dir is not None
+        ):
+            self.probe_features = ProbeFeatureConfig(
+                dataset_path=profile_paths.probe_dataset_path,
+                mlip_results_dir=profile_paths.probe_mlip_results_dir,
+            )
+        elif self.probe_features is not None:
+            if profile_paths.probe_dataset_path is not None:
+                self._fill_none(
+                    self.probe_features,
+                    "dataset_path",
+                    profile_paths.probe_dataset_path,
+                )
+            if profile_paths.probe_mlip_results_dir is not None:
+                self._fill_none(
+                    self.probe_features,
+                    "mlip_results_dir",
+                    profile_paths.probe_mlip_results_dir,
+                )
+
+        if self.analysis is not None:
+            self._fill_none(
+                self.analysis,
+                "calculating_path",
+                profile_paths.calculating_path,
+            )
+            self._fill_none(
+                self.analysis,
+                "summary_workbook_path",
+                profile_paths.summary_workbook_path,
+            )
+            self._fill_none(
+                self.analysis,
+                "comparison_workbook_path",
+                profile_paths.comparison_workbook_path,
+            )
+            self._fill_none(
+                self.analysis,
+                "comparison_plot_path",
+                profile_paths.comparison_plot_path,
+            )
+            self._fill_none(
+                self.analysis,
+                "base_dir",
+                profile_paths.analysis_base_dir,
+            )
+
+    @staticmethod
+    def _fill_none(model: BaseModel, field_name: str, value: Any) -> None:
+        if value is None or getattr(model, field_name) is not None:
+            return
+        setattr(model, field_name, value)
+
+    @staticmethod
+    def _derived_dataset_profile_paths(tag: str) -> DatasetProfilePathsConfig:
+        return DatasetProfilePathsConfig(
+            dataset=Path("data/raw_data") / f"{tag}.json",
+            probe_dataset_path=Path("data/raw_data") / f"{tag}_with_probe_ids.json",
+            probe_mlip_results_dir=Path("data/mlips") / f"{tag}_unique_probes",
+            results_bundle_path=Path("data/results/learning_curve") / f"{tag}.json",
+            graph_dataset_path=Path("data/processed") / f"{tag}.parquet",
+            calculating_path=Path("data/mlips") / tag,
+            summary_workbook_path=Path("data/results") / tag / "oasis_Benchmarking_Analysis.xlsx",
+            comparison_workbook_path=Path("data/results") / tag / "oasis_Benchmarking_Analysis.xlsx",
+            comparison_plot_path=Path("data/results/plots") / f"{tag}_mae_comparison.png",
+            analysis_base_dir=Path("data/mlips") / tag,
+        )
 
     def _inherit_global_seed(self) -> None:
         if self.seed is None or self.experiment is None:

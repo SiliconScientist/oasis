@@ -81,6 +81,145 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
 
+    def test_dataset_profile_derives_common_paths(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {
+                    "tag": "mamun_oh",
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        self.assertEqual(cfg.mlip.dataset, "data/raw_data/mamun_oh.json")
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/mamun_oh.json"),
+        )
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/mamun_oh.parquet"),
+        )
+        assert cfg.probe_features is not None
+        self.assertEqual(
+            cfg.probe_features.dataset_path,
+            Path("data/raw_data/mamun_oh_with_probe_ids.json"),
+        )
+        self.assertEqual(
+            cfg.probe_features.mlip_results_dir,
+            Path("data/mlips/mamun_oh_unique_probes"),
+        )
+        assert cfg.analysis is not None
+        self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/mamun_oh"))
+        self.assertEqual(
+            cfg.analysis.comparison_plot_path,
+            Path("data/results/plots/mamun_oh_mae_comparison.png"),
+        )
+
+    def test_dataset_profile_explicit_paths_override_defaults(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {
+                    "tag": "mamun_oh",
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "dataset": "data/raw_data/explicit.json",
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "probe_features": {
+                    "dataset_path": "data/raw_data/explicit_probe.json",
+                    "mlip_results_dir": "data/mlips/explicit_probes",
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "results_bundle_path": "data/results/learning_curve/explicit.json",
+                        "graph_dataset": {
+                            "path": "data/processed/explicit.parquet",
+                        },
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "base_dir": "data/mlips/explicit",
+                    "comparison_plot_path": "data/results/plots/explicit.png",
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        self.assertEqual(cfg.mlip.dataset, "data/raw_data/explicit.json")
+        assert cfg.probe_features is not None
+        self.assertEqual(
+            cfg.probe_features.dataset_path,
+            Path("data/raw_data/explicit_probe.json"),
+        )
+        self.assertEqual(
+            cfg.probe_features.mlip_results_dir,
+            Path("data/mlips/explicit_probes"),
+        )
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/explicit.json"),
+        )
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/explicit.parquet"),
+        )
+        assert cfg.analysis is not None
+        self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/explicit"))
+        self.assertEqual(
+            cfg.analysis.comparison_plot_path,
+            Path("data/results/plots/explicit.png"),
+        )
+
     def test_learning_curve_graph_dataset_section_parses(self) -> None:
         cfg = Config(
             **{
