@@ -71,17 +71,18 @@ min_test_size = 1
 # Repeats are independent outer splits at each training-budget value.
 n_repeats = 10
 # Optional single-file bundle for one dataset's cached learning-curve results.
-# Typical workflow:
-# 1. Run once with this path set to persist sweep results.
-# 2. Keep `reuse_results = true` to regenerate plots from cache without retraining.
-# 3. Use `force_refresh_methods` to rerun whole methods, or
-#    `force_refresh_train_sizes` to rerun only selected `n_train` points.
+# Intended workflow:
+# 1. Build results incrementally in one bundle file for this dataset.
+# 2. Re-run later with wider bounds or more enabled methods; Oasis fills only
+#    the missing cached points when `reuse_results = true`.
+# 3. Regenerate plots from the accumulated bundle without retraining old points.
+# 4. If you want to replace existing rows, refresh them explicitly.
 # results_bundle_path = "data/results/learning_curve/example_dataset.json"
-# If true, reuse compatible saved result artifacts when available.
+# If true, reuse compatible saved rows and run only missing `n_train` points.
 # reuse_results = true
-# Optional subset of enabled methods to rerun even if compatible artifacts exist.
+# Optional subset of enabled methods to rerun and overwrite in the bundle.
 # force_refresh_methods = ["moe", "probe_gnn"]
-# Optional per-method `n_train` points to rerun even if compatible cached rows exist.
+# Optional per-method `n_train` points to rerun and overwrite explicitly.
 # force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
 [experiment.learning_curve.graph_dataset]

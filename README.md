@@ -44,31 +44,48 @@ reuse_results = true
 
 Workflow:
 
-- Run once with `results_bundle_path` set. Oasis writes one JSON bundle for the
-  dataset after the sweep completes.
-- Regenerate plots later with `reuse_results = true`. If the saved artifact
-  metadata matches the current sweep definition, Oasis reloads cached
-  `LearningCurveResults` instead of retraining.
-- Partial cache hits are supported. If only some enabled methods are cached,
-  Oasis reuses those results and trains only the missing methods.
-- Reuse tolerates cached supersets. If a saved artifact contains results
-  for more methods than are currently enabled, Oasis reuses the matching subset
-  instead of failing.
-- Selective refresh is supported through `force_refresh_methods`. This reruns
-  only the named enabled methods and overwrites just those bundle entries.
+- Build results incrementally. Run one method or one `n_train` range now, then
+  add more methods or more sweep sizes to the same bundle later.
+- Fill gaps later. With `reuse_results = true`, Oasis inspects cached rows per
+  method and runs only the missing `n_train` points needed for the current
+  request.
+- Reuse cached points. Plot regeneration and later sweep runs reuse compatible
+  cached rows instead of retraining them.
+- Mixed coverage is allowed. Different methods may have different feasible
+  `n_train` ranges in the same bundle, and plotting uses whatever rows exist
+  for each method.
+- Refresh conflicts explicitly. Use `force_refresh_methods` to rerun a whole
+  method, or `force_refresh_train_sizes` to rerun only selected `n_train`
+  points for a method.
 
-Example selective refresh:
+Example iterative workflow:
 
 ```toml
 [experiment.learning_curve]
 results_bundle_path = "data/results/learning_curve/khlohc_tol.json"
 reuse_results = true
+
+# First pass: run one method or one range.
+# enabled methods example:
+# use_ridge = true
+# use_weighted_simplex = false
+
+# Later, enable another method or widen the sweep bounds.
+# Oasis keeps the old rows and fills only the gaps.
+
 force_refresh_methods = ["moe", "probe_gnn"]
+force_refresh_train_sizes = { ridge = [20, 30] }
 ```
 
-Artifact compatibility is strict. Reuse happens only when the saved artifact
-matches the current sweep metadata, including seed, min/max train, step,
-repeats, enabled methods, and active plot filters.
+Bundle identity is dataset/filter oriented, not exact-sweep oriented. Reuse
+requires the same dataset/filter identity and seed, but the bundle may contain:
+
+- different enabled-method subsets across runs
+- different `min_train` / `max_train` / `step` ranges across runs
+- different `n_repeats` across runs
+
+Those sweep settings are still preserved as per-point provenance in the saved
+artifact so you can audit how each row was produced.
 
 ## Graph Artifact Contract
 
