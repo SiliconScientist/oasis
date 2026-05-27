@@ -28,6 +28,14 @@ _MLIP_DISPLAY_NAMES = {
 }
 
 
+def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+    if frame is None or frame.empty:
+        return frame
+    if "n_train" not in frame.columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    return frame.sort_values("n_train").reset_index(drop=True)
+
+
 def mae_comparison_plot(
     comparison_df: pd.DataFrame,
     summary_df: pd.DataFrame,
@@ -136,6 +144,12 @@ def learning_curve_plot(
     output_path: str | Path,
     fontsize: int = 8,
 ) -> Path:
+    results = LearningCurveResults.from_mapping(
+        {
+            field_name: _ordered_learning_curve_frame(frame)
+            for field_name, frame in results.to_mapping().items()
+        }
+    )
     fig, ax = plt.subplots(figsize=(7, 4))
     if results.ridge_df is not None:
         ax.plot(

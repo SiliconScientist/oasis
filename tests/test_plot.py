@@ -8,7 +8,9 @@ import pandas as pd
 
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
+    load_learning_curve_results_artifact,
     load_learning_curve_results_from_method_artifacts,
+    save_learning_curve_results_artifact,
     save_learning_curve_method_artifacts,
 )
 from oasis.plot import learning_curve_plot
@@ -94,3 +96,43 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(original_path.exists())
             self.assertTrue(reloaded_path.exists())
+
+    def test_learning_curve_plot_renders_sparse_incremental_bundle(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4, 1, 3],
+                    "rmse_mean": [0.2, 0.5, 0.3],
+                    "rmse_std": [0.03, 0.06, 0.04],
+                }
+            ),
+            weighted_simplex_df=pd.DataFrame(
+                {
+                    "n_train": [4, 2],
+                    "rmse_mean": [0.18, 0.28],
+                    "rmse_std": [0.025, 0.035],
+                }
+            ),
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=23,
+            min_train=1,
+            max_train=4,
+            step=1,
+            n_repeats=2,
+            enabled_models=("ridge", "weighted_simplex"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bundle_path = Path(tmpdir) / "learning_curve_results.json"
+            output_path = Path(tmpdir) / "learning_curve.png"
+            save_learning_curve_results_artifact(results, metadata, bundle_path)
+
+            reloaded = load_learning_curve_results_artifact(
+                bundle_path,
+                expected_metadata=metadata,
+            ).results
+            saved_path = learning_curve_plot(reloaded, output_path=output_path)
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
