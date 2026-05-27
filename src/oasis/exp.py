@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -11,7 +12,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
+    learning_curve_method_name_for_result_field,
     learning_curve_method_names,
+    learning_curve_result_field_for_method_name,
     learning_curve_results_has_method,
 )
 from oasis.sweep import (
@@ -502,7 +505,10 @@ def run_learning_curve_experiments_from_config(
     model_families: Sequence[Any] | None = None,
     auxiliary_views: dict[str, Any] | None = None,
 ) -> LearningCurveResults:
-    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+    from oasis.learning_curve.registry import (
+        default_sweep_model_families,
+        enabled_learning_curve_model_names_from_config,
+    )
     from oasis.learning_curve.results_io import (
         LearningCurveSweepMetadata,
         build_learning_curve_point_provenance,
@@ -525,6 +531,11 @@ def run_learning_curve_experiments_from_config(
         df, cfg, graph_view=graph_view, auxiliary_views=auxiliary_views
     )
     enabled_model_names = enabled_learning_curve_model_names_from_config(model_cfg)
+    available_families = tuple(
+        model_families
+        if model_families is not None
+        else default_sweep_model_families(enabled_model_names, config=model_cfg)
+    )
     results_bundle_path = (
         getattr(experiment_cfg, "results_bundle_path", None)
         if experiment_cfg is not None
@@ -543,8 +554,10 @@ def run_learning_curve_experiments_from_config(
 
     cached_results = LearningCurveResults.empty()
     cached_method_names: set[str] = set()
-    families_to_run = model_families
+    families_to_run: Sequence[Any] | None = available_families
     enabled_model_names_to_run = enabled_model_names
+    requested_sweep_sizes_by_method: dict[str, tuple[int, ...]] = {}
+    missing_sweep_sizes_by_method: dict[str, tuple[int, ...]] = {}
     if (
         cfg is not None
         and experiment_cfg is not None
@@ -572,23 +585,52 @@ def run_learning_curve_experiments_from_config(
                     if method_name not in force_refresh_methods
                 ),
             )
-        cached_method_names = {
-            method_name
-            for method_name in enabled_model_names
-            if method_name not in force_refresh_methods
-            if learning_curve_results_has_method(cached_results, method_name)
-        }
-        enabled_model_names_to_run = tuple(
-            method_name
-            for method_name in enabled_model_names
-            if method_name not in cached_method_names
-        )
-        if model_families is not None:
-            families_to_run = tuple(
-                family
-                for family in model_families
-                if _family_method_name(family, learning_curve_method_name_for_result_field)
-                not in cached_method_names
+        if available_families:
+            selected_families: list[Any] = []
+            for family in available_families:
+                method_name = _family_method_name(
+                    family,
+                    learning_curve_method_name_for_result_field,
+                )
+                if method_name is None or method_name not in enabled_model_names:
+                    selected_families.append(family)
+                    continue
+                split_collection = _build_family_split_collection(
+                    dataset,
+                    family,
+                    min_train=experiment_cfg.min_train,
+                    max_train=experiment_cfg.max_train,
+                    step=getattr(experiment_cfg, "step", 1),
+                    n_repeats=experiment_cfg.n_repeats,
+                    seed=cfg.seed if cfg.seed is not None else 42,
+                    validation_fraction=getattr(experiment_cfg, "validation_fraction", 0.2),
+                    min_val_size=getattr(experiment_cfg, "min_val_size", 1),
+                    min_tuning_val_size=getattr(experiment_cfg, "min_tuning_val_size", 1),
+                    min_inner_train_size=getattr(experiment_cfg, "min_inner_train_size", 1),
+                    min_test_size=getattr(experiment_cfg, "min_test_size", 1),
+                )
+                requested_sizes = _unique_sweep_sizes(split_collection)
+                requested_sweep_sizes_by_method[method_name] = requested_sizes
+                cached_sizes = _result_frame_train_sizes(
+                    cached_results,
+                    method_name,
+                    learning_curve_result_field_for_method_name,
+                )
+                missing_sizes = tuple(
+                    sweep_size
+                    for sweep_size in requested_sizes
+                    if sweep_size not in cached_sizes
+                )
+                if missing_sizes:
+                    missing_sweep_sizes_by_method[method_name] = missing_sizes
+                    selected_families.append(family)
+                else:
+                    cached_method_names.add(method_name)
+            families_to_run = tuple(selected_families)
+            enabled_model_names_to_run = tuple(
+                method_name
+                for method_name in enabled_model_names
+                if method_name not in cached_method_names
             )
 
     fresh_results = LearningCurveResults.empty()
@@ -624,6 +666,7 @@ def run_learning_curve_experiments_from_config(
                 getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
             ),
             model_families=families_to_run,
+            requested_sweep_sizes_by_method=missing_sweep_sizes_by_method or None,
         )
 
     results = cached_results.merge(fresh_results)
@@ -693,7 +736,10 @@ def load_or_run_learning_curve_results_from_config(
     model_families: Sequence[Any] | None = None,
     auxiliary_views: dict[str, Any] | None = None,
 ) -> LearningCurveResults:
-    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+    from oasis.learning_curve.registry import (
+        default_sweep_model_families,
+        enabled_learning_curve_model_names_from_config,
+    )
     from oasis.learning_curve.results_io import (
         learning_curve_results_has_method,
         load_learning_curve_results_artifact,
@@ -728,7 +774,21 @@ def load_or_run_learning_curve_results_from_config(
     ):
         expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
         enabled_model_names = expected_metadata.enabled_models
+        available_families = tuple(
+            model_families
+            if model_families is not None
+            else default_sweep_model_families(
+                enabled_model_names,
+                config=experiment_cfg.models,
+            )
+        )
         if Path(results_bundle_path).is_file():
+            dataset = build_sweep_dataset_from_config(
+                df,
+                cfg,
+                graph_view=graph_view,
+                auxiliary_views=auxiliary_views,
+            )
             cached_results = select_learning_curve_results_methods(
                 load_learning_curve_results_artifact(
                     results_bundle_path,
@@ -739,10 +799,39 @@ def load_or_run_learning_curve_results_from_config(
                 ).results,
                 enabled_model_names,
             )
-            if all(
-                learning_curve_results_has_method(cached_results, method_name)
-                for method_name in enabled_model_names
-            ):
+            all_methods_fully_cached = True
+            for family in available_families:
+                method_name = _family_method_name(
+                    family,
+                    learning_curve_method_name_for_result_field,
+                )
+                if method_name is None or method_name not in enabled_model_names:
+                    continue
+                requested_sizes = _unique_sweep_sizes(
+                    _build_family_split_collection(
+                        dataset,
+                        family,
+                        min_train=experiment_cfg.min_train,
+                        max_train=experiment_cfg.max_train,
+                        step=getattr(experiment_cfg, "step", 1),
+                        n_repeats=experiment_cfg.n_repeats,
+                        seed=cfg.seed if cfg.seed is not None else 42,
+                        validation_fraction=getattr(experiment_cfg, "validation_fraction", 0.2),
+                        min_val_size=getattr(experiment_cfg, "min_val_size", 1),
+                        min_tuning_val_size=getattr(experiment_cfg, "min_tuning_val_size", 1),
+                        min_inner_train_size=getattr(experiment_cfg, "min_inner_train_size", 1),
+                        min_test_size=getattr(experiment_cfg, "min_test_size", 1),
+                    )
+                )
+                cached_sizes = _result_frame_train_sizes(
+                    cached_results,
+                    method_name,
+                    learning_curve_result_field_for_method_name,
+                )
+                if any(size not in cached_sizes for size in requested_sizes):
+                    all_methods_fully_cached = False
+                    break
+            if all_methods_fully_cached:
                 return cached_results
 
     return run_learning_curve_experiments_from_config(
@@ -806,6 +895,65 @@ def _family_method_name(
     return None
 
 
+def _family_requirements(family: Any) -> SweepFamilyRequirements:
+    if hasattr(family, "capabilities"):
+        return family.capabilities().to_requirements()
+    if hasattr(family, "requirements"):
+        return family.requirements()
+    return SweepFamilyRequirements()
+
+
+def _build_family_split_collection(
+    dataset: SweepDataset,
+    family: Any,
+    *,
+    min_train: int,
+    max_train: int,
+    step: int,
+    n_repeats: int,
+    seed: int,
+    validation_fraction: float,
+    min_val_size: int,
+    min_tuning_val_size: int,
+    min_inner_train_size: int,
+    min_test_size: int,
+) -> SweepSplitCollection:
+    return build_sweep_split_collection(
+        dataset.n_samples,
+        min_train=min_train,
+        max_train=max_train,
+        step=step,
+        n_repeats=n_repeats,
+        seed=seed,
+        requirements=_family_requirements(family),
+        validation_fraction=validation_fraction,
+        min_val_size=min_val_size,
+        min_tuning_val_size=min_tuning_val_size,
+        min_inner_train_size=min_inner_train_size,
+        min_test_size=min_test_size,
+    )
+
+
+def _unique_sweep_sizes(split_collection: SweepSplitCollection) -> tuple[int, ...]:
+    return tuple(
+        sorted({split.sweep_size for split in split_collection.splits})
+    )
+
+
+def _result_frame_train_sizes(
+    results: LearningCurveResults,
+    method_name: str,
+    resolve_result_field: Any,
+) -> set[int]:
+    result_field = resolve_result_field(method_name)
+    if result_field is None:
+        return set()
+    frame = getattr(results, result_field)
+    if frame is None or "n_train" not in frame.columns:
+        return set()
+    return {int(value) for value in frame["n_train"].tolist()}
+
+
 def run_learning_curve_experiments(
     dataset: SweepDataset,
     *,
@@ -822,6 +970,7 @@ def run_learning_curve_experiments(
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
+    requested_sweep_sizes_by_method: Mapping[str, Collection[int]] | None = None,
 ) -> LearningCurveResults:
     families = model_families
     if families is None:
@@ -831,29 +980,40 @@ def run_learning_curve_experiments(
 
     results = LearningCurveResults.empty()
     for family in families:
-        requirements = (
-            family.capabilities().to_requirements()
-            if hasattr(family, "capabilities")
-            else family.requirements()
-            if hasattr(family, "requirements")
-            else SweepFamilyRequirements()
+        split_collection = _build_family_split_collection(
+            dataset,
+            family,
+            min_train=min_train,
+            max_train=max_train,
+            step=step,
+            n_repeats=n_repeats,
+            seed=seed,
+            validation_fraction=validation_fraction,
+            min_val_size=min_val_size,
+            min_tuning_val_size=min_tuning_val_size,
+            min_inner_train_size=min_inner_train_size,
+            min_test_size=min_test_size,
         )
-        payload = SweepRunPayload(
-            dataset=dataset,
-            split_collection=build_sweep_split_collection(
-                dataset.n_samples,
-                min_train=min_train,
-                max_train=max_train,
-                step=step,
-                n_repeats=n_repeats,
-                seed=seed,
-                requirements=requirements,
-                validation_fraction=validation_fraction,
-                min_val_size=min_val_size,
-                min_tuning_val_size=min_tuning_val_size,
-                min_inner_train_size=min_inner_train_size,
-                min_test_size=min_test_size,
-            ),
+        method_name = _family_method_name(family, learning_curve_method_name_for_result_field)
+        requested_sweep_sizes = (
+            None
+            if requested_sweep_sizes_by_method is None or method_name is None
+            else {
+                int(value)
+                for value in requested_sweep_sizes_by_method.get(method_name, ())
+            }
         )
+        if requested_sweep_sizes is not None:
+            split_collection = SweepSplitCollection(
+                splits=tuple(
+                    split
+                    for split in split_collection.splits
+                    if split.sweep_size in requested_sweep_sizes
+                ),
+                planning_requirements=split_collection.planning_requirements,
+            )
+            if not split_collection.splits:
+                continue
+        payload = SweepRunPayload(dataset=dataset, split_collection=split_collection)
         results = results.merge(family.run(payload))
     return results
