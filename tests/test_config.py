@@ -124,11 +124,7 @@ class ConfigParsingTests(unittest.TestCase):
             cfg.experiment.learning_curve.results_bundle_path,
             Path("data/results/learning_curve/mamun_oh.json"),
         )
-        assert cfg.experiment.learning_curve.graph_dataset is not None
-        self.assertEqual(
-            cfg.experiment.learning_curve.graph_dataset.path,
-            Path("data/processed/mamun_oh.parquet"),
-        )
+        self.assertIsNone(cfg.experiment.learning_curve.graph_dataset)
         assert cfg.probe_features is not None
         self.assertEqual(
             cfg.probe_features.dataset_path,
@@ -200,11 +196,7 @@ class ConfigParsingTests(unittest.TestCase):
             cfg.experiment.learning_curve.results_bundle_path,
             Path("data/results/learning_curve/mamun_oh.json"),
         )
-        assert cfg.experiment.learning_curve.graph_dataset is not None
-        self.assertEqual(
-            cfg.experiment.learning_curve.graph_dataset.path,
-            Path("data/processed/mamun_oh.parquet"),
-        )
+        self.assertIsNone(cfg.experiment.learning_curve.graph_dataset)
         assert cfg.probe_features is not None
         self.assertEqual(
             cfg.probe_features.dataset_path,
@@ -287,10 +279,7 @@ class ConfigParsingTests(unittest.TestCase):
             simple_cfg.probe_features.dataset_path,
             Path("data/raw_data/simple_with_probe_ids.json"),
         )
-        self.assertEqual(
-            simple_cfg.experiment.learning_curve.graph_dataset.path,
-            Path("data/processed/simple.parquet"),
-        )
+        self.assertIsNone(simple_cfg.experiment.learning_curve.graph_dataset)
 
         self.assertEqual(
             custom_cfg.mlip.dataset,
@@ -307,11 +296,7 @@ class ConfigParsingTests(unittest.TestCase):
         )
         assert custom_cfg.experiment is not None
         assert custom_cfg.experiment.learning_curve is not None
-        assert custom_cfg.experiment.learning_curve.graph_dataset is not None
-        self.assertEqual(
-            custom_cfg.experiment.learning_curve.graph_dataset.path,
-            Path("data/processed/khlohc_tol.parquet"),
-        )
+        self.assertIsNone(custom_cfg.experiment.learning_curve.graph_dataset)
         assert custom_cfg.analysis is not None
         self.assertEqual(
             custom_cfg.analysis.base_dir,

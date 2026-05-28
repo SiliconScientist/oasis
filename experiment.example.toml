@@ -32,9 +32,12 @@ n_repeats = 10
 # force_refresh_methods = ["ridge"]
 # force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
-[experiment.learning_curve.graph_dataset]
-# `path` is derived from the active dataset profile.
-join_key = "reaction"
+# Optional graph dataset artifact. Omit this section to rebuild graphs in
+# memory each run and avoid writing an aligned Parquet cache.
+#
+# [experiment.learning_curve.graph_dataset]
+# # `path` is derived from the active dataset profile.
+# join_key = "reaction"
 
 [experiment.learning_curve.models]
 use_ridge = true

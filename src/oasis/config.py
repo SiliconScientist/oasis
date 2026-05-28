@@ -285,13 +285,12 @@ class Config(BaseModel):
             ):
                 learning_curve.results_bundle_path = profile_paths.results_bundle_path
 
-            if profile_paths.graph_dataset_path is not None:
-                if learning_curve.graph_dataset is None:
-                    learning_curve.graph_dataset = GraphDatasetInputConfig(
-                        path=profile_paths.graph_dataset_path
-                    )
-                elif learning_curve.graph_dataset.path is None:
-                    learning_curve.graph_dataset.path = profile_paths.graph_dataset_path
+            if (
+                learning_curve.graph_dataset is not None
+                and learning_curve.graph_dataset.path is None
+                and profile_paths.graph_dataset_path is not None
+            ):
+                learning_curve.graph_dataset.path = profile_paths.graph_dataset_path
 
         if (
             self.probe_features is None

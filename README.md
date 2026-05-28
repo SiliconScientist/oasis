@@ -118,6 +118,8 @@ join_key = "reaction"
 
 Behavior:
 
+- This section is optional. If you omit it, Oasis rebuilds graphs in memory for
+  the current run and does not write an aligned Parquet cache.
 - `graph_dataset.path` is derived from the active dataset profile.
 - If `graph_dataset.path` exists, Oasis reuses that saved aligned artifact.
 - If it does not exist, Oasis loads atoms from `mlip.dataset`, converts them to
