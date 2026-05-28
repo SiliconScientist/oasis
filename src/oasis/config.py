@@ -164,7 +164,7 @@ class PlotFiltersConfig(BaseModel):
 
 
 class GraphDatasetInputConfig(BaseModel):
-    path: Path
+    path: Optional[Path] = None
     join_key: str = "reaction"
 
 

@@ -381,6 +381,81 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.analysis is not None
         self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/oh_mamun"))
 
+    def test_get_config_derives_graph_dataset_path_from_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            experiment_path = tmp / "experiment.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "mamun_oh"',
+                        "",
+                        "[datasets.mamun_oh]",
+                        'raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"',
+                        'processed_basename = "mamun_oh"',
+                        "",
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[experiment]",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[experiment.learning_curve.graph_dataset]",
+                        'join_key = "reaction"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config([mlip_path, experiment_path])
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/mamun_oh.parquet"),
+        )
+        self.assertEqual(
+            cfg.experiment.learning_curve.graph_dataset.join_key,
+            "reaction",
+        )
+
     def test_learning_curve_graph_dataset_section_parses(self) -> None:
         cfg = Config(
             **{

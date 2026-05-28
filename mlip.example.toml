@@ -5,9 +5,19 @@ dev_run = false
 train = true
 evaluate = true
 
+[dataset_profile]
+tag = "mamun_oh"
+
+[datasets.mamun_oh]
+raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
+processed_basename = "mamun_oh"
+mlip_run_dirname = "oh_mamun"
+analysis_run_dirname = "ch3_oh_mamun"
+summary_run_dirname = "ch3_oh_shifted_mamun"
+
 [ingest]
 source = "data/raw_vasp/systems"
-dataset_name = "example_dataset"
+dataset_name = "rodrigo"
 
 [ingest.stoich]
 elements = ["C", "O", "H"]
@@ -21,15 +31,14 @@ H2 = { H = 2 }
 [mlip]
 dev_n = 2
 dev_run = false
-dataset = "data/datasets/example_adsorption.json"
-optimizer = "LBFGS"
+optimizer = "FIRE"
 
 [mlip.models]
-enabled = ["mace", "mattersim"]
+enabled = ["mace", "mattersim", "orb_v3", "sevennet", "uma"]
 
 [mlip.rootstock]
-root = "/path/to/rootstock"
-# python = "/path/to/rootstock/.venv/bin/python"
+root = "/projects/bchg/rootstock"
+# python = "/projects/bchg/rootstock/.venv/bin/python"
 
 [mlip.rootstock.models.mace]
 model = "mace"
@@ -44,15 +53,31 @@ checkpoint = "medium"
 model = "mattersim"
 mlip_name = "mattersim-v1-5m"
 checkpoint = "models/mattersim/mattersim-v1.0.0-5M.pth"
-# [mlip.rootstock.models.mattersim.metadata]
-# provider = "acme"
+
+[mlip.rootstock.models.orb_v3]
+model = "orb_v3"
+checkpoint = "orb_v3_conservative_inf_omat"
+mlip_name = "orb-v3-conservative-inf-omat"
+
+[mlip.rootstock.models.sevennet]
+model = "sevennet"
+checkpoint = "7net-omni"
+mlip_name = "7net-omni"
+
+[mlip.rootstock.models.sevennet.metadata]
+modal = "mpa"
+
+[mlip.rootstock.models.uma]
+model = "uma"
+checkpoint = "uma-s-1p1"
+mlip_name = "uma-s-1p1"
+
+[mlip.rootstock.models.uma.metadata]
+task_name = "omat"
 
 [analysis]
 run_adsorption_analysis = false
-# calculating_path = "data/mlips/example_run"
-# summary_workbook_path = "data/results/example/oasis_Benchmarking_Analysis.xlsx"
-# comparison_workbook_path = "data/results/example_control/oasis_Benchmarking_Analysis.xlsx"
-# comparison_plot_path = "data/results/plots/mae_comparison.png"
-base_dir = "data/mlips/example_run"
+# Kept explicit because this plot is currently shared rather than per-dataset.
+comparison_plot_path = "data/results/plots/mae_comparison.png"
 out_dir = "data/mlips_by_prefix"
 prefixes = ["ol", "sa", "ss"]

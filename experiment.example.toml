@@ -1,7 +1,8 @@
 seed = 42
 
 # Example experiment-side configuration.
-# Copy to `experiment.toml` and tune per study.
+# Copy to `experiment.toml` and tune per study. Paths shared with `mlip.toml`
+# are derived from `dataset_profile.tag` plus `[datasets.<tag>]`.
 
 [plot]
 output_dir = "data/results/plots"
@@ -27,15 +28,12 @@ min_tuning_val_size = 1
 min_inner_train_size = 1
 min_test_size = 1
 n_repeats = 10
-# results_bundle_path = "data/results/learning_curve/example_dataset.json"
 # reuse_results = true
-# force_refresh_methods = ["moe", "probe_gnn"]
+# force_refresh_methods = ["ridge"]
 # force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
 [experiment.learning_curve.graph_dataset]
-# Reuse this aligned MLIP+graph artifact if it already exists; otherwise Oasis
-# builds it from `mlip.dataset` atoms and saves it here.
-path = "data/graphs/example_reactions.parquet"
+# `path` is derived from the active dataset profile.
 join_key = "reaction"
 
 [experiment.learning_curve.models]
@@ -45,78 +43,54 @@ use_lasso = false
 use_elastic_net = false
 use_residual = true
 use_weighted_linear = false
-use_weighted_simplex = false
+use_weighted_simplex = true
 use_graph_mean = false
-use_latent = false
+use_latent = true
 
-# [experiment.learning_curve.models.latent]
-# experiment_config_path = "vendor/latent/config.toml"
-# csv_path = "data/processed/data_6910487.csv"
-# cobyla_initial_guess = 0.1
-# cobyla_max_iter = 100
+[experiment.learning_curve.models.latent]
+experiment_config_path = "vendor/latent/config.toml"
+# Kept explicit because the vendor artifact name does not follow the dataset tag.
+csv_path = "vendor/latent/data/processed/data_6910487.csv"
+cobyla_initial_guess = 0.1
+cobyla_max_iter = 100
 
 [experiment.learning_curve.models.moe]
 enabled = false
-gate_type = "mlip_baseline"  # "mlip_baseline" | "gnn" | "schnet"
-gating_mode = "dense"        # "dense" | "top_k"
-top_k = 2
-# hidden_dims = [64, 64]
-# n_rbf = 20
-# r_max = 6.0
+gate_type = "schnet"  # "mlip_baseline" | "gnn" | "schnet"
+gating_mode = "dense" # "dense" | "top_k"
+# top_k = 2
+n_rbf = 20
+r_max = 6.0
 
 [experiment.learning_curve.models.moe.training]
-batch_size = 32
-# eval_batch_size = 64
-epochs = 100
-# lr = 1e-3
-# weight_decay = 0.0
-# num_workers = 0
-# device = "cpu"
+epochs = 50
 
 [experiment.learning_curve.models.moe.tuning.optuna]
-# n_trials = 50
-# sampler = "tpe"
-# pruner = "median"
-# timeout_s = 600
+n_trials = 10
+sampler = "tpe"
 
 [experiment.learning_curve.models.gnn_direct]
-enabled = false
+enabled = false  # set true to run GNN direct regression (no probe features) as a baseline
 # hidden_dims = [64, 64]
 
 [experiment.learning_curve.models.gnn_direct.training]
-batch_size = 32
-# eval_batch_size = 64
-epochs = 100
-# lr = 1e-3
-# weight_decay = 0.0
-# num_workers = 0
-# device = "cpu"
+epochs = 50
 
 [experiment.learning_curve.models.gnn_direct.tuning.optuna]
-# n_trials = 50
-# sampler = "tpe"
-# pruner = "median"
-# timeout_s = 600
+n_trials = 10
+sampler = "tpe"
 
 [experiment.learning_curve.models.probe_gnn]
-enabled = false
+enabled = false # set true to run probe-GNN direct regression alongside MoE
 # hidden_dims = [64, 64]
 
 [experiment.learning_curve.models.probe_gnn.training]
-batch_size = 32
-# eval_batch_size = 64
-epochs = 100
-# lr = 1e-3
-# weight_decay = 0.0
-# num_workers = 0
-# device = "cpu"
+epochs = 50
 
 # [probe_features]
-# dataset_path = "data/raw_data/example_adsorption.json"
-# mlip_results_dir = "data/mlips/example_run"
+# dataset_path = "data/raw_data/KHLOHC_origin_tolstar_adsorption_with_probe_ids.json"
+# mlip_results_dir = "data/mlips/khlohc_toluene_unique_probes"
 
 [experiment.learning_curve.models.probe_gnn.tuning.optuna]
-# n_trials = 50
-# sampler = "tpe"
-# pruner = "median"
-# timeout_s = 600
+n_trials = 10
+sampler = "tpe"
