@@ -76,6 +76,24 @@ class NamedDatasetConfig(BaseModel):
     analysis_run_dirname: Optional[str] = None
     summary_run_dirname: Optional[str] = None
 
+    def raw_dataset_filename_or_default(self, tag: str) -> str:
+        return self.raw_dataset_filename or f"{tag}.json"
+
+    def processed_basename_or_default(self, tag: str) -> str:
+        return self.processed_basename or tag
+
+    def probe_results_dirname_or_default(self, tag: str) -> str:
+        return self.probe_results_dirname or f"{tag}_unique_probes"
+
+    def mlip_run_dirname_or_default(self, tag: str) -> str:
+        return self.mlip_run_dirname or tag
+
+    def analysis_run_dirname_or_default(self, tag: str) -> str:
+        return self.analysis_run_dirname or self.mlip_run_dirname_or_default(tag)
+
+    def summary_run_dirname_or_default(self, tag: str) -> str:
+        return self.summary_run_dirname or self.analysis_run_dirname_or_default(tag)
+
 
 class DatasetProfileConfig(BaseModel):
     tag: str
@@ -232,6 +250,7 @@ class Config(BaseModel):
         )
         self.ingest.catbench_folder = catbench_folder
         self._apply_dataset_profile()
+        self._validate_derived_paths()
         self._inherit_global_seed()
 
     def _apply_dataset_profile(self) -> None:
@@ -325,63 +344,101 @@ class Config(BaseModel):
         setattr(model, field_name, value)
 
     @staticmethod
+    def _raw_dataset_path(raw_dataset_filename: str) -> Path:
+        return Path("data/raw_data") / raw_dataset_filename
+
+    @staticmethod
+    def _probe_dataset_path(raw_dataset_filename: str) -> Path:
+        raw_dataset_path = Path(raw_dataset_filename)
+        suffix = raw_dataset_path.suffix or ".json"
+        return Path("data/raw_data") / (
+            f"{raw_dataset_path.stem}_with_probe_ids{suffix}"
+        )
+
+    @staticmethod
+    def _processed_graph_dataset_path(processed_basename: str) -> Path:
+        return Path("data/processed") / f"{processed_basename}.parquet"
+
+    @staticmethod
+    def _learning_curve_bundle_path(processed_basename: str) -> Path:
+        return Path("data/results/learning_curve") / f"{processed_basename}.json"
+
+    @staticmethod
+    def _probe_results_dir(probe_results_dirname: str) -> Path:
+        return Path("data/mlips") / probe_results_dirname
+
+    @staticmethod
+    def _mlip_results_dir(mlip_run_dirname: str) -> Path:
+        return Path("data/mlips") / mlip_run_dirname
+
+    @staticmethod
+    def _analysis_workbook_path(run_dirname: str) -> Path:
+        return Path("data/results") / run_dirname / "oasis_Benchmarking_Analysis.xlsx"
+
+    @staticmethod
+    def _comparison_plot_path(tag: str) -> Path:
+        return Path("data/results/plots") / f"{tag}_mae_comparison.png"
+
+    @classmethod
     def _derived_dataset_profile_paths(
+        cls,
         tag: str,
         named_profile: NamedDatasetConfig | None = None,
     ) -> DatasetProfilePathsConfig:
-        raw_dataset_filename = (
-            named_profile.raw_dataset_filename
-            if named_profile is not None and named_profile.raw_dataset_filename is not None
-            else f"{tag}.json"
-        )
-        processed_basename = (
-            named_profile.processed_basename
-            if named_profile is not None and named_profile.processed_basename is not None
-            else tag
-        )
-        probe_results_dirname = (
-            named_profile.probe_results_dirname
-            if named_profile is not None and named_profile.probe_results_dirname is not None
-            else f"{tag}_unique_probes"
-        )
-        mlip_run_dirname = (
-            named_profile.mlip_run_dirname
-            if named_profile is not None and named_profile.mlip_run_dirname is not None
-            else tag
-        )
-        analysis_run_dirname = (
-            named_profile.analysis_run_dirname
-            if named_profile is not None and named_profile.analysis_run_dirname is not None
-            else mlip_run_dirname
-        )
-        summary_run_dirname = (
-            named_profile.summary_run_dirname
-            if named_profile is not None and named_profile.summary_run_dirname is not None
-            else analysis_run_dirname
-        )
-
-        raw_dataset_path = Path("data/raw_data") / raw_dataset_filename
-        probe_dataset_filename = (
-            f"{Path(raw_dataset_filename).stem}_with_probe_ids"
-            f"{Path(raw_dataset_filename).suffix or '.json'}"
-        )
+        named_profile = named_profile or NamedDatasetConfig()
+        raw_dataset_filename = named_profile.raw_dataset_filename_or_default(tag)
+        processed_basename = named_profile.processed_basename_or_default(tag)
+        probe_results_dirname = named_profile.probe_results_dirname_or_default(tag)
+        mlip_run_dirname = named_profile.mlip_run_dirname_or_default(tag)
+        analysis_run_dirname = named_profile.analysis_run_dirname_or_default(tag)
+        summary_run_dirname = named_profile.summary_run_dirname_or_default(tag)
 
         return DatasetProfilePathsConfig(
-            dataset=raw_dataset_path,
-            probe_dataset_path=Path("data/raw_data") / probe_dataset_filename,
-            probe_mlip_results_dir=Path("data/mlips") / probe_results_dirname,
-            results_bundle_path=Path("data/results/learning_curve") / f"{processed_basename}.json",
-            graph_dataset_path=Path("data/processed") / f"{processed_basename}.parquet",
-            calculating_path=Path("data/mlips") / analysis_run_dirname,
-            summary_workbook_path=Path("data/results")
-            / summary_run_dirname
-            / "oasis_Benchmarking_Analysis.xlsx",
-            comparison_workbook_path=Path("data/results")
-            / analysis_run_dirname
-            / "oasis_Benchmarking_Analysis.xlsx",
-            comparison_plot_path=Path("data/results/plots") / f"{tag}_mae_comparison.png",
-            analysis_base_dir=Path("data/mlips") / mlip_run_dirname,
+            dataset=cls._raw_dataset_path(raw_dataset_filename),
+            probe_dataset_path=cls._probe_dataset_path(raw_dataset_filename),
+            probe_mlip_results_dir=cls._probe_results_dir(probe_results_dirname),
+            results_bundle_path=cls._learning_curve_bundle_path(processed_basename),
+            graph_dataset_path=cls._processed_graph_dataset_path(processed_basename),
+            calculating_path=cls._mlip_results_dir(analysis_run_dirname),
+            summary_workbook_path=cls._analysis_workbook_path(summary_run_dirname),
+            comparison_workbook_path=cls._analysis_workbook_path(analysis_run_dirname),
+            comparison_plot_path=cls._comparison_plot_path(tag),
+            analysis_base_dir=cls._mlip_results_dir(mlip_run_dirname),
         )
+
+    def _validate_derived_paths(self) -> None:
+        learning_curve = (
+            self.experiment.learning_curve
+            if self.experiment is not None
+            else None
+        )
+        if learning_curve is not None and learning_curve.graph_dataset is not None:
+            if learning_curve.graph_dataset.path is None:
+                raise ValueError(
+                    "experiment.learning_curve.graph_dataset.path must be provided "
+                    "explicitly or derived from dataset_profile.tag"
+                )
+
+        if self.analysis is not None:
+            if self.analysis.base_dir is None:
+                raise ValueError(
+                    "analysis.base_dir must be provided explicitly or derived from "
+                    "dataset_profile.tag"
+                )
+            missing_analysis_fields: list[str] = []
+            if self.analysis.summary_workbook_path is None:
+                missing_analysis_fields.append("analysis.summary_workbook_path")
+            if self.analysis.comparison_workbook_path is None:
+                missing_analysis_fields.append("analysis.comparison_workbook_path")
+            if self.analysis.comparison_plot_path is None:
+                missing_analysis_fields.append("analysis.comparison_plot_path")
+            if self.analysis.run_adsorption_analysis and self.analysis.calculating_path is None:
+                missing_analysis_fields.append("analysis.calculating_path")
+            if missing_analysis_fields:
+                missing = ", ".join(missing_analysis_fields)
+                raise ValueError(
+                    f"{missing} must be provided explicitly or derived from dataset_profile.tag"
+                )
 
     def _inherit_global_seed(self) -> None:
         if self.seed is None or self.experiment is None:

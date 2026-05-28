@@ -225,6 +225,107 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/ch3_oh_mamun/oasis_Benchmarking_Analysis.xlsx"),
         )
 
+    def test_dataset_profile_templates_support_two_distinct_naming_patterns(self) -> None:
+        base_payload = {
+            "ingest": {
+                "source": "data/raw_vasp/systems",
+                "dataset_name": "test",
+                "stoich": {
+                    "elements": ["H"],
+                    "basis_species": ["H2"],
+                    "basis_composition": {"H2": {"H": 2}},
+                },
+            },
+            "datasets": {
+                "simple": {},
+                "tol_probe": {
+                    "raw_dataset_filename": "KHLOHC_origin_tolstar_adsorption.json",
+                    "processed_basename": "khlohc_tol",
+                    "probe_results_dirname": "khlohc_toluene_unique_probes",
+                    "mlip_run_dirname": "khlohc_tol_results",
+                    "analysis_run_dirname": "khlohc_tol_analysis",
+                    "summary_run_dirname": "khlohc_tol_shifted",
+                },
+            },
+            "mlip": {
+                "dev_n": 1,
+                "dev_run": False,
+                "models": {"enabled": []},
+                "rootstock": {"root": ".", "models": {}},
+            },
+            "experiment": {
+                "learning_curve": {
+                    "min_train": 2,
+                    "max_train": 4,
+                    "n_repeats": 3,
+                }
+            },
+            "analysis": {
+                "run_adsorption_analysis": False,
+                "comparison_plot_path": "data/results/plots/shared.png",
+                "out_dir": "data/mlips_by_prefix",
+                "prefixes": ["ol"],
+            },
+        }
+
+        simple_cfg = Config(
+            **{
+                **base_payload,
+                "dataset_profile": {"tag": "simple"},
+            }
+        )
+        custom_cfg = Config(
+            **{
+                **base_payload,
+                "dataset_profile": {"tag": "tol_probe"},
+            }
+        )
+
+        self.assertEqual(simple_cfg.mlip.dataset, "data/raw_data/simple.json")
+        assert simple_cfg.probe_features is not None
+        self.assertEqual(
+            simple_cfg.probe_features.dataset_path,
+            Path("data/raw_data/simple_with_probe_ids.json"),
+        )
+        self.assertEqual(
+            simple_cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/simple.parquet"),
+        )
+
+        self.assertEqual(
+            custom_cfg.mlip.dataset,
+            "data/raw_data/KHLOHC_origin_tolstar_adsorption.json",
+        )
+        assert custom_cfg.probe_features is not None
+        self.assertEqual(
+            custom_cfg.probe_features.dataset_path,
+            Path("data/raw_data/KHLOHC_origin_tolstar_adsorption_with_probe_ids.json"),
+        )
+        self.assertEqual(
+            custom_cfg.probe_features.mlip_results_dir,
+            Path("data/mlips/khlohc_toluene_unique_probes"),
+        )
+        assert custom_cfg.experiment is not None
+        assert custom_cfg.experiment.learning_curve is not None
+        assert custom_cfg.experiment.learning_curve.graph_dataset is not None
+        self.assertEqual(
+            custom_cfg.experiment.learning_curve.graph_dataset.path,
+            Path("data/processed/khlohc_tol.parquet"),
+        )
+        assert custom_cfg.analysis is not None
+        self.assertEqual(
+            custom_cfg.analysis.base_dir,
+            Path("data/mlips/khlohc_tol_results"),
+        )
+        self.assertEqual(
+            custom_cfg.analysis.calculating_path,
+            Path("data/mlips/khlohc_tol_analysis"),
+        )
+        self.assertEqual(
+            custom_cfg.analysis.summary_workbook_path,
+            Path("data/results/khlohc_tol_shifted/oasis_Benchmarking_Analysis.xlsx"),
+        )
+
     def test_dataset_profile_explicit_paths_override_defaults(self) -> None:
         cfg = Config(
             **{
@@ -299,6 +400,37 @@ class ConfigParsingTests(unittest.TestCase):
             cfg.analysis.comparison_plot_path,
             Path("data/results/plots/explicit.png"),
         )
+
+    def test_analysis_requires_resolved_workbook_paths(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "analysis.summary_workbook_path, analysis.comparison_workbook_path",
+        ):
+            Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "models": {"enabled": []},
+                        "rootstock": {"root": ".", "models": {}},
+                    },
+                    "analysis": {
+                        "run_adsorption_analysis": False,
+                        "base_dir": "data/mlips/manual",
+                        "out_dir": "data/mlips_by_prefix",
+                        "prefixes": ["ol"],
+                    },
+                }
+            )
 
     def test_get_config_loads_named_dataset_profile_from_toml(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

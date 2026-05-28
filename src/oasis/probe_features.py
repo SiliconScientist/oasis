@@ -65,7 +65,10 @@ def load_mlip_probe_energies(
         }
     """
     mlip_probe_energies: dict[str, dict[str, float]] = {}
-    _, resolved_mlip_results_dir = _resolve_probe_feature_paths(None, mlip_results_dir)
+    if mlip_results_dir is None:
+        _, resolved_mlip_results_dir = _resolve_probe_feature_paths(None, None)
+    else:
+        resolved_mlip_results_dir = mlip_results_dir
 
     for result_path in sorted(resolved_mlip_results_dir.glob("*_result.json")):
         result_data = _load_json(result_path)
