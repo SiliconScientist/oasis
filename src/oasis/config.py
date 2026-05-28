@@ -259,6 +259,12 @@ class Config(BaseModel):
             return
 
         named_profile = self.datasets.get(profile.tag)
+        if named_profile is None and self.datasets:
+            known_tags = ", ".join(sorted(self.datasets))
+            raise ValueError(
+                f"dataset_profile.tag {profile.tag!r} was not found in [datasets]. "
+                f"Known tags: {known_tags}"
+            )
         derived_paths = self._derived_dataset_profile_paths(profile.tag, named_profile)
         profile_paths = derived_paths.model_copy(
             update=profile.paths.model_dump(exclude_none=True)

@@ -401,6 +401,103 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/plots/explicit.png"),
         )
 
+    def test_fully_explicit_legacy_config_parses_without_dataset_profile(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "legacy",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "dataset": "data/raw_data/legacy.json",
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "probe_features": {
+                    "dataset_path": "data/raw_data/legacy_with_probe_ids.json",
+                    "mlip_results_dir": "data/mlips/legacy_unique_probes",
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "results_bundle_path": "data/results/learning_curve/legacy.json",
+                        "graph_dataset": {
+                            "path": "data/processed/legacy.parquet",
+                            "join_key": "reaction",
+                        },
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "calculating_path": "data/mlips/legacy_analysis",
+                    "summary_workbook_path": "data/results/legacy_shifted/oasis_Benchmarking_Analysis.xlsx",
+                    "comparison_workbook_path": "data/results/legacy/oasis_Benchmarking_Analysis.xlsx",
+                    "comparison_plot_path": "data/results/plots/legacy.png",
+                    "base_dir": "data/mlips/legacy",
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        self.assertIsNone(cfg.dataset_profile)
+        self.assertEqual(cfg.mlip.dataset, "data/raw_data/legacy.json")
+        assert cfg.probe_features is not None
+        self.assertEqual(
+            cfg.probe_features.dataset_path,
+            Path("data/raw_data/legacy_with_probe_ids.json"),
+        )
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/legacy.json"),
+        )
+        assert cfg.analysis is not None
+        self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/legacy"))
+
+    def test_missing_named_dataset_profile_gives_clear_error(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"dataset_profile\.tag 'missing' was not found in \[datasets\]",
+        ):
+            Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "dataset_profile": {
+                        "tag": "missing",
+                    },
+                    "datasets": {
+                        "mamun_oh": {
+                            "raw_dataset_filename": "MamunHighT2019_oh_adsorption.json",
+                        }
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "models": {"enabled": []},
+                        "rootstock": {"root": ".", "models": {}},
+                    },
+                }
+            )
+
     def test_analysis_requires_resolved_workbook_paths(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
