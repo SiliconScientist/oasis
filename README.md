@@ -35,14 +35,16 @@ Learning-curve runs can persist one bundle file per dataset so you do not need
 to retrain every model just to regenerate plots.
 
 In the tag-first config style, the bundle path is derived from
-`dataset_profile.tag` plus `[datasets.<tag>]`, so `experiment.toml` only needs:
+`dataset_profile.tag` plus `[datasets.<tag>]`, so `experiment.toml` only needs
+the naming inputs that differ from the default tag-based convention:
 
 ```toml
 [dataset_profile]
 tag = "example_oh"
 
 [datasets.example_oh]
-processed_basename = "example_oh"
+# Omit this when the processed basename is exactly the tag.
+# processed_basename = "example_oh"
 
 [experiment.learning_curve]
 reuse_results = true
@@ -71,7 +73,8 @@ Example iterative workflow:
 tag = "example_oh"
 
 [datasets.example_oh]
-processed_basename = "example_oh"
+# Omit this when the processed basename is exactly the tag.
+# processed_basename = "example_oh"
 
 [experiment.learning_curve]
 reuse_results = true
@@ -110,7 +113,8 @@ Example:
 tag = "example_oh"
 
 [datasets.example_oh]
-processed_basename = "example_oh"
+# Omit this when the processed basename is exactly the tag.
+# processed_basename = "example_oh"
 
 [experiment.learning_curve.graph_dataset]
 join_key = "reaction"

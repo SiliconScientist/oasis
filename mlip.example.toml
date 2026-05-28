@@ -10,7 +10,6 @@ tag = "example_oh"
 
 [datasets.example_oh]
 raw_dataset_filename = "ExampleOH_adsorption.json"
-processed_basename = "example_oh"
 mlip_run_dirname = "oh_example"
 analysis_run_dirname = "ch3_oh_example"
 summary_run_dirname = "ch3_oh_shifted_example"
