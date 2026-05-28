@@ -34,11 +34,17 @@ PYTHONPATH=src python -m unittest tests.test_config
 Learning-curve runs can persist one bundle file per dataset so you do not need
 to retrain every model just to regenerate plots.
 
-Enable this in `experiment.toml`:
+In the tag-first config style, the bundle path is derived from
+`dataset_profile.tag` plus `[datasets.<tag>]`, so `experiment.toml` only needs:
 
 ```toml
+[dataset_profile]
+tag = "example_oh"
+
+[datasets.example_oh]
+processed_basename = "example_oh"
+
 [experiment.learning_curve]
-results_bundle_path = "data/results/learning_curve/khlohc_tol.json"
 reuse_results = true
 ```
 
@@ -61,8 +67,13 @@ Workflow:
 Example iterative workflow:
 
 ```toml
+[dataset_profile]
+tag = "example_oh"
+
+[datasets.example_oh]
+processed_basename = "example_oh"
+
 [experiment.learning_curve]
-results_bundle_path = "data/results/learning_curve/khlohc_tol.json"
 reuse_results = true
 
 # First pass: run one method or one range.
@@ -95,13 +106,19 @@ Configured graph-backed learning-curve runs use
 Example:
 
 ```toml
+[dataset_profile]
+tag = "example_oh"
+
+[datasets.example_oh]
+processed_basename = "example_oh"
+
 [experiment.learning_curve.graph_dataset]
-path = "data/processed/oh_mamun.parquet"
 join_key = "reaction"
 ```
 
 Behavior:
 
+- `graph_dataset.path` is derived from the active dataset profile.
 - If `graph_dataset.path` exists, Oasis reuses that saved aligned artifact.
 - If it does not exist, Oasis loads atoms from `mlip.dataset`, converts them to
   graphs, aligns them to the filtered MLIP frame, and saves the artifact to
