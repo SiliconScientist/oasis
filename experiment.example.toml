@@ -50,7 +50,7 @@ use_latent = true
 [experiment.learning_curve.models.latent]
 experiment_config_path = "vendor/latent/config.toml"
 # Kept explicit because the vendor artifact name does not follow the dataset tag.
-csv_path = "vendor/latent/data/processed/data_6910487.csv"
+csv_path = "vendor/latent/data/processed/example_latent.csv"
 cobyla_initial_guess = 0.1
 cobyla_max_iter = 100
 
@@ -88,8 +88,8 @@ enabled = false # set true to run probe-GNN direct regression alongside MoE
 epochs = 50
 
 # [probe_features]
-# dataset_path = "data/raw_data/KHLOHC_origin_tolstar_adsorption_with_probe_ids.json"
-# mlip_results_dir = "data/mlips/khlohc_toluene_unique_probes"
+# dataset_path = "data/raw_data/ExampleOH_adsorption_with_probe_ids.json"
+# mlip_results_dir = "data/mlips/example_oh_unique_probes"
 
 [experiment.learning_curve.models.probe_gnn.tuning.optuna]
 n_trials = 10

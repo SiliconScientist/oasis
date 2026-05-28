@@ -6,18 +6,18 @@ train = true
 evaluate = true
 
 [dataset_profile]
-tag = "mamun_oh"
+tag = "example_oh"
 
-[datasets.mamun_oh]
-raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
-processed_basename = "mamun_oh"
-mlip_run_dirname = "oh_mamun"
-analysis_run_dirname = "ch3_oh_mamun"
-summary_run_dirname = "ch3_oh_shifted_mamun"
+[datasets.example_oh]
+raw_dataset_filename = "ExampleOH_adsorption.json"
+processed_basename = "example_oh"
+mlip_run_dirname = "oh_example"
+analysis_run_dirname = "ch3_oh_example"
+summary_run_dirname = "ch3_oh_shifted_example"
 
 [ingest]
 source = "data/raw_vasp/systems"
-dataset_name = "rodrigo"
+dataset_name = "example_dataset"
 
 [ingest.stoich]
 elements = ["C", "O", "H"]
@@ -37,8 +37,8 @@ optimizer = "FIRE"
 enabled = ["mace", "mattersim", "orb_v3", "sevennet", "uma"]
 
 [mlip.rootstock]
-root = "/projects/bchg/rootstock"
-# python = "/projects/bchg/rootstock/.venv/bin/python"
+root = "/path/to/rootstock"
+# python = "/path/to/rootstock/.venv/bin/python"
 
 [mlip.rootstock.models.mace]
 model = "mace"

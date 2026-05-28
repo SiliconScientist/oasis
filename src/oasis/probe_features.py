@@ -4,13 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_DATASET_PATH = (
-    _REPO_ROOT / "data/raw_data/KHLOHC_origin_tolstar_adsorption_with_probe_ids.json"
-)
-_DEFAULT_MLIP_RESULTS_DIR = _REPO_ROOT / "data/mlips/khlohc_toluene_unique_probes"
+from oasis.config import get_config
 
 
 @dataclass(frozen=True)
@@ -37,8 +31,28 @@ def _mlip_name_from_result_path(result_path: Path) -> str:
     return result_path.name.removesuffix("_result.json")
 
 
+def _resolve_probe_feature_paths(
+    dataset_path: Path | None,
+    mlip_results_dir: Path | None,
+) -> tuple[Path, Path]:
+    if dataset_path is not None and mlip_results_dir is not None:
+        return dataset_path, mlip_results_dir
+
+    cfg = get_config()
+    probe_cfg = cfg.probe_features
+    if probe_cfg is None:
+        raise ValueError(
+            "probe_features.dataset_path and probe_features.mlip_results_dir must "
+            "be provided explicitly or configured in experiment.toml"
+        )
+
+    resolved_dataset_path = dataset_path or probe_cfg.dataset_path
+    resolved_mlip_results_dir = mlip_results_dir or probe_cfg.mlip_results_dir
+    return resolved_dataset_path, resolved_mlip_results_dir
+
+
 def load_mlip_probe_energies(
-    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+    mlip_results_dir: Path | None = None,
 ) -> dict[str, dict[str, float]]:
     """
     Return:
@@ -51,8 +65,9 @@ def load_mlip_probe_energies(
         }
     """
     mlip_probe_energies: dict[str, dict[str, float]] = {}
+    _, resolved_mlip_results_dir = _resolve_probe_feature_paths(None, mlip_results_dir)
 
-    for result_path in sorted(mlip_results_dir.glob("*_result.json")):
+    for result_path in sorted(resolved_mlip_results_dir.glob("*_result.json")):
         result_data = _load_json(result_path)
         probe_energies: dict[str, float] = {}
 
@@ -70,14 +85,16 @@ def load_mlip_probe_energies(
         mlip_probe_energies[_mlip_name_from_result_path(result_path)] = probe_energies
 
     if not mlip_probe_energies:
-        raise FileNotFoundError(f"No MLIP result files found in {mlip_results_dir}")
+        raise FileNotFoundError(
+            f"No MLIP result files found in {resolved_mlip_results_dir}"
+        )
 
     return mlip_probe_energies
 
 
 def build_sample_mlip_feature_matrices(
-    dataset_path: Path = _DEFAULT_DATASET_PATH,
-    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+    dataset_path: Path | None = None,
+    mlip_results_dir: Path | None = None,
 ) -> dict[str, SampleMLIPFeatureMatrix]:
     """
     Build one matrix per sample where:
@@ -85,8 +102,12 @@ def build_sample_mlip_feature_matrices(
     - columns are the sample's probe sites in `unique_probe_ids` order
     - values are the MLIP `ads_eng_median` values for those probes
     """
-    dataset = _load_json(dataset_path)
-    mlip_probe_energies = load_mlip_probe_energies(mlip_results_dir)
+    resolved_dataset_path, resolved_mlip_results_dir = _resolve_probe_feature_paths(
+        dataset_path,
+        mlip_results_dir,
+    )
+    dataset = _load_json(resolved_dataset_path)
+    mlip_probe_energies = load_mlip_probe_energies(resolved_mlip_results_dir)
     mlip_names = sorted(mlip_probe_energies)
 
     feature_matrices: dict[str, SampleMLIPFeatureMatrix] = {}
@@ -113,8 +134,8 @@ def build_sample_mlip_feature_matrices(
 
 def build_feature_matrix(
     reaction: str,
-    dataset_path: Path = _DEFAULT_DATASET_PATH,
-    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+    dataset_path: Path | None = None,
+    mlip_results_dir: Path | None = None,
 ) -> SampleMLIPFeatureMatrix:
     feature_matrices = build_sample_mlip_feature_matrices(
         dataset_path=dataset_path,
@@ -123,20 +144,30 @@ def build_feature_matrix(
     try:
         return feature_matrices[reaction]
     except KeyError as exc:
-        raise KeyError(f"Reaction {reaction!r} not found in {dataset_path}") from exc
+        resolved_dataset_path, _ = _resolve_probe_feature_paths(
+            dataset_path,
+            mlip_results_dir,
+        )
+        raise KeyError(
+            f"Reaction {reaction!r} not found in {resolved_dataset_path}"
+        ) from exc
 
 
 def add_mlip_feature_matrices_to_dataset(
-    dataset_path: Path = _DEFAULT_DATASET_PATH,
-    mlip_results_dir: Path = _DEFAULT_MLIP_RESULTS_DIR,
+    dataset_path: Path | None = None,
+    mlip_results_dir: Path | None = None,
     output_path: Path | None = None,
     field_name: str = "mlip_feature_matrix",
 ) -> dict[str, object]:
     import json
-    dataset = _load_json(dataset_path)
+    resolved_dataset_path, resolved_mlip_results_dir = _resolve_probe_feature_paths(
+        dataset_path,
+        mlip_results_dir,
+    )
+    dataset = _load_json(resolved_dataset_path)
     feature_matrices = build_sample_mlip_feature_matrices(
-        dataset_path=dataset_path,
-        mlip_results_dir=mlip_results_dir,
+        dataset_path=resolved_dataset_path,
+        mlip_results_dir=resolved_mlip_results_dir,
     )
 
     for reaction, entry in dataset.items():
@@ -146,6 +177,6 @@ def add_mlip_feature_matrices_to_dataset(
             "matrix": feature_matrix.matrix.T.tolist(),
         }
 
-    destination = output_path or dataset_path
+    destination = output_path or resolved_dataset_path
     destination.write_text(json.dumps(dataset, indent=2) + "\n")
     return dataset
