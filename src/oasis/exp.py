@@ -578,7 +578,10 @@ def run_learning_curve_experiments_from_config(
         and reuse_results
         and results_bundle_path is not None
     ):
-        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        expected_metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=len(df),
+        )
         if Path(results_bundle_path).is_file():
             cached_results = select_learning_curve_results_methods(
                 load_learning_curve_results_artifact(
@@ -702,7 +705,10 @@ def run_learning_curve_experiments_from_config(
 
     results = cached_results.merge(fresh_results)
     if cfg is not None and experiment_cfg is not None:
-        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        expected_metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=len(df),
+        )
         if results_bundle_path is not None:
             existing_bundle_results = LearningCurveResults.empty()
             existing_bundle_point_provenance: dict[str, pd.DataFrame] = {}
@@ -823,7 +829,10 @@ def load_or_run_learning_curve_results_from_config(
         and not force_refresh_train_sizes
         and results_bundle_path is not None
     ):
-        expected_metadata = learning_curve_sweep_metadata_from_config(cfg)
+        expected_metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=len(df),
+        )
         enabled_model_names = expected_metadata.enabled_models
         available_families = tuple(
             model_families
@@ -926,6 +935,8 @@ def _metadata_for_available_results(
         step=expected_metadata.step,
         n_repeats=expected_metadata.n_repeats,
         enabled_models=enabled_models,
+        dataset_tag=expected_metadata.dataset_tag,
+        dataset_size=expected_metadata.dataset_size,
         adsorbate_filter=expected_metadata.adsorbate_filter,
         anomaly_filter=expected_metadata.anomaly_filter,
         reaction_contains_filter=expected_metadata.reaction_contains_filter,

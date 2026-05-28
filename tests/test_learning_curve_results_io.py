@@ -127,6 +127,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             step=2,
             n_repeats=3,
             enabled_models=("moe", "ridge"),
+            dataset_tag="mamun_oh",
+            dataset_size=42,
             adsorbate_filter="OH",
             anomaly_filter="!inference_anomaly",
             reaction_contains_filter=("Pt",),
@@ -138,6 +140,10 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                 metadata,
                 tmp_dir,
             )
+            ridge_artifact = load_learning_curve_method_artifact(
+                saved_paths["ridge"],
+                expected_metadata=metadata,
+            )
             restored = load_learning_curve_results_from_method_artifacts(
                 tmp_dir,
                 expected_metadata=metadata,
@@ -145,6 +151,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
 
         self.assertEqual(set(saved_paths), {"ridge", "moe"})
         self.assertTrue(saved_paths["ridge"].name.endswith("ridge.json"))
+        self.assertEqual(ridge_artifact.metadata.dataset_tag, "mamun_oh")
+        self.assertEqual(ridge_artifact.metadata.dataset_size, 42)
         pd.testing.assert_frame_equal(restored.ridge_df, results.ridge_df)
         pd.testing.assert_frame_equal(
             restored.ridge_selection_df,
@@ -545,6 +553,7 @@ class LearningCurveResultsIoTests(unittest.TestCase):
     def test_sweep_metadata_from_config_collects_enabled_models_and_filters(self) -> None:
         cfg = SimpleNamespace(
             seed=23,
+            dataset_profile=SimpleNamespace(tag="mamun_oh"),
             plot=SimpleNamespace(
                 filters=SimpleNamespace(
                     adsorbate="OH",
@@ -576,7 +585,7 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             ),
         )
 
-        metadata = learning_curve_sweep_metadata_from_config(cfg)
+        metadata = learning_curve_sweep_metadata_from_config(cfg, dataset_size=12)
 
         self.assertEqual(metadata.seed, 23)
         self.assertEqual(metadata.min_train, 2)
@@ -584,6 +593,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         self.assertEqual(metadata.step, 2)
         self.assertEqual(metadata.n_repeats, 4)
         self.assertEqual(metadata.enabled_models, ("moe", "residual", "ridge"))
+        self.assertEqual(metadata.dataset_tag, "mamun_oh")
+        self.assertEqual(metadata.dataset_size, 12)
         self.assertEqual(metadata.adsorbate_filter, "OH")
         self.assertEqual(metadata.anomaly_filter, "!inference_anomaly")
         self.assertEqual(metadata.reaction_contains_filter, ("Pt", "Ni"))

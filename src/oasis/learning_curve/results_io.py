@@ -66,6 +66,8 @@ class LearningCurveSweepMetadata:
     step: int
     n_repeats: int
     enabled_models: tuple[str, ...]
+    dataset_tag: str | None = None
+    dataset_size: int | None = None
     adsorbate_filter: str | None = None
     anomaly_filter: str | None = None
     reaction_contains_filter: tuple[str, ...] | None = None
@@ -94,6 +96,8 @@ class LearningCurveSweepMetadata:
             "step": self.step,
             "n_repeats": self.n_repeats,
             "enabled_models": list(self.enabled_models),
+            "dataset_tag": self.dataset_tag,
+            "dataset_size": self.dataset_size,
             "adsorbate_filter": self.adsorbate_filter,
             "anomaly_filter": self.anomaly_filter,
             "reaction_contains_filter": (
@@ -115,6 +119,12 @@ class LearningCurveSweepMetadata:
             step=int(payload["step"]),
             n_repeats=int(payload["n_repeats"]),
             enabled_models=tuple(payload.get("enabled_models", ())),
+            dataset_tag=payload.get("dataset_tag"),
+            dataset_size=(
+                None
+                if payload.get("dataset_size") is None
+                else int(payload["dataset_size"])
+            ),
             adsorbate_filter=payload.get("adsorbate_filter"),
             anomaly_filter=payload.get("anomaly_filter"),
             reaction_contains_filter=(
@@ -146,6 +156,10 @@ class LearningCurveSweepMetadata:
             f"{key}: expected {this_mapping[key]!r}, got {other_mapping[key]!r}"
             for key in this_mapping
             if key not in ignored_keys
+            if not (
+                key in {"dataset_tag", "dataset_size"}
+                and other_mapping.get(key) is None
+            )
             if key != "enabled_models" or not allow_enabled_model_superset
             if this_mapping[key] != other_mapping.get(key)
         ]
@@ -181,6 +195,8 @@ class LearningCurveResultsArtifact:
 
 def learning_curve_sweep_metadata_from_config(
     cfg: Any,
+    *,
+    dataset_size: int | None = None,
 ) -> LearningCurveSweepMetadata:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
 
@@ -194,6 +210,7 @@ def learning_curve_sweep_metadata_from_config(
         if plot_filters is None or plot_filters.reaction_contains is None
         else tuple(value for value in plot_filters.reaction_contains if value)
     )
+    dataset_profile = getattr(cfg, "dataset_profile", None)
     return LearningCurveSweepMetadata(
         seed=cfg.seed,
         min_train=experiment_cfg.min_train,
@@ -203,6 +220,8 @@ def learning_curve_sweep_metadata_from_config(
         enabled_models=enabled_learning_curve_model_names_from_config(
             experiment_cfg.models
         ),
+        dataset_tag=getattr(dataset_profile, "tag", None),
+        dataset_size=dataset_size,
         adsorbate_filter=plot_filters.adsorbate if plot_filters else None,
         anomaly_filter=plot_filters.anomaly_label if plot_filters else None,
         reaction_contains_filter=reaction_contains_filter,

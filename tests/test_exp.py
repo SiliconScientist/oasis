@@ -3044,6 +3044,7 @@ class ExpIntegrationTests(unittest.TestCase):
             bundle_path = Path(tmp_dir) / "learning_curve_results.json"
             cfg = SimpleNamespace(
                 seed=23,
+                dataset_profile=SimpleNamespace(tag="mamun_oh"),
                 plot=SimpleNamespace(
                     filters=SimpleNamespace(
                         adsorbate="OH",
@@ -3098,6 +3099,8 @@ class ExpIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(artifact.metadata.seed, 23)
         self.assertEqual(artifact.metadata.enabled_models, ("ridge",))
+        self.assertEqual(artifact.metadata.dataset_tag, "mamun_oh")
+        self.assertEqual(artifact.metadata.dataset_size, len(df))
         self.assertEqual(artifact.metadata.adsorbate_filter, "OH")
         self.assertEqual(artifact.metadata.reaction_contains_filter, ("Pt",))
 
