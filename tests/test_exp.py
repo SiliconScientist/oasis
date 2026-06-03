@@ -3097,12 +3097,8 @@ class ExpIntegrationTests(unittest.TestCase):
             artifact.results.ridge_selection_df,
             selection_df,
         )
-        self.assertEqual(artifact.metadata.seed, 23)
-        self.assertEqual(artifact.metadata.enabled_models, ("ridge",))
         self.assertEqual(artifact.metadata.dataset_tag, "mamun_oh")
         self.assertEqual(artifact.metadata.dataset_size, len(df))
-        self.assertEqual(artifact.metadata.adsorbate_filter, "OH")
-        self.assertEqual(artifact.metadata.reaction_contains_filter, ("Pt",))
 
     def test_load_or_run_learning_curve_results_from_config_reuses_bundle_artifact(
         self,
@@ -4084,10 +4080,8 @@ class ExpIntegrationTests(unittest.TestCase):
             artifact.results.weighted_simplex_df,
             weighted_simplex_df,
         )
-        self.assertEqual(
-            artifact.metadata.enabled_models,
-            ("ridge", "weighted_simplex"),
-        )
+        self.assertEqual(artifact.metadata.dataset_tag, None)
+        self.assertEqual(artifact.metadata.dataset_size, len(df))
 
     def test_run_learning_curve_experiments_from_config_merges_method_rows_across_bounds(
         self,

@@ -107,6 +107,12 @@ class LearningCurveSweepMetadata:
             ),
         }
 
+    def to_bundle_mapping(self) -> dict[str, Any]:
+        return {
+            "dataset_tag": self.dataset_tag,
+            "dataset_size": self.dataset_size,
+        }
+
     @classmethod
     def from_mapping(
         cls,
@@ -131,6 +137,63 @@ class LearningCurveSweepMetadata:
                 None
                 if payload.get("reaction_contains_filter") is None
                 else tuple(payload["reaction_contains_filter"])
+            ),
+        )
+
+    @classmethod
+    def from_bundle_mapping(
+        cls,
+        payload: dict[str, Any],
+        *,
+        fallback: LearningCurveSweepMetadata | None = None,
+    ) -> LearningCurveSweepMetadata:
+        return cls(
+            seed=fallback.seed if fallback is not None else payload.get("seed"),
+            min_train=(
+                fallback.min_train
+                if fallback is not None
+                else int(payload.get("min_train", 0))
+            ),
+            max_train=(
+                fallback.max_train
+                if fallback is not None
+                else int(payload.get("max_train", 0))
+            ),
+            step=(
+                fallback.step
+                if fallback is not None
+                else int(payload.get("step", 0))
+            ),
+            n_repeats=(
+                fallback.n_repeats
+                if fallback is not None
+                else int(payload.get("n_repeats", 0))
+            ),
+            enabled_models=(
+                fallback.enabled_models
+                if fallback is not None
+                else tuple(payload.get("enabled_models", ()))
+            ),
+            dataset_tag=payload.get("dataset_tag"),
+            dataset_size=(
+                None
+                if payload.get("dataset_size") is None
+                else int(payload["dataset_size"])
+            ),
+            adsorbate_filter=(
+                fallback.adsorbate_filter if fallback is not None else payload.get("adsorbate_filter")
+            ),
+            anomaly_filter=(
+                fallback.anomaly_filter if fallback is not None else payload.get("anomaly_filter")
+            ),
+            reaction_contains_filter=(
+                fallback.reaction_contains_filter
+                if fallback is not None
+                else (
+                    None
+                    if payload.get("reaction_contains_filter") is None
+                    else tuple(payload["reaction_contains_filter"])
+                )
             ),
         )
 
@@ -306,7 +369,7 @@ def dump_learning_curve_results_artifact(
     )
     return {
         "version": _RESULTS_BUNDLE_ARTIFACT_VERSION,
-        "metadata": metadata.to_mapping(),
+        "metadata": metadata.to_bundle_mapping(),
         "results": dump_learning_curve_results(results),
         "point_provenance": _dump_frame_mapping(resolved_point_provenance),
     }
@@ -331,7 +394,10 @@ def load_learning_curve_results_artifact_mapping(
     metadata_payload = payload.get("metadata")
     if not isinstance(metadata_payload, dict):
         raise TypeError("learning-curve results bundle artifact must contain metadata.")
-    metadata = LearningCurveSweepMetadata.from_mapping(metadata_payload)
+    metadata = LearningCurveSweepMetadata.from_bundle_mapping(
+        metadata_payload,
+        fallback=expected_metadata,
+    )
     if expected_metadata is not None:
         expected_metadata.assert_compatible(
             metadata,
