@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 try:
-    from oasis.config import Config, get_config
+    from oasis.config import Config, get_config, load_config_data
 
     HAS_CONFIG = True
 except ModuleNotFoundError:
@@ -14,6 +14,63 @@ except ModuleNotFoundError:
 
 @unittest.skipUnless(HAS_CONFIG, "requires config dependencies")
 class ConfigParsingTests(unittest.TestCase):
+    def test_load_config_data_allows_default_discovery_during_one_file_migration(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 7",
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            old_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(tmp)
+                data = load_config_data()
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(data["seed"], 7)
+        self.assertEqual(data["mlip"]["dataset"], "data/raw_data/example.json")
+
+    def test_load_config_data_rejects_missing_explicit_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            experiment_path = tmp / "experiment.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                rf"Explicit config file\(s\) not found: .*{experiment_path.name}",
+            ):
+                load_config_data([mlip_path, experiment_path])
+
     def test_get_config_merges_mlip_and_experiment_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

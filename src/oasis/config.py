@@ -490,7 +490,8 @@ def _deep_merge_dicts(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[
 def load_config_data(
     config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
 ) -> dict[str, Any]:
-    raw_paths = config_paths if config_paths is not None else DEFAULT_CONFIG_PATHS
+    use_default_discovery = config_paths is None
+    raw_paths = DEFAULT_CONFIG_PATHS if use_default_discovery else config_paths
     if isinstance(raw_paths, (str, Path)):
         path_list = [Path(raw_paths)]
     else:
@@ -507,9 +508,9 @@ def load_config_data(
     if not merged:
         searched = ", ".join(str(path) for path in path_list)
         raise FileNotFoundError(f"No config files found. Looked for: {searched}")
-    if missing and config_paths is not None:
+    if missing and not use_default_discovery:
         missing_str = ", ".join(str(path) for path in missing)
-        raise FileNotFoundError(f"Config file(s) not found: {missing_str}")
+        raise FileNotFoundError(f"Explicit config file(s) not found: {missing_str}")
     return merged
 
 
