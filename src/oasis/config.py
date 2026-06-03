@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
@@ -12,49 +12,18 @@ from oasis.config_base import (
     derive_dataset_profile_paths,
     load_toml_file,
 )
+from oasis.mlip_config import (
+    IngestConfig,
+    MLIPModelsConfig,
+    MLIPConfig,
+    RootstockConfig,
+    RootstockModelConfig,
+    StoichConfig,
+    default_catbench_folder,
+    fill_mlip_dataset_path,
+)
 from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field
-
-
-class StoichConfig(BaseModel):
-    elements: list[str]
-    basis_species: list[str]
-    basis_composition: Dict[str, Dict[str, int]]
-
-
-class IngestConfig(BaseModel):
-    source: Path
-    dataset_name: str
-    catbench_folder: Optional[Path] = None
-    stoich: StoichConfig
-
-
-class MLIPModelsConfig(BaseModel):
-    enabled: List[str]
-
-
-class RootstockModelConfig(BaseModel):
-    model: str
-    mlip_name: str
-    checkpoint: Optional[str] = None
-    output_model: Optional[str] = None
-    model_version: Optional[str] = None
-    metadata: Dict[str, str] = Field(default_factory=dict)
-
-
-class RootstockConfig(BaseModel):
-    root: Path
-    python: Optional[Path] = None
-    models: Dict[str, RootstockModelConfig]
-
-
-class MLIPConfig(BaseModel):
-    dev_n: int
-    dev_run: bool
-    dataset: Optional[str] = None
-    optimizer: str = "LBFGS"
-    models: MLIPModelsConfig
-    rootstock: RootstockConfig
 
 
 class AnalysisConfig(BaseModel):
@@ -202,10 +171,7 @@ class Config(BaseModel):
         self.init_paths()
 
     def init_paths(self):
-        catbench_folder = (
-            self.ingest.source.parent / f"{self.ingest.source.name}_catbench"
-        )
-        self.ingest.catbench_folder = catbench_folder
+        self.ingest.catbench_folder = default_catbench_folder(self.ingest.source)
         self._apply_dataset_profile()
         self._validate_derived_paths()
         self._inherit_global_seed()
@@ -227,8 +193,7 @@ class Config(BaseModel):
             update=profile.paths.model_dump(exclude_none=True)
         )
 
-        if self.mlip.dataset is None and profile_paths.dataset is not None:
-            self.mlip.dataset = str(profile_paths.dataset)
+        fill_mlip_dataset_path(self.mlip, dataset_path=profile_paths.dataset)
 
         learning_curve = (
             self.experiment.learning_curve

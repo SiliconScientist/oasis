@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from oasis.mlip_config import mlip_results_dir, raw_dataset_path
 from pydantic import BaseModel, Field
 
 try:
@@ -54,11 +55,6 @@ class DatasetProfileConfig(BaseModel):
     tag: str
     paths: DatasetProfilePathsConfig = Field(default_factory=DatasetProfilePathsConfig)
 
-
-def raw_dataset_path(raw_dataset_filename: str) -> Path:
-    return Path("data/raw_data") / raw_dataset_filename
-
-
 def probe_dataset_path(raw_dataset_filename: str) -> Path:
     source_path = Path(raw_dataset_filename)
     suffix = source_path.suffix or ".json"
@@ -75,11 +71,6 @@ def learning_curve_bundle_path(processed_basename: str) -> Path:
 
 def probe_results_dir(probe_results_dirname: str) -> Path:
     return Path("data/mlips") / probe_results_dirname
-
-
-def mlip_results_dir(mlip_run_dirname: str) -> Path:
-    return Path("data/mlips") / mlip_run_dirname
-
 
 def analysis_workbook_path(run_dirname: str) -> Path:
     return Path("data/results") / run_dirname / "oasis_Benchmarking_Analysis.xlsx"
