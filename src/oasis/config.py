@@ -1,17 +1,19 @@
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
 
+from oasis.config_base import (
+    DatasetProfileConfig,
+    DatasetProfilePathsConfig,
+    NamedDatasetConfig,
+    deep_merge_dicts,
+    derive_dataset_profile_paths,
+    load_toml_file,
+)
 from oasis.tune import OptunaTuningConfig
 from pydantic import BaseModel, Field
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib
 
 
 class StoichConfig(BaseModel):
@@ -53,51 +55,6 @@ class MLIPConfig(BaseModel):
     optimizer: str = "LBFGS"
     models: MLIPModelsConfig
     rootstock: RootstockConfig
-
-
-class DatasetProfilePathsConfig(BaseModel):
-    dataset: Optional[Path] = None
-    probe_dataset_path: Optional[Path] = None
-    probe_mlip_results_dir: Optional[Path] = None
-    results_bundle_path: Optional[Path] = None
-    graph_dataset_path: Optional[Path] = None
-    calculating_path: Optional[Path] = None
-    summary_workbook_path: Optional[Path] = None
-    comparison_workbook_path: Optional[Path] = None
-    comparison_plot_path: Optional[Path] = None
-    analysis_base_dir: Optional[Path] = None
-
-
-class NamedDatasetConfig(BaseModel):
-    raw_dataset_filename: Optional[str] = None
-    processed_basename: Optional[str] = None
-    probe_results_dirname: Optional[str] = None
-    mlip_run_dirname: Optional[str] = None
-    analysis_run_dirname: Optional[str] = None
-    summary_run_dirname: Optional[str] = None
-
-    def raw_dataset_filename_or_default(self, tag: str) -> str:
-        return self.raw_dataset_filename or f"{tag}.json"
-
-    def processed_basename_or_default(self, tag: str) -> str:
-        return self.processed_basename or tag
-
-    def probe_results_dirname_or_default(self, tag: str) -> str:
-        return self.probe_results_dirname or f"{tag}_unique_probes"
-
-    def mlip_run_dirname_or_default(self, tag: str) -> str:
-        return self.mlip_run_dirname or tag
-
-    def analysis_run_dirname_or_default(self, tag: str) -> str:
-        return self.analysis_run_dirname or self.mlip_run_dirname_or_default(tag)
-
-    def summary_run_dirname_or_default(self, tag: str) -> str:
-        return self.summary_run_dirname or self.analysis_run_dirname_or_default(tag)
-
-
-class DatasetProfileConfig(BaseModel):
-    tag: str
-    paths: DatasetProfilePathsConfig = Field(default_factory=DatasetProfilePathsConfig)
 
 
 class AnalysisConfig(BaseModel):
@@ -348,68 +305,13 @@ class Config(BaseModel):
             return
         setattr(model, field_name, value)
 
-    @staticmethod
-    def _raw_dataset_path(raw_dataset_filename: str) -> Path:
-        return Path("data/raw_data") / raw_dataset_filename
-
-    @staticmethod
-    def _probe_dataset_path(raw_dataset_filename: str) -> Path:
-        raw_dataset_path = Path(raw_dataset_filename)
-        suffix = raw_dataset_path.suffix or ".json"
-        return Path("data/raw_data") / (
-            f"{raw_dataset_path.stem}_with_probe_ids{suffix}"
-        )
-
-    @staticmethod
-    def _processed_graph_dataset_path(processed_basename: str) -> Path:
-        return Path("data/processed") / f"{processed_basename}.parquet"
-
-    @staticmethod
-    def _learning_curve_bundle_path(processed_basename: str) -> Path:
-        return Path("data/results/learning_curve") / f"{processed_basename}.json"
-
-    @staticmethod
-    def _probe_results_dir(probe_results_dirname: str) -> Path:
-        return Path("data/mlips") / probe_results_dirname
-
-    @staticmethod
-    def _mlip_results_dir(mlip_run_dirname: str) -> Path:
-        return Path("data/mlips") / mlip_run_dirname
-
-    @staticmethod
-    def _analysis_workbook_path(run_dirname: str) -> Path:
-        return Path("data/results") / run_dirname / "oasis_Benchmarking_Analysis.xlsx"
-
-    @staticmethod
-    def _comparison_plot_path(tag: str) -> Path:
-        return Path("data/results/plots") / f"{tag}_mae_comparison.png"
-
     @classmethod
     def _derived_dataset_profile_paths(
         cls,
         tag: str,
         named_profile: NamedDatasetConfig | None = None,
     ) -> DatasetProfilePathsConfig:
-        named_profile = named_profile or NamedDatasetConfig()
-        raw_dataset_filename = named_profile.raw_dataset_filename_or_default(tag)
-        processed_basename = named_profile.processed_basename_or_default(tag)
-        probe_results_dirname = named_profile.probe_results_dirname_or_default(tag)
-        mlip_run_dirname = named_profile.mlip_run_dirname_or_default(tag)
-        analysis_run_dirname = named_profile.analysis_run_dirname_or_default(tag)
-        summary_run_dirname = named_profile.summary_run_dirname_or_default(tag)
-
-        return DatasetProfilePathsConfig(
-            dataset=cls._raw_dataset_path(raw_dataset_filename),
-            probe_dataset_path=cls._probe_dataset_path(raw_dataset_filename),
-            probe_mlip_results_dir=cls._probe_results_dir(probe_results_dirname),
-            results_bundle_path=cls._learning_curve_bundle_path(processed_basename),
-            graph_dataset_path=cls._processed_graph_dataset_path(processed_basename),
-            calculating_path=cls._mlip_results_dir(analysis_run_dirname),
-            summary_workbook_path=cls._analysis_workbook_path(summary_run_dirname),
-            comparison_workbook_path=cls._analysis_workbook_path(analysis_run_dirname),
-            comparison_plot_path=cls._comparison_plot_path(tag),
-            analysis_base_dir=cls._mlip_results_dir(mlip_run_dirname),
-        )
+        return derive_dataset_profile_paths(tag, named_profile)
 
     def _validate_derived_paths(self) -> None:
         learning_curve = (
@@ -470,23 +372,6 @@ class Config(BaseModel):
 
 DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
 
-
-def _load_toml_file(path: Path) -> dict[str, Any]:
-    with path.open("rb") as f:
-        return tomllib.load(f)
-
-
-def _deep_merge_dicts(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
-    merged = dict(base)
-    for key, value in overlay.items():
-        existing = merged.get(key)
-        if isinstance(existing, dict) and isinstance(value, Mapping):
-            merged[key] = _deep_merge_dicts(existing, value)
-        else:
-            merged[key] = value
-    return merged
-
-
 def load_config_data(
     config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
 ) -> dict[str, Any]:
@@ -503,7 +388,7 @@ def load_config_data(
         if not path.exists():
             missing.append(path)
             continue
-        merged = _deep_merge_dicts(merged, _load_toml_file(path))
+        merged = deep_merge_dicts(merged, load_toml_file(path))
 
     if not merged:
         searched = ", ".join(str(path) for path in path_list)
