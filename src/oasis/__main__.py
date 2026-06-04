@@ -22,7 +22,6 @@ from oasis.io import (
     load_wide_predictions,
 )
 from oasis.plot import learning_curve_plot, parity_plot
-from oasis.mlip.cli import main as mlip_main
 from oasis.probe import build_probe_dataset, updated_dataset_output_path
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
@@ -42,10 +41,17 @@ def _can_reuse_graph_artifact(
     return tuple(artifact_graph_view.sample_ids) == tuple(reaction_ids)
 
 
-def main() -> None:
-    if len(sys.argv) >= 2 and sys.argv[1] == "mlip":
+def _dispatch_mlip_cli(argv: list[str]) -> None:
+    from oasis.mlip.cli import main as mlip_main
+
+    mlip_main(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "mlip":
         # Forward remaining args to mlip CLI
-        mlip_main(sys.argv[2:])
+        _dispatch_mlip_cli(argv[1:])
         return
 
     cfg = get_config()

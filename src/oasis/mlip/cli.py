@@ -50,3 +50,7 @@ def main(argv=None):
             out_path=args.out,
             datasets=args.datasets,
         )
+
+
+if __name__ == "__main__":
+    main()

@@ -21,5 +21,5 @@ CONFIG="${2:-config.toml}"
 LINE="$(sed -n "$((SLURM_ARRAY_TASK_ID+1))p" "$TASKFILE")"
 echo "TASK: $LINE"
 
-# Use the driver env to parse config + dispatch
-python -m oasis mlip run-one --line "$LINE" --config "$CONFIG"
+# Use the dedicated MLIP entrypoint to parse config + dispatch
+python -m oasis.mlip.cli run-one --line "$LINE" --config "$CONFIG"

@@ -10,8 +10,8 @@ shift || true
 mkdir -p slurm_output
 TASKFILE="slurm_output/mlip_tasks_${RUN_TAG}.txt"
 
-# Generate tasks via oasis (nice because it can read config/models)
-python -m oasis mlip make-tasks --config "$CONFIG" --run-tag "$RUN_TAG" --out "$TASKFILE" "$@"
+# Generate tasks via the dedicated MLIP entrypoint.
+python -m oasis.mlip.cli make-tasks --config "$CONFIG" --run-tag "$RUN_TAG" --out "$TASKFILE" "$@"
 
 NTASKS=$(wc -l < "$TASKFILE")
 echo "Submitting $NTASKS tasks from $TASKFILE"
