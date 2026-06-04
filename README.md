@@ -23,8 +23,8 @@ PYTHONPATH=src python -m unittest
 
 ## Entrypoints
 
-Oasis owns experiment workflows. MLIP ingestion/prediction code remains here
-temporarily while it is being extracted into a separate repo.
+Oasis owns experiment workflows. MLIP ingestion/prediction now lives in
+[Moirai](https://github.com/SiliconScientist/Moirai).
 
 Experiment execution is config-driven:
 
@@ -36,8 +36,8 @@ run_experiment_from_config(["mlip.toml", "experiment.toml"])
 
 If you already have a parsed config object, call `run_experiment(cfg)` instead.
 
-MLIP commands remain available through the internal module entrypoint during the
-split:
+For MLIP ingestion/prediction, use Moirai. The old in-repo MLIP module path
+remains documented here only as a temporary compatibility surface:
 
 ```bash
 python -m oasis.mlip submit --config mlip.toml
@@ -48,17 +48,13 @@ python -m oasis.mlip run-one --config mlip.toml --line "mace example data/raw_da
 `python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
 otherwise exits with guidance to use the MLIP module entrypoint.
 
-## Extraction Prep
+## Related Repo
 
-The MLIP-facing code is being kept extractable with minimal churn:
+MLIP ingestion/prediction repo:
 
-- runtime entrypoint: `python -m oasis.mlip`
-- config contract: `mlip.toml`
-- package root: `oasis.mlip`
-- supporting runtime modules: `oasis.adapters`, `oasis.ingest`
+- `Moirai`: https://github.com/SiliconScientist/Moirai
 
-The extracted repo will get its own package metadata, CLI name, and branding.
-This repo remains experiment-first.
+Oasis remains experiment-first.
 
 Targeted graph/config test commands:
 

@@ -2,6 +2,8 @@
 # Copy to `mlip.toml` and replace paths/model specs for your environment.
 # This file owns only ingest/MLIP concerns. Dataset-profile, analysis, plot,
 # and learning-curve settings live in `experiment.toml`.
+# Canonical home for this MLIP workflow is Moirai:
+# https://github.com/SiliconScientist/Moirai
 
 dev_run = false
 train = true

@@ -4,7 +4,8 @@ import sys
 
 _EXPERIMENT_CLI_ERROR = (
     "Experiment orchestration no longer runs via `python -m oasis`.\n"
-    "Use `python -m oasis.mlip ...` for MLIP commands.\n"
+    "Use Moirai for MLIP commands: https://github.com/SiliconScientist/Moirai\n"
+    "Temporary compatibility path: `python -m oasis.mlip ...`.\n"
     "Run experiment workflows through config-driven entrypoints elsewhere."
 )
 
