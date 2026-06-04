@@ -4,7 +4,7 @@ import sys
 
 _EXPERIMENT_CLI_ERROR = (
     "Experiment orchestration no longer runs via `python -m oasis`.\n"
-    "Use `python -m oasis.mlip.cli ...` for MLIP commands.\n"
+    "Use `python -m oasis.mlip ...` for MLIP commands.\n"
     "Run experiment workflows through config-driven entrypoints elsewhere."
 )
 

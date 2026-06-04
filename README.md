@@ -1,5 +1,5 @@
 # oasis
-Refining ML interatomic potentials with sparse DFT data in low-data regimes.
+Experiment workflows for refining ML interatomic potentials with sparse DFT data.
 
 ## Environment
 
@@ -23,20 +23,10 @@ PYTHONPATH=src python -m unittest
 
 ## Entrypoints
 
-MLIP commands and experiment runs are now separate.
+Oasis owns experiment workflows. MLIP ingestion/prediction code remains here
+temporarily while it is being extracted into a separate repo.
 
-MLIP CLI:
-
-```bash
-python -m oasis.mlip.cli submit --config mlip.toml
-python -m oasis.mlip.cli make-tasks --config mlip.toml --run-tag dev --out slurm_output/tasks.txt
-python -m oasis.mlip.cli run-one --config mlip.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
-```
-
-`python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
-otherwise exits with guidance to use the dedicated MLIP entrypoint.
-
-Config-driven experiment execution:
+Experiment execution is config-driven:
 
 ```python
 from oasis.experiment_runner import run_experiment_from_config
@@ -45,6 +35,30 @@ run_experiment_from_config(["mlip.toml", "experiment.toml"])
 ```
 
 If you already have a parsed config object, call `run_experiment(cfg)` instead.
+
+MLIP commands remain available through the internal module entrypoint during the
+split:
+
+```bash
+python -m oasis.mlip submit --config mlip.toml
+python -m oasis.mlip make-tasks --config mlip.toml --run-tag dev --out slurm_output/tasks.txt
+python -m oasis.mlip run-one --config mlip.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
+```
+
+`python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
+otherwise exits with guidance to use the MLIP module entrypoint.
+
+## Extraction Prep
+
+The MLIP-facing code is being kept extractable with minimal churn:
+
+- runtime entrypoint: `python -m oasis.mlip`
+- config contract: `mlip.toml`
+- package root: `oasis.mlip`
+- supporting runtime modules: `oasis.adapters`, `oasis.ingest`
+
+The extracted repo will get its own package metadata, CLI name, and branding.
+This repo remains experiment-first.
 
 Targeted graph/config test commands:
 

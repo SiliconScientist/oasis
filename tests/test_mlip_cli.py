@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import runpy
 import sys
 import unittest
 from unittest.mock import patch
@@ -99,3 +100,10 @@ class MlipCliTests(unittest.TestCase):
             out_path="tasks.txt",
             datasets=["dataset.json"],
         )
+
+    def test_python_dash_m_oasis_mlip_delegates_to_cli_main(self) -> None:
+        with patch("oasis.mlip.cli.main") as mock_mlip_main:
+            with patch.object(sys, "argv", ["python", "submit", "--config", "mlip.toml"]):
+                runpy.run_module("oasis.mlip", run_name="__main__")
+
+        mock_mlip_main.assert_called_once_with()
