@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from oasis.experiment_runner import run_experiment
+from oasis.experiment_runner import run_experiment, run_experiment_from_config
 from oasis.sweep import LearningCurveResults
 
 
@@ -34,6 +34,20 @@ class _FakeWideFrame:
 
 
 class ExperimentRunnerTests(unittest.TestCase):
+    def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
+        cfg = SimpleNamespace()
+
+        with patch("oasis.experiment_runner.get_config", return_value=cfg) as mock_get:
+            with patch(
+                "oasis.experiment_runner.run_experiment",
+                return_value="results",
+            ) as mock_run:
+                result = run_experiment_from_config(["mlip.toml", "experiment.toml"])
+
+        mock_get.assert_called_once_with(["mlip.toml", "experiment.toml"])
+        mock_run.assert_called_once_with(cfg)
+        self.assertEqual(result, "results")
+
     def test_run_experiment_skips_probe_dataset_build_when_probe_gnn_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

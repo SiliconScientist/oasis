@@ -21,6 +21,31 @@ Run the test suite with:
 PYTHONPATH=src python -m unittest
 ```
 
+## Entrypoints
+
+MLIP commands and experiment runs are now separate.
+
+MLIP CLI:
+
+```bash
+python -m oasis.mlip.cli submit --config mlip.toml
+python -m oasis.mlip.cli make-tasks --config mlip.toml --run-tag dev --out slurm_output/tasks.txt
+python -m oasis.mlip.cli run-one --config mlip.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
+```
+
+`python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
+otherwise exits with guidance to use the dedicated MLIP entrypoint.
+
+Config-driven experiment execution:
+
+```python
+from oasis.experiment_runner import run_experiment_from_config
+
+run_experiment_from_config(["mlip.toml", "experiment.toml"])
+```
+
+If you already have a parsed config object, call `run_experiment(cfg)` instead.
+
 Targeted graph/config test commands:
 
 ```bash
