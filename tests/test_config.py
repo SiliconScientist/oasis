@@ -14,6 +14,47 @@ except ModuleNotFoundError:
 
 @unittest.skipUnless(HAS_CONFIG, "requires config dependencies")
 class ConfigParsingTests(unittest.TestCase):
+    def test_load_config_data_merges_two_files_with_later_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            experiment_path = tmp / "experiment.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 7",
+                        "",
+                        "[plot]",
+                        'output_dir = "data/results/mlip-plots"',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/from_mlip.json"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 11",
+                        "",
+                        "[plot]",
+                        'output_dir = "data/results/experiment-plots"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            data = load_config_data([mlip_path, experiment_path])
+
+        self.assertEqual(data["seed"], 11)
+        self.assertEqual(data["plot"]["output_dir"], "data/results/experiment-plots")
+        self.assertEqual(data["mlip"]["dataset"], "data/raw_data/from_mlip.json")
+
     def test_load_config_data_allows_default_discovery_during_one_file_migration(
         self,
     ) -> None:
@@ -46,6 +87,41 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertEqual(data["seed"], 7)
         self.assertEqual(data["mlip"]["dataset"], "data/raw_data/example.json")
+
+    def test_load_config_data_allows_experiment_only_default_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 13",
+                        "",
+                        "[plot]",
+                        'output_dir = "data/results/plots"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            old_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(tmp)
+                data = load_config_data()
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(data["seed"], 13)
+        self.assertEqual(data["plot"]["output_dir"], "data/results/plots")
+        self.assertEqual(data["experiment"]["learning_curve"]["n_repeats"], 3)
 
     def test_load_config_data_rejects_missing_explicit_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -137,6 +213,92 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
+
+    def test_get_config_loads_mlip_only_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            mlip_path = tmp / "mlip.toml"
+            mlip_path.write_text(
+                "\n".join(
+                    [
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(mlip_path)
+
+        self.assertEqual(cfg.mlip.dataset, "data/raw_data/example.json")
+        self.assertIsNone(cfg.experiment)
+        self.assertIsNone(cfg.analysis)
+        self.assertIsNone(cfg.plot)
+
+    def test_load_config_data_loads_experiment_only_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 23",
+                        "",
+                        "[dataset_profile]",
+                        'tag = "example_oh"',
+                        "",
+                        "[datasets.example_oh]",
+                        'raw_dataset_filename = "ExampleOH_adsorption.json"',
+                        'processed_basename = "example_oh"',
+                        "",
+                        "[analysis]",
+                        "run_adsorption_analysis = false",
+                        'out_dir = "data/mlips_by_prefix"',
+                        'prefixes = ["ol"]',
+                        "",
+                        "[plot]",
+                        'output_dir = "data/results/plots"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            data = load_config_data(experiment_path)
+
+        self.assertEqual(data["seed"], 23)
+        self.assertEqual(data["dataset_profile"]["tag"], "example_oh")
+        self.assertEqual(data["analysis"]["prefixes"], ["ol"])
+        self.assertEqual(data["experiment"]["learning_curve"]["max_train"], 4)
 
     def test_dataset_profile_derives_common_paths(self) -> None:
         cfg = Config(
@@ -565,6 +727,75 @@ class ConfigParsingTests(unittest.TestCase):
                     "analysis": {
                         "run_adsorption_analysis": False,
                         "base_dir": "data/mlips/manual",
+                        "out_dir": "data/mlips_by_prefix",
+                        "prefixes": ["ol"],
+                    },
+                }
+            )
+
+    def test_graph_dataset_requires_explicit_or_derived_path(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "experiment.learning_curve.graph_dataset.path must be provided explicitly or derived from dataset_profile.tag",
+        ):
+            Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "models": {"enabled": []},
+                        "rootstock": {"root": ".", "models": {}},
+                    },
+                    "experiment": {
+                        "learning_curve": {
+                            "min_train": 2,
+                            "max_train": 4,
+                            "n_repeats": 3,
+                            "graph_dataset": {
+                                "join_key": "reaction",
+                            },
+                        }
+                    },
+                }
+            )
+
+    def test_analysis_requires_derived_calculating_path_when_adsorption_enabled(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "analysis.calculating_path must be provided explicitly or derived from dataset_profile.tag",
+        ):
+            Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "models": {"enabled": []},
+                        "rootstock": {"root": ".", "models": {}},
+                    },
+                    "analysis": {
+                        "run_adsorption_analysis": True,
+                        "base_dir": "data/mlips/manual",
+                        "summary_workbook_path": "data/results/manual/oasis_Benchmarking_Analysis.xlsx",
+                        "comparison_workbook_path": "data/results/manual_compare/oasis_Benchmarking_Analysis.xlsx",
+                        "comparison_plot_path": "data/results/plots/manual.png",
                         "out_dir": "data/mlips_by_prefix",
                         "prefixes": ["ol"],
                     },

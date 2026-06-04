@@ -1,18 +1,11 @@
 # Example MLIP-side configuration.
 # Copy to `mlip.toml` and replace paths/model specs for your environment.
+# This file owns only ingest/MLIP concerns. Dataset-profile, analysis, plot,
+# and learning-curve settings live in `experiment.toml`.
 
 dev_run = false
 train = true
 evaluate = true
-
-[dataset_profile]
-tag = "example_oh"
-
-[datasets.example_oh]
-raw_dataset_filename = "ExampleOH_adsorption.json"
-mlip_run_dirname = "oh_example"
-analysis_run_dirname = "ch3_oh_example"
-summary_run_dirname = "ch3_oh_shifted_example"
 
 [ingest]
 source = "data/raw_vasp/systems"
@@ -73,10 +66,3 @@ mlip_name = "uma-s-1p1"
 
 [mlip.rootstock.models.uma.metadata]
 task_name = "omat"
-
-[analysis]
-run_adsorption_analysis = false
-# Kept explicit because this plot is currently shared rather than per-dataset.
-comparison_plot_path = "data/results/plots/mae_comparison.png"
-out_dir = "data/mlips_by_prefix"
-prefixes = ["ol", "sa", "ss"]

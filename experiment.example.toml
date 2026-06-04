@@ -1,8 +1,25 @@
 seed = 42
 
 # Example experiment-side configuration.
-# Copy to `experiment.toml` and tune per study. Paths shared with `mlip.toml`
-# are derived from `dataset_profile.tag` plus `[datasets.<tag>]`.
+# Copy to `experiment.toml` and tune per study.
+# This file owns dataset-profile, analysis, plot, probe-feature, and
+# learning-curve settings. MLIP model registry details live in `mlip.toml`.
+
+[dataset_profile]
+tag = "example_oh"
+
+[datasets.example_oh]
+raw_dataset_filename = "ExampleOH_adsorption.json"
+processed_basename = "example_oh"
+mlip_run_dirname = "oh_example"
+analysis_run_dirname = "ch3_oh_example"
+summary_run_dirname = "ch3_oh_shifted_example"
+
+[analysis]
+run_adsorption_analysis = false
+out_dir = "data/mlips_by_prefix"
+prefixes = ["ol", "sa", "ss"]
+# comparison_plot_path = "data/results/plots/shared_mae_comparison.png"
 
 [plot]
 output_dir = "data/results/plots"
@@ -90,6 +107,9 @@ enabled = false # set true to run probe-GNN direct regression alongside MoE
 [experiment.learning_curve.models.probe_gnn.training]
 epochs = 50
 
+# Optional explicit overrides. When omitted, both paths are derived from
+# `dataset_profile.tag` and `[datasets.<tag>]`.
+#
 # [probe_features]
 # dataset_path = "data/raw_data/ExampleOH_adsorption_with_probe_ids.json"
 # mlip_results_dir = "data/mlips/example_oh_unique_probes"
