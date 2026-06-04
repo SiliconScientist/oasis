@@ -1,0 +1,596 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from ase import Atoms
+from ase.db.row import AtomsRow
+from ase.io import jsonio
+from ase.neighborlist import natural_cutoffs, neighbor_list
+
+from oasis.exp import column_to_numpy, mlip_columns
+from oasis.sweep import (
+    GraphDatasetView,
+    GraphRecord,
+    SweepDatasetInputs,
+    _duplicate_sample_ids,
+    _format_sample_id_list,
+)
+from oasis.sweep import SweepDataset
+
+if TYPE_CHECKING:
+    from oasis.config import GraphDatasetInputConfig
+    from oasis.config import Config
+
+
+@dataclass(frozen=True, slots=True)
+class AtomsToGraphPolicy:
+    """Canonical policy for converting ASE Atoms into GraphRecord objects.
+
+    Policy:
+    - preserve the input atom order as node order
+    - store Cartesian coordinates as `node_positions`
+    - use atomic numbers as the sole node feature
+    - build directed edges from ASE's neighbor list with natural covalent cutoffs
+    - store one edge feature per edge: the interatomic distance
+    - omit graph-level features unless a caller defines a different policy later
+    """
+
+    cutoff_multiplier: float = 1.25
+    include_self_interactions: bool = False
+
+    def __post_init__(self) -> None:
+        if self.cutoff_multiplier <= 0:
+            raise ValueError("cutoff_multiplier must be positive.")
+
+
+DEFAULT_ATOMS_TO_GRAPH_POLICY = AtomsToGraphPolicy()
+
+_GRAPH_PARQUET_SAMPLE_ID_COLUMN = "graph_sample_id"
+_GRAPH_PARQUET_NODE_FEATURES_COLUMN = "graph_node_features"
+_GRAPH_PARQUET_EDGE_INDEX_COLUMN = "graph_edge_index"
+_GRAPH_PARQUET_NODE_POSITIONS_COLUMN = "graph_node_positions"
+_GRAPH_PARQUET_EDGE_FEATURES_COLUMN = "graph_edge_features"
+_GRAPH_PARQUET_GRAPH_FEATURES_COLUMN = "graph_graph_features"
+
+
+def atoms_from_ase_db_json(atoms_json: str) -> Atoms:
+    """Convert an ASE database-style JSON string into an ASE Atoms object."""
+    decoded = jsonio.decode(atoms_json)
+    row_id = decoded["ids"][0]
+    row = decoded[row_id]
+    atom_count = len(row["numbers"])
+    for key in (
+        "momenta",
+        "masses",
+        "tags",
+        "initial_charges",
+        "initial_magmoms",
+    ):
+        values = row.get(key)
+        if values is not None and len(values) != atom_count:
+            row.pop(key)
+    return AtomsRow(row).toatoms()
+
+
+def updated_dataset_output_path(input_dataset_path: Path) -> Path:
+    """Build the output path for the original dataset with probe ids added."""
+    stem = input_dataset_path.stem
+    return input_dataset_path.with_name(
+        f"{stem}_with_probe_ids{input_dataset_path.suffix}"
+    )
+
+
+def build_probe_dataset(cfg: Config) -> None:
+    from oasis.probe import build_probe_dataset as _build_probe_dataset
+
+    _build_probe_dataset(cfg)
+
+
+def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
+    """Load a graph dataset view from JSON records or a Parquet graph artifact."""
+
+    resolved_path = Path(path)
+    if resolved_path.suffix == ".parquet":
+        return _load_graph_dataset_view_from_parquet(resolved_path)
+
+    with resolved_path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    if not isinstance(payload, list):
+        raise TypeError("graph dataset JSON must be a top-level list of records.")
+
+    records = tuple(_graph_record_from_mapping(item) for item in payload)
+    return GraphDatasetView.from_records(records)
+
+
+def load_configured_graph_dataset_view(
+    graph_dataset_cfg: GraphDatasetInputConfig | None,
+) -> GraphDatasetView | None:
+    """Load a graph dataset view from configured graph dataset input settings."""
+
+    if graph_dataset_cfg is None:
+        return None
+    return load_graph_dataset_view(graph_dataset_cfg.path)
+
+
+def dump_graph_dataset_view(graph_view: GraphDatasetView) -> list[dict[str, Any]]:
+    """Convert a graph dataset view into JSON-serializable graph artifacts."""
+
+    return [_graph_record_to_mapping(graph_view[sample_id]) for sample_id in graph_view.sample_ids]
+
+
+def save_graph_dataset_view(
+    graph_view: GraphDatasetView,
+    path: str | Path,
+) -> Path:
+    """Write graph artifacts as a JSON list of graph records."""
+
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_path.open("w", encoding="utf-8") as f:
+        json.dump(dump_graph_dataset_view(graph_view), f, indent=2)
+    return resolved_path
+
+
+def save_aligned_graph_dataset_parquet(
+    wide_df: Any,
+    graph_view: GraphDatasetView,
+    path: str | Path,
+    *,
+    join_key: str = "reaction",
+) -> Path:
+    """Write the aligned MLIP frame plus graph payloads to a Parquet artifact."""
+
+    pl = _require_polars()
+    aligned_graphs = build_graph_sweep_dataset(
+        wide_df,
+        graph_view,
+        join_key=join_key,
+    ).graphs
+    artifact_frame = _wide_frame_to_polars(wide_df)
+    artifact_frame = artifact_frame.with_columns(
+        pl.Series(
+            _GRAPH_PARQUET_SAMPLE_ID_COLUMN,
+            list(aligned_graphs.sample_ids),
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_NODE_FEATURES_COLUMN,
+            [aligned_graphs[sample_id].node_features.tolist() for sample_id in aligned_graphs.sample_ids],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_EDGE_INDEX_COLUMN,
+            [aligned_graphs[sample_id].edge_index.tolist() for sample_id in aligned_graphs.sample_ids],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_NODE_POSITIONS_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].node_positions is None
+                else aligned_graphs[sample_id].node_positions.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_EDGE_FEATURES_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].edge_features is None
+                else aligned_graphs[sample_id].edge_features.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+        pl.Series(
+            _GRAPH_PARQUET_GRAPH_FEATURES_COLUMN,
+            [
+                None
+                if aligned_graphs[sample_id].graph_features is None
+                else aligned_graphs[sample_id].graph_features.tolist()
+                for sample_id in aligned_graphs.sample_ids
+            ],
+        ),
+    )
+
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_frame.write_parquet(resolved_path)
+    return resolved_path
+
+
+def load_sweep_dataset_from_graph_artifact(
+    path: str | Path,
+    *,
+    join_key: str = "reaction",
+    auxiliary_views: dict | None = None,
+    filter_df: Any | None = None,
+) -> SweepDataset:
+    """Load a saved aligned MLIP+graph artifact into a SweepDataset."""
+
+    resolved_path = Path(path)
+    pl = _require_polars()
+    artifact_frame = pl.read_parquet(resolved_path)
+    if filter_df is not None and join_key in getattr(filter_df, "columns", ()):
+        keep_ids = list(filter_df[join_key])
+        keep_set = set(keep_ids)
+        artifact_ids = set(artifact_frame.get_column(join_key).to_list())
+        missing = keep_set - artifact_ids
+        print(f"[latent filter] filter_df rows={len(keep_ids)}, artifact rows before filter={len(artifact_frame)}, missing from artifact={len(missing)}")
+        if missing:
+            print(f"  first missing: {list(missing)[:3]}")
+        artifact_frame = artifact_frame.filter(
+            artifact_frame.get_column(join_key).is_in(list(keep_set))
+        )
+        id_to_row = {sid: i for i, sid in enumerate(artifact_frame.get_column(join_key).to_list())}
+        order = [id_to_row[sid] for sid in keep_ids if sid in id_to_row]
+        artifact_frame = artifact_frame[order]
+        print(f"[latent filter] artifact rows after filter={len(artifact_frame)}, auxiliary latent rows={auxiliary_views.get('latent') if auxiliary_views else None}")
+    graph_view = load_graph_dataset_view(resolved_path)
+    return build_graph_sweep_dataset(
+        artifact_frame,
+        graph_view,
+        join_key=join_key,
+        auxiliary_views=auxiliary_views,
+    )
+
+
+def atoms_to_graph_record(
+    atoms: Atoms,
+    *,
+    sample_id: Any,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphRecord:
+    """Convert one ASE Atoms object into a canonical GraphRecord."""
+
+    node_features = np.asarray(atoms.numbers, dtype=float).reshape(-1, 1)
+    node_positions = np.asarray(atoms.positions, dtype=float)
+    cutoffs = natural_cutoffs(atoms, mult=policy.cutoff_multiplier)
+    edge_sources, edge_targets, edge_distances = neighbor_list(
+        "ijd",
+        atoms,
+        cutoffs,
+        self_interaction=policy.include_self_interactions,
+    )
+
+    if len(edge_sources):
+        order = np.lexsort((edge_distances, edge_targets, edge_sources))
+        edge_index = np.vstack(
+            (
+                np.asarray(edge_sources[order], dtype=np.int64),
+                np.asarray(edge_targets[order], dtype=np.int64),
+            )
+        )
+        edge_features = np.asarray(edge_distances[order], dtype=float).reshape(-1, 1)
+    else:
+        edge_index = np.empty((2, 0), dtype=np.int64)
+        edge_features = np.empty((0, 1), dtype=float)
+
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=node_features,
+        edge_index=edge_index,
+        node_positions=node_positions,
+        edge_features=edge_features,
+    )
+
+
+def atoms_to_graph_dataset_view(
+    sample_ids: Sequence[Any],
+    atoms_list: Sequence[Atoms],
+    *,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphDatasetView:
+    """Convert aligned sample IDs and ASE Atoms objects into a GraphDatasetView."""
+
+    if len(sample_ids) != len(atoms_list):
+        raise ValueError("sample_ids and atoms_list must have the same length.")
+
+    return GraphDatasetView.from_records(
+        tuple(
+            atoms_to_graph_record(atoms, sample_id=sample_id, policy=policy)
+            for sample_id, atoms in zip(sample_ids, atoms_list, strict=True)
+        )
+    )
+
+
+def build_graph_sweep_dataset(
+    wide_df: Any,
+    graph_view: GraphDatasetView,
+    *,
+    join_key: str = "reaction",
+    auxiliary_views: dict | None = None,
+) -> SweepDataset:
+    """Build a SweepDataset by aligning wide-frame rows with structure graphs."""
+
+    columns = getattr(wide_df, "columns", ())
+    if join_key not in columns:
+        raise ValueError(f"wide_df is missing required join column: {join_key}")
+    if "reference_ads_eng" not in columns:
+        raise ValueError("wide_df is missing required target column: reference_ads_eng")
+
+    feature_cols = mlip_columns(wide_df)
+    if not feature_cols:
+        raise ValueError(
+            "No MLIP prediction columns found (expected *_mlip_ads_eng_median)."
+        )
+
+    sample_ids = tuple(column_to_numpy(wide_df, join_key).tolist())
+    duplicate_frame_ids = _duplicate_sample_ids(sample_ids)
+    if duplicate_frame_ids:
+        raise ValueError(
+            f"wide_df contains duplicate {join_key} values: "
+            f"{_format_sample_id_list(duplicate_frame_ids)}."
+        )
+
+    graph_sample_ids = graph_view.sample_ids
+    duplicate_graph_ids = _duplicate_sample_ids(graph_sample_ids)
+    if duplicate_graph_ids:
+        raise ValueError(
+            "graph_view contains duplicate sample_ids: "
+            f"{_format_sample_id_list(duplicate_graph_ids)}."
+        )
+
+    graph_records = graph_view.records_by_sample_id
+    sample_id_set = set(sample_ids)
+    missing_graph_ids = tuple(
+        sample_id for sample_id in sample_ids if sample_id not in graph_records
+    )
+    if missing_graph_ids:
+        raise KeyError(
+            f"missing graphs for {join_key} values: "
+            f"{_format_sample_id_list(missing_graph_ids)}."
+        )
+    extra_graph_ids = tuple(
+        sample_id for sample_id in graph_view.sample_ids if sample_id not in sample_id_set
+    )
+    if extra_graph_ids:
+        raise KeyError(
+            f"extra sample_ids with no matching {join_key}: "
+            f"{_format_sample_id_list(extra_graph_ids)}."
+        )
+
+    if hasattr(wide_df, "select"):
+        mlip_features = wide_df.select(feature_cols).to_numpy()
+    else:
+        mlip_features = np.column_stack(
+            [column_to_numpy(wide_df, column_name) for column_name in feature_cols]
+        )
+    targets = column_to_numpy(wide_df, "reference_ads_eng")
+    aligned_graphs = GraphDatasetView.from_records(
+        tuple(graph_view[sample_id] for sample_id in sample_ids)
+    )
+    return SweepDataset.from_inputs(
+        inputs=SweepDatasetInputs(
+            mlip_features=mlip_features,
+            graph_view=aligned_graphs,
+        ),
+        targets=targets,
+        sample_ids=np.asarray(sample_ids),
+        auxiliary_views=auxiliary_views,
+    )
+
+
+def load_probe_graph_dataset_view(
+    path: str | Path,
+    *,
+    policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+) -> GraphDatasetView:
+    """Load a GraphDatasetView from a probe-annotated adsorption dataset JSON.
+
+    Each entry must have been produced by ``build_probe_dataset`` and include
+    ``bound_surface_indices`` and ``mlip_feature_matrix``.  The graph for each
+    sample is built from ``raw.Tolstar``; bound-atom node features are augmented
+    with the corresponding rows of ``mlip_feature_matrix.matrix``.
+
+    Args:
+        path: Path to the JSON dataset file
+            (e.g. ``KHLOHC_origin_tolstar_adsorption_with_probe_ids.json``).
+        policy: Graph construction policy applied to each Tolstar Atoms object.
+
+    Returns:
+        A GraphDatasetView where every record has node_features of shape
+        ``(n_atoms, 1 + n_mlips)``: column 0 is the atomic number; columns
+        1..n_mlips are the MLIP probe adsorption energies (zero for non-binding
+        atoms).
+    """
+    resolved_path = Path(path)
+    with resolved_path.open("r", encoding="utf-8") as fh:
+        dataset = json.load(fh)
+
+    if not isinstance(dataset, dict):
+        raise TypeError("probe dataset JSON must be a top-level object.")
+
+    records: list[GraphRecord] = []
+    for reaction, entry in dataset.items():
+        tolstar = entry.get("raw", {}).get("Tolstar")
+        if tolstar is None:
+            raise ValueError(f"Entry {reaction!r} is missing 'raw.Tolstar'.")
+
+        atoms = atoms_from_ase_db_json(tolstar["atoms_json"])
+        base_record = atoms_to_graph_record(atoms, sample_id=reaction, policy=policy)
+
+        bound_surface_indices: list[int] = list(entry.get("bound_surface_indices", []))
+
+        mlip_payload = entry.get("mlip_feature_matrix")
+        if mlip_payload is None:
+            raise ValueError(f"Entry {reaction!r} is missing 'mlip_feature_matrix'.")
+
+        n_mlips = len(mlip_payload.get("mlip_names", []))
+        matrix_raw = mlip_payload.get("matrix", [])
+        if matrix_raw:
+            probe_matrix = np.asarray(matrix_raw, dtype=float)
+        else:
+            probe_matrix = np.empty((0, n_mlips), dtype=float)
+
+        augmented = augment_graph_with_probe_features(
+            base_record, bound_surface_indices, probe_matrix
+        )
+        records.append(augmented)
+
+    return GraphDatasetView.from_records(tuple(records))
+
+
+def augment_graph_with_probe_features(
+    record: GraphRecord,
+    bound_surface_indices: Sequence[int],
+    probe_matrix: np.ndarray,
+) -> GraphRecord:
+    """Return a new GraphRecord with per-atom MLIP probe vectors appended to node features.
+
+    Every node gets its feature vector extended by `n_mlips` dimensions.  Nodes
+    listed in `bound_surface_indices` receive the corresponding row of
+    `probe_matrix`; all other nodes receive zeros in those positions.
+
+    Args:
+        record: Source graph.  Its node_features have shape (n_nodes, f).
+        bound_surface_indices: Indices of the binding-site atoms, in the same
+            order as rows of `probe_matrix`.  Must be unique and in-range.
+        probe_matrix: Shape (n_bound, n_mlips).  Row i contains the MLIP
+            adsorption-energy predictions for bound atom i.
+
+    Returns:
+        A new GraphRecord with node_features shape (n_nodes, f + n_mlips).
+        All other fields are copied from `record` unchanged.
+    """
+    probe_matrix = np.asarray(probe_matrix, dtype=float)
+    if probe_matrix.ndim != 2:
+        raise ValueError(
+            f"probe_matrix must be 2-D, got shape {probe_matrix.shape}."
+        )
+    n_bound, n_mlips = probe_matrix.shape
+    if len(bound_surface_indices) != n_bound:
+        raise ValueError(
+            f"len(bound_surface_indices)={len(bound_surface_indices)} does not match "
+            f"probe_matrix.shape[0]={n_bound}."
+        )
+
+    n_nodes = record.n_nodes
+    for idx in bound_surface_indices:
+        if idx < 0 or idx >= n_nodes:
+            raise IndexError(
+                f"bound_surface_index {idx} is out of range for a graph with "
+                f"{n_nodes} nodes."
+            )
+    if len(set(bound_surface_indices)) != len(bound_surface_indices):
+        raise ValueError("bound_surface_indices contains duplicate node indices.")
+
+    probe_block = np.zeros((n_nodes, n_mlips), dtype=float)
+    for row, node_idx in enumerate(bound_surface_indices):
+        probe_block[node_idx] = probe_matrix[row]
+
+    augmented_features = np.concatenate(
+        [record.node_features, probe_block], axis=1
+    )
+    return GraphRecord(
+        sample_id=record.sample_id,
+        node_features=augmented_features,
+        edge_index=record.edge_index,
+        node_positions=record.node_positions,
+        edge_features=record.edge_features,
+        graph_features=record.graph_features,
+    )
+
+
+def _graph_record_from_mapping(payload: Any) -> GraphRecord:
+    if not isinstance(payload, dict):
+        raise TypeError("each graph record must be a JSON object.")
+
+    missing_fields = {
+        "sample_id",
+        "node_features",
+        "edge_index",
+    }.difference(payload)
+    if missing_fields:
+        missing = ", ".join(sorted(missing_fields))
+        raise ValueError(f"graph record is missing required fields: {missing}")
+
+    return GraphRecord(
+        sample_id=payload["sample_id"],
+        node_features=np.asarray(payload["node_features"], dtype=float),
+        edge_index=np.asarray(payload["edge_index"], dtype=np.int64),
+        node_positions=_optional_array(payload.get("node_positions"), dtype=float),
+        edge_features=_optional_array(payload.get("edge_features"), dtype=float),
+        graph_features=_optional_array(payload.get("graph_features"), dtype=float),
+    )
+
+
+def _graph_record_to_mapping(record: GraphRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "sample_id": record.sample_id,
+        "node_features": record.node_features.tolist(),
+        "edge_index": record.edge_index.tolist(),
+    }
+    if record.node_positions is not None:
+        payload["node_positions"] = record.node_positions.tolist()
+    if record.edge_features is not None:
+        payload["edge_features"] = record.edge_features.tolist()
+    if record.graph_features is not None:
+        payload["graph_features"] = record.graph_features.tolist()
+    return payload
+
+
+def _load_graph_dataset_view_from_parquet(path: Path) -> GraphDatasetView:
+    pl = _require_polars()
+    payload = pl.read_parquet(path).to_dicts()
+    records = tuple(_graph_record_from_parquet_row(item) for item in payload)
+    return GraphDatasetView.from_records(records)
+
+
+def _graph_record_from_parquet_row(payload: dict[str, Any]) -> GraphRecord:
+    sample_id = payload.get(_GRAPH_PARQUET_SAMPLE_ID_COLUMN)
+    if sample_id is None:
+        raise ValueError(
+            f"graph dataset Parquet is missing required column: {_GRAPH_PARQUET_SAMPLE_ID_COLUMN}"
+        )
+
+    return GraphRecord(
+        sample_id=sample_id,
+        node_features=np.asarray(payload[_GRAPH_PARQUET_NODE_FEATURES_COLUMN], dtype=float),
+        edge_index=np.asarray(payload[_GRAPH_PARQUET_EDGE_INDEX_COLUMN], dtype=np.int64),
+        node_positions=_optional_array(
+            payload.get(_GRAPH_PARQUET_NODE_POSITIONS_COLUMN),
+            dtype=float,
+        ),
+        edge_features=_optional_array(
+            payload.get(_GRAPH_PARQUET_EDGE_FEATURES_COLUMN),
+            dtype=float,
+        ),
+        graph_features=_optional_array(
+            payload.get(_GRAPH_PARQUET_GRAPH_FEATURES_COLUMN),
+            dtype=float,
+        ),
+    )
+
+
+def _wide_frame_to_polars(wide_df: Any) -> Any:
+    pl = _require_polars()
+    if isinstance(wide_df, pl.DataFrame):
+        return wide_df
+    if hasattr(wide_df, "to_dicts"):
+        return pl.from_dicts(wide_df.to_dicts())
+    columns = list(getattr(wide_df, "columns", ()))
+    return pl.DataFrame(
+        {
+            column_name: column_to_numpy(wide_df, column_name).tolist()
+            for column_name in columns
+        }
+    )
+
+
+def _require_polars() -> Any:
+    try:
+        import polars as pl
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "polars is required for Parquet graph dataset artifacts."
+        ) from exc
+    return pl
+
+
+def _optional_array(value: Any, *, dtype: Any | None = None) -> np.ndarray | None:
+    if value is None:
+        return None
+    return np.asarray(value, dtype=dtype)

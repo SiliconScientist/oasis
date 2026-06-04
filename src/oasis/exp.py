@@ -433,7 +433,7 @@ def build_sweep_dataset_from_frame(
     auxiliary_views: dict[str, Any] | None = None,
 ) -> SweepDataset:
     if graph_view is not None:
-        from oasis.graphs import build_graph_sweep_dataset
+        from oasis.experiment_data import build_graph_sweep_dataset
 
         return build_graph_sweep_dataset(
             df, graph_view, join_key=graph_join_key, auxiliary_views=auxiliary_views
@@ -477,7 +477,7 @@ def build_sweep_dataset_from_config(
         and graph_dataset_cfg is not None
         and Path(graph_dataset_cfg.path).is_file()
     ):
-        from oasis.graphs import load_sweep_dataset_from_graph_artifact
+        from oasis.experiment_data import load_sweep_dataset_from_graph_artifact
 
         return load_sweep_dataset_from_graph_artifact(
             graph_dataset_cfg.path,
@@ -486,7 +486,7 @@ def build_sweep_dataset_from_config(
             filter_df=df,
         )
     if graph_view is None and experiment_cfg:
-        from oasis.graphs import load_configured_graph_dataset_view
+        from oasis.experiment_data import load_configured_graph_dataset_view
 
         graph_view = load_configured_graph_dataset_view(graph_dataset_cfg)
 

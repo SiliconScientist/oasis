@@ -7,11 +7,13 @@ import pandas as pd
 from oasis.analysis import filter_wide_predictions
 from oasis.config import get_config
 from oasis.exp import load_or_run_learning_curve_results_from_config
-from oasis.graphs import (
+from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
+    build_probe_dataset,
     load_graph_dataset_view,
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
+    updated_dataset_output_path,
 )
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
@@ -19,7 +21,6 @@ from oasis.mlip.artifacts import (
     load_wide_predictions,
 )
 from oasis.plot import learning_curve_plot, parity_plot
-from oasis.probe import build_probe_dataset, updated_dataset_output_path
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 

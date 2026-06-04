@@ -183,3 +183,16 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("oasis.analysis_workflows", imported)
         self.assertNotIn("oasis.plot", imported)
         self.assertNotIn("catbench.adsorption", imported)
+
+    def test_importing_experiment_data_does_not_import_probe_module(self) -> None:
+        for module_name in (
+            "oasis.experiment_data",
+            "oasis.probe",
+        ):
+            sys.modules.pop(module_name, None)
+        before_import = set(sys.modules)
+
+        importlib.import_module("oasis.experiment_data")
+
+        imported = set(sys.modules) - before_import
+        self.assertNotIn("oasis.probe", imported)
