@@ -1,41 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pandas as pd
 import polars as pl
-from catbench.adsorption import AdsorptionAnalysis
 
-from oasis.config import Config, get_config
-from oasis.mlip.result_parsing import (
-    detect_anomalies_from_result_dict,
-    detect_anomalies_from_result_json,
-    extract_adsorbate,
-)
-from oasis.plot import mae_comparison_plot
-
-_INFERENCE_ANOMALY_DETAILS = (
-    "slab_conv",
-    "ads_conv",
-    "slab_move",
-    "ads_move",
-    "slab_seed",
-    "ads_seed",
-    "ads_eng_seed",
-    "adsorbate_migration",
-)
-
-
-def _load_summary_dataframe(workbook_path: str | Path) -> pd.DataFrame:
-    try:
-        excel_file = pd.ExcelFile(workbook_path)
-    except ImportError as exc:
-        raise ImportError(
-            "Reading Excel summary files requires openpyxl. Install it first."
-        ) from exc
-
-    sheet_name = "Summary" if "Summary" in excel_file.sheet_names else 0
-    return pd.read_excel(workbook_path, sheet_name=sheet_name)
+from oasis.mlip.artifacts import INFERENCE_DETAIL_COLUMNS
 
 
 def filter_wide_predictions(
@@ -65,7 +32,7 @@ def filter_wide_predictions(
             for col in filtered_df.columns
             if any(
                 col.endswith(f"_{detail_name}")
-                for detail_name in _INFERENCE_ANOMALY_DETAILS
+                for detail_name in INFERENCE_DETAIL_COLUMNS
             )
         ]
         if not label_cols and not detail_cols:
@@ -122,36 +89,3 @@ def filter_wide_predictions(
             )
 
     return filtered_df
-
-
-def run_summary_analysis(cfg: Config | None = None) -> Path | None:
-    cfg = cfg or get_config()
-    if cfg.analysis is None:
-        return None
-
-    if cfg.analysis.summary_workbook_path is None:
-        raise ValueError("mlip.toml must define analysis.summary_workbook_path")
-    if cfg.analysis.comparison_workbook_path is None:
-        raise ValueError("mlip.toml must define analysis.comparison_workbook_path")
-    if cfg.analysis.comparison_plot_path is None:
-        raise ValueError("mlip.toml must define analysis.comparison_plot_path")
-    if cfg.analysis.run_adsorption_analysis and cfg.analysis.calculating_path is None:
-        raise ValueError(
-            "mlip.toml must define analysis.calculating_path when "
-            "run_adsorption_analysis is true"
-        )
-
-    summary_df = _load_summary_dataframe(cfg.analysis.summary_workbook_path)
-    comparison_df = _load_summary_dataframe(cfg.analysis.comparison_workbook_path)
-    comparison_plot_path = mae_comparison_plot(
-        comparison_df=comparison_df,
-        summary_df=summary_df,
-        output_path=cfg.analysis.comparison_plot_path,
-    )
-
-    if cfg.analysis.run_adsorption_analysis:
-        analysis = AdsorptionAnalysis(calculating_path=str(cfg.analysis.calculating_path))
-        analysis.analysis()
-        analysis.threshold_sensitivity_analysis()
-
-    return comparison_plot_path

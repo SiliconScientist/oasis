@@ -166,3 +166,20 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("oasis.mlip.runner", imported)
         self.assertNotIn("oasis.mlip.tasks", imported)
         self.assertNotIn("oasis.adapters.rootstock_adapter", imported)
+
+    def test_importing_analysis_does_not_import_workflow_modules(self) -> None:
+        for module_name in (
+            "oasis.analysis",
+            "oasis.analysis_workflows",
+            "oasis.plot",
+            "catbench.adsorption",
+        ):
+            sys.modules.pop(module_name, None)
+        before_import = set(sys.modules)
+
+        importlib.import_module("oasis.analysis")
+
+        imported = set(sys.modules) - before_import
+        self.assertNotIn("oasis.analysis_workflows", imported)
+        self.assertNotIn("oasis.plot", imported)
+        self.assertNotIn("catbench.adsorption", imported)
