@@ -5,6 +5,11 @@ from pathlib import Path
 
 import numpy as np
 from oasis.config import get_config
+from oasis.mlip.artifacts import (
+    find_result_files,
+    load_result_json,
+    model_name_from_result_path,
+)
 
 
 @dataclass(frozen=True)
@@ -19,17 +24,6 @@ class SampleMLIPFeatureMatrix:
             "mlip_names": self.mlip_names,
             "matrix": self.matrix.tolist(),
         }
-
-
-def _load_json(path: Path) -> dict[str, object]:
-    import json
-    with path.open() as handle:
-        return json.load(handle)
-
-
-def _mlip_name_from_result_path(result_path: Path) -> str:
-    return result_path.name.removesuffix("_result.json")
-
 
 def _resolve_probe_feature_paths(
     dataset_path: Path | None,
@@ -70,8 +64,11 @@ def load_mlip_probe_energies(
     else:
         resolved_mlip_results_dir = mlip_results_dir
 
-    for result_path in sorted(resolved_mlip_results_dir.glob("*_result.json")):
-        result_data = _load_json(result_path)
+    for result_path in find_result_files(
+        resolved_mlip_results_dir,
+        pattern="*_result.json",
+    ):
+        result_data = load_result_json(result_path)
         probe_energies: dict[str, float] = {}
 
         for probe_key, probe_data in result_data.items():
@@ -85,12 +82,7 @@ def load_mlip_probe_energies(
                 float(ads_eng_median) if ads_eng_median is not None else np.nan
             )
 
-        mlip_probe_energies[_mlip_name_from_result_path(result_path)] = probe_energies
-
-    if not mlip_probe_energies:
-        raise FileNotFoundError(
-            f"No MLIP result files found in {resolved_mlip_results_dir}"
-        )
+        mlip_probe_energies[model_name_from_result_path(result_path)] = probe_energies
 
     return mlip_probe_energies
 
@@ -109,7 +101,7 @@ def build_sample_mlip_feature_matrices(
         dataset_path,
         mlip_results_dir,
     )
-    dataset = _load_json(resolved_dataset_path)
+    dataset = load_result_json(resolved_dataset_path)
     mlip_probe_energies = load_mlip_probe_energies(resolved_mlip_results_dir)
     mlip_names = sorted(mlip_probe_energies)
 
@@ -167,7 +159,7 @@ def add_mlip_feature_matrices_to_dataset(
         dataset_path,
         mlip_results_dir,
     )
-    dataset = _load_json(resolved_dataset_path)
+    dataset = load_result_json(resolved_dataset_path)
     feature_matrices = build_sample_mlip_feature_matrices(
         dataset_path=resolved_dataset_path,
         mlip_results_dir=resolved_mlip_results_dir,

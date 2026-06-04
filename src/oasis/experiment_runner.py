@@ -13,9 +13,9 @@ from oasis.graphs import (
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
 )
-from oasis.io import (
+from oasis.io import load_sample_atoms_for_wide_df
+from oasis.mlip.artifacts import (
     find_result_files,
-    load_sample_atoms_for_wide_df,
     load_wide_predictions,
 )
 from oasis.plot import learning_curve_plot, parity_plot

@@ -2,6 +2,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from oasis.mlip.artifacts import load_result_json, result_file_name
+
 DEFAULT_BASE_DIR = Path("data/mlips")
 DEFAULT_OUT_DIR = Path("data/mlips_by_prefix")
 DEFAULT_PREFIXES = ("ol", "sa", "ss")
@@ -20,15 +22,14 @@ def run(
             continue
 
         model_name = model_dir.name
-        result_file = model_dir / f"{model_name}_result.json"
+        result_file = model_dir / result_file_name(model_name)
 
         if not result_file.exists():
             continue
 
         print(f"Processing {model_name}")
 
-        with open(result_file) as f:
-            data = json.load(f)
+        data = load_result_json(result_file)
 
         calculation_settings = data.get("calculation_settings")
 
@@ -47,7 +48,7 @@ def run(
 
             out_model_dir = out_prefix_dir / model_name
             out_model_dir.mkdir(exist_ok=True)
-            out_file = out_model_dir / f"{model_name}_result.json"
+            out_file = out_model_dir / result_file_name(model_name)
 
             output_data = {}
             if calculation_settings is not None:

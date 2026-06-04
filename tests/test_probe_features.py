@@ -124,3 +124,16 @@ class ProbeFeatureTests(unittest.TestCase):
                 "probe_features.dataset_path and probe_features.mlip_results_dir",
             ):
                 load_mlip_probe_energies()
+
+    def test_probe_feature_loader_ignores_processed_result_files(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            results_dir = Path(tmp_dir) / "probe_results"
+            _write_probe_results(results_dir)
+            (results_dir / "mace_processed_result.json").write_text(
+                json.dumps({"unique_probe_1": {"final": {"ads_eng_median": 9.9}}}),
+                encoding="utf-8",
+            )
+
+            result = load_mlip_probe_energies(results_dir)
+
+        self.assertEqual(set(result), {"mace", "orb"})
