@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -16,10 +18,44 @@ class MainDispatchTests(unittest.TestCase):
             ["run-one", "--line", "task", "--config", "mlip.toml"]
         )
 
+    def test_importing_main_does_not_load_experiment_modules(self) -> None:
+        sys.modules.pop("oasis.__main__", None)
+        before_import = set(sys.modules)
+
+        importlib.import_module("oasis.__main__")
+
+        for name in (
+            "oasis.analysis",
+            "oasis.exp",
+            "oasis.experiment_runner",
+            "oasis.graphs",
+            "oasis.plot",
+            "oasis.probe",
+            "oasis.probe_features",
+        ):
+            self.assertNotIn(name, set(sys.modules) - before_import)
+
 
 class MlipCliTests(unittest.TestCase):
+    def test_importing_mlip_cli_does_not_load_experiment_modules(self) -> None:
+        sys.modules.pop("oasis.mlip.cli", None)
+        before_import = set(sys.modules)
+
+        importlib.import_module("oasis.mlip.cli")
+
+        for name in (
+            "oasis.analysis",
+            "oasis.exp",
+            "oasis.experiment_runner",
+            "oasis.graphs",
+            "oasis.plot",
+            "oasis.probe",
+            "oasis.probe_features",
+        ):
+            self.assertNotIn(name, set(sys.modules) - before_import)
+
     def test_submit_delegates_to_submit_jobs(self) -> None:
-        with patch("oasis.mlip.cli.submit_jobs") as mock_submit_jobs:
+        with patch("oasis.mlip.submit.submit_jobs") as mock_submit_jobs:
             mlip_main(
                 ["submit", "--config", "mlip.toml", "--run-tag", "tag", "dataset.json"]
             )
@@ -31,7 +67,7 @@ class MlipCliTests(unittest.TestCase):
         )
 
     def test_run_one_delegates_to_runner(self) -> None:
-        with patch("oasis.mlip.cli.run_one_task") as mock_run_one_task:
+        with patch("oasis.mlip.runner.run_one_task") as mock_run_one_task:
             mlip_main(["run-one", "--line", "task-line", "--config", "mlip.toml"])
 
         mock_run_one_task.assert_called_once_with(
@@ -40,7 +76,7 @@ class MlipCliTests(unittest.TestCase):
         )
 
     def test_make_tasks_delegates_to_task_writer(self) -> None:
-        with patch("oasis.mlip.cli.make_tasks") as mock_make_tasks:
+        with patch("oasis.mlip.tasks.make_tasks") as mock_make_tasks:
             mlip_main(
                 [
                     "make-tasks",

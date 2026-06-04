@@ -1,9 +1,5 @@
 import argparse
 
-from oasis.mlip.submit import submit_jobs
-from oasis.mlip.runner import run_one_task
-from oasis.mlip.tasks import make_tasks
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -32,18 +28,24 @@ def main(argv=None):
     make_tasks_p.add_argument("datasets", nargs="*")
     args = parser.parse_args(argv)
     if args.subcommand == "submit":
+        from oasis.mlip.submit import submit_jobs
+
         submit_jobs(
             config_path=args.config,
             run_tag=args.run_tag,
             datasets=args.datasets,
         )
     elif args.subcommand == "run-one":
+        from oasis.mlip.runner import run_one_task
+
         run_one_task(
             line=args.line,
             config_path=args.config,
         )
 
     elif args.subcommand == "make-tasks":
+        from oasis.mlip.tasks import make_tasks
+
         make_tasks(
             config_path=args.config,
             run_tag=args.run_tag,
