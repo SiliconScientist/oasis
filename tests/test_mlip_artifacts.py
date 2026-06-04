@@ -202,12 +202,15 @@ class DependencyBoundaryTests(unittest.TestCase):
             "oasis.exp",
             "oasis.experiment_runner",
             "oasis.experiment_data",
+            "oasis.learning_curve.registry",
             "oasis.learning_curve.results_io",
+            "oasis.learning_curve.runners",
         )
         runtime_modules = (
             "oasis.mlip.cli",
             "oasis.mlip.runner",
             "oasis.mlip.submit",
+            "oasis.mlip.tasks",
             "oasis.adapters.rootstock_adapter",
         )
         original_modules = {
