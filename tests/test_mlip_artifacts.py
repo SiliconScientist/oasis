@@ -196,3 +196,38 @@ class DependencyBoundaryTests(unittest.TestCase):
 
         imported = set(sys.modules) - before_import
         self.assertNotIn("oasis.probe", imported)
+
+    def test_experiment_side_modules_do_not_import_mlip_runtime(self) -> None:
+        target_modules = (
+            "oasis.exp",
+            "oasis.experiment_runner",
+            "oasis.experiment_data",
+            "oasis.learning_curve.results_io",
+        )
+        runtime_modules = (
+            "oasis.mlip.cli",
+            "oasis.mlip.runner",
+            "oasis.mlip.submit",
+            "oasis.adapters.rootstock_adapter",
+        )
+        original_modules = {
+            module_name: sys.modules.get(module_name)
+            for module_name in (*target_modules, *runtime_modules)
+        }
+        try:
+            for module_name in (*target_modules, *runtime_modules):
+                sys.modules.pop(module_name, None)
+            before_import = set(sys.modules)
+
+            for module_name in target_modules:
+                importlib.import_module(module_name)
+
+            imported = set(sys.modules) - before_import
+            for module_name in runtime_modules:
+                self.assertNotIn(module_name, imported)
+        finally:
+            for module_name in (*target_modules, *runtime_modules):
+                sys.modules.pop(module_name, None)
+            for module_name, module in original_modules.items():
+                if module is not None:
+                    sys.modules[module_name] = module
