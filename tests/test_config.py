@@ -1230,6 +1230,40 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_train_sizes, {})
 
+    def test_plot_curve_window_section_parses(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "plot": {
+                    "output_dir": "data/results/plots",
+                    "curve_window": {
+                        "min_x": 10,
+                        "max_x": 50,
+                        "include_x": [10, 30, 50],
+                    },
+                },
+            }
+        )
+
+        assert cfg.plot is not None
+        self.assertEqual(cfg.plot.curve_window.min_x, 10)
+        self.assertEqual(cfg.plot.curve_window.max_x, 50)
+        self.assertEqual(cfg.plot.curve_window.include_x, [10, 30, 50])
+
     def test_screening_section_overrides_legacy_learning_curve_screening_fields(self) -> None:
         cfg = Config(
             **{

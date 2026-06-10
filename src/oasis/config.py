@@ -19,6 +19,7 @@ from oasis.experiment_config import (
     MoETrainingConfig,
     NamedDatasetConfig,
     PlotConfig,
+    PlotCurveWindowConfig,
     PlotFiltersConfig,
     ProbeFeatureConfig,
     ProbeGnnConfig,

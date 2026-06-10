@@ -228,6 +228,12 @@ def run_experiment(cfg: object):
         auxiliary_views=auxiliary_views,
     )
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
+    plot_kwargs = {
+        "min_x": getattr(curve_window_cfg, "min_x", None),
+        "max_x": getattr(curve_window_cfg, "max_x", None),
+        "include_x": getattr(curve_window_cfg, "include_x", None),
+    }
     learning_curve_cfg = (
         cfg.experiment.learning_curve if cfg.experiment is not None else None
     )
@@ -236,11 +242,13 @@ def run_experiment(cfg: object):
         screening_budget_plot(
             results=learning_curve_results,
             output_path=output_dir / "screening_budget.png",
+            **plot_kwargs,
         )
     else:
         learning_curve_plot(
             results=learning_curve_results,
             output_path=output_dir / "learning_curve.png",
+            **plot_kwargs,
         )
     return learning_curve_results
 

@@ -44,6 +44,27 @@ def _ordered_screening_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
     return frame.sort_values("n_budget").reset_index(drop=True)
 
 
+def _filter_curve_frame(
+    frame: pd.DataFrame | None,
+    *,
+    x_column: str,
+    min_x: int | None,
+    max_x: int | None,
+    include_x: list[int] | tuple[int, ...] | None,
+) -> pd.DataFrame | None:
+    if frame is None or frame.empty:
+        return frame
+    filtered = frame
+    if min_x is not None:
+        filtered = filtered.loc[filtered[x_column] >= min_x]
+    if max_x is not None:
+        filtered = filtered.loc[filtered[x_column] <= max_x]
+    if include_x:
+        allowed_x = {int(value) for value in include_x}
+        filtered = filtered.loc[filtered[x_column].isin(sorted(allowed_x))]
+    return filtered.reset_index(drop=True)
+
+
 def _screening_metric_columns(frame: pd.DataFrame) -> tuple[str, str]:
     if "cv_rmse_mean" in frame.columns and "cv_rmse_std" in frame.columns:
         return "cv_rmse_mean", "cv_rmse_std"
@@ -161,10 +182,19 @@ def learning_curve_plot(
     results: LearningCurveResults,
     output_path: str | Path,
     fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
-            field_name: _ordered_learning_curve_frame(frame)
+            field_name: _filter_curve_frame(
+                _ordered_learning_curve_frame(frame),
+                x_column="n_train",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+            )
             for field_name, frame in results.to_mapping().items()
         }
     )
@@ -385,10 +415,19 @@ def screening_budget_plot(
     results: LearningCurveResults,
     output_path: str | Path,
     fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
-            field_name: _ordered_screening_frame(frame)
+            field_name: _filter_curve_frame(
+                _ordered_screening_frame(frame),
+                x_column="n_budget",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+            )
             for field_name, frame in results.to_mapping().items()
         }
     )

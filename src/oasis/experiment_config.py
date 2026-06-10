@@ -136,6 +136,12 @@ class PlotFiltersConfig(BaseModel):
     reaction_contains: Optional[List[str]] = None
 
 
+class PlotCurveWindowConfig(BaseModel):
+    min_x: Optional[int] = None
+    max_x: Optional[int] = None
+    include_x: Optional[List[int]] = None
+
+
 class GraphDatasetInputConfig(BaseModel):
     path: Optional[Path] = None
     join_key: str = "reaction"
@@ -210,6 +216,7 @@ class ExperimentConfig(BaseModel):
 class PlotConfig(BaseModel):
     output_dir: Path
     filters: PlotFiltersConfig = Field(default_factory=PlotFiltersConfig)
+    curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
 
 
 class ProbeFeatureConfig(BaseModel):

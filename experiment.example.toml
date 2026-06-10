@@ -31,6 +31,12 @@ output_dir = "data/results/plots"
 # anomaly_label = "!adsorbate_migration"
 # reaction_contains = ["Pt", "OH"]
 
+[plot.curve_window]
+# Optional x-axis window for learning-curve and screening plots.
+# min_x = 10
+# max_x = 50
+# include_x = [10, 20, 30, 40, 50]
+
 [experiment.learning_curve]
 # Learning-curve sweep sizes refer to the outer training budget.
 # Models that require validation spend part of that budget on inner validation.

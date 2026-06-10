@@ -44,6 +44,28 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
 
+    def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4, 5],
+                "rmse_mean": [0.4, 0.3, 0.2, 0.1],
+                "rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "learning_curve_windowed.png"
+            saved_path = learning_curve_plot(
+                results,
+                output_path=output_path,
+                min_x=3,
+                max_x=4,
+            )
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+
     def test_learning_curve_plot_matches_reloaded_artifacts(self) -> None:
         result_df = pd.DataFrame(
             {
@@ -158,6 +180,31 @@ class PlotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "screening_curve.png"
             saved_path = screening_budget_plot(results, output_path=output_path)
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+
+    def test_screening_budget_plot_filters_to_requested_x_window(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_budget": [4, 6, 8, 10],
+                "n_train": [3, 4, 6, 8],
+                "n_screen": [1, 2, 2, 2],
+                "screen_fraction": [0.25, 1 / 3, 0.25, 0.2],
+                "n_cv_folds": [4, 3, 4, 5],
+                "cv_rmse_mean": [0.4, 0.3, 0.2, 0.1],
+                "cv_rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "screening_curve_windowed.png"
+            saved_path = screening_budget_plot(
+                results,
+                output_path=output_path,
+                include_x=[6, 10],
+            )
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
