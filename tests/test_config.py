@@ -1061,6 +1061,9 @@ class ConfigParsingTests(unittest.TestCase):
                             "min_train": 2,
                             "max_train": 4,
                             "n_repeats": 3,
+                            "budget_mode": "screening_fraction",
+                            "screen_fraction": 0.25,
+                            "min_screen_size": 2,
                             "validation_fraction": 0.35,
                             "min_val_size": 2,
                             "min_tuning_val_size": 4,
@@ -1073,6 +1076,9 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "screening_fraction")
+        self.assertEqual(cfg.experiment.learning_curve.screen_fraction, 0.25)
+        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 2)
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.35)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 2)
         self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 4)
@@ -1157,6 +1163,9 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "full_remainder_test")
+        self.assertIsNone(cfg.experiment.learning_curve.screen_fraction)
+        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 1)

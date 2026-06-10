@@ -10,6 +10,7 @@ from oasis.experiment_config import (
     GnnDirectConfig,
     GraphDatasetInputConfig,
     LatentModelConfig,
+    LearningCurveBudgetMode,
     LearningCurveExperimentConfig,
     LearningCurveModelsConfig,
     MoEConfig,

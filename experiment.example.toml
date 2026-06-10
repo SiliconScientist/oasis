@@ -35,10 +35,17 @@ output_dir = "data/results/plots"
 # Learning-curve sweep sizes refer to the outer training budget.
 # Models that require validation spend part of that budget on inner validation.
 # The test split is always an outer holdout used only for final evaluation.
+# `budget_mode = "full_remainder_test"` keeps the current behavior, where the
+# full dataset remainder becomes the outer test set.
+# `budget_mode = "screening_fraction"` reserves part of the user-declared
+# training budget for screening/evaluation instead.
 # Validation-aware points are skipped when these minima cannot all fit together.
 min_train = 5
 max_train = 25
 step = 1
+budget_mode = "full_remainder_test" # or "screening_fraction"
+# screen_fraction = 0.2
+# min_screen_size = 1
 validation_fraction = 0.2
 min_val_size = 1
 min_tuning_val_size = 1

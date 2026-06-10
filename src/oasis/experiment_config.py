@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
+LearningCurveBudgetMode = Literal["full_remainder_test", "screening_fraction"]
 
 
 class DatasetProfilePathsConfig(BaseModel):
@@ -145,6 +146,9 @@ class LearningCurveExperimentConfig(BaseModel):
     max_train: int
     step: int = 1
     n_repeats: int
+    budget_mode: LearningCurveBudgetMode = "full_remainder_test"
+    screen_fraction: float | None = None
+    min_screen_size: int = 1
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_tuning_val_size: int = 1
