@@ -9,6 +9,24 @@ from oasis.experiment_config import LearningCurveBudgetMode
 from oasis.sweep import SweepFamilyRequirements, SweepSplit, SweepSplitCollection
 
 
+def _screening_cv_test_folds(
+    budget_idx: np.ndarray,
+    *,
+    n_screen: int,
+) -> Iterator[np.ndarray]:
+    """Yield disjoint fixed-size screening holdouts from one budget sample."""
+
+    if n_screen <= 0:
+        raise ValueError("n_screen must be positive.")
+    n_folds = len(budget_idx) // n_screen
+    if n_folds < 2:
+        return
+    for fold_idx in range(n_folds):
+        start = fold_idx * n_screen
+        stop = start + n_screen
+        yield budget_idx[start:stop]
+
+
 def inner_validation_size_for_sweep(
     sweep_size: int,
     *,
@@ -139,7 +157,7 @@ def generate_screening_sweep_splits(
     min_screen_size: int = 1,
     min_outer_train_size: int = 1,
 ) -> Iterator[SweepSplit]:
-    """Yield screening-mode splits over fixed total-budget sweep sizes."""
+    """Yield screening-mode outer CV splits over fixed total-budget sweep sizes."""
 
     idx = np.arange(n_samples)
     max_budget = min(max_train, n_samples)
@@ -153,9 +171,12 @@ def generate_screening_sweep_splits(
         if n_outer_train is None:
             continue
         n_screen = sweep_size - n_outer_train
-        for _ in range(n_repeats):
-            budget_idx = rng.choice(idx, size=sweep_size, replace=False)
-            test_idx = rng.choice(budget_idx, size=n_screen, replace=False)
+        budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+        shuffled_budget_idx = rng.permutation(budget_idx)
+        for test_idx in _screening_cv_test_folds(
+            shuffled_budget_idx,
+            n_screen=n_screen,
+        ):
             train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
             yield SweepSplit(
                 sweep_size=sweep_size,
@@ -218,7 +239,7 @@ def generate_screening_sweep_splits_with_validation(
     min_inner_train_size: int = 1,
     min_outer_train_size: int = 1,
 ) -> Iterator[SweepSplit]:
-    """Yield screening-mode splits with nested validation inside outer train."""
+    """Yield screening-mode outer CV splits with nested validation inside outer train."""
 
     if min_outer_train_size <= 0:
         raise ValueError("min_outer_train_size must be positive.")
@@ -244,9 +265,12 @@ def generate_screening_sweep_splits_with_validation(
         if n_val is None:
             continue
         n_screen = sweep_size - n_outer_train
-        for _ in range(n_repeats):
-            budget_idx = rng.choice(idx, size=sweep_size, replace=False)
-            test_idx = rng.choice(budget_idx, size=n_screen, replace=False)
+        budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+        shuffled_budget_idx = rng.permutation(budget_idx)
+        for test_idx in _screening_cv_test_folds(
+            shuffled_budget_idx,
+            n_screen=n_screen,
+        ):
             outer_train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
             val_idx = rng.choice(outer_train_idx, size=n_val, replace=False)
             train_idx = np.setdiff1d(outer_train_idx, val_idx, assume_unique=False)

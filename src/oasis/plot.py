@@ -36,6 +36,24 @@ def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | 
     return frame.sort_values("n_train").reset_index(drop=True)
 
 
+def _ordered_screening_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+    if frame is None or frame.empty:
+        return frame
+    if "n_budget" not in frame.columns:
+        raise ValueError("screening result frames must contain an n_budget column.")
+    return frame.sort_values("n_budget").reset_index(drop=True)
+
+
+def _screening_metric_columns(frame: pd.DataFrame) -> tuple[str, str]:
+    if "cv_rmse_mean" in frame.columns and "cv_rmse_std" in frame.columns:
+        return "cv_rmse_mean", "cv_rmse_std"
+    if "rmse_mean" in frame.columns and "rmse_std" in frame.columns:
+        return "rmse_mean", "rmse_std"
+    raise ValueError(
+        "screening result frames must contain cv_rmse_mean/cv_rmse_std."
+    )
+
+
 def mae_comparison_plot(
     comparison_df: pd.DataFrame,
     summary_df: pd.DataFrame,
@@ -350,6 +368,242 @@ def learning_curve_plot(
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
+    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=fontsize)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
+def screening_budget_plot(
+    results: LearningCurveResults,
+    output_path: str | Path,
+    fontsize: int = 8,
+) -> Path:
+    results = LearningCurveResults.from_mapping(
+        {
+            field_name: _ordered_screening_frame(frame)
+            for field_name, frame in results.to_mapping().items()
+        }
+    )
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if results.ridge_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.ridge_df)
+        ax.plot(
+            results.ridge_df["n_budget"],
+            results.ridge_df[mean_col],
+            marker="o",
+            color="tab:blue",
+            label="Ridge mean",
+        )
+        ax.fill_between(
+            results.ridge_df["n_budget"],
+            results.ridge_df[mean_col] - results.ridge_df[std_col],
+            results.ridge_df[mean_col] + results.ridge_df[std_col],
+            color="tab:blue",
+            alpha=0.2,
+            label="Ridge +/- 1sd",
+        )
+    if results.kernel_ridge_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.kernel_ridge_df)
+        ax.plot(
+            results.kernel_ridge_df["n_budget"],
+            results.kernel_ridge_df[mean_col],
+            marker="X",
+            color="tab:cyan",
+            label="Kernel Ridge mean",
+        )
+        ax.fill_between(
+            results.kernel_ridge_df["n_budget"],
+            results.kernel_ridge_df[mean_col] - results.kernel_ridge_df[std_col],
+            results.kernel_ridge_df[mean_col] + results.kernel_ridge_df[std_col],
+            color="tab:cyan",
+            alpha=0.2,
+            label="Kernel Ridge +/- 1sd",
+        )
+    if results.lasso_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.lasso_df)
+        ax.plot(
+            results.lasso_df["n_budget"],
+            results.lasso_df[mean_col],
+            marker="s",
+            color="tab:orange",
+            label="Lasso mean",
+        )
+        ax.fill_between(
+            results.lasso_df["n_budget"],
+            results.lasso_df[mean_col] - results.lasso_df[std_col],
+            results.lasso_df[mean_col] + results.lasso_df[std_col],
+            color="tab:orange",
+            alpha=0.2,
+            label="Lasso +/- 1sd",
+        )
+    if results.elastic_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.elastic_df)
+        ax.plot(
+            results.elastic_df["n_budget"],
+            results.elastic_df[mean_col],
+            marker="D",
+            color="tab:purple",
+            label="Elastic Net mean",
+        )
+        ax.fill_between(
+            results.elastic_df["n_budget"],
+            results.elastic_df[mean_col] - results.elastic_df[std_col],
+            results.elastic_df[mean_col] + results.elastic_df[std_col],
+            color="tab:purple",
+            alpha=0.2,
+            label="Elastic Net +/- 1sd",
+        )
+    if results.resid_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.resid_df)
+        ax.plot(
+            results.resid_df["n_budget"],
+            results.resid_df[mean_col],
+            marker="^",
+            color="tab:green",
+            label="Residual mean",
+        )
+        ax.fill_between(
+            results.resid_df["n_budget"],
+            results.resid_df[mean_col] - results.resid_df[std_col],
+            results.resid_df[mean_col] + results.resid_df[std_col],
+            color="tab:green",
+            alpha=0.2,
+            label="Residual +/- 1sd",
+        )
+    if results.weighted_linear_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.weighted_linear_df)
+        ax.plot(
+            results.weighted_linear_df["n_budget"],
+            results.weighted_linear_df[mean_col],
+            marker="*",
+            color="tab:gray",
+            label="Weighted linear mean",
+        )
+        ax.fill_between(
+            results.weighted_linear_df["n_budget"],
+            results.weighted_linear_df[mean_col]
+            - results.weighted_linear_df[std_col],
+            results.weighted_linear_df[mean_col]
+            + results.weighted_linear_df[std_col],
+            color="tab:gray",
+            alpha=0.2,
+            label="Weighted linear +/- 1sd",
+        )
+    if results.weighted_simplex_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.weighted_simplex_df)
+        ax.plot(
+            results.weighted_simplex_df["n_budget"],
+            results.weighted_simplex_df[mean_col],
+            marker="8",
+            color="teal",
+            label="Weighted simplex mean",
+        )
+        ax.fill_between(
+            results.weighted_simplex_df["n_budget"],
+            results.weighted_simplex_df[mean_col]
+            - results.weighted_simplex_df[std_col],
+            results.weighted_simplex_df[mean_col]
+            + results.weighted_simplex_df[std_col],
+            color="teal",
+            alpha=0.2,
+            label="Weighted simplex +/- 1sd",
+        )
+    if results.graph_mean_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.graph_mean_df)
+        ax.plot(
+            results.graph_mean_df["n_budget"],
+            results.graph_mean_df[mean_col],
+            marker="P",
+            color="tab:red",
+            label="Graph mean mean",
+        )
+        ax.fill_between(
+            results.graph_mean_df["n_budget"],
+            results.graph_mean_df[mean_col] - results.graph_mean_df[std_col],
+            results.graph_mean_df[mean_col] + results.graph_mean_df[std_col],
+            color="tab:red",
+            alpha=0.2,
+            label="Graph mean +/- 1sd",
+        )
+    if results.moe_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.moe_df)
+        ax.plot(
+            results.moe_df["n_budget"],
+            results.moe_df[mean_col],
+            marker="*",
+            color="tab:purple",
+            label="MoE mean",
+        )
+        ax.fill_between(
+            results.moe_df["n_budget"],
+            results.moe_df[mean_col] - results.moe_df[std_col],
+            results.moe_df[mean_col] + results.moe_df[std_col],
+            color="tab:purple",
+            alpha=0.2,
+            label="MoE +/- 1sd",
+        )
+    if results.gnn_direct_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.gnn_direct_df)
+        ax.plot(
+            results.gnn_direct_df["n_budget"],
+            results.gnn_direct_df[mean_col],
+            marker="s",
+            color="tab:cyan",
+            label="GNN direct mean",
+        )
+        ax.fill_between(
+            results.gnn_direct_df["n_budget"],
+            results.gnn_direct_df[mean_col] - results.gnn_direct_df[std_col],
+            results.gnn_direct_df[mean_col] + results.gnn_direct_df[std_col],
+            color="tab:cyan",
+            alpha=0.2,
+            label="GNN direct +/- 1sd",
+        )
+    if results.probe_gnn_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.probe_gnn_df)
+        ax.plot(
+            results.probe_gnn_df["n_budget"],
+            results.probe_gnn_df[mean_col],
+            marker="D",
+            color="tab:olive",
+            label="Probe GNN mean",
+        )
+        ax.fill_between(
+            results.probe_gnn_df["n_budget"],
+            results.probe_gnn_df[mean_col] - results.probe_gnn_df[std_col],
+            results.probe_gnn_df[mean_col] + results.probe_gnn_df[std_col],
+            color="tab:olive",
+            alpha=0.2,
+            label="Probe GNN +/- 1sd",
+        )
+    if results.latent_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.latent_df)
+        ax.plot(
+            results.latent_df["n_budget"],
+            results.latent_df[mean_col],
+            marker="v",
+            color="tab:brown",
+            label="Latent mean",
+        )
+        ax.fill_between(
+            results.latent_df["n_budget"],
+            results.latent_df[mean_col] - results.latent_df[std_col],
+            results.latent_df[mean_col] + results.latent_df[std_col],
+            color="tab:brown",
+            alpha=0.2,
+            label="Latent +/- 1sd",
+        )
+    ax.set_xlabel("Sample budget", fontsize=fontsize)
+    ax.set_ylabel("CV RMSE (eV)", fontsize=fontsize)
+    ax.set_title("Screening curve (method performance vs budget)", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
     ax.legend(fontsize=fontsize)

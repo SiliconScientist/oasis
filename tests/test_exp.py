@@ -219,7 +219,7 @@ class _GenerateSweepSplitsTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual([split.sweep_size for split in splits], [5, 5, 6, 6])
+        self.assertEqual([split.sweep_size for split in splits], [5, 5, 6, 6, 6])
         for split in splits:
             self.assertEqual(
                 len(split.test_idx),
@@ -244,6 +244,25 @@ class _GenerateSweepSplitsTests(unittest.TestCase):
             self.assertEqual(len(np.union1d(split.train_idx, split.test_idx)), split.sweep_size)
             self.assertLess(len(split.train_idx) + len(split.test_idx), 10)
             self.assertIsNone(split.val_idx)
+
+    def test_generate_screening_sweep_splits_preserves_holdout_size_when_repeats_is_one(
+        self,
+    ) -> None:
+        splits = list(
+            generate_screening_sweep_splits(
+                n_samples=7,
+                min_train=4,
+                max_train=4,
+                n_repeats=1,
+                rng=np.random.default_rng(42),
+                screen_fraction=0.25,
+                min_screen_size=1,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [4, 4, 4, 4])
+        self.assertEqual([len(split.test_idx) for split in splits], [1, 1, 1, 1])
+        self.assertEqual([len(split.train_idx) for split in splits], [3, 3, 3, 3])
 
     def test_same_seed_gives_same_screening_splits(self) -> None:
         splits_a = list(
@@ -1228,7 +1247,7 @@ class _GenerateSweepSplitsWithValidationTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual([split.sweep_size for split in splits], [6, 6, 7, 7])
+        self.assertEqual([split.sweep_size for split in splits], [6, 6, 6, 7, 7, 7])
         for split in splits:
             self.assertIsNotNone(split.val_idx)
             self.assertEqual(
@@ -1280,13 +1299,16 @@ class _GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [split.sweep_size for split in split_collection.splits], [5, 6, 7]
+            [split.sweep_size for split in split_collection.splits],
+            [5, 5, 6, 6, 6, 7, 7, 7],
         )
         self.assertEqual(
-            [len(split.test_idx) for split in split_collection.splits], [2, 2, 2]
+            [len(split.test_idx) for split in split_collection.splits],
+            [2, 2, 2, 2, 2, 2, 2, 2],
         )
         self.assertEqual(
-            [len(split.train_idx) for split in split_collection.splits], [3, 4, 5]
+            [len(split.train_idx) for split in split_collection.splits],
+            [3, 3, 4, 4, 4, 5, 5, 5],
         )
 
     def test_build_sweep_split_collection_screening_mode_honors_validation_requirements(
@@ -1312,13 +1334,15 @@ class _GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [split.sweep_size for split in split_collection.splits], [6, 7]
+            [split.sweep_size for split in split_collection.splits], [6, 6, 6, 7, 7, 7]
         )
         self.assertEqual(
-            [len(split.test_idx) for split in split_collection.splits], [2, 2]
+            [len(split.test_idx) for split in split_collection.splits],
+            [2, 2, 2, 2, 2, 2],
         )
         self.assertEqual(
-            [len(split.val_idx) for split in split_collection.splits], [2, 2]
+            [len(split.val_idx) for split in split_collection.splits],
+            [2, 2, 2, 2, 2, 2],
         )
 
     def test_build_sweep_split_collection_screening_mode_requires_fraction(self) -> None:
@@ -4799,11 +4823,20 @@ class ExpIntegrationTests(unittest.TestCase):
         assert results.ridge_df is not None
         self.assertEqual(
             results.ridge_df.columns.tolist(),
-            ["n_budget", "n_train", "n_screen", "screen_fraction", "rmse_mean", "rmse_std"],
+            [
+                "n_budget",
+                "n_train",
+                "n_screen",
+                "screen_fraction",
+                "n_cv_folds",
+                "cv_rmse_mean",
+                "cv_rmse_std",
+            ],
         )
         self.assertEqual(results.ridge_df["n_budget"].tolist(), [4])
         self.assertEqual(results.ridge_df["n_train"].tolist(), [3])
         self.assertEqual(results.ridge_df["n_screen"].tolist(), [1])
+        self.assertEqual(results.ridge_df["n_cv_folds"].tolist(), [4])
 
     def test_run_learning_curve_experiments_from_config_forwards_graph_view(
         self,

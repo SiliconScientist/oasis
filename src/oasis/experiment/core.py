@@ -155,20 +155,21 @@ def _screening_split_metadata_frame(
     split_collection: SweepSplitCollection,
 ) -> Any:
     rows: list[dict[str, float | int]] = []
-    seen_budgets: set[int] = set()
-    for split in split_collection.splits:
-        if split.sweep_size in seen_budgets:
-            continue
-        seen_budgets.add(split.sweep_size)
-        n_budget = int(split.sweep_size)
-        n_train = int(len(split.train_idx))
-        n_screen = int(len(split.test_idx))
+    budgets = sorted({int(split.sweep_size) for split in split_collection.splits})
+    for n_budget in budgets:
+        budget_splits = [
+            split for split in split_collection.splits if int(split.sweep_size) == n_budget
+        ]
+        representative = budget_splits[0]
+        n_train = int(len(representative.train_idx))
+        n_screen = int(len(representative.test_idx))
         rows.append(
             {
                 "n_budget": n_budget,
                 "n_train": n_train,
                 "n_screen": n_screen,
                 "screen_fraction": float(n_screen / n_budget),
+                "n_cv_folds": int(len(budget_splits)),
             }
         )
     import pandas as pd
@@ -194,8 +195,14 @@ def _annotate_screening_frame(
         validate="many_to_one",
     )
     annotated = annotated.rename(columns={"screening_train_count": "n_train"})
+    annotated = annotated.rename(
+        columns={
+            "rmse_mean": "cv_rmse_mean",
+            "rmse_std": "cv_rmse_std",
+        }
+    )
     ordered_columns = []
-    for column in ("n_budget", "n_train", "n_screen", "screen_fraction"):
+    for column in ("n_budget", "n_train", "n_screen", "screen_fraction", "n_cv_folds"):
         if column in annotated.columns:
             ordered_columns.append(column)
     ordered_columns.extend(
