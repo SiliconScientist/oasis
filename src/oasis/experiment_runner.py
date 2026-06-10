@@ -20,7 +20,7 @@ from oasis.mlip.artifacts import (
     find_result_files,
     load_wide_predictions,
 )
-from oasis.plot import learning_curve_plot, parity_plot
+from oasis.plot import learning_curve_plot, parity_plot, screening_budget_plot
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 
@@ -228,10 +228,20 @@ def run_experiment(cfg: object):
         auxiliary_views=auxiliary_views,
     )
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
-    learning_curve_plot(
-        results=learning_curve_results,
-        output_path=output_dir / "learning_curve.png",
+    learning_curve_cfg = (
+        cfg.experiment.learning_curve if cfg.experiment is not None else None
     )
+    budget_mode = getattr(learning_curve_cfg, "budget_mode", "full_remainder_test")
+    if budget_mode == "screening_fraction":
+        screening_budget_plot(
+            results=learning_curve_results,
+            output_path=output_dir / "screening_budget.png",
+        )
+    else:
+        learning_curve_plot(
+            results=learning_curve_results,
+            output_path=output_dir / "learning_curve.png",
+        )
     return learning_curve_results
 
 

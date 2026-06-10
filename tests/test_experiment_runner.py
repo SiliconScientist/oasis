@@ -278,3 +278,67 @@ class ExperimentRunnerTests(unittest.TestCase):
                 mock_learning_curve_results.call_args.kwargs["graph_view"],
                 ["g0", "g1", "g2"],
             )
+
+    def test_run_experiment_uses_screening_plot_for_screening_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    filters=SimpleNamespace(
+                        adsorbate=None,
+                        anomaly_label=None,
+                        reaction_contains=None,
+                    ),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.screening_budget_plot",
+                return_value=tmp_path / "plots" / "screening_budget.png",
+            ) as mock_screening_plot:
+                run_experiment(cfg)
+
+        mock_learning_curve_plot.assert_not_called()
+        mock_screening_plot.assert_called_once()
+        self.assertEqual(
+            mock_screening_plot.call_args.kwargs["output_path"],
+            tmp_path / "plots" / "screening_budget.png",
+        )
