@@ -162,8 +162,49 @@ class LearningCurveExperimentConfig(BaseModel):
     models: Optional[LearningCurveModelsConfig] = None
 
 
+class ScreeningExperimentConfig(BaseModel):
+    budget_mode: LearningCurveBudgetMode = "screening_fraction"
+    screen_fraction: float | None = None
+    min_screen_size: int = 1
+    validation_fraction: float = 0.2
+    min_val_size: int = 1
+    min_tuning_val_size: int = 1
+    min_inner_train_size: int = 1
+    results_bundle_path: Optional[Path] = None
+    reuse_results: bool = False
+    force_refresh_methods: list[str] = Field(default_factory=list)
+    force_refresh_train_sizes: dict[str, list[int]] = Field(default_factory=dict)
+
+
 class ExperimentConfig(BaseModel):
     learning_curve: Optional[LearningCurveExperimentConfig] = None
+    screening: Optional[ScreeningExperimentConfig] = None
+
+    def apply_screening_overlay(self) -> None:
+        if self.screening is None:
+            return
+        if self.learning_curve is None:
+            raise ValueError(
+                "experiment.screening requires experiment.learning_curve to define "
+                "the training grid and model families."
+            )
+        learning_curve = self.learning_curve
+        screening = self.screening
+        learning_curve.budget_mode = screening.budget_mode
+        learning_curve.screen_fraction = screening.screen_fraction
+        learning_curve.min_screen_size = screening.min_screen_size
+        learning_curve.validation_fraction = screening.validation_fraction
+        learning_curve.min_val_size = screening.min_val_size
+        learning_curve.min_tuning_val_size = screening.min_tuning_val_size
+        learning_curve.min_inner_train_size = screening.min_inner_train_size
+        if screening.results_bundle_path is not None:
+            learning_curve.results_bundle_path = screening.results_bundle_path
+        learning_curve.reuse_results = screening.reuse_results
+        learning_curve.force_refresh_methods = list(screening.force_refresh_methods)
+        learning_curve.force_refresh_train_sizes = {
+            method_name: list(sweep_sizes)
+            for method_name, sweep_sizes in screening.force_refresh_train_sizes.items()
+        }
 
 
 class PlotConfig(BaseModel):

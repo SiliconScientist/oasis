@@ -7,6 +7,7 @@ from oasis.experiment_config import (
     DatasetProfileConfig,
     DatasetProfilePathsConfig,
     ExperimentConfig,
+    ScreeningExperimentConfig,
     GnnDirectConfig,
     GraphDatasetInputConfig,
     LatentModelConfig,

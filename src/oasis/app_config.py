@@ -40,6 +40,8 @@ class Config(BaseModel):
 
     def init_paths(self) -> None:
         self.ingest.catbench_folder = default_catbench_folder(self.ingest.source)
+        if self.experiment is not None:
+            self.experiment.apply_screening_overlay()
         self._apply_dataset_profile()
         self._validate_derived_paths()
         self._inherit_global_seed()

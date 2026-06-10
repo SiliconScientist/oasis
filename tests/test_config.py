@@ -466,9 +466,10 @@ class ConfigParsingTests(unittest.TestCase):
                         "min_train": 2,
                         "max_train": 4,
                         "n_repeats": 3,
-                        "budget_mode": "screening_fraction",
+                    },
+                    "screening": {
                         "screen_fraction": 0.25,
-                    }
+                    },
                 },
                 "analysis": {
                     "run_adsorption_analysis": False,
@@ -1106,19 +1107,21 @@ class ConfigParsingTests(unittest.TestCase):
                     "rootstock": {"root": ".", "models": {}},
                 },
                 "experiment": {
-                        "learning_curve": {
-                            "min_train": 2,
-                            "max_train": 4,
-                            "n_repeats": 3,
-                            "budget_mode": "screening_fraction",
-                            "screen_fraction": 0.25,
-                            "min_screen_size": 2,
-                            "validation_fraction": 0.35,
-                            "min_val_size": 2,
-                            "min_tuning_val_size": 4,
-                            "min_inner_train_size": 5,
-                            "min_test_size": 3,
-                    }
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "min_test_size": 3,
+                    },
+                    "screening": {
+                        "budget_mode": "screening_fraction",
+                        "screen_fraction": 0.25,
+                        "min_screen_size": 2,
+                        "validation_fraction": 0.35,
+                        "min_val_size": 2,
+                        "min_tuning_val_size": 4,
+                        "min_inner_train_size": 5,
+                    },
                 },
             }
         )
@@ -1157,11 +1160,13 @@ class ConfigParsingTests(unittest.TestCase):
                         "min_train": 2,
                         "max_train": 4,
                         "n_repeats": 3,
-                        "results_bundle_path": "data/results/learning_curve/example.json",
+                    },
+                    "screening": {
+                        "results_bundle_path": "data/results/screening/example.json",
                         "reuse_results": True,
                         "force_refresh_methods": ["moe", "probe_gnn"],
                         "force_refresh_train_sizes": {"ridge": [5, 10]},
-                    }
+                    },
                 },
             }
         )
@@ -1170,7 +1175,7 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(
             cfg.experiment.learning_curve.results_bundle_path,
-            Path("data/results/learning_curve/example.json"),
+            Path("data/results/screening/example.json"),
         )
         self.assertTrue(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(
@@ -1224,6 +1229,78 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertFalse(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_train_sizes, {})
+
+    def test_screening_section_overrides_legacy_learning_curve_screening_fields(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "budget_mode": "full_remainder_test",
+                        "screen_fraction": 0.1,
+                        "min_screen_size": 9,
+                    },
+                    "screening": {
+                        "budget_mode": "screening_fraction",
+                        "screen_fraction": 0.25,
+                        "min_screen_size": 2,
+                    },
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "screening_fraction")
+        self.assertEqual(cfg.experiment.learning_curve.screen_fraction, 0.25)
+        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 2)
+
+    def test_screening_section_requires_learning_curve_section(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "experiment.screening requires experiment.learning_curve",
+        ):
+            Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "models": {"enabled": []},
+                        "rootstock": {"root": ".", "models": {}},
+                    },
+                    "experiment": {
+                        "screening": {
+                            "screen_fraction": 0.25,
+                        }
+                    },
+                }
+            )
 
     def test_learning_curve_models_section_parses(self) -> None:
         cfg = Config(
