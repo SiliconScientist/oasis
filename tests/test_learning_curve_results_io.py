@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from io import StringIO
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -666,6 +668,46 @@ class LearningCurveResultsIoTests(unittest.TestCase):
 
         self.assertEqual(provenance["ridge_df"]["n_budget"].tolist(), [5, 6])
         self.assertEqual(provenance["ridge_df"]["n_screen"].tolist(), [2, 2])
+        self.assertNotIn("n_repeats", provenance["ridge_df"].columns)
+
+    def test_results_bundle_artifact_screening_provenance_omits_repeat_count(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_budget": [5],
+                    "n_train": [3],
+                    "n_screen": [2],
+                    "screen_fraction": [0.4],
+                    "cv_rmse_mean": [0.41],
+                    "cv_rmse_std": [0.06],
+                }
+            )
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=4,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+            budget_mode="screening_fraction",
+            screen_fraction=0.25,
+            min_screen_size=2,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "screening_results.json"
+            save_learning_curve_results_artifact(results, metadata, bundle_path)
+            payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+            restored = load_learning_curve_results_artifact(bundle_path)
+
+        stored_provenance = pd.read_json(
+            StringIO(payload["point_provenance"]["ridge_df"]),
+            orient="table",
+        )
+        self.assertNotIn("n_repeats", stored_provenance.columns)
+        self.assertIn("n_repeats", restored.point_provenance["ridge_df"].columns)
+        self.assertTrue(restored.point_provenance["ridge_df"]["n_repeats"].isna().all())
 
     def test_single_method_artifact_file_round_trip(self) -> None:
         results = LearningCurveResults(

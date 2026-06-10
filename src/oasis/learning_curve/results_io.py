@@ -772,42 +772,43 @@ def build_learning_curve_point_provenance(
 ) -> dict[str, pd.DataFrame]:
     resolved_run_id = run_id or uuid4().hex
     resolved_timestamp = run_timestamp_utc or datetime.now(timezone.utc).isoformat()
+    include_repeat_count = metadata.budget_mode != "screening_fraction"
     point_provenance: dict[str, pd.DataFrame] = {}
     for field_name, frame in results.to_mapping().items():
         if frame is None:
             continue
         if "n_train" not in frame.columns:
             raise ValueError("learning-curve result frames must contain an n_train column.")
-        point_provenance[field_name] = pd.DataFrame(
-            {
-                "n_train": pd.Series(frame["n_train"].tolist(), dtype="Int64"),
-                "n_budget": pd.Series(
-                    frame["n_budget"].tolist()
-                    if "n_budget" in frame.columns
-                    else [None] * len(frame),
-                    dtype="Int64",
-                ),
-                "n_screen": pd.Series(
-                    frame["n_screen"].tolist()
-                    if "n_screen" in frame.columns
-                    else [None] * len(frame),
-                    dtype="Int64",
-                ),
-                "screen_fraction": pd.Series(
-                    frame["screen_fraction"].tolist()
-                    if "screen_fraction" in frame.columns
-                    else [None] * len(frame),
-                    dtype="Float64",
-                ),
-                "seed": [metadata.seed] * len(frame),
-                "n_repeats": [metadata.n_repeats] * len(frame),
-                "sweep_min_train": [metadata.min_train] * len(frame),
-                "sweep_max_train": [metadata.max_train] * len(frame),
-                "sweep_step": [metadata.step] * len(frame),
-                "run_id": [resolved_run_id] * len(frame),
-                "run_timestamp_utc": [resolved_timestamp] * len(frame),
-            }
-        )
+        frame_mapping: dict[str, Any] = {
+            "n_train": pd.Series(frame["n_train"].tolist(), dtype="Int64"),
+            "n_budget": pd.Series(
+                frame["n_budget"].tolist()
+                if "n_budget" in frame.columns
+                else [None] * len(frame),
+                dtype="Int64",
+            ),
+            "n_screen": pd.Series(
+                frame["n_screen"].tolist()
+                if "n_screen" in frame.columns
+                else [None] * len(frame),
+                dtype="Int64",
+            ),
+            "screen_fraction": pd.Series(
+                frame["screen_fraction"].tolist()
+                if "screen_fraction" in frame.columns
+                else [None] * len(frame),
+                dtype="Float64",
+            ),
+            "seed": [metadata.seed] * len(frame),
+        }
+        if include_repeat_count:
+            frame_mapping["n_repeats"] = [metadata.n_repeats] * len(frame)
+        frame_mapping["sweep_min_train"] = [metadata.min_train] * len(frame)
+        frame_mapping["sweep_max_train"] = [metadata.max_train] * len(frame)
+        frame_mapping["sweep_step"] = [metadata.step] * len(frame)
+        frame_mapping["run_id"] = [resolved_run_id] * len(frame)
+        frame_mapping["run_timestamp_utc"] = [resolved_timestamp] * len(frame)
+        point_provenance[field_name] = pd.DataFrame(frame_mapping)
     return point_provenance
 
 
