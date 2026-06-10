@@ -80,7 +80,7 @@ except ModuleNotFoundError:
     HAS_SKLEARN = False
 
 
-class GenerateSweepSplitsTests(unittest.TestCase):
+class _GenerateSweepSplitsTests(unittest.TestCase):
     def test_generate_sweep_splits_yields_disjoint_full_partitions(self) -> None:
         rng = np.random.default_rng(123)
 
@@ -288,7 +288,7 @@ class GenerateSweepSplitsTests(unittest.TestCase):
         np.testing.assert_array_equal(split.test_idx, np.array([5, 6]))
 
 
-class BuildSweepDatasetFromFrameTests(unittest.TestCase):
+class _BuildSweepDatasetFromFrameTests(unittest.TestCase):
     def test_build_sweep_dataset_from_frame_without_graphs_uses_frame_order(
         self,
     ) -> None:
@@ -598,7 +598,7 @@ class BuildSweepDatasetFromFrameTests(unittest.TestCase):
         self.assertNotIn("latent", dataset.auxiliary_views or {})
 
 
-class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
+class _GenerateSweepSplitsWithValidationTests(unittest.TestCase):
     def test_inner_validation_size_for_sweep_uses_fraction_policy(self) -> None:
         self.assertEqual(
             inner_validation_size_for_sweep(
@@ -1718,7 +1718,7 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_learning_curve_experiments",
             autospec=True,
         ) as run_mock:
             run_mock.return_value = LearningCurveResults.from_mapping(
@@ -1785,7 +1785,7 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_learning_curve_experiments",
             autospec=True,
         ) as run_mock:
             run_mock.return_value = LearningCurveResults.from_mapping(
@@ -1845,7 +1845,7 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_learning_curve_experiments",
             autospec=True,
         ) as run_mock:
             run_mock.return_value = LearningCurveResults.from_mapping(
@@ -1900,10 +1900,10 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_standard_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_standard_learning_curve_experiments",
             autospec=True,
         ) as standard_mock, patch(
-            "oasis.exp.run_screening_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_screening_learning_curve_experiments",
             autospec=True,
         ) as screening_mock:
             standard_mock.return_value = expected
@@ -1937,10 +1937,10 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_standard_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_standard_learning_curve_experiments",
             autospec=True,
         ) as standard_mock, patch(
-            "oasis.exp.run_screening_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_screening_learning_curve_experiments",
             autospec=True,
         ) as screening_mock:
             screening_mock.return_value = expected
@@ -1980,7 +1980,7 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_screening_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_screening_learning_curve_experiments",
             autospec=True,
         ) as screening_mock:
             screening_mock.return_value = expected
@@ -3495,7 +3495,7 @@ class ExpIntegrationTests(unittest.TestCase):
             )
 
             with patch(
-                "oasis.exp.run_learning_curve_experiments_from_config"
+                "oasis.experiment.orchestration.run_learning_curve_experiments_from_config"
             ) as mock_run:
                 results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
 
@@ -3575,7 +3575,7 @@ class ExpIntegrationTests(unittest.TestCase):
             )
 
             with patch(
-                "oasis.exp.run_learning_curve_experiments_from_config",
+                "oasis.experiment.orchestration.run_learning_curve_experiments_from_config",
             ) as mock_run:
                 results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
 
@@ -3655,7 +3655,7 @@ class ExpIntegrationTests(unittest.TestCase):
             )
 
             with patch(
-                "oasis.exp.run_learning_curve_experiments_from_config"
+                "oasis.experiment.orchestration.run_learning_curve_experiments_from_config"
             ) as mock_run:
                 results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
 
@@ -4747,10 +4747,10 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         with patch(
-            "oasis.exp.run_screening_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_screening_learning_curve_experiments",
             autospec=True,
         ) as screening_mock, patch(
-            "oasis.exp.run_standard_learning_curve_experiments",
+            "oasis.experiment.orchestration.run_standard_learning_curve_experiments",
             autospec=True,
         ) as standard_mock:
             screening_mock.return_value = expected
@@ -4822,8 +4822,8 @@ class ExpIntegrationTests(unittest.TestCase):
             ),
         )
 
-        with patch("oasis.exp.build_sweep_dataset_from_config") as mock_build:
-            with patch("oasis.exp.run_learning_curve_experiments") as mock_run:
+        with patch("oasis.experiment.orchestration.build_sweep_dataset_from_config") as mock_build:
+            with patch("oasis.experiment.orchestration.run_learning_curve_experiments") as mock_run:
                 mock_build.return_value = SweepDataset(
                     mlip_features=np.array([[1.0]]),
                     targets=np.array([1.0]),
@@ -4886,8 +4886,8 @@ class ExpIntegrationTests(unittest.TestCase):
             "oasis.graphs.load_configured_graph_dataset_view",
             return_value=graph_view,
         ) as mock_load:
-            with patch("oasis.exp.build_sweep_dataset_from_config") as mock_build:
-                with patch("oasis.exp.run_learning_curve_experiments") as mock_run:
+            with patch("oasis.experiment.orchestration.build_sweep_dataset_from_config") as mock_build:
+                with patch("oasis.experiment.orchestration.run_learning_curve_experiments") as mock_run:
                     mock_build.return_value = SweepDataset(
                         mlip_features=np.array([[1.0]]),
                         targets=np.array([1.0]),
