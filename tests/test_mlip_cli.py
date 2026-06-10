@@ -19,6 +19,12 @@ class MainDispatchTests(unittest.TestCase):
             ["run-one", "--line", "task", "--config", "mlip.toml"]
         )
 
+    def test_main_forwards_non_mlip_args_to_experiment_runner(self) -> None:
+        with patch("oasis.experiment_runner.run_experiment_from_config") as mock_run:
+            main(["experiment.toml"])
+
+        mock_run.assert_called_once_with(["experiment.toml"])
+
     def test_importing_main_does_not_load_experiment_modules(self) -> None:
         sys.modules.pop("oasis.__main__", None)
         before_import = set(sys.modules)

@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import sys
 
-_EXPERIMENT_CLI_ERROR = (
-    "Experiment orchestration no longer runs via `python -m oasis`.\n"
-    "Use Moirai for MLIP commands: https://github.com/SiliconScientist/Moirai\n"
-    "Temporary compatibility path: `python -m oasis.mlip ...`.\n"
-    "Run experiment workflows through config-driven entrypoints elsewhere."
-)
-
 def _dispatch_mlip_cli(argv: list[str]) -> None:
     from oasis.mlip.cli import main as mlip_main
 
     mlip_main(argv)
+
+
+def _dispatch_experiment_cli(argv: list[str]) -> None:
+    from oasis.experiment_runner import run_experiment_from_config
+
+    run_experiment_from_config(argv or None)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,7 +20,7 @@ def main(argv: list[str] | None = None) -> None:
         _dispatch_mlip_cli(argv[1:])
         return
 
-    raise SystemExit(_EXPERIMENT_CLI_ERROR)
+    _dispatch_experiment_cli(argv)
 
 
 if __name__ == "__main__":

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from oasis.__main__ import main
 
 
 class MainTests(unittest.TestCase):
-    def test_main_rejects_empty_cli(self) -> None:
-        with self.assertRaises(SystemExit) as exc_info:
+    def test_main_runs_experiment_with_default_config_discovery_on_empty_cli(self) -> None:
+        with patch("oasis.experiment_runner.run_experiment_from_config") as mock_run:
             main([])
 
-        self.assertEqual(str(exc_info.exception), main.__globals__["_EXPERIMENT_CLI_ERROR"])
+        mock_run.assert_called_once_with(None)
 
-    def test_main_rejects_non_mlip_cli(self) -> None:
-        with self.assertRaises(SystemExit) as exc_info:
-            main(["experiment"])
+    def test_main_treats_non_mlip_args_as_config_paths(self) -> None:
+        with patch("oasis.experiment_runner.run_experiment_from_config") as mock_run:
+            main(["experiment.toml"])
 
-        self.assertEqual(str(exc_info.exception), main.__globals__["_EXPERIMENT_CLI_ERROR"])
+        mock_run.assert_called_once_with(["experiment.toml"])
