@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from oasis.experiment_config import LearningCurveBudgetMode
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
     learning_curve_method_name_for_result_field,
@@ -96,6 +97,48 @@ def validation_size_if_sweep_feasible(
         return None
     return n_val
 
+
+def screening_holdout_size_for_budget(
+    sweep_size: int,
+    *,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+) -> int:
+    """Return the screening holdout size for one total-budget sweep point."""
+
+    if sweep_size <= 0:
+        raise ValueError("sweep_size must be positive.")
+    if screen_fraction <= 0 or screen_fraction >= 1:
+        raise ValueError("screen_fraction must be between 0 and 1.")
+    if min_screen_size <= 0:
+        raise ValueError("min_screen_size must be positive.")
+    return max(
+        min_screen_size,
+        math.floor(screen_fraction * sweep_size),
+    )
+
+
+def outer_train_size_if_screening_feasible(
+    sweep_size: int,
+    *,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+    min_outer_train_size: int = 1,
+) -> int | None:
+    """Return outer-train size for a feasible screening-budget sweep point."""
+
+    if min_outer_train_size <= 0:
+        raise ValueError("min_outer_train_size must be positive.")
+    n_screen = screening_holdout_size_for_budget(
+        sweep_size,
+        screen_fraction=screen_fraction,
+        min_screen_size=min_screen_size,
+    )
+    n_outer_train = sweep_size - n_screen
+    if n_outer_train < min_outer_train_size:
+        return None
+    return n_outer_train
+
 def generate_sweep_splits(
     n_samples: int,
     min_train: int,
@@ -123,6 +166,43 @@ def generate_sweep_splits(
             test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
             yield SweepSplit(
                 sweep_size=n_train,
+                train_idx=train_idx,
+                test_idx=test_idx,
+            )
+
+
+def generate_screening_sweep_splits(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+    min_outer_train_size: int = 1,
+) -> Iterator[SweepSplit]:
+    """Yield screening-mode splits over fixed total-budget sweep sizes."""
+
+    idx = np.arange(n_samples)
+    max_budget = min(max_train, n_samples)
+    for sweep_size in range(min_train, max_budget + 1, step):
+        n_outer_train = outer_train_size_if_screening_feasible(
+            sweep_size,
+            screen_fraction=screen_fraction,
+            min_screen_size=min_screen_size,
+            min_outer_train_size=min_outer_train_size,
+        )
+        if n_outer_train is None:
+            continue
+        n_screen = sweep_size - n_outer_train
+        for _ in range(n_repeats):
+            budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+            test_idx = rng.choice(budget_idx, size=n_screen, replace=False)
+            train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=sweep_size,
                 train_idx=train_idx,
                 test_idx=test_idx,
             )
@@ -167,6 +247,62 @@ def generate_sweep_splits_with_validation(
             train_idx = np.setdiff1d(outer_train_idx, val_idx, assume_unique=False)
             yield SweepSplit(
                 sweep_size=n_train,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                val_idx=val_idx,
+            )
+
+
+def generate_screening_sweep_splits_with_validation(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_outer_train_size: int = 1,
+) -> Iterator[SweepSplit]:
+    """Yield screening-mode splits with nested validation inside outer train."""
+
+    if min_outer_train_size <= 0:
+        raise ValueError("min_outer_train_size must be positive.")
+
+    idx = np.arange(n_samples)
+    max_budget = min(max_train, n_samples)
+    for sweep_size in range(min_train, max_budget + 1, step):
+        n_outer_train = outer_train_size_if_screening_feasible(
+            sweep_size,
+            screen_fraction=screen_fraction,
+            min_screen_size=min_screen_size,
+            min_outer_train_size=min_outer_train_size,
+        )
+        if n_outer_train is None:
+            continue
+        n_val = validation_size_if_sweep_feasible(
+            n_outer_train,
+            validation_fraction=validation_fraction,
+            min_val_size=min_val_size,
+            min_tuning_val_size=min_tuning_val_size,
+            min_inner_train_size=min_inner_train_size,
+        )
+        if n_val is None:
+            continue
+        n_screen = sweep_size - n_outer_train
+        for _ in range(n_repeats):
+            budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+            test_idx = rng.choice(budget_idx, size=n_screen, replace=False)
+            outer_train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
+            val_idx = rng.choice(outer_train_idx, size=n_val, replace=False)
+            train_idx = np.setdiff1d(outer_train_idx, val_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=sweep_size,
                 train_idx=train_idx,
                 test_idx=test_idx,
                 val_idx=val_idx,
@@ -233,6 +369,9 @@ def build_sweep_split_collection(
     n_repeats: int,
     seed: int,
     requirements: SweepFamilyRequirements | None = None,
+    budget_mode: LearningCurveBudgetMode = "full_remainder_test",
+    screen_fraction: float | None = None,
+    min_screen_size: int = 1,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
@@ -268,6 +407,8 @@ def build_sweep_split_collection(
         raise ValueError("max_train must be positive.")
     if n_repeats <= 0:
         raise ValueError("n_repeats must be positive.")
+    if min_screen_size <= 0:
+        raise ValueError("min_screen_size must be positive.")
     if min_test_size <= 0:
         raise ValueError("min_test_size must be positive.")
     if min_val_size <= 0:
@@ -277,8 +418,16 @@ def build_sweep_split_collection(
     if min_inner_train_size <= 0:
         raise ValueError("min_inner_train_size must be positive.")
 
-    feasible_max_train = min(max_train, n_samples - min_test_size)
-    effective_min_train = max(min_train, requirements.min_train_size)
+    if budget_mode == "screening_fraction":
+        if screen_fraction is None:
+            raise ValueError(
+                "screen_fraction must be provided when budget_mode='screening_fraction'."
+            )
+        feasible_max_train = min(max_train, n_samples)
+        effective_min_train = min_train
+    else:
+        feasible_max_train = min(max_train, n_samples - min_test_size)
+        effective_min_train = max(min_train, requirements.min_train_size)
     if feasible_max_train < effective_min_train:
         return SweepSplitCollection(
             splits=(),
@@ -286,7 +435,71 @@ def build_sweep_split_collection(
         )
 
     rng = np.random.default_rng(seed)
-    if requirements.requires_inner_validation:
+    if budget_mode == "screening_fraction":
+        first_feasible_budget = next(
+            (
+                sweep_size
+                for sweep_size in range(effective_min_train, feasible_max_train + 1, step)
+                if (
+                    outer_train_size := outer_train_size_if_screening_feasible(
+                        sweep_size,
+                        screen_fraction=screen_fraction,
+                        min_screen_size=min_screen_size,
+                        min_outer_train_size=max(requirements.min_train_size, 1),
+                    )
+                )
+                is not None
+                if not requirements.requires_inner_validation
+                or validation_size_if_sweep_feasible(
+                    outer_train_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                )
+                is not None
+            ),
+            None,
+        )
+        if first_feasible_budget is None:
+            return SweepSplitCollection(
+                splits=(),
+                planning_requirements=requirements,
+            )
+        effective_min_train = first_feasible_budget
+        if requirements.requires_inner_validation:
+            splits = tuple(
+                generate_screening_sweep_splits_with_validation(
+                    n_samples,
+                    effective_min_train,
+                    feasible_max_train,
+                    n_repeats,
+                    rng,
+                    step=step,
+                    screen_fraction=screen_fraction,
+                    min_screen_size=min_screen_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                    min_outer_train_size=max(requirements.min_train_size, 1),
+                )
+            )
+        else:
+            splits = tuple(
+                generate_screening_sweep_splits(
+                    n_samples,
+                    effective_min_train,
+                    feasible_max_train,
+                    n_repeats,
+                    rng,
+                    step=step,
+                    screen_fraction=screen_fraction,
+                    min_screen_size=min_screen_size,
+                    min_outer_train_size=max(requirements.min_train_size, 1),
+                )
+            )
+    elif requirements.requires_inner_validation:
         first_feasible_train = next(
             (
                 sweep_size
@@ -380,6 +593,9 @@ def run_learning_curve_experiments_from_frame(
     enabled_model_names: Sequence[str] | None = None,
     graph_view: GraphDatasetView | None = None,
     graph_join_key: str = "reaction",
+    budget_mode: LearningCurveBudgetMode = "full_remainder_test",
+    screen_fraction: float | None = None,
+    min_screen_size: int = 1,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
@@ -401,6 +617,9 @@ def run_learning_curve_experiments_from_frame(
         n_repeats=n_repeats,
         seed=seed,
         enabled_model_names=enabled_model_names,
+        budget_mode=budget_mode,
+        screen_fraction=screen_fraction,
+        min_screen_size=min_screen_size,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
         min_tuning_val_size=min_tuning_val_size,
@@ -629,6 +848,11 @@ def run_learning_curve_experiments_from_config(
                     step=getattr(experiment_cfg, "step", 1),
                     n_repeats=experiment_cfg.n_repeats,
                     seed=cfg.seed if cfg.seed is not None else 42,
+                    budget_mode=getattr(
+                        experiment_cfg, "budget_mode", "full_remainder_test"
+                    ),
+                    screen_fraction=getattr(experiment_cfg, "screen_fraction", None),
+                    min_screen_size=getattr(experiment_cfg, "min_screen_size", 1),
                     validation_fraction=getattr(experiment_cfg, "validation_fraction", 0.2),
                     min_val_size=getattr(experiment_cfg, "min_val_size", 1),
                     min_tuning_val_size=getattr(experiment_cfg, "min_tuning_val_size", 1),
@@ -678,6 +902,21 @@ def run_learning_curve_experiments_from_config(
             seed=cfg.seed if cfg and cfg.seed is not None else 42,
             enabled_model_names=enabled_model_names_to_run,
             model_cfg=model_cfg,
+            budget_mode=(
+                getattr(experiment_cfg, "budget_mode", "full_remainder_test")
+                if experiment_cfg
+                else "full_remainder_test"
+            ),
+            screen_fraction=(
+                getattr(experiment_cfg, "screen_fraction", None)
+                if experiment_cfg
+                else None
+            ),
+            min_screen_size=(
+                getattr(experiment_cfg, "min_screen_size", 1)
+                if experiment_cfg
+                else 1
+            ),
             validation_fraction=(
                 getattr(experiment_cfg, "validation_fraction", 0.2)
                 if experiment_cfg
@@ -876,6 +1115,13 @@ def load_or_run_learning_curve_results_from_config(
                         step=getattr(experiment_cfg, "step", 1),
                         n_repeats=experiment_cfg.n_repeats,
                         seed=cfg.seed if cfg.seed is not None else 42,
+                        budget_mode=getattr(
+                            experiment_cfg, "budget_mode", "full_remainder_test"
+                        ),
+                        screen_fraction=getattr(experiment_cfg, "screen_fraction", None),
+                        min_screen_size=getattr(
+                            experiment_cfg, "min_screen_size", 1
+                        ),
                         validation_fraction=getattr(experiment_cfg, "validation_fraction", 0.2),
                         min_val_size=getattr(experiment_cfg, "min_val_size", 1),
                         min_tuning_val_size=getattr(experiment_cfg, "min_tuning_val_size", 1),
@@ -974,6 +1220,9 @@ def _build_family_split_collection(
     step: int,
     n_repeats: int,
     seed: int,
+    budget_mode: LearningCurveBudgetMode,
+    screen_fraction: float | None,
+    min_screen_size: int,
     validation_fraction: float,
     min_val_size: int,
     min_tuning_val_size: int,
@@ -988,6 +1237,9 @@ def _build_family_split_collection(
         n_repeats=n_repeats,
         seed=seed,
         requirements=_family_requirements(family),
+        budget_mode=budget_mode,
+        screen_fraction=screen_fraction,
+        min_screen_size=min_screen_size,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
         min_tuning_val_size=min_tuning_val_size,
@@ -1068,6 +1320,9 @@ def run_learning_curve_experiments(
     seed: int = 42,
     enabled_model_names: Sequence[str] | None = None,
     model_cfg: Any | None = None,
+    budget_mode: LearningCurveBudgetMode = "full_remainder_test",
+    screen_fraction: float | None = None,
+    min_screen_size: int = 1,
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
@@ -1092,6 +1347,9 @@ def run_learning_curve_experiments(
             step=step,
             n_repeats=n_repeats,
             seed=seed,
+            budget_mode=budget_mode,
+            screen_fraction=screen_fraction,
+            min_screen_size=min_screen_size,
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
             min_tuning_val_size=min_tuning_val_size,

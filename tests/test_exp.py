@@ -21,15 +21,19 @@ from oasis.exp import (
     build_sweep_dataset_from_config,
     build_sweep_dataset_from_frame,
     build_sweep_split_collection,
+    generate_screening_sweep_splits,
+    generate_screening_sweep_splits_with_validation,
     generate_inner_validation_sweep_splits,
     load_or_run_learning_curve_results_from_config,
     generate_sweep_splits,
     generate_sweep_splits_with_validation,
     inner_validation_size_for_sweep,
+    outer_train_size_if_screening_feasible,
     prepare_parity_plot_data,
     run_learning_curve_experiments,
     run_learning_curve_experiments_from_config,
     run_learning_curve_experiments_from_frame,
+    screening_holdout_size_for_budget,
     validation_size_if_sweep_feasible,
 )
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
@@ -173,6 +177,95 @@ class GenerateSweepSplitsTests(unittest.TestCase):
                 n_repeats=2,
                 rng=np.random.default_rng(42),
                 min_test_size=2,
+            )
+        )
+
+        self.assertEqual(len(splits_a), len(splits_b))
+        for split_a, split_b in zip(splits_a, splits_b, strict=True):
+            self.assertEqual(split_a.sweep_size, split_b.sweep_size)
+            np.testing.assert_array_equal(split_a.train_idx, split_b.train_idx)
+            np.testing.assert_array_equal(split_a.test_idx, split_b.test_idx)
+
+    def test_screening_holdout_size_for_budget_uses_fraction_with_minimum(self) -> None:
+        self.assertEqual(
+            screening_holdout_size_for_budget(
+                10,
+                screen_fraction=0.2,
+                min_screen_size=1,
+            ),
+            2,
+        )
+        self.assertEqual(
+            screening_holdout_size_for_budget(
+                5,
+                screen_fraction=0.2,
+                min_screen_size=2,
+            ),
+            2,
+        )
+
+    def test_generate_screening_sweep_splits_uses_fixed_budgeted_holdout(self) -> None:
+        rng = np.random.default_rng(123)
+
+        splits = list(
+            generate_screening_sweep_splits(
+                n_samples=10,
+                min_train=5,
+                max_train=6,
+                n_repeats=2,
+                rng=rng,
+                screen_fraction=0.4,
+                min_screen_size=2,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [5, 5, 6, 6])
+        for split in splits:
+            self.assertEqual(
+                len(split.test_idx),
+                screening_holdout_size_for_budget(
+                    split.sweep_size,
+                    screen_fraction=0.4,
+                    min_screen_size=2,
+                ),
+            )
+            self.assertEqual(
+                len(split.train_idx),
+                outer_train_size_if_screening_feasible(
+                    split.sweep_size,
+                    screen_fraction=0.4,
+                    min_screen_size=2,
+                ),
+            )
+            self.assertEqual(
+                len(np.intersect1d(split.train_idx, split.test_idx)),
+                0,
+            )
+            self.assertEqual(len(np.union1d(split.train_idx, split.test_idx)), split.sweep_size)
+            self.assertLess(len(split.train_idx) + len(split.test_idx), 10)
+            self.assertIsNone(split.val_idx)
+
+    def test_same_seed_gives_same_screening_splits(self) -> None:
+        splits_a = list(
+            generate_screening_sweep_splits(
+                n_samples=10,
+                min_train=5,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                screen_fraction=0.4,
+                min_screen_size=2,
+            )
+        )
+        splits_b = list(
+            generate_screening_sweep_splits(
+                n_samples=10,
+                min_train=5,
+                max_train=6,
+                n_repeats=2,
+                rng=np.random.default_rng(42),
+                screen_fraction=0.4,
+                min_screen_size=2,
             )
         )
 
@@ -1117,6 +1210,46 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
 
         self.assertEqual(splits, [])
 
+    def test_generate_screening_sweep_splits_with_validation_uses_budgeted_screen_holdout(
+        self,
+    ) -> None:
+        splits = list(
+            generate_screening_sweep_splits_with_validation(
+                n_samples=12,
+                min_train=6,
+                max_train=7,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                screen_fraction=0.25,
+                min_screen_size=2,
+                validation_fraction=0.25,
+                min_val_size=1,
+                min_inner_train_size=2,
+            )
+        )
+
+        self.assertEqual([split.sweep_size for split in splits], [6, 6, 7, 7])
+        for split in splits:
+            self.assertIsNotNone(split.val_idx)
+            self.assertEqual(
+                len(np.union1d(np.union1d(split.train_idx, split.val_idx), split.test_idx)),
+                split.sweep_size,
+            )
+            self.assertLess(
+                len(split.train_idx) + len(split.val_idx) + len(split.test_idx),
+                12,
+            )
+            self.assertEqual(
+                len(split.test_idx),
+                screening_holdout_size_for_budget(
+                    split.sweep_size,
+                    screen_fraction=0.25,
+                    min_screen_size=2,
+                ),
+            )
+            outer_train_size = split.sweep_size - len(split.test_idx)
+            self.assertEqual(len(split.train_idx) + len(split.val_idx), outer_train_size)
+
     def test_build_sweep_split_collection_honors_min_test_size(self) -> None:
         split_collection = build_sweep_split_collection(
             n_samples=7,
@@ -1133,6 +1266,74 @@ class GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual(
             [len(split.test_idx) for split in split_collection.splits], [3, 2]
         )
+
+    def test_build_sweep_split_collection_screening_mode_uses_fixed_holdout(self) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=10,
+            min_train=5,
+            max_train=7,
+            n_repeats=1,
+            seed=3,
+            budget_mode="screening_fraction",
+            screen_fraction=0.4,
+            min_screen_size=2,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits], [5, 6, 7]
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in split_collection.splits], [2, 2, 2]
+        )
+        self.assertEqual(
+            [len(split.train_idx) for split in split_collection.splits], [3, 4, 5]
+        )
+
+    def test_build_sweep_split_collection_screening_mode_honors_validation_requirements(
+        self,
+    ) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=12,
+            min_train=4,
+            max_train=7,
+            n_repeats=1,
+            seed=3,
+            requirements=SweepFamilyRequirements(
+                min_train_size=0,
+                requires_inner_validation=True,
+            ),
+            budget_mode="screening_fraction",
+            screen_fraction=0.25,
+            min_screen_size=2,
+            validation_fraction=0.2,
+            min_val_size=1,
+            min_tuning_val_size=2,
+            min_inner_train_size=2,
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in split_collection.splits], [6, 7]
+        )
+        self.assertEqual(
+            [len(split.test_idx) for split in split_collection.splits], [2, 2]
+        )
+        self.assertEqual(
+            [len(split.val_idx) for split in split_collection.splits], [2, 2]
+        )
+
+    def test_build_sweep_split_collection_screening_mode_requires_fraction(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "screen_fraction must be provided",
+        ):
+            build_sweep_split_collection(
+                n_samples=10,
+                min_train=5,
+                max_train=7,
+                n_repeats=1,
+                seed=3,
+                budget_mode="screening_fraction",
+            )
 
     def test_build_sweep_split_collection_rejects_invalid_planner_inputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "n_samples must be positive"):
