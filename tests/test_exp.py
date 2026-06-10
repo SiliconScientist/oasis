@@ -1882,6 +1882,124 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(dataset.graphs["rxn-3"].edge_index.dtype, np.int64)
         self.assertIsNone(dataset.auxiliary_views)
 
+    def test_run_learning_curve_experiments_dispatches_standard_workflow(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(12, dtype=float).reshape(6, 2),
+            targets=np.arange(6, dtype=float),
+        )
+        expected = LearningCurveResults.from_mapping(
+            {
+                "ridge_df": pd.DataFrame(
+                    {
+                        "n_train": [2, 3],
+                        "rmse_mean": [0.4, 0.3],
+                        "rmse_std": [0.05, 0.04],
+                    }
+                )
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_standard_learning_curve_experiments",
+            autospec=True,
+        ) as standard_mock, patch(
+            "oasis.exp.run_screening_learning_curve_experiments",
+            autospec=True,
+        ) as screening_mock:
+            standard_mock.return_value = expected
+
+            result = run_learning_curve_experiments(
+                dataset,
+                min_train=2,
+                max_train=3,
+                n_repeats=1,
+            )
+
+        self.assertIs(result, expected)
+        standard_mock.assert_called_once()
+        screening_mock.assert_not_called()
+
+    def test_run_learning_curve_experiments_dispatches_screening_workflow(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(12, dtype=float).reshape(6, 2),
+            targets=np.arange(6, dtype=float),
+        )
+        expected = LearningCurveResults.from_mapping(
+            {
+                "ridge_df": pd.DataFrame(
+                    {
+                        "n_train": [4, 5],
+                        "rmse_mean": [0.4, 0.3],
+                        "rmse_std": [0.05, 0.04],
+                    }
+                )
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_standard_learning_curve_experiments",
+            autospec=True,
+        ) as standard_mock, patch(
+            "oasis.exp.run_screening_learning_curve_experiments",
+            autospec=True,
+        ) as screening_mock:
+            screening_mock.return_value = expected
+
+            result = run_learning_curve_experiments(
+                dataset,
+                min_train=4,
+                max_train=5,
+                n_repeats=1,
+                budget_mode="screening_fraction",
+                screen_fraction=0.25,
+                min_screen_size=1,
+            )
+
+        self.assertIs(result, expected)
+        screening_mock.assert_called_once()
+        standard_mock.assert_not_called()
+
+    def test_run_learning_curve_experiments_from_frame_routes_screening_mode(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": [f"rxn-{idx}" for idx in range(6)],
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        expected = LearningCurveResults.from_mapping(
+            {
+                "ridge_df": pd.DataFrame(
+                    {
+                        "n_train": [4],
+                        "rmse_mean": [0.3],
+                        "rmse_std": [0.04],
+                    }
+                )
+            }
+        )
+
+        with patch(
+            "oasis.exp.run_screening_learning_curve_experiments",
+            autospec=True,
+        ) as screening_mock:
+            screening_mock.return_value = expected
+
+            result = run_learning_curve_experiments_from_frame(
+                df,
+                min_train=4,
+                max_train=4,
+                n_repeats=1,
+                budget_mode="screening_fraction",
+                screen_fraction=0.25,
+            )
+
+        self.assertIs(result, expected)
+        screening_mock.assert_called_once()
+        dataset = screening_mock.call_args.args[0]
+        self.assertIsInstance(dataset, SweepDataset)
+        np.testing.assert_array_equal(dataset.sample_ids, np.array(df["reaction"]))
+
     def test_run_learning_curve_experiments_plans_splits_from_dataset_sample_count(
         self,
     ) -> None:
@@ -4581,6 +4699,68 @@ class ExpIntegrationTests(unittest.TestCase):
             ],
             [2],
         )
+
+    def test_run_learning_curve_experiments_from_config_routes_screening_mode(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1],
+            }
+        )
+        expected = LearningCurveResults.from_mapping(
+            {
+                "ridge_df": pd.DataFrame(
+                    {
+                        "n_train": [4],
+                        "rmse_mean": [0.3],
+                        "rmse_std": [0.04],
+                    }
+                )
+            }
+        )
+
+        cfg = SimpleNamespace(
+            seed=23,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=4,
+                    max_train=4,
+                    n_repeats=1,
+                    budget_mode="screening_fraction",
+                    screen_fraction=0.25,
+                    min_screen_size=1,
+                    validation_fraction=0.2,
+                    min_val_size=1,
+                    min_tuning_val_size=1,
+                    min_inner_train_size=1,
+                    min_test_size=1,
+                    models=None,
+                    results_bundle_path=None,
+                    reuse_results=False,
+                    force_refresh_methods=[],
+                    force_refresh_train_sizes={},
+                )
+            ),
+        )
+
+        with patch(
+            "oasis.exp.run_screening_learning_curve_experiments",
+            autospec=True,
+        ) as screening_mock, patch(
+            "oasis.exp.run_standard_learning_curve_experiments",
+            autospec=True,
+        ) as standard_mock:
+            screening_mock.return_value = expected
+
+            results = run_learning_curve_experiments_from_config(df, cfg=cfg)
+
+        self.assertIsNotNone(results.ridge_df)
+        pd.testing.assert_frame_equal(results.ridge_df, expected.ridge_df)
+        screening_mock.assert_called_once()
+        standard_mock.assert_not_called()
 
     def test_run_learning_curve_experiments_from_config_forwards_graph_view(
         self,
