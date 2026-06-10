@@ -19,6 +19,16 @@ from oasis.sweep import (
 )
 
 
+def _result_frame_budget_column(frame: Any) -> str:
+    if frame is None:
+        raise ValueError("learning-curve frame is required.")
+    if "n_budget" in frame.columns:
+        return "n_budget"
+    if "n_train" not in frame.columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    return "n_train"
+
+
 def _family_method_name(
     family: Any,
     resolve_result_field: Any,
@@ -93,9 +103,10 @@ def _result_frame_train_sizes(
     if result_field is None:
         return set()
     frame = getattr(results, result_field)
-    if frame is None or "n_train" not in frame.columns:
+    if frame is None:
         return set()
-    return {int(value) for value in frame["n_train"].tolist()}
+    budget_column = _result_frame_budget_column(frame)
+    return {int(value) for value in frame[budget_column].tolist()}
 
 
 def _filter_learning_curve_frame_by_train_sizes(
@@ -105,11 +116,10 @@ def _filter_learning_curve_frame_by_train_sizes(
     if frame is None:
         return None
     allowed_sizes = {int(value) for value in allowed_train_sizes}
-    if "n_train" not in frame.columns:
-        raise ValueError("learning-curve result frames must contain an n_train column.")
+    budget_column = _result_frame_budget_column(frame)
     return (
-        frame.loc[frame["n_train"].isin(sorted(allowed_sizes))]
-        .sort_values("n_train")
+        frame.loc[frame[budget_column].isin(sorted(allowed_sizes))]
+        .sort_values(budget_column)
         .reset_index(drop=True)
     )
 
@@ -131,13 +141,79 @@ def _remove_method_train_sizes_from_results(
         frame = field_mapping[field_name]
         if frame is None:
             continue
+        budget_column = _result_frame_budget_column(frame)
         filtered_frame = (
-            frame.loc[~frame["n_train"].isin(sorted(allowed_sizes))]
-            .sort_values("n_train")
+            frame.loc[~frame[budget_column].isin(sorted(allowed_sizes))]
+            .sort_values(budget_column)
             .reset_index(drop=True)
         )
         field_mapping[field_name] = None if filtered_frame.empty else filtered_frame
     return LearningCurveResults.from_mapping(field_mapping)
+
+
+def _screening_split_metadata_frame(
+    split_collection: SweepSplitCollection,
+) -> Any:
+    rows: list[dict[str, float | int]] = []
+    seen_budgets: set[int] = set()
+    for split in split_collection.splits:
+        if split.sweep_size in seen_budgets:
+            continue
+        seen_budgets.add(split.sweep_size)
+        n_budget = int(split.sweep_size)
+        n_train = int(len(split.train_idx))
+        n_screen = int(len(split.test_idx))
+        rows.append(
+            {
+                "n_budget": n_budget,
+                "n_train": n_train,
+                "n_screen": n_screen,
+                "screen_fraction": float(n_screen / n_budget),
+            }
+        )
+    import pandas as pd
+
+    return pd.DataFrame(rows).sort_values("n_budget").reset_index(drop=True)
+
+
+def _annotate_screening_frame(
+    frame: Any,
+    split_collection: SweepSplitCollection,
+) -> Any:
+    if frame is None:
+        return None
+    if "n_train" not in frame.columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    metadata = _screening_split_metadata_frame(split_collection).rename(
+        columns={"n_train": "screening_train_count"}
+    )
+    annotated = frame.rename(columns={"n_train": "n_budget"}).merge(
+        metadata,
+        on="n_budget",
+        how="left",
+        validate="many_to_one",
+    )
+    annotated = annotated.rename(columns={"screening_train_count": "n_train"})
+    ordered_columns = []
+    for column in ("n_budget", "n_train", "n_screen", "screen_fraction"):
+        if column in annotated.columns:
+            ordered_columns.append(column)
+    ordered_columns.extend(
+        column for column in annotated.columns if column not in ordered_columns
+    )
+    return annotated.loc[:, ordered_columns].sort_values("n_budget").reset_index(drop=True)
+
+
+def _annotate_screening_results(
+    results: LearningCurveResults,
+    split_collection: SweepSplitCollection,
+) -> LearningCurveResults:
+    return LearningCurveResults.from_mapping(
+        {
+            field_name: _annotate_screening_frame(frame, split_collection)
+            for field_name, frame in results.to_mapping().items()
+        }
+    )
 
 
 def _run_learning_curve_experiments_with_budget_mode(
@@ -210,5 +286,11 @@ def _run_learning_curve_experiments_with_budget_mode(
             if not split_collection.splits:
                 continue
         payload = SweepRunPayload(dataset=dataset, split_collection=split_collection)
-        results = results.merge(family.run(payload))
+        family_results = family.run(payload)
+        if budget_mode == "screening_fraction":
+            family_results = _annotate_screening_results(
+                family_results,
+                split_collection,
+            )
+        results = results.merge(family_results)
     return results

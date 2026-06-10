@@ -1031,6 +1031,10 @@ class LearningCurveResults:
     The `*_df` fields keep the historical RMSE result shape unchanged:
     `n_train`, `rmse_mean`, and `rmse_std`.
 
+    Screening-mode frames may also include `n_budget`, `n_screen`, and
+    `screen_fraction`. In that case `n_train` refers to the actual outer-train
+    count, while `n_budget` is the user-facing total budget for the point.
+
     Selection-aware families may also populate `*_selection_df` metadata frames.
     Those are optional companion outputs keyed by `n_train` that surface the
     chosen hyperparameters for each sweep size without changing the RMSE frames.
@@ -1115,24 +1119,56 @@ def _merge_learning_curve_frame(
         return right
     if right is None:
         return left
-    if "n_train" not in left.columns or "n_train" not in right.columns:
-        raise ValueError("learning-curve result frames must contain an n_train column.")
+    key_columns = _learning_curve_frame_key_columns(left, right)
+    primary_key = key_columns[0]
     overlapping_train_sizes = sorted(
-        set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
+        set(_frame_key_tuples(left, key_columns)).intersection(
+            _frame_key_tuples(right, key_columns)
+        )
     )
     allowed_overlap_sizes = {int(value) for value in allowed_overlap_train_sizes}
     disallowed_overlap_sizes = [
         sweep_size
         for sweep_size in overlapping_train_sizes
-        if sweep_size not in allowed_overlap_sizes
+        if not (
+            len(sweep_size) == 1 and sweep_size[0] in allowed_overlap_sizes
+        )
+    ]
+    display_overlap_sizes = [
+        sweep_size[0] if len(sweep_size) == 1 else sweep_size
+        for sweep_size in disallowed_overlap_sizes
     ]
     if disallowed_overlap_sizes and not allow_overlap:
         raise ValueError(
-            f"{field_name} contains duplicate n_train rows: {disallowed_overlap_sizes!r}."
+            f"{field_name} contains duplicate {primary_key} rows: {display_overlap_sizes!r}."
         )
     merged = pd.concat([left, right], ignore_index=True)
-    merged = merged.drop_duplicates(subset=["n_train"], keep="last")
-    return merged.sort_values("n_train").reset_index(drop=True)
+    merged = merged.drop_duplicates(subset=key_columns, keep="last")
+    return merged.sort_values(key_columns).reset_index(drop=True)
+
+
+def _learning_curve_frame_key_columns(
+    left: pd.DataFrame,
+    right: pd.DataFrame | None = None,
+) -> list[str]:
+    candidate_columns = set(left.columns)
+    if right is not None:
+        candidate_columns &= set(right.columns)
+    if "n_budget" in candidate_columns:
+        return ["n_budget"]
+    if "n_train" not in candidate_columns:
+        raise ValueError("learning-curve result frames must contain an n_train column.")
+    return ["n_train"]
+
+
+def _frame_key_tuples(
+    frame: pd.DataFrame,
+    key_columns: Collection[str],
+) -> set[tuple[int, ...]]:
+    return {
+        tuple(int(value) for value in values)
+        for values in frame.loc[:, list(key_columns)].itertuples(index=False, name=None)
+    }
 
 
 def combine_sweep_family_requirements(

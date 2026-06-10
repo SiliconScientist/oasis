@@ -1690,3 +1690,45 @@ class LearningCurveResultsTests(unittest.TestCase):
                 }
             ),
         )
+
+    def test_merge_screening_frames_keys_by_n_budget(self) -> None:
+        base = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_budget": [5],
+                    "n_train": [3],
+                    "n_screen": [2],
+                    "screen_fraction": [0.4],
+                    "rmse_mean": [0.5],
+                    "rmse_std": [0.07],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_budget": [6],
+                    "n_train": [4],
+                    "n_screen": [2],
+                    "screen_fraction": [1 / 3],
+                    "rmse_mean": [0.39],
+                    "rmse_std": [0.045],
+                }
+            )
+        )
+
+        merged = base.merge(update)
+
+        pd.testing.assert_frame_equal(
+            merged.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_budget": [5, 6],
+                    "n_train": [3, 4],
+                    "n_screen": [2, 2],
+                    "screen_fraction": [0.4, 1 / 3],
+                    "rmse_mean": [0.5, 0.39],
+                    "rmse_std": [0.07, 0.045],
+                }
+            ),
+        )

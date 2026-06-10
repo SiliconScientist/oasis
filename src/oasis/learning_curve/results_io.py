@@ -48,6 +48,9 @@ _RESULT_FIELD_TO_METHOD = {
 }
 _PROVENANCE_COLUMNS = [
     "n_train",
+    "n_budget",
+    "n_screen",
+    "screen_fraction",
     "seed",
     "n_repeats",
     "sweep_min_train",
@@ -66,6 +69,9 @@ class LearningCurveSweepMetadata:
     step: int
     n_repeats: int
     enabled_models: tuple[str, ...]
+    budget_mode: str = "full_remainder_test"
+    screen_fraction: float | None = None
+    min_screen_size: int | None = None
     dataset_tag: str | None = None
     dataset_size: int | None = None
     adsorbate_filter: str | None = None
@@ -96,6 +102,9 @@ class LearningCurveSweepMetadata:
             "step": self.step,
             "n_repeats": self.n_repeats,
             "enabled_models": list(self.enabled_models),
+            "budget_mode": self.budget_mode,
+            "screen_fraction": self.screen_fraction,
+            "min_screen_size": self.min_screen_size,
             "dataset_tag": self.dataset_tag,
             "dataset_size": self.dataset_size,
             "adsorbate_filter": self.adsorbate_filter,
@@ -125,6 +134,9 @@ class LearningCurveSweepMetadata:
             step=int(payload["step"]),
             n_repeats=int(payload["n_repeats"]),
             enabled_models=tuple(payload.get("enabled_models", ())),
+            budget_mode=payload.get("budget_mode", "full_remainder_test"),
+            screen_fraction=payload.get("screen_fraction"),
+            min_screen_size=payload.get("min_screen_size"),
             dataset_tag=payload.get("dataset_tag"),
             dataset_size=(
                 None
@@ -173,6 +185,21 @@ class LearningCurveSweepMetadata:
                 fallback.enabled_models
                 if fallback is not None
                 else tuple(payload.get("enabled_models", ()))
+            ),
+            budget_mode=(
+                fallback.budget_mode
+                if fallback is not None
+                else payload.get("budget_mode", "full_remainder_test")
+            ),
+            screen_fraction=(
+                fallback.screen_fraction
+                if fallback is not None
+                else payload.get("screen_fraction")
+            ),
+            min_screen_size=(
+                fallback.min_screen_size
+                if fallback is not None
+                else payload.get("min_screen_size")
             ),
             dataset_tag=payload.get("dataset_tag"),
             dataset_size=(
@@ -283,6 +310,9 @@ def learning_curve_sweep_metadata_from_config(
         enabled_models=enabled_learning_curve_model_names_from_config(
             experiment_cfg.models
         ),
+        budget_mode=getattr(experiment_cfg, "budget_mode", "full_remainder_test"),
+        screen_fraction=getattr(experiment_cfg, "screen_fraction", None),
+        min_screen_size=getattr(experiment_cfg, "min_screen_size", None),
         dataset_tag=getattr(dataset_profile, "tag", None),
         dataset_size=dataset_size,
         adsorbate_filter=plot_filters.adsorbate if plot_filters else None,
@@ -750,7 +780,25 @@ def build_learning_curve_point_provenance(
             raise ValueError("learning-curve result frames must contain an n_train column.")
         point_provenance[field_name] = pd.DataFrame(
             {
-                "n_train": frame["n_train"].tolist(),
+                "n_train": pd.Series(frame["n_train"].tolist(), dtype="Int64"),
+                "n_budget": pd.Series(
+                    frame["n_budget"].tolist()
+                    if "n_budget" in frame.columns
+                    else [None] * len(frame),
+                    dtype="Int64",
+                ),
+                "n_screen": pd.Series(
+                    frame["n_screen"].tolist()
+                    if "n_screen" in frame.columns
+                    else [None] * len(frame),
+                    dtype="Int64",
+                ),
+                "screen_fraction": pd.Series(
+                    frame["screen_fraction"].tolist()
+                    if "screen_fraction" in frame.columns
+                    else [None] * len(frame),
+                    dtype="Float64",
+                ),
                 "seed": [metadata.seed] * len(frame),
                 "n_repeats": [metadata.n_repeats] * len(frame),
                 "sweep_min_train": [metadata.min_train] * len(frame),
@@ -846,13 +894,18 @@ def _load_point_provenance_mapping(
 def _normalize_provenance_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if "n_train" not in frame.columns:
         raise ValueError("learning-curve provenance frames must contain an n_train column.")
-    missing_columns = [column for column in _PROVENANCE_COLUMNS if column not in frame.columns]
-    if missing_columns:
-        raise ValueError(
-            "learning-curve provenance frames are missing required columns: "
-            f"{missing_columns!r}."
-        )
-    return frame.loc[:, _PROVENANCE_COLUMNS].sort_values("n_train").reset_index(drop=True)
+    normalized = frame.copy()
+    for column in _PROVENANCE_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = None
+    normalized["n_train"] = pd.Series(normalized["n_train"], dtype="Int64")
+    normalized["n_budget"] = pd.Series(normalized["n_budget"], dtype="Int64")
+    normalized["n_screen"] = pd.Series(normalized["n_screen"], dtype="Int64")
+    normalized["screen_fraction"] = pd.Series(
+        normalized["screen_fraction"], dtype="Float64"
+    )
+    key_columns = _provenance_key_columns(normalized)
+    return normalized.loc[:, _PROVENANCE_COLUMNS].sort_values(key_columns).reset_index(drop=True)
 
 
 def _merge_provenance_frame(
@@ -867,22 +920,55 @@ def _merge_provenance_frame(
         return right
     if right is None:
         return left
+    key_columns = _provenance_key_columns(left, right)
+    primary_key = key_columns[0]
     overlapping_train_sizes = sorted(
-        set(left["n_train"].tolist()).intersection(right["n_train"].tolist())
+        set(_provenance_key_tuples(left, key_columns)).intersection(
+            _provenance_key_tuples(right, key_columns)
+        )
     )
     disallowed_overlap_sizes = [
         sweep_size
         for sweep_size in overlapping_train_sizes
-        if sweep_size not in allowed_overlap_train_sizes
+        if not (
+            len(sweep_size) == 1 and sweep_size[0] in allowed_overlap_train_sizes
+        )
+    ]
+    display_overlap_sizes = [
+        sweep_size[0] if len(sweep_size) == 1 else sweep_size
+        for sweep_size in disallowed_overlap_sizes
     ]
     if disallowed_overlap_sizes and not allow_overlap:
         raise ValueError(
-            f"{field_name} contains duplicate provenance rows for n_train: "
-            f"{disallowed_overlap_sizes!r}."
+            f"{field_name} contains duplicate provenance rows for {primary_key}: "
+            f"{display_overlap_sizes!r}."
         )
     merged = pd.concat([left, right], ignore_index=True)
-    merged = merged.drop_duplicates(subset=["n_train"], keep="last")
-    return merged.sort_values("n_train").reset_index(drop=True)
+    merged = merged.drop_duplicates(subset=key_columns, keep="last")
+    return merged.sort_values(key_columns).reset_index(drop=True)
+
+
+def _provenance_key_columns(
+    left: pd.DataFrame,
+    right: pd.DataFrame | None = None,
+) -> list[str]:
+    candidate_columns = set(left.columns)
+    if right is not None:
+        candidate_columns &= set(right.columns)
+    if "n_budget" in candidate_columns and left["n_budget"].notna().any():
+        return ["n_budget"]
+    return ["n_train"]
+
+
+def _provenance_key_tuples(
+    frame: pd.DataFrame,
+    key_columns: list[str],
+) -> set[tuple[int, ...]]:
+    normalized = frame.dropna(subset=key_columns)
+    return {
+        tuple(int(value) for value in values)
+        for values in normalized.loc[:, key_columns].itertuples(index=False, name=None)
+    }
 
 
 def _extract_method_point_provenance(

@@ -599,6 +599,74 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         self.assertEqual(metadata.anomaly_filter, "!inference_anomaly")
         self.assertEqual(metadata.reaction_contains_filter, ("Pt", "Ni"))
 
+    def test_sweep_metadata_from_config_includes_screening_settings(self) -> None:
+        cfg = SimpleNamespace(
+            seed=23,
+            dataset_profile=None,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=4,
+                    max_train=8,
+                    step=2,
+                    n_repeats=4,
+                    budget_mode="screening_fraction",
+                    screen_fraction=0.25,
+                    min_screen_size=2,
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    ),
+                )
+            ),
+        )
+
+        metadata = learning_curve_sweep_metadata_from_config(cfg, dataset_size=12)
+
+        self.assertEqual(metadata.budget_mode, "screening_fraction")
+        self.assertEqual(metadata.screen_fraction, 0.25)
+        self.assertEqual(metadata.min_screen_size, 2)
+
+    def test_point_provenance_preserves_screening_columns(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_budget": [5, 6],
+                    "n_train": [3, 4],
+                    "n_screen": [2, 2],
+                    "screen_fraction": [0.4, 1 / 3],
+                    "rmse_mean": [0.41, 0.32],
+                    "rmse_std": [0.06, 0.03],
+                }
+            )
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=4,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+            budget_mode="screening_fraction",
+            screen_fraction=0.25,
+            min_screen_size=2,
+        )
+
+        provenance = build_learning_curve_point_provenance(results, metadata)
+
+        self.assertEqual(provenance["ridge_df"]["n_budget"].tolist(), [5, 6])
+        self.assertEqual(provenance["ridge_df"]["n_screen"].tolist(), [2, 2])
+
     def test_single_method_artifact_file_round_trip(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(

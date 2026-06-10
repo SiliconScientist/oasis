@@ -190,6 +190,10 @@ def learning_curve_bundle_path(processed_basename: str) -> Path:
     return Path("data/results/learning_curve") / f"{processed_basename}.json"
 
 
+def screening_bundle_path(processed_basename: str) -> Path:
+    return Path("data/results/screening") / f"{processed_basename}.json"
+
+
 def probe_results_dir(probe_results_dirname: str) -> Path:
     return Path("data/mlips") / probe_results_dirname
 

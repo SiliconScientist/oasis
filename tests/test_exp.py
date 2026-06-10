@@ -4762,6 +4762,49 @@ class ExpIntegrationTests(unittest.TestCase):
         screening_mock.assert_called_once()
         standard_mock.assert_not_called()
 
+    def test_run_learning_curve_experiments_screening_results_include_budget_columns(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4],
+                "rmse_mean": [0.3],
+                "rmse_std": [0.04],
+            }
+        )
+
+        class StubFamily:
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+        family = StubFamily()
+
+        results = run_learning_curve_experiments_from_frame(
+            df,
+            min_train=4,
+            max_train=4,
+            n_repeats=1,
+            budget_mode="screening_fraction",
+            screen_fraction=0.25,
+            model_families=[family],
+        )
+
+        assert results.ridge_df is not None
+        self.assertEqual(
+            results.ridge_df.columns.tolist(),
+            ["n_budget", "n_train", "n_screen", "screen_fraction", "rmse_mean", "rmse_std"],
+        )
+        self.assertEqual(results.ridge_df["n_budget"].tolist(), [4])
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [3])
+        self.assertEqual(results.ridge_df["n_screen"].tolist(), [1])
+
     def test_run_learning_curve_experiments_from_config_forwards_graph_view(
         self,
     ) -> None:

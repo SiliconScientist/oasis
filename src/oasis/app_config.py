@@ -10,6 +10,7 @@ from oasis.experiment_config import (
     PlotConfig,
     ProbeFeatureConfig,
     derive_dataset_profile_paths,
+    screening_bundle_path,
 )
 from oasis.mlip_config import (
     IngestConfig,
@@ -72,7 +73,13 @@ class Config(BaseModel):
                 learning_curve.results_bundle_path is None
                 and profile_paths.results_bundle_path is not None
             ):
-                learning_curve.results_bundle_path = profile_paths.results_bundle_path
+                if learning_curve.budget_mode == "screening_fraction":
+                    dataset_path = profile_paths.results_bundle_path
+                    learning_curve.results_bundle_path = screening_bundle_path(
+                        dataset_path.stem
+                    )
+                else:
+                    learning_curve.results_bundle_path = profile_paths.results_bundle_path
 
             if (
                 learning_curve.graph_dataset is not None

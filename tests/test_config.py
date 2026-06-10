@@ -436,6 +436,55 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/ch3_oh_mamun/oasis_Benchmarking_Analysis.xlsx"),
         )
 
+    def test_screening_mode_derives_screening_results_bundle_path(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {"tag": "mamun_oh"},
+                "datasets": {
+                    "mamun_oh": {
+                        "raw_dataset_filename": "MamunHighT2019_oh_adsorption.json",
+                        "processed_basename": "mamun_oh",
+                    }
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "budget_mode": "screening_fraction",
+                        "screen_fraction": 0.25,
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(
+            cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/screening/mamun_oh.json"),
+        )
+
     def test_dataset_profile_templates_support_two_distinct_naming_patterns(self) -> None:
         base_payload = {
             "ingest": {
