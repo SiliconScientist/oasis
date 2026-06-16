@@ -10,7 +10,10 @@ from unittest.mock import patch
 
 import polars as pl
 
-from oasis.analysis import filter_anomalous_mlip_columns
+from oasis.analysis import (
+    filter_anomalous_mlip_columns,
+    filter_structures_with_insufficient_valid_mlips,
+)
 from oasis.mlip.artifacts import (
     INFERENCE_DETAIL_COLUMNS,
     find_result_files,
@@ -216,20 +219,19 @@ class AnomalyAwareMlipSelectionTests(unittest.TestCase):
     def test_filter_anomalous_mlip_columns_can_use_strict_inference_details(self) -> None:
         wide_df = self._wide_df()
 
-        filtered = filter_anomalous_mlip_columns(
-            wide_df,
-            enabled=True,
-            strict_inference_anomaly=True,
-        )
+        with patch("builtins.print") as mock_print:
+            filtered = filter_anomalous_mlip_columns(
+                wide_df,
+                enabled=True,
+                strict_inference_anomaly=True,
+            )
 
-        self.assertEqual(
-            self._mlip_columns(filtered),
-            [
-                "mace_mlip_ads_eng_median",
-                "orb_mlip_ads_eng_median",
-            ],
+        self.assertEqual(filtered.columns, wide_df.columns)
+        mock_print.assert_called_once()
+        self.assertIn(
+            "Skipped global anomaly-aware MLIP selection in strict inference mode",
+            mock_print.call_args.args[0],
         )
-        self.assertNotIn("uma_ads_move", filtered.columns)
 
     def test_filter_anomalous_mlip_columns_raises_when_all_mlips_removed(self) -> None:
         wide_df = self._wide_df().with_columns(
@@ -243,6 +245,38 @@ class AnomalyAwareMlipSelectionTests(unittest.TestCase):
             "No MLIP prediction columns remain after anomaly-aware selection",
         ):
             filter_anomalous_mlip_columns(wide_df, enabled=True)
+
+    def test_filter_structures_with_insufficient_valid_mlips_drops_rows_with_one_remaining(
+        self,
+    ) -> None:
+        wide_df = self._wide_df().with_columns(
+            pl.Series("orb_label", ["normal", "energy_anomaly"]),
+            pl.Series("uma_label", ["normal", "energy_anomaly"]),
+        )
+
+        filtered = filter_structures_with_insufficient_valid_mlips(
+            wide_df,
+            enabled=True,
+        )
+
+        self.assertEqual(filtered.get_column("reaction").to_list(), ["rxn-1->OH*"])
+
+    def test_filter_structures_with_insufficient_valid_mlips_uses_inference_details_only(
+        self,
+    ) -> None:
+        wide_df = self._wide_df().with_columns(
+            pl.lit("energy_anomaly").alias("orb_label"),
+            pl.Series("orb_ads_move", [0, 1]),
+            pl.Series("uma_ads_move", [0, 1]),
+        )
+
+        filtered = filter_structures_with_insufficient_valid_mlips(
+            wide_df,
+            enabled=True,
+            strict_inference_anomaly=True,
+        )
+
+        self.assertEqual(filtered.get_column("reaction").to_list(), ["rxn-1->OH*"])
 
 
 class DependencyBoundaryTests(unittest.TestCase):

@@ -164,12 +164,22 @@ class ExperimentRunnerTests(unittest.TestCase):
                     return_value=fake_wide_df,
                 ):
                     with patch(
-                        "oasis.experiment_runner.filter_anomalous_mlip_columns",
+                        "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
                         return_value=fake_wide_df,
-                    ) as mock_filter_mlips:
-                        wide_df, *_ = load_filtered_wide_predictions(cfg)
+                    ) as mock_filter_structures:
+                        with patch(
+                            "oasis.experiment_runner.filter_anomalous_mlip_columns",
+                            return_value=fake_wide_df,
+                        ) as mock_filter_mlips:
+                            wide_df, *_ = load_filtered_wide_predictions(cfg)
 
         self.assertIs(wide_df, fake_wide_df)
+        mock_filter_structures.assert_called_once_with(
+            fake_wide_df,
+            enabled=True,
+            label_allowlist=["normal", "energy_anomaly"],
+            strict_inference_anomaly=True,
+        )
         mock_filter_mlips.assert_called_once_with(
             fake_wide_df,
             enabled=True,
@@ -227,6 +237,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.filter_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.filter_anomalous_mlip_columns",

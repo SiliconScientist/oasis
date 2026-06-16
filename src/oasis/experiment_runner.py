@@ -6,6 +6,7 @@ import pandas as pd
 
 from oasis.analysis import (
     filter_anomalous_mlip_columns,
+    filter_structures_with_insufficient_valid_mlips,
     filter_wide_predictions,
 )
 from oasis.config import get_config
@@ -154,6 +155,20 @@ def load_filtered_wide_predictions(cfg: object):
         f": {pre_filter_rows} -> {_frame_height(wide_df)} rows"
     )
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    wide_df = filter_structures_with_insufficient_valid_mlips(
+        wide_df,
+        enabled=bool(
+            getattr(mlip_selection_cfg, "exclude_anomalous", False)
+        ),
+        label_allowlist=(
+            list(mlip_selection_cfg.label_allowlist)
+            if mlip_selection_cfg is not None
+            else None
+        ),
+        strict_inference_anomaly=bool(
+            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
+        ),
+    )
     wide_df = filter_anomalous_mlip_columns(
         wide_df,
         enabled=bool(
