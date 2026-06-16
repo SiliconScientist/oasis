@@ -31,6 +31,62 @@ def _frame_height(frame: object) -> int:
     return int(getattr(frame, "height", len(frame)))
 
 
+def _mlip_selection_cfg(cfg: object):
+    learning_curve_cfg = (
+        cfg.experiment.learning_curve
+        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        else None
+    )
+    return getattr(learning_curve_cfg, "mlip_selection", None)
+
+
+def _anomaly_aware_run_suffix(cfg: object) -> str:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    enabled = bool(getattr(mlip_selection_cfg, "exclude_anomalous", False))
+    return "anomalyaware_on" if enabled else "anomalyaware_off"
+
+
+def _append_output_suffix(path: Path, suffix: str) -> Path:
+    if path.stem.endswith(f"_{suffix}"):
+        return path
+    return path.with_name(f"{path.stem}_{suffix}{path.suffix}")
+
+
+def _apply_run_output_suffixes(cfg: object) -> str:
+    suffix = _anomaly_aware_run_suffix(cfg)
+
+    learning_curve_cfg = (
+        cfg.experiment.learning_curve
+        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        else None
+    )
+    if learning_curve_cfg is not None:
+        results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+        if results_bundle_path is not None:
+            learning_curve_cfg.results_bundle_path = _append_output_suffix(
+                Path(results_bundle_path),
+                suffix,
+            )
+
+        graph_dataset_cfg = getattr(learning_curve_cfg, "graph_dataset", None)
+        graph_dataset_path = getattr(graph_dataset_cfg, "path", None)
+        if graph_dataset_cfg is not None and graph_dataset_path is not None:
+            graph_dataset_cfg.path = _append_output_suffix(
+                Path(graph_dataset_path),
+                suffix,
+            )
+
+    analysis_cfg = getattr(cfg, "analysis", None)
+    comparison_plot_path = getattr(analysis_cfg, "comparison_plot_path", None)
+    if comparison_plot_path is not None:
+        analysis_cfg.comparison_plot_path = _append_output_suffix(
+            Path(comparison_plot_path),
+            suffix,
+        )
+
+    return suffix
+
+
 def _can_reuse_graph_artifact(
     artifact_path: Path,
     *,
@@ -97,12 +153,7 @@ def load_filtered_wide_predictions(cfg: object):
         f" reaction_contains={reaction_contains_filter!r}"
         f": {pre_filter_rows} -> {_frame_height(wide_df)} rows"
     )
-    learning_curve_cfg = (
-        cfg.experiment.learning_curve
-        if cfg.experiment and cfg.experiment.learning_curve
-        else None
-    )
-    mlip_selection_cfg = getattr(learning_curve_cfg, "mlip_selection", None)
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
     wide_df = filter_anomalous_mlip_columns(
         wide_df,
         enabled=bool(
@@ -166,6 +217,7 @@ def write_parity_plot(
     adsorbate_filter: object,
     anomaly_filter: object,
     reaction_contains_filter: object,
+    run_suffix: str,
 ) -> Path:
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,6 +229,7 @@ def write_parity_plot(
     if reaction_contains_filter:
         joined = "-".join(reaction_contains_filter)
         suffix_parts.append(f"reaction_contains_{joined}")
+    suffix_parts.append(run_suffix)
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
@@ -232,6 +285,7 @@ def prepare_graph_view(cfg: object, wide_df: object):
 
 
 def run_experiment(cfg: object):
+    run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files, adsorbate_filter, anomaly_filter, reaction_contains_filter = (
         load_filtered_wide_predictions(cfg)
@@ -244,6 +298,7 @@ def run_experiment(cfg: object):
         adsorbate_filter,
         anomaly_filter,
         reaction_contains_filter,
+        run_suffix,
     )
     graph_view = prepare_graph_view(cfg, wide_df)
     learning_curve_results = load_or_run_learning_curve_results_from_config(
@@ -266,13 +321,13 @@ def run_experiment(cfg: object):
     if budget_mode == "screening_fraction":
         screening_budget_plot(
             results=learning_curve_results,
-            output_path=output_dir / "screening_budget.png",
+            output_path=output_dir / f"screening_budget_{run_suffix}.png",
             **plot_kwargs,
         )
     else:
         learning_curve_plot(
             results=learning_curve_results,
-            output_path=output_dir / "learning_curve.png",
+            output_path=output_dir / f"learning_curve_{run_suffix}.png",
             **plot_kwargs,
         )
     return learning_curve_results
