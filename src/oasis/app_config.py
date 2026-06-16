@@ -160,6 +160,15 @@ class Config(BaseModel):
             if self.experiment is not None
             else None
         )
+        if (
+            learning_curve is not None
+            and learning_curve.mlip_selection.exclude_anomalous
+            and not learning_curve.mlip_selection.label_allowlist
+        ):
+            raise ValueError(
+                "experiment.learning_curve.mlip_selection.label_allowlist must "
+                "not be empty when exclude_anomalous is enabled"
+            )
         if learning_curve is not None and learning_curve.graph_dataset is not None:
             if learning_curve.graph_dataset.path is None:
                 raise ValueError(
