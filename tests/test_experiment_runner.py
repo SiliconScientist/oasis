@@ -228,8 +228,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                             return_value=tmp_path / "plots" / "parity.png",
                         ):
                             with patch(
-                                "oasis.experiment_runner.load_graph_dataset_view",
-                                return_value=SimpleNamespace(sample_ids=("r0", "r1")),
+                                "oasis.experiment_runner.graph_artifact_matches_frame",
+                                return_value=False,
                             ):
                                 with patch(
                                     "oasis.experiment_runner.load_sample_atoms_for_wide_df",

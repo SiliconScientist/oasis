@@ -26,6 +26,7 @@ from oasis.graphs import (
     load_configured_graph_dataset_view,
     load_graph_dataset_view,
     load_probe_graph_dataset_view,
+    load_sweep_dataset_from_graph_artifact,
     save_aligned_graph_dataset_parquet,
     save_graph_dataset_view,
 )
@@ -439,6 +440,49 @@ class AtomsToGraphConversionTests(unittest.TestCase):
             frame.select("graph_node_features").to_series().to_list(),
             [[[2.0]], [[1.0]]],
         )
+
+    @unittest.skipUnless(HAS_POLARS, "requires polars")
+    def test_load_sweep_dataset_from_graph_artifact_rejects_mismatched_mlip_names(
+        self,
+    ) -> None:
+        wide_df = _Frame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_a_mlip_ads_eng_median": [2.2, 1.1],
+            }
+        )
+        filter_df = _Frame(
+            {
+                "reaction": ["rxn-b", "rxn-a"],
+                "reference_ads_eng": [2.0, 1.0],
+                "model_b_mlip_ads_eng_median": [1.8, 0.9],
+            }
+        )
+        graph_view = GraphDatasetView.from_records(
+            (
+                GraphRecord(
+                    sample_id="rxn-a",
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                ),
+                GraphRecord(
+                    sample_id="rxn-b",
+                    node_features=np.array([[2.0]]),
+                    edge_index=np.array([[0], [0]], dtype=np.int64),
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "aligned_graphs.parquet"
+            save_aligned_graph_dataset_parquet(wide_df, graph_view, path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "graph artifact MLIP feature names are incompatible",
+            ):
+                load_sweep_dataset_from_graph_artifact(path, filter_df=filter_df)
 
 
 class BuildGraphSweepDatasetTests(unittest.TestCase):

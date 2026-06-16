@@ -587,7 +587,11 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             ),
         )
 
-        metadata = learning_curve_sweep_metadata_from_config(cfg, dataset_size=12)
+        metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=12,
+            mlip_feature_names=("ridge", "linear"),
+        )
 
         self.assertEqual(metadata.seed, 23)
         self.assertEqual(metadata.min_train, 2)
@@ -597,9 +601,51 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         self.assertEqual(metadata.enabled_models, ("moe", "residual", "ridge"))
         self.assertEqual(metadata.dataset_tag, "mamun_oh")
         self.assertEqual(metadata.dataset_size, 12)
+        self.assertEqual(metadata.mlip_feature_names, ("ridge", "linear"))
         self.assertEqual(metadata.adsorbate_filter, "OH")
         self.assertEqual(metadata.anomaly_filter, "!inference_anomaly")
         self.assertEqual(metadata.reaction_contains_filter, ("Pt", "Ni"))
+
+    def test_results_artifact_rejects_mismatched_mlip_feature_names(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.41],
+                    "rmse_std": [0.06],
+                }
+            )
+        )
+        stored_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+            mlip_feature_names=("mace", "uma"),
+        )
+        expected_metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=1,
+            n_repeats=3,
+            enabled_models=("ridge",),
+            mlip_feature_names=("mace", "orb"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(results, stored_metadata, artifact_path)
+            with self.assertRaisesRegex(
+                ValueError,
+                "mlip_feature_names: expected \\['mace', 'orb'\\], got \\['mace', 'uma'\\]",
+            ):
+                load_learning_curve_results_artifact(
+                    artifact_path,
+                    expected_metadata=expected_metadata,
+                )
 
     def test_sweep_metadata_from_config_includes_screening_settings(self) -> None:
         cfg = SimpleNamespace(

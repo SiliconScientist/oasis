@@ -23,6 +23,13 @@ def mlip_columns(df: Any) -> list[str]:
     return [c for c in df.columns if c.endswith("_mlip_ads_eng_median")]
 
 
+def mlip_feature_names(df: Any) -> tuple[str, ...]:
+    return tuple(
+        column.removesuffix("_mlip_ads_eng_median")
+        for column in mlip_columns(df)
+    )
+
+
 def column_to_numpy(df: Any, col: str) -> np.ndarray:
     series = df[col]
     if hasattr(series, "to_numpy"):

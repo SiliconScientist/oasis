@@ -17,6 +17,7 @@ from oasis.experiment.dataset import (
     _validate_learning_curve_frame,
     assemble_learning_curve_dataset_from_frame,
     build_sweep_dataset_from_config,
+    mlip_feature_names,
 )
 from oasis.experiment.learning_curve import run_standard_learning_curve_experiments
 from oasis.experiment.screening import run_screening_learning_curve_experiments
@@ -180,6 +181,7 @@ def _metadata_for_available_results(
         min_screen_size=expected_metadata.min_screen_size,
         dataset_tag=expected_metadata.dataset_tag,
         dataset_size=expected_metadata.dataset_size,
+        mlip_feature_names=expected_metadata.mlip_feature_names,
         adsorbate_filter=expected_metadata.adsorbate_filter,
         anomaly_filter=expected_metadata.anomaly_filter,
         reaction_contains_filter=expected_metadata.reaction_contains_filter,
@@ -202,6 +204,7 @@ def run_learning_curve_experiments_from_config(
     experiment_cfg = cfg.experiment.learning_curve if cfg and cfg.experiment else None
     model_cfg = experiment_cfg.models if experiment_cfg else None
     _validate_learning_curve_frame(df)
+    current_mlip_feature_names = mlip_feature_names(df)
     dataset = build_sweep_dataset_from_config(
         df, cfg, graph_view=graph_view, auxiliary_views=auxiliary_views
     )
@@ -251,18 +254,22 @@ def run_learning_curve_experiments_from_config(
         expected_metadata = learning_curve_sweep_metadata_from_config(
             cfg,
             dataset_size=len(df),
+            mlip_feature_names=current_mlip_feature_names,
         )
         if Path(results_bundle_path).is_file():
-            cached_results = select_learning_curve_results_methods(
-                load_learning_curve_results_artifact(
-                    results_bundle_path,
-                    expected_metadata=expected_metadata,
-                    ignore_enabled_models=True,
-                    ignore_train_grid=True,
-                    ignore_repeat_count=True,
-                ).results,
-                enabled_model_names,
-            )
+            try:
+                cached_results = select_learning_curve_results_methods(
+                    load_learning_curve_results_artifact(
+                        results_bundle_path,
+                        expected_metadata=expected_metadata,
+                        ignore_enabled_models=True,
+                        ignore_train_grid=True,
+                        ignore_repeat_count=True,
+                    ).results,
+                    enabled_model_names,
+                )
+            except ValueError:
+                cached_results = LearningCurveResults.empty()
         if force_refresh_methods or force_refresh_train_sizes:
             for method_name in force_refresh_methods:
                 cached_results = select_learning_curve_results_methods(
@@ -403,6 +410,7 @@ def run_learning_curve_experiments_from_config(
         expected_metadata = learning_curve_sweep_metadata_from_config(
             cfg,
             dataset_size=len(df),
+            mlip_feature_names=current_mlip_feature_names,
         )
         if results_bundle_path is not None:
             existing_bundle_results = LearningCurveResults.empty()
@@ -521,6 +529,7 @@ def load_or_run_learning_curve_results_from_config(
         expected_metadata = learning_curve_sweep_metadata_from_config(
             cfg,
             dataset_size=len(df),
+            mlip_feature_names=mlip_feature_names(df),
         )
         enabled_model_names = expected_metadata.enabled_models
         available_families = tuple(
@@ -538,16 +547,19 @@ def load_or_run_learning_curve_results_from_config(
                 graph_view=graph_view,
                 auxiliary_views=auxiliary_views,
             )
-            cached_results = select_learning_curve_results_methods(
-                load_learning_curve_results_artifact(
-                    results_bundle_path,
-                    expected_metadata=expected_metadata,
-                    ignore_enabled_models=True,
-                    ignore_train_grid=True,
-                    ignore_repeat_count=True,
-                ).results,
-                enabled_model_names,
-            )
+            try:
+                cached_results = select_learning_curve_results_methods(
+                    load_learning_curve_results_artifact(
+                        results_bundle_path,
+                        expected_metadata=expected_metadata,
+                        ignore_enabled_models=True,
+                        ignore_train_grid=True,
+                        ignore_repeat_count=True,
+                    ).results,
+                    enabled_model_names,
+                )
+            except ValueError:
+                cached_results = LearningCurveResults.empty()
             all_methods_fully_cached = True
             for family in available_families:
                 method_name = _family_method_name(

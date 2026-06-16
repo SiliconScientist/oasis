@@ -16,6 +16,7 @@ from oasis.experiment.dataset import (
     build_sweep_dataset_from_frame,
     column_to_numpy,
     mlip_columns,
+    mlip_feature_names,
     prepare_parity_plot_data,
 )
 from oasis.experiment.learning_curve import run_standard_learning_curve_experiments
@@ -65,6 +66,7 @@ __all__ = [
     "inner_validation_size_for_sweep",
     "load_or_run_learning_curve_results_from_config",
     "mlip_columns",
+    "mlip_feature_names",
     "outer_train_size_if_screening_feasible",
     "prepare_parity_plot_data",
     "run_learning_curve_experiments",

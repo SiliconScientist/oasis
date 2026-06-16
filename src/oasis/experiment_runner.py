@@ -13,7 +13,7 @@ from oasis.exp import load_or_run_learning_curve_results_from_config
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
     build_probe_dataset,
-    load_graph_dataset_view,
+    graph_artifact_matches_frame,
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
     updated_dataset_output_path,
@@ -34,12 +34,12 @@ def _frame_height(frame: object) -> int:
 def _can_reuse_graph_artifact(
     artifact_path: Path,
     *,
-    reaction_ids: list[str],
+    wide_df: object,
+    join_key: str = "reaction",
 ) -> bool:
     if not artifact_path.is_file():
         return False
-    artifact_graph_view = load_graph_dataset_view(artifact_path)
-    return tuple(artifact_graph_view.sample_ids) == tuple(reaction_ids)
+    return graph_artifact_matches_frame(artifact_path, wide_df, join_key=join_key)
 
 
 def ensure_probe_artifacts(cfg: object) -> bool:
@@ -198,11 +198,13 @@ def prepare_graph_view(cfg: object, wide_df: object):
         else None
     )
     reaction_ids = wide_df.get_column("reaction").to_list()
+    graph_join_key = graph_dataset_cfg.join_key if graph_dataset_cfg is not None else "reaction"
     reuse_existing_graph_dataset = (
         graph_dataset_cfg is not None
         and _can_reuse_graph_artifact(
             graph_dataset_cfg.path,
-            reaction_ids=reaction_ids,
+            wide_df=wide_df,
+            join_key=graph_join_key,
         )
     )
     if reuse_existing_graph_dataset:

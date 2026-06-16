@@ -12,7 +12,7 @@ from ase.db.row import AtomsRow
 from ase.io import jsonio
 from ase.neighborlist import natural_cutoffs, neighbor_list
 
-from oasis.exp import column_to_numpy, mlip_columns
+from oasis.exp import column_to_numpy, mlip_columns, mlip_feature_names
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -201,6 +201,23 @@ def save_aligned_graph_dataset_parquet(
     return resolved_path
 
 
+def graph_artifact_matches_frame(
+    path: str | Path,
+    filter_df: Any,
+    *,
+    join_key: str = "reaction",
+) -> bool:
+    pl = _require_polars()
+    artifact_frame = pl.read_parquet(Path(path))
+    if mlip_feature_names(artifact_frame) != mlip_feature_names(filter_df):
+        return False
+    if join_key not in getattr(filter_df, "columns", ()) or join_key not in artifact_frame.columns:
+        return False
+    return tuple(artifact_frame.get_column(join_key).to_list()) == tuple(
+        column_to_numpy(filter_df, join_key).tolist()
+    )
+
+
 def load_sweep_dataset_from_graph_artifact(
     path: str | Path,
     *,
@@ -213,6 +230,15 @@ def load_sweep_dataset_from_graph_artifact(
     resolved_path = Path(path)
     pl = _require_polars()
     artifact_frame = pl.read_parquet(resolved_path)
+    if filter_df is not None:
+        expected_mlip_names = mlip_feature_names(filter_df)
+        artifact_mlip_names = mlip_feature_names(artifact_frame)
+        if expected_mlip_names != artifact_mlip_names:
+            raise ValueError(
+                "graph artifact MLIP feature names are incompatible: "
+                f"expected {list(expected_mlip_names)!r}, "
+                f"got {list(artifact_mlip_names)!r}"
+            )
     if filter_df is not None and join_key in getattr(filter_df, "columns", ()):
         keep_ids = list(filter_df[join_key])
         keep_set = set(keep_ids)

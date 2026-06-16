@@ -74,6 +74,7 @@ class LearningCurveSweepMetadata:
     min_screen_size: int | None = None
     dataset_tag: str | None = None
     dataset_size: int | None = None
+    mlip_feature_names: tuple[str, ...] | None = None
     adsorbate_filter: str | None = None
     anomaly_filter: str | None = None
     reaction_contains_filter: tuple[str, ...] | None = None
@@ -86,13 +87,23 @@ class LearningCurveSweepMetadata:
         )
         reaction_contains_filter = self.reaction_contains_filter
         if reaction_contains_filter is None:
-            return
-        normalized = tuple(value for value in reaction_contains_filter if value)
+            normalized_reaction_contains = None
+        else:
+            normalized_reaction_contains = tuple(
+                value for value in reaction_contains_filter if value
+            )
         object.__setattr__(
             self,
             "reaction_contains_filter",
-            normalized or None,
+            normalized_reaction_contains or None,
         )
+        mlip_feature_names = self.mlip_feature_names
+        if mlip_feature_names is not None:
+            object.__setattr__(
+                self,
+                "mlip_feature_names",
+                tuple(dict.fromkeys(mlip_feature_names)),
+            )
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -107,6 +118,11 @@ class LearningCurveSweepMetadata:
             "min_screen_size": self.min_screen_size,
             "dataset_tag": self.dataset_tag,
             "dataset_size": self.dataset_size,
+            "mlip_feature_names": (
+                None
+                if self.mlip_feature_names is None
+                else list(self.mlip_feature_names)
+            ),
             "adsorbate_filter": self.adsorbate_filter,
             "anomaly_filter": self.anomaly_filter,
             "reaction_contains_filter": (
@@ -120,6 +136,11 @@ class LearningCurveSweepMetadata:
         return {
             "dataset_tag": self.dataset_tag,
             "dataset_size": self.dataset_size,
+            "mlip_feature_names": (
+                None
+                if self.mlip_feature_names is None
+                else list(self.mlip_feature_names)
+            ),
         }
 
     @classmethod
@@ -142,6 +163,11 @@ class LearningCurveSweepMetadata:
                 None
                 if payload.get("dataset_size") is None
                 else int(payload["dataset_size"])
+            ),
+            mlip_feature_names=(
+                None
+                if payload.get("mlip_feature_names") is None
+                else tuple(payload["mlip_feature_names"])
             ),
             adsorbate_filter=payload.get("adsorbate_filter"),
             anomaly_filter=payload.get("anomaly_filter"),
@@ -206,6 +232,11 @@ class LearningCurveSweepMetadata:
                 None
                 if payload.get("dataset_size") is None
                 else int(payload["dataset_size"])
+            ),
+            mlip_feature_names=(
+                None
+                if payload.get("mlip_feature_names") is None
+                else tuple(payload["mlip_feature_names"])
             ),
             adsorbate_filter=(
                 fallback.adsorbate_filter if fallback is not None else payload.get("adsorbate_filter")
@@ -287,6 +318,7 @@ def learning_curve_sweep_metadata_from_config(
     cfg: Any,
     *,
     dataset_size: int | None = None,
+    mlip_feature_names: tuple[str, ...] | None = None,
 ) -> LearningCurveSweepMetadata:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
 
@@ -315,6 +347,7 @@ def learning_curve_sweep_metadata_from_config(
         min_screen_size=getattr(experiment_cfg, "min_screen_size", None),
         dataset_tag=getattr(dataset_profile, "tag", None),
         dataset_size=dataset_size,
+        mlip_feature_names=mlip_feature_names,
         adsorbate_filter=plot_filters.adsorbate if plot_filters else None,
         anomaly_filter=plot_filters.anomaly_label if plot_filters else None,
         reaction_contains_filter=reaction_contains_filter,
