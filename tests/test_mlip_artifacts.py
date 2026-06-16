@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 import polars as pl
 
@@ -196,7 +197,8 @@ class AnomalyAwareMlipSelectionTests(unittest.TestCase):
     ) -> None:
         wide_df = self._wide_df()
 
-        filtered = filter_anomalous_mlip_columns(wide_df, enabled=True)
+        with patch("builtins.print") as mock_print:
+            filtered = filter_anomalous_mlip_columns(wide_df, enabled=True)
 
         self.assertEqual(
             self._mlip_columns(filtered),
@@ -206,6 +208,10 @@ class AnomalyAwareMlipSelectionTests(unittest.TestCase):
             ],
         )
         self.assertNotIn("orb_label", filtered.columns)
+        mock_print.assert_called_once()
+        printed = mock_print.call_args.args[0]
+        self.assertIn("Applied anomaly-aware MLIP selection", printed)
+        self.assertIn("removed 1 ['orb']", printed)
 
     def test_filter_anomalous_mlip_columns_can_use_strict_inference_details(self) -> None:
         wide_df = self._wide_df()

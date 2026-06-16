@@ -6,7 +6,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from oasis.experiment_runner import run_experiment, run_experiment_from_config
+from oasis.experiment_runner import (
+    load_filtered_wide_predictions,
+    run_experiment,
+    run_experiment_from_config,
+)
 from oasis.sweep import LearningCurveResults
 
 
@@ -122,6 +126,56 @@ class ExperimentRunnerTests(unittest.TestCase):
 
             self.assertFalse(mock_build_probe.called)
             self.assertFalse(mock_add_probe_features.called)
+
+    def test_load_filtered_wide_predictions_applies_anomaly_aware_mlip_selection(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            analysis=SimpleNamespace(base_dir=Path("data/mlips/OH-BMA")),
+            plot=SimpleNamespace(
+                filters=SimpleNamespace(
+                    adsorbate=None,
+                    anomaly_label=None,
+                    reaction_contains=None,
+                )
+            ),
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous=True,
+                        label_allowlist=["normal", "energy_anomaly"],
+                        strict_inference_anomaly=True,
+                    )
+                )
+            ),
+        )
+        fake_wide_df = _FakeWideFrame()
+
+        with patch(
+            "oasis.experiment_runner.find_result_files",
+            return_value=[],
+        ):
+            with patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ):
+                with patch(
+                    "oasis.experiment_runner.filter_wide_predictions",
+                    return_value=fake_wide_df,
+                ):
+                    with patch(
+                        "oasis.experiment_runner.filter_anomalous_mlip_columns",
+                        return_value=fake_wide_df,
+                    ) as mock_filter_mlips:
+                        wide_df, *_ = load_filtered_wide_predictions(cfg)
+
+        self.assertIs(wide_df, fake_wide_df)
+        mock_filter_mlips.assert_called_once_with(
+            fake_wide_df,
+            enabled=True,
+            label_allowlist=["normal", "energy_anomaly"],
+            strict_inference_anomaly=True,
+        )
 
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
         self,

@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from oasis.analysis import filter_wide_predictions
+from oasis.analysis import (
+    filter_anomalous_mlip_columns,
+    filter_wide_predictions,
+)
 from oasis.config import get_config
 from oasis.exp import load_or_run_learning_curve_results_from_config
 from oasis.experiment_data import (
@@ -93,6 +96,26 @@ def load_filtered_wide_predictions(cfg: object):
         f" anomaly_label={anomaly_filter!r}"
         f" reaction_contains={reaction_contains_filter!r}"
         f": {pre_filter_rows} -> {_frame_height(wide_df)} rows"
+    )
+    learning_curve_cfg = (
+        cfg.experiment.learning_curve
+        if cfg.experiment and cfg.experiment.learning_curve
+        else None
+    )
+    mlip_selection_cfg = getattr(learning_curve_cfg, "mlip_selection", None)
+    wide_df = filter_anomalous_mlip_columns(
+        wide_df,
+        enabled=bool(
+            getattr(mlip_selection_cfg, "exclude_anomalous", False)
+        ),
+        label_allowlist=(
+            list(mlip_selection_cfg.label_allowlist)
+            if mlip_selection_cfg is not None
+            else None
+        ),
+        strict_inference_anomaly=bool(
+            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
+        ),
     )
     return wide_df, result_files, adsorbate_filter, anomaly_filter, reaction_contains_filter
 
