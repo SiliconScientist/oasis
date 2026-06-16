@@ -5,6 +5,22 @@ import polars as pl
 from oasis.mlip.artifacts import INFERENCE_DETAIL_COLUMNS
 
 
+def filter_anomalous_mlip_columns(
+    wide_df: pl.DataFrame,
+    *,
+    enabled: bool = False,
+    strict_inference_anomaly: bool = False,
+) -> pl.DataFrame:
+    """Return a wide frame with anomalous MLIP columns removed.
+
+    When ``enabled`` is false, the input frame is returned unchanged. Future
+    commits will implement anomaly-aware MLIP selection using the per-MLIP
+    ``*_label`` and inference detail columns already present in the wide frame.
+    """
+    del strict_inference_anomaly
+    return wide_df.clone() if enabled else wide_df
+
+
 def filter_wide_predictions(
     wide_df: pl.DataFrame,
     adsorbate_filter: str | None = None,

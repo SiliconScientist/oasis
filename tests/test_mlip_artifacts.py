@@ -7,7 +7,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+import polars as pl
+
+from oasis.analysis import filter_anomalous_mlip_columns
 from oasis.mlip.artifacts import (
+    INFERENCE_DETAIL_COLUMNS,
     find_result_files,
     load_result_json,
     load_wide_predictions,
@@ -138,6 +142,101 @@ class MlipArtifactTests(unittest.TestCase):
         self.assertEqual(wide_df.get_column("reference_ads_eng").to_list(), [1.0])
         self.assertEqual(wide_df.get_column("mace_mlip_ads_eng_median").to_list(), [1.1])
         self.assertEqual(wide_df.get_column("mace_label").to_list(), ["normal"])
+
+
+class AnomalyAwareMlipSelectionTests(unittest.TestCase):
+    @staticmethod
+    def _mlip_columns(frame: pl.DataFrame) -> list[str]:
+        return [col for col in frame.columns if col.endswith("_mlip_ads_eng_median")]
+
+    def _wide_df(self) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "reaction": ["rxn-1->OH*", "rxn-2->OH*"],
+                "adsorbate": ["OH", "OH"],
+                "reference_ads_eng": [1.0, 2.0],
+                "mace_mlip_ads_eng_median": [1.1, 2.1],
+                "mace_label": ["normal", "normal"],
+                "orb_mlip_ads_eng_median": [0.9, 1.9],
+                "orb_label": ["normal", "energy_anomaly"],
+                "uma_mlip_ads_eng_median": [1.2, 2.2],
+                "uma_label": ["normal", "normal"],
+                **{
+                    f"mace_{detail}": [0, 0]
+                    for detail in INFERENCE_DETAIL_COLUMNS
+                },
+                **{
+                    f"orb_{detail}": [0, 0]
+                    for detail in INFERENCE_DETAIL_COLUMNS
+                },
+                **{
+                    f"uma_{detail}": [0, 0]
+                    for detail in INFERENCE_DETAIL_COLUMNS
+                },
+            }
+        ).with_columns(pl.lit(1).alias("uma_ads_move"))
+
+    def test_filter_anomalous_mlip_columns_keeps_all_mlips_when_disabled(self) -> None:
+        wide_df = self._wide_df()
+
+        filtered = filter_anomalous_mlip_columns(wide_df, enabled=False)
+
+        self.assertEqual(filtered.columns, wide_df.columns)
+        self.assertEqual(
+            self._mlip_columns(filtered),
+            [
+                "mace_mlip_ads_eng_median",
+                "orb_mlip_ads_eng_median",
+                "uma_mlip_ads_eng_median",
+            ],
+        )
+
+    def test_filter_anomalous_mlip_columns_drops_mlips_with_non_normal_labels(
+        self,
+    ) -> None:
+        wide_df = self._wide_df()
+
+        filtered = filter_anomalous_mlip_columns(wide_df, enabled=True)
+
+        self.assertEqual(
+            self._mlip_columns(filtered),
+            [
+                "mace_mlip_ads_eng_median",
+                "uma_mlip_ads_eng_median",
+            ],
+        )
+        self.assertNotIn("orb_label", filtered.columns)
+
+    def test_filter_anomalous_mlip_columns_can_use_strict_inference_details(self) -> None:
+        wide_df = self._wide_df()
+
+        filtered = filter_anomalous_mlip_columns(
+            wide_df,
+            enabled=True,
+            strict_inference_anomaly=True,
+        )
+
+        self.assertEqual(
+            self._mlip_columns(filtered),
+            [
+                "mace_mlip_ads_eng_median",
+                "orb_mlip_ads_eng_median",
+            ],
+        )
+        self.assertNotIn("uma_ads_move", filtered.columns)
+
+    def test_filter_anomalous_mlip_columns_raises_when_all_mlips_removed(self) -> None:
+        wide_df = self._wide_df().with_columns(
+            pl.lit("energy_anomaly").alias("mace_label"),
+            pl.lit("energy_anomaly").alias("orb_label"),
+            pl.lit("energy_anomaly").alias("uma_label"),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "No MLIP prediction columns remain after anomaly-aware selection",
+        ):
+            filter_anomalous_mlip_columns(wide_df, enabled=True)
 
 
 class DependencyBoundaryTests(unittest.TestCase):
