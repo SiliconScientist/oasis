@@ -55,6 +55,38 @@ n_repeats = 10
 # force_refresh_methods = ["ridge"]
 # force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
+# Anomaly-aware MLIP selection. Leave this off for the baseline comparison.
+[experiment.learning_curve.mlip_selection]
+exclude_anomalous = false
+label_allowlist = ["normal"]
+strict_inference_anomaly = false
+
+# OH-BMA comparison presets:
+#
+# Baseline:
+# [dataset_profile]
+# tag = "mamun_oh"
+#
+# [experiment.learning_curve.mlip_selection]
+# exclude_anomalous = false
+# label_allowlist = ["normal"]
+# strict_inference_anomaly = false
+#
+# Filtered:
+# [dataset_profile]
+# tag = "mamun_oh"
+#
+# [experiment.learning_curve.mlip_selection]
+# exclude_anomalous = true
+# label_allowlist = ["normal"]
+# strict_inference_anomaly = false
+#
+# Optional stricter filtered variant:
+# [experiment.learning_curve.mlip_selection]
+# exclude_anomalous = true
+# label_allowlist = ["normal"]
+# strict_inference_anomaly = true
+
 [experiment.screening]
 # Screening mode overlays the screening-specific knobs onto
 # `[experiment.learning_curve]`.

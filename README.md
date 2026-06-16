@@ -126,6 +126,62 @@ force_refresh_methods = ["moe", "probe_gnn"]
 force_refresh_train_sizes = { ridge = [20, 30] }
 ```
 
+## OH-BMA Comparison Workflow
+
+For the anomaly-aware MLIP-selection branch, keep two experiment presets and
+run them against the same `OH-BMA` result set:
+
+- baseline: anomaly-aware MLIP filtering off
+- filtered: anomaly-aware MLIP filtering on
+
+Minimal config pattern:
+
+```toml
+[dataset_profile]
+tag = "mamun_oh"
+
+[datasets.mamun_oh]
+raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
+mlip_run_dirname = "OH-BMA"
+
+[experiment.learning_curve]
+reuse_results = true
+
+[experiment.learning_curve.mlip_selection]
+exclude_anomalous = false
+label_allowlist = ["normal"]
+strict_inference_anomaly = false
+```
+
+Filtered variant:
+
+```toml
+[dataset_profile]
+tag = "mamun_oh"
+
+[datasets.mamun_oh]
+raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
+mlip_run_dirname = "OH-BMA"
+
+[experiment.learning_curve]
+reuse_results = true
+
+[experiment.learning_curve.mlip_selection]
+exclude_anomalous = true
+label_allowlist = ["normal"]
+strict_inference_anomaly = false
+```
+
+Notes:
+
+- Oasis now auto-suffixes outputs and caches with `anomalyaware_on` or
+  `anomalyaware_off`, so the two runs do not overwrite each other.
+- The learning-curve bundle and aligned graph artifact are also separated by
+  that suffix.
+- If you want a stricter comparison, set
+  `strict_inference_anomaly = true` in the filtered preset to drop MLIPs based
+  on per-MLIP inference-detail flags rather than labels alone.
+
 Bundle identity is dataset/filter oriented, not exact-sweep oriented. Reuse
 requires the same dataset/filter identity and seed, but the bundle may contain:
 
