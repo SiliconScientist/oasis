@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from oasis.config import MoETrainingConfig
+from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
 from oasis.learning_curve.families.gnn_gate import collate_graphs_with_distances
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
@@ -256,7 +257,11 @@ class SchNetGateTuningSpec:
 
         train_graphs = _graphs_from_dataset(train_ds)
         val_graphs = _graphs_from_dataset(val_ds)
-        n_experts = train_ds.mlip_features.shape[1]
+        n_experts = require_min_mlip_feature_count(
+            split.dataset.mlip_features,
+            min_features=2,
+            method_name="moe",
+        )
 
         train_z, train_ei, train_ed, train_bv = _collate_schnet(train_graphs)
         val_z, val_ei, val_ed, val_bv = _collate_schnet(val_graphs)
@@ -312,7 +317,11 @@ class SchNetGateTuningSpec:
             X_np = np.concatenate([subsets.train.mlip_features, subsets.val.mlip_features])
             y_np = np.concatenate([subsets.train.targets, subsets.val.targets])
 
-        n_experts = split.dataset.mlip_features.shape[1]
+        n_experts = require_min_mlip_feature_count(
+            split.dataset.mlip_features,
+            min_features=2,
+            method_name="moe",
+        )
         hidden_dim, n_layers = self._arch_from_trial(best_trial)
         lr: float = best_trial.params["lr"]
         weight_decay: float = best_trial.params["weight_decay"]

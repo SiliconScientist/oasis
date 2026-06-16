@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
+from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.sweep import SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import SelectionRefitPolicy
 
@@ -31,7 +32,11 @@ class MlipBaselineGateTuningSpec:
         subsets = split.dataset_subsets()
         X_val = subsets.val.mlip_features
         y_val = subsets.val.targets
-        n_experts = X_val.shape[1]
+        n_experts = require_min_mlip_feature_count(
+            split.dataset.mlip_features,
+            min_features=2,
+            method_name="moe",
+        )
         policy = self.policy
 
         def objective(trial: Any) -> float:
@@ -51,7 +56,11 @@ class MlipBaselineGateTuningSpec:
         refit_policy: SelectionRefitPolicy,
     ) -> MoEModel:
         subsets = split.dataset_subsets()
-        n_experts = split.dataset.mlip_features.shape[1]
+        n_experts = require_min_mlip_feature_count(
+            split.dataset.mlip_features,
+            min_features=2,
+            method_name="moe",
+        )
         logits = np.array([best_trial.params[f"logit_{i}"] for i in range(n_experts)])
         weights = self.policy.apply(logits)
         if refit_policy == "train_only":

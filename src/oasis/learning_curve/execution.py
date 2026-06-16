@@ -33,6 +33,21 @@ if TYPE_CHECKING:
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 
 
+def require_min_mlip_feature_count(
+    mlip_features: np.ndarray,
+    *,
+    min_features: int,
+    method_name: str,
+) -> int:
+    feature_count = int(mlip_features.shape[1]) if mlip_features.ndim >= 2 else 1
+    if feature_count < min_features:
+        raise ValueError(
+            f"{method_name} requires at least {min_features} MLIP feature columns; "
+            f"got {feature_count}."
+        )
+    return feature_count
+
+
 def _fit_model_safely(model: object, X: np.ndarray, y: np.ndarray) -> None:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=ConvergenceWarning)
@@ -263,6 +278,11 @@ def weighted_simplex_sweep(
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
+        require_min_mlip_feature_count(
+            X,
+            min_features=2,
+            method_name="weighted_simplex",
+        )
         weights = _simplex_weights(
             X[split.train_idx],
             y[split.train_idx],

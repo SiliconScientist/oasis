@@ -345,6 +345,15 @@ class GnnGateTuningSpecTests(unittest.TestCase):
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         self.assertEqual(spec.trial_metadata(trial, model)["n_experts"], 3)
 
+    def test_rejects_single_mlip_expert(self) -> None:
+        split = _make_split_with_graphs(n_experts=1)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "moe requires at least 2 MLIP feature columns; got 1.",
+        ):
+            _fast_spec().build_trial_objective(split)
+
 
 class CollateGraphsWithDistancesTests(unittest.TestCase):
     # --- return shape ---

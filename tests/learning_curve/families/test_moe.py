@@ -61,6 +61,29 @@ def _make_split() -> TrainValTestSweepRunnerInput:
     )
 
 
+def _make_single_expert_split() -> TrainValTestSweepRunnerInput:
+    dataset = SweepDataset(
+        mlip_features=np.array(
+            [
+                [1.0],
+                [2.0],
+                [3.0],
+                [4.0],
+                [5.0],
+                [6.0],
+            ]
+        ),
+        targets=np.array([1.5, 2.5, 3.5, 1.0, 5.5, 6.5]),
+    )
+    return TrainValTestSweepRunnerInput(
+        dataset=dataset,
+        sweep_size=4,
+        train_idx=np.array([0, 1, 2]),
+        val_idx=np.array([3]),
+        test_idx=np.array([4, 5]),
+    )
+
+
 class MoEModelTests(unittest.TestCase):
     def test_predict_shape(self) -> None:
         model = MoEModel(weights=np.array([0.3, 0.7]), bias=0.0)
@@ -118,6 +141,16 @@ class MlipBaselineGateTuningSpecTests(unittest.TestCase):
         self.assertIn("weight_0", metadata)
         self.assertIn("weight_1", metadata)
         self.assertAlmostEqual(metadata["weight_0"] + metadata["weight_1"], 1.0)
+
+    def test_rejects_single_mlip_expert(self) -> None:
+        spec = MlipBaselineGateTuningSpec()
+        split = _make_single_expert_split()
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "moe requires at least 2 MLIP feature columns; got 1.",
+        ):
+            spec.build_trial_objective(split)
 
 
 class MoERegistrationTests(unittest.TestCase):
@@ -472,6 +505,16 @@ class SchNetGateIntegrationTests(unittest.TestCase):
         preds = spec.predict(model, split.dataset_subsets().test)
         self.assertEqual(preds.shape, (2,))
         self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_schnet_gate_rejects_single_mlip_expert(self) -> None:
+        split = _make_schnet_split(n_experts=1)
+        spec = _moe_config_tuning_spec_factory(_model_cfg_schnet())
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "moe requires at least 2 MLIP feature columns; got 1.",
+        ):
+            spec.build_trial_objective(split)
 
 
 # ---------------------------------------------------------------------------

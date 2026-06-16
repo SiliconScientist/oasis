@@ -1205,6 +1205,51 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_simplex_rejects_single_mlip_feature(self) -> None:
+        X = np.array([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]])
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        payload = SweepRunPayload(
+            dataset=SweepDataset(mlip_features=X, targets=y),
+            split_collection=self._fixed_payload().split_collection,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "weighted_simplex requires at least 2 MLIP feature columns; got 1.",
+        ):
+            weighted_simplex_sweep(payload)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_simplex_rejects_zero_mlip_features(self) -> None:
+        X = np.empty((6, 0), dtype=float)
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        graph_view = GraphDatasetView.from_records(
+            tuple(
+                GraphRecord(
+                    sample_id=i,
+                    node_features=np.array([[1.0]]),
+                    edge_index=np.empty((2, 0), dtype=np.int64),
+                )
+                for i in range(6)
+            )
+        )
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                mlip_features=X,
+                targets=y,
+                sample_ids=np.arange(6),
+                graph_view=graph_view,
+            ),
+            split_collection=self._fixed_payload().split_collection,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "weighted_simplex requires at least 2 MLIP feature columns; got 0.",
+        ):
+            weighted_simplex_sweep(payload)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_linear_ignores_unrelated_auxiliary_views(self) -> None:
         X, y = self._toy_dataset()
         split_collection = self._fixed_payload().split_collection
