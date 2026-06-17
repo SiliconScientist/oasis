@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from oasis.analysis import (
@@ -10,7 +11,10 @@ from oasis.analysis import (
     filter_wide_predictions,
 )
 from oasis.config import get_config
-from oasis.exp import load_or_run_learning_curve_results_from_config
+from oasis.exp import (
+    load_or_run_learning_curve_results_from_config,
+    prepare_parity_plot_data,
+)
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
     build_probe_dataset,
@@ -329,6 +333,14 @@ def run_experiment(cfg: object):
         "max_x": getattr(curve_window_cfg, "max_x", None),
         "include_x": getattr(curve_window_cfg, "include_x", None),
     }
+    parity_plot_data = prepare_parity_plot_data(wide_df)
+    zero_shot_preds = np.mean(
+        np.column_stack(list(parity_plot_data.predictions.values())),
+        axis=1,
+    )
+    zero_shot_rmse = float(
+        np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
+    )
     learning_curve_cfg = (
         cfg.experiment.learning_curve if cfg.experiment is not None else None
     )
@@ -343,6 +355,7 @@ def run_experiment(cfg: object):
         learning_curve_plot(
             results=learning_curve_results,
             output_path=output_dir / f"learning_curve_{run_suffix}.png",
+            zero_shot_rmse=zero_shot_rmse,
             **plot_kwargs,
         )
     return learning_curve_results

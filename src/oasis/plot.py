@@ -185,6 +185,7 @@ def learning_curve_plot(
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
+    zero_shot_rmse: float | None = None,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -395,6 +396,18 @@ def learning_curve_plot(
             alpha=0.2,
             label="Latent +/- 1sd",
         )
+    if zero_shot_rmse is not None:
+        x_min, x_max = ax.get_xlim()
+        ax.hlines(
+            y=zero_shot_rmse,
+            xmin=x_min,
+            xmax=x_max,
+            colors="black",
+            linestyles="--",
+            linewidth=1.25,
+            label="Zero-shot mean-MLIP RMSE",
+        )
+        ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
