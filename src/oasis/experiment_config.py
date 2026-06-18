@@ -193,31 +193,41 @@ class ExperimentConfig(BaseModel):
     learning_curve: Optional[LearningCurveExperimentConfig] = None
     screening: Optional[ScreeningExperimentConfig] = None
 
-    def apply_screening_overlay(self) -> None:
-        if self.screening is None:
-            return
-        if self.learning_curve is None:
+    def validate_screening_dependency(self) -> None:
+        if self.screening is not None and self.learning_curve is None:
             raise ValueError(
                 "experiment.screening requires experiment.learning_curve to define "
                 "the training grid and model families."
             )
-        learning_curve = self.learning_curve
+
+    def derived_screening_learning_curve(
+        self,
+    ) -> Optional[LearningCurveExperimentConfig]:
+        if self.screening is None:
+            return None
+        self.validate_screening_dependency()
+        assert self.learning_curve is not None
+
         screening = self.screening
-        learning_curve.budget_mode = screening.budget_mode
-        learning_curve.screen_fraction = screening.screen_fraction
-        learning_curve.min_screen_size = screening.min_screen_size
-        learning_curve.validation_fraction = screening.validation_fraction
-        learning_curve.min_val_size = screening.min_val_size
-        learning_curve.min_tuning_val_size = screening.min_tuning_val_size
-        learning_curve.min_inner_train_size = screening.min_inner_train_size
-        if screening.results_bundle_path is not None:
-            learning_curve.results_bundle_path = screening.results_bundle_path
-        learning_curve.reuse_results = screening.reuse_results
-        learning_curve.force_refresh_methods = list(screening.force_refresh_methods)
-        learning_curve.force_refresh_train_sizes = {
-            method_name: list(sweep_sizes)
-            for method_name, sweep_sizes in screening.force_refresh_train_sizes.items()
-        }
+        return self.learning_curve.model_copy(
+            deep=True,
+            update={
+                "budget_mode": screening.budget_mode,
+                "screen_fraction": screening.screen_fraction,
+                "min_screen_size": screening.min_screen_size,
+                "validation_fraction": screening.validation_fraction,
+                "min_val_size": screening.min_val_size,
+                "min_tuning_val_size": screening.min_tuning_val_size,
+                "min_inner_train_size": screening.min_inner_train_size,
+                "results_bundle_path": screening.results_bundle_path,
+                "reuse_results": screening.reuse_results,
+                "force_refresh_methods": list(screening.force_refresh_methods),
+                "force_refresh_train_sizes": {
+                    method_name: list(sweep_sizes)
+                    for method_name, sweep_sizes in screening.force_refresh_train_sizes.items()
+                },
+            },
+        )
 
 
 class PlotConfig(BaseModel):

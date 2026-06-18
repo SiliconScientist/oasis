@@ -436,7 +436,7 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/ch3_oh_mamun/oasis_Benchmarking_Analysis.xlsx"),
         )
 
-    def test_screening_mode_derives_screening_results_bundle_path(self) -> None:
+    def test_screening_mode_derives_separate_screening_results_bundle_path(self) -> None:
         cfg = Config(
             **{
                 "ingest": {
@@ -481,8 +481,13 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.screening is not None
         self.assertEqual(
             cfg.experiment.learning_curve.results_bundle_path,
+            Path("data/results/learning_curve/mamun_oh.json"),
+        )
+        self.assertEqual(
+            cfg.experiment.screening.results_bundle_path,
             Path("data/results/screening/mamun_oh.json"),
         )
 
@@ -1128,13 +1133,21 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
-        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "screening_fraction")
-        self.assertEqual(cfg.experiment.learning_curve.screen_fraction, 0.25)
-        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 2)
-        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.35)
-        self.assertEqual(cfg.experiment.learning_curve.min_val_size, 2)
-        self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 4)
-        self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 5)
+        assert cfg.experiment.screening is not None
+        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "full_remainder_test")
+        self.assertIsNone(cfg.experiment.learning_curve.screen_fraction)
+        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
+        self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 1)
+        self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 1)
+        self.assertEqual(cfg.experiment.screening.budget_mode, "screening_fraction")
+        self.assertEqual(cfg.experiment.screening.screen_fraction, 0.25)
+        self.assertEqual(cfg.experiment.screening.min_screen_size, 2)
+        self.assertEqual(cfg.experiment.screening.validation_fraction, 0.35)
+        self.assertEqual(cfg.experiment.screening.min_val_size, 2)
+        self.assertEqual(cfg.experiment.screening.min_tuning_val_size, 4)
+        self.assertEqual(cfg.experiment.screening.min_inner_train_size, 5)
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 3)
 
     def test_learning_curve_results_artifact_config_explicit_values_parse(self) -> None:
@@ -1173,17 +1186,18 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.screening is not None
         self.assertEqual(
-            cfg.experiment.learning_curve.results_bundle_path,
+            cfg.experiment.screening.results_bundle_path,
             Path("data/results/screening/example.json"),
         )
-        self.assertTrue(cfg.experiment.learning_curve.reuse_results)
+        self.assertTrue(cfg.experiment.screening.reuse_results)
         self.assertEqual(
-            cfg.experiment.learning_curve.force_refresh_methods,
+            cfg.experiment.screening.force_refresh_methods,
             ["moe", "probe_gnn"],
         )
         self.assertEqual(
-            cfg.experiment.learning_curve.force_refresh_train_sizes,
+            cfg.experiment.screening.force_refresh_train_sizes,
             {"ridge": [5, 10]},
         )
 
@@ -1423,9 +1437,13 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
-        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "screening_fraction")
-        self.assertEqual(cfg.experiment.learning_curve.screen_fraction, 0.25)
-        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 2)
+        assert cfg.experiment.screening is not None
+        self.assertEqual(cfg.experiment.learning_curve.budget_mode, "full_remainder_test")
+        self.assertEqual(cfg.experiment.learning_curve.screen_fraction, 0.1)
+        self.assertEqual(cfg.experiment.learning_curve.min_screen_size, 9)
+        self.assertEqual(cfg.experiment.screening.budget_mode, "screening_fraction")
+        self.assertEqual(cfg.experiment.screening.screen_fraction, 0.25)
+        self.assertEqual(cfg.experiment.screening.min_screen_size, 2)
 
     def test_screening_section_requires_learning_curve_section(self) -> None:
         with self.assertRaisesRegex(

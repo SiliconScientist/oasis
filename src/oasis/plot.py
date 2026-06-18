@@ -14,6 +14,7 @@ import matplotlib
 if "MPLBACKEND" not in os.environ:
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 from oasis.exp import prepare_parity_plot_data
@@ -73,6 +74,10 @@ def _screening_metric_columns(frame: pd.DataFrame) -> tuple[str, str]:
     raise ValueError(
         "screening result frames must contain cv_rmse_mean/cv_rmse_std."
     )
+
+
+def _set_integer_x_ticks(ax: Any) -> None:
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
 def mae_comparison_plot(
@@ -186,6 +191,7 @@ def learning_curve_plot(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     zero_shot_rmse: float | None = None,
+    show_legend: bool = True,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -411,9 +417,11 @@ def learning_curve_plot(
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
+    _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(fontsize=fontsize)
+    if show_legend:
+        ax.legend(fontsize=fontsize)
     plt.tight_layout()
 
     output_path = Path(output_path)
@@ -431,6 +439,7 @@ def screening_budget_plot(
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -656,9 +665,11 @@ def screening_budget_plot(
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("CV RMSE (eV)", fontsize=fontsize)
     ax.set_title("Screening curve (method performance vs budget)", fontsize=fontsize)
+    _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(fontsize=fontsize)
+    if show_legend:
+        ax.legend(fontsize=fontsize)
     plt.tight_layout()
 
     output_path = Path(output_path)

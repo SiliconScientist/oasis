@@ -21,6 +21,9 @@ class _FakeColumn:
     def to_list(self):
         return list(self._values)
 
+    def to_numpy(self):
+        return self._values
+
 
 class _FakeWideFrame:
     def __init__(self, reactions=None) -> None:
@@ -28,9 +31,16 @@ class _FakeWideFrame:
         self._columns = {
             "reaction": _FakeColumn(reactions),
             "reference_ads_eng": _FakeColumn([float(i + 1) for i in range(len(reactions))]),
+            "fake_mlip_ads_eng_median": _FakeColumn(
+                [float(i + 1) for i in range(len(reactions))]
+            ),
         }
+        self.columns = tuple(self._columns)
 
     def get_column(self, name: str):
+        return self._columns[name]
+
+    def __getitem__(self, name: str):
         return self._columns[name]
 
     def __len__(self) -> int:
@@ -289,7 +299,9 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "comparison_anomalyaware_on.png",
         )
 
-    def test_run_experiment_suffixes_screening_plot_for_baseline_mode(self) -> None:
+    def test_run_experiment_emits_learning_and_screening_plots_when_both_are_configured(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -297,7 +309,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 probe_features=None,
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
-                        budget_mode="screening_fraction",
+                        budget_mode="full_remainder_test",
                         graph_dataset=None,
                         mlip_selection=SimpleNamespace(
                             exclude_anomalous=False,
@@ -308,7 +320,20 @@ class ExperimentRunnerTests(unittest.TestCase):
                             use_latent=False,
                             probe_gnn=SimpleNamespace(enabled=False),
                         ),
-                    )
+                    ),
+                    screening=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        results_bundle_path=None,
+                        reuse_results=False,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                    ),
                 ),
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
@@ -346,18 +371,39 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
                 return_value=LearningCurveResults.empty(),
-            ), patch(
+            ) as mock_results, patch(
                 "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.screening_budget_plot",
-                return_value=tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
-            ) as mock_screening_plot:
+                side_effect=[
+                    tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
+                    tmp_path / "tmp" / "screening_budget_panel_anomalyaware_off.png",
+                ],
+            ) as mock_screening_plot, patch(
+                "oasis.experiment_runner.learning_screening_figure",
+                return_value=tmp_path / "plots" / "learning_screening_figure_anomalyaware_off.png",
+            ) as mock_learning_screening_figure:
                 run_experiment(cfg)
 
-        mock_learning_curve_plot.assert_not_called()
+        self.assertEqual(mock_results.call_count, 2)
+        mock_learning_curve_plot.assert_called_once()
+        self.assertEqual(mock_screening_plot.call_count, 2)
         self.assertEqual(
-            mock_screening_plot.call_args.kwargs["output_path"],
+            mock_screening_plot.call_args_list[0].kwargs["output_path"],
             tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_screening_plot.call_args_list[1].kwargs["show_legend"],
+            False,
+        )
+        self.assertEqual(
+            mock_learning_screening_figure.call_args.kwargs["screening_curve_path"],
+            tmp_path / "tmp" / "screening_budget_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_learning_screening_figure.call_args.kwargs["learning_curve_path"],
+            tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
         )
 
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
@@ -516,7 +562,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ["g0", "g1", "g2"],
             )
 
-    def test_run_experiment_uses_screening_plot_for_screening_mode(self) -> None:
+    def test_run_experiment_passes_separate_screening_config_to_second_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -524,13 +570,27 @@ class ExperimentRunnerTests(unittest.TestCase):
                 probe_features=None,
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
-                        budget_mode="screening_fraction",
+                        budget_mode="full_remainder_test",
                         graph_dataset=None,
+                        results_bundle_path=tmp_path / "learning.json",
                         models=SimpleNamespace(
                             use_latent=False,
                             probe_gnn=SimpleNamespace(enabled=False),
                         ),
-                    )
+                    ),
+                    screening=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        screen_fraction=0.25,
+                        min_screen_size=2,
+                        validation_fraction=0.3,
+                        min_val_size=2,
+                        min_tuning_val_size=3,
+                        min_inner_train_size=4,
+                        results_bundle_path=tmp_path / "screening.json",
+                        reuse_results=True,
+                        force_refresh_methods=["ridge"],
+                        force_refresh_train_sizes={"lasso": [8]},
+                    ),
                 ),
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
@@ -565,18 +625,45 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
                 return_value=LearningCurveResults.empty(),
-            ), patch(
+            ) as mock_results, patch(
                 "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.screening_budget_plot",
-                return_value=tmp_path / "plots" / "screening_budget.png",
-            ) as mock_screening_plot:
+                side_effect=[
+                    tmp_path / "plots" / "screening_budget.png",
+                    tmp_path / "tmp" / "screening_budget_panel.png",
+                ],
+            ) as mock_screening_plot, patch(
+                "oasis.experiment_runner.learning_screening_figure",
+                return_value=tmp_path / "plots" / "learning_screening_figure.png",
+            ) as mock_learning_screening_figure:
                 run_experiment(cfg)
 
-        mock_learning_curve_plot.assert_not_called()
-        mock_screening_plot.assert_called_once()
+        first_cfg = mock_results.call_args_list[0].args[1]
+        second_cfg = mock_results.call_args_list[1].args[1]
         self.assertEqual(
-            mock_screening_plot.call_args.kwargs["output_path"],
+            first_cfg.experiment.learning_curve.results_bundle_path,
+            tmp_path / "learning_anomalyaware_off.json",
+        )
+        self.assertEqual(
+            second_cfg.experiment.learning_curve.results_bundle_path,
+            tmp_path / "screening_anomalyaware_off.json",
+        )
+        self.assertEqual(
+            second_cfg.experiment.learning_curve.budget_mode,
+            "screening_fraction",
+        )
+        self.assertEqual(second_cfg.experiment.learning_curve.min_screen_size, 2)
+        self.assertTrue(second_cfg.experiment.learning_curve.reuse_results)
+        self.assertEqual(
+            second_cfg.experiment.learning_curve.force_refresh_methods,
+            ["ridge"],
+        )
+        mock_learning_curve_plot.assert_called_once()
+        self.assertEqual(mock_screening_plot.call_count, 2)
+        self.assertEqual(
+            mock_screening_plot.call_args_list[0].kwargs["output_path"],
             tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
         )
 

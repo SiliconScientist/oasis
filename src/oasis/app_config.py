@@ -40,8 +40,6 @@ class Config(BaseModel):
 
     def init_paths(self) -> None:
         self.ingest.catbench_folder = default_catbench_folder(self.ingest.source)
-        if self.experiment is not None:
-            self.experiment.apply_screening_overlay()
         self._apply_dataset_profile()
         self._validate_derived_paths()
         self._inherit_global_seed()
@@ -75,13 +73,7 @@ class Config(BaseModel):
                 learning_curve.results_bundle_path is None
                 and profile_paths.results_bundle_path is not None
             ):
-                if learning_curve.budget_mode == "screening_fraction":
-                    dataset_path = profile_paths.results_bundle_path
-                    learning_curve.results_bundle_path = screening_bundle_path(
-                        dataset_path.stem
-                    )
-                else:
-                    learning_curve.results_bundle_path = profile_paths.results_bundle_path
+                learning_curve.results_bundle_path = profile_paths.results_bundle_path
 
             if (
                 learning_curve.graph_dataset is not None
@@ -89,6 +81,16 @@ class Config(BaseModel):
                 and profile_paths.graph_dataset_path is not None
             ):
                 learning_curve.graph_dataset.path = profile_paths.graph_dataset_path
+
+        screening = self.experiment.screening if self.experiment is not None else None
+        if (
+            screening is not None
+            and screening.results_bundle_path is None
+            and profile_paths.results_bundle_path is not None
+        ):
+            screening.results_bundle_path = screening_bundle_path(
+                profile_paths.results_bundle_path.stem
+            )
 
         if (
             self.probe_features is None
@@ -155,6 +157,8 @@ class Config(BaseModel):
         return derive_dataset_profile_paths(tag, named_profile)
 
     def _validate_derived_paths(self) -> None:
+        if self.experiment is not None:
+            self.experiment.validate_screening_dependency()
         learning_curve = (
             self.experiment.learning_curve
             if self.experiment is not None

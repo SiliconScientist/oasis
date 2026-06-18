@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -65,6 +66,25 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+
+    def test_learning_curve_plot_uses_integer_x_ticks(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4, 5],
+                "rmse_mean": [0.4, 0.3, 0.2, 0.1],
+                "rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "learning_curve_ticks.png"
+            with patch("oasis.plot.plt.close"):
+                learning_curve_plot(results, output_path=output_path)
+                fig = learning_curve_plot.__globals__["plt"].gcf()
+                locator = fig.axes[0].xaxis.get_major_locator()
+
+            self.assertTrue(getattr(locator, "_integer", False))
 
     def test_learning_curve_plot_matches_reloaded_artifacts(self) -> None:
         result_df = pd.DataFrame(
@@ -208,6 +228,29 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+
+    def test_screening_budget_plot_uses_integer_x_ticks(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_budget": [4, 6, 8, 10],
+                "n_train": [3, 4, 6, 8],
+                "n_screen": [1, 2, 2, 2],
+                "screen_fraction": [0.25, 1 / 3, 0.25, 0.2],
+                "n_cv_folds": [4, 3, 4, 5],
+                "cv_rmse_mean": [0.4, 0.3, 0.2, 0.1],
+                "cv_rmse_std": [0.05, 0.04, 0.03, 0.02],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "screening_curve_ticks.png"
+            with patch("oasis.plot.plt.close"):
+                screening_budget_plot(results, output_path=output_path)
+                fig = screening_budget_plot.__globals__["plt"].gcf()
+                locator = fig.axes[0].xaxis.get_major_locator()
+
+            self.assertTrue(getattr(locator, "_integer", False))
 
     def test_screening_budget_plot_matches_reloaded_artifacts(self) -> None:
         result_df = pd.DataFrame(

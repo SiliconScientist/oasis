@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +17,7 @@ from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
     prepare_parity_plot_data,
 )
+from oasis.figure import learning_screening_figure
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
     build_probe_dataset,
@@ -60,26 +63,34 @@ def _append_output_suffix(path: Path, suffix: str) -> Path:
 def _apply_run_output_suffixes(cfg: object) -> str:
     suffix = _anomaly_aware_run_suffix(cfg)
 
+    experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = (
-        cfg.experiment.learning_curve
-        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        experiment_cfg.learning_curve
+        if experiment_cfg is not None and experiment_cfg.learning_curve
         else None
     )
-    if learning_curve_cfg is not None:
-        results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    screening_cfg = (
+        experiment_cfg.screening
+        if experiment_cfg is not None and getattr(experiment_cfg, "screening", None)
+        else None
+    )
+    for curve_cfg in (learning_curve_cfg, screening_cfg):
+        if curve_cfg is None:
+            continue
+        results_bundle_path = getattr(curve_cfg, "results_bundle_path", None)
         if results_bundle_path is not None:
-            learning_curve_cfg.results_bundle_path = _append_output_suffix(
+            curve_cfg.results_bundle_path = _append_output_suffix(
                 Path(results_bundle_path),
                 suffix,
             )
 
-        graph_dataset_cfg = getattr(learning_curve_cfg, "graph_dataset", None)
-        graph_dataset_path = getattr(graph_dataset_cfg, "path", None)
-        if graph_dataset_cfg is not None and graph_dataset_path is not None:
-            graph_dataset_cfg.path = _append_output_suffix(
-                Path(graph_dataset_path),
-                suffix,
-            )
+    graph_dataset_cfg = getattr(learning_curve_cfg, "graph_dataset", None)
+    graph_dataset_path = getattr(graph_dataset_cfg, "path", None)
+    if graph_dataset_cfg is not None and graph_dataset_path is not None:
+        graph_dataset_cfg.path = _append_output_suffix(
+            Path(graph_dataset_path),
+            suffix,
+        )
 
     analysis_cfg = getattr(cfg, "analysis", None)
     comparison_plot_path = getattr(analysis_cfg, "comparison_plot_path", None)
@@ -90,6 +101,50 @@ def _apply_run_output_suffixes(cfg: object) -> str:
         )
 
     return suffix
+
+
+def _derived_screening_learning_curve_cfg(cfg: object):
+    experiment_cfg = getattr(cfg, "experiment", None)
+    if experiment_cfg is None:
+        return None
+    derive = getattr(experiment_cfg, "derived_screening_learning_curve", None)
+    if callable(derive):
+        return derive()
+
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    if screening_cfg is None:
+        return None
+    if learning_curve_cfg is None:
+        raise ValueError(
+            "experiment.screening requires experiment.learning_curve to define "
+            "the training grid and model families."
+        )
+    derived_cfg = copy.deepcopy(learning_curve_cfg)
+    for field_name in (
+        "budget_mode",
+        "screen_fraction",
+        "min_screen_size",
+        "validation_fraction",
+        "min_val_size",
+        "min_tuning_val_size",
+        "min_inner_train_size",
+        "results_bundle_path",
+        "reuse_results",
+        "force_refresh_methods",
+        "force_refresh_train_sizes",
+    ):
+        setattr(derived_cfg, field_name, copy.deepcopy(getattr(screening_cfg, field_name)))
+    return derived_cfg
+
+
+def _screening_run_cfg(cfg: object):
+    screening_learning_curve_cfg = _derived_screening_learning_curve_cfg(cfg)
+    if screening_learning_curve_cfg is None:
+        return None
+    screening_cfg = copy.deepcopy(cfg)
+    screening_cfg.experiment.learning_curve = screening_learning_curve_cfg
+    return screening_cfg
 
 
 def _can_reuse_graph_artifact(
@@ -320,12 +375,6 @@ def run_experiment(cfg: object):
         run_suffix,
     )
     graph_view = prepare_graph_view(cfg, wide_df)
-    learning_curve_results = load_or_run_learning_curve_results_from_config(
-        wide_df,
-        cfg,
-        graph_view=graph_view,
-        auxiliary_views=auxiliary_views,
-    )
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
     plot_kwargs = {
@@ -341,24 +390,52 @@ def run_experiment(cfg: object):
     zero_shot_rmse = float(
         np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
     )
-    learning_curve_cfg = (
-        cfg.experiment.learning_curve if cfg.experiment is not None else None
-    )
-    budget_mode = getattr(learning_curve_cfg, "budget_mode", "full_remainder_test")
-    if budget_mode == "screening_fraction":
-        screening_budget_plot(
-            results=learning_curve_results,
-            output_path=output_dir / f"screening_budget_{run_suffix}.png",
-            **plot_kwargs,
+    learning_curve_results = None
+    learning_curve_plot_path = None
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is not None:
+        learning_curve_results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
         )
-    else:
-        learning_curve_plot(
+        learning_curve_plot_path = learning_curve_plot(
             results=learning_curve_results,
             output_path=output_dir / f"learning_curve_{run_suffix}.png",
             zero_shot_rmse=zero_shot_rmse,
             **plot_kwargs,
         )
-    return learning_curve_results
+
+    screening_run_cfg = _screening_run_cfg(cfg)
+    screening_results = None
+    screening_plot_path = None
+    if screening_run_cfg is not None:
+        screening_results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            screening_run_cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+        screening_plot_path = screening_budget_plot(
+            results=screening_results,
+            output_path=output_dir / f"screening_budget_{run_suffix}.png",
+            **plot_kwargs,
+        )
+    if learning_curve_plot_path is not None and screening_plot_path is not None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            screening_panel_path = screening_budget_plot(
+                results=screening_results,
+                output_path=Path(tmpdir) / f"screening_budget_panel_{run_suffix}.png",
+                show_legend=False,
+                **plot_kwargs,
+            )
+            learning_screening_figure(
+                learning_curve_path=learning_curve_plot_path,
+                screening_curve_path=screening_panel_path,
+                output_path=output_dir / f"learning_screening_figure_{run_suffix}.png",
+            )
+    return learning_curve_results if learning_curve_results is not None else screening_results
 
 
 def run_experiment_from_config(config_paths=None):
