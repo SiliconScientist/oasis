@@ -30,6 +30,7 @@ from oasis.learning_curve.results_io import (
     learning_curve_result_field_for_method_name,
     learning_curve_results_has_method,
     learning_curve_selection_field_for_method_name,
+    learning_curve_uq_field_for_method_name,
     learning_curve_sweep_metadata_from_config,
     load_learning_curve_results_artifact,
     merge_learning_curve_point_provenance,
@@ -436,6 +437,7 @@ def run_learning_curve_experiments_from_config(
                 for field_name in (
                     learning_curve_result_field_for_method_name(method_name),
                     learning_curve_selection_field_for_method_name(method_name),
+                    learning_curve_uq_field_for_method_name(method_name),
                 )
                 if field_name is not None
             }
@@ -448,6 +450,7 @@ def run_learning_curve_experiments_from_config(
                 for field_name in (
                     learning_curve_result_field_for_method_name(method_name),
                     learning_curve_selection_field_for_method_name(method_name),
+                    learning_curve_uq_field_for_method_name(method_name),
                 )
                 if field_name is not None
             }

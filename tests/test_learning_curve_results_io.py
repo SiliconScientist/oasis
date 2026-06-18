@@ -14,6 +14,7 @@ from oasis.learning_curve.results_io import (
     build_learning_curve_point_provenance,
     dump_learning_curve_method_artifact,
     dump_learning_curve_results,
+    learning_curve_uq_field_for_method_name,
     learning_curve_sweep_metadata_from_config,
     load_learning_curve_method_artifact,
     load_learning_curve_method_artifact_mapping,
@@ -21,6 +22,7 @@ from oasis.learning_curve.results_io import (
     load_learning_curve_results,
     load_learning_curve_results_from_method_artifacts,
     load_learning_curve_results_mapping,
+    select_learning_curve_results_methods,
     save_learning_curve_method_artifacts,
     save_learning_curve_results_artifact,
     save_learning_curve_results,
@@ -29,6 +31,56 @@ from oasis.sweep import LearningCurveResults
 
 
 class LearningCurveResultsIoTests(unittest.TestCase):
+    def test_select_learning_curve_results_methods_keeps_uq_companions(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.41, 0.32],
+                    "rmse_std": [0.06, 0.03],
+                }
+            ),
+            ridge_selection_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "alpha": [0.1, 1.0],
+                }
+            ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "miscalibration_area": [0.13, 0.09],
+                    "sharpness": [0.2, 0.16],
+                    "dispersion": [0.4, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
+            weighted_linear_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.35, 0.25],
+                    "rmse_std": [0.04, 0.03],
+                }
+            ),
+        )
+
+        selected = select_learning_curve_results_methods(results, ("ridge",))
+
+        pd.testing.assert_frame_equal(selected.ridge_df, results.ridge_df)
+        pd.testing.assert_frame_equal(
+            selected.ridge_selection_df,
+            results.ridge_selection_df,
+        )
+        pd.testing.assert_frame_equal(selected.ridge_uq_df, results.ridge_uq_df)
+        self.assertIsNone(selected.weighted_linear_df)
+
+    def test_learning_curve_uq_field_for_method_name_returns_registered_uq_field(
+        self,
+    ) -> None:
+        self.assertEqual(learning_curve_uq_field_for_method_name("ridge"), "ridge_uq_df")
+        self.assertEqual(learning_curve_uq_field_for_method_name("moe"), "moe_uq_df")
+        self.assertIsNone(learning_curve_uq_field_for_method_name("missing"))
+
     def test_round_trip_serialization_preserves_mixed_result_frames(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(

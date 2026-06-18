@@ -8,6 +8,7 @@ from oasis.learning_curve.results_io import (
     learning_curve_method_name_for_result_field,
     learning_curve_result_field_for_method_name,
     learning_curve_selection_field_for_method_name,
+    learning_curve_uq_field_for_method_name,
 )
 from oasis.experiment.splits import build_sweep_split_collection
 from oasis.sweep import (
@@ -135,7 +136,8 @@ def _remove_method_train_sizes_from_results(
     field_mapping = results.to_mapping()
     metrics_field = learning_curve_result_field_for_method_name(method_name)
     selection_field = learning_curve_selection_field_for_method_name(method_name)
-    for field_name in (metrics_field, selection_field):
+    uq_field = learning_curve_uq_field_for_method_name(method_name)
+    for field_name in (metrics_field, selection_field, uq_field):
         if field_name is None:
             continue
         frame = field_mapping[field_name]

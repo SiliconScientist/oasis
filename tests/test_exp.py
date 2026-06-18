@@ -4148,11 +4148,37 @@ class ExpIntegrationTests(unittest.TestCase):
                 "rmse_std": [0.07, 0.06],
             }
         )
+        cached_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "miscalibration_area": [0.4, 0.3],
+                "sharpness": [0.5, 0.4],
+                "dispersion": [0.6, 0.5],
+                "uncertainty_kind": ["spread_only", "spread_only"],
+                "uncertainty_note": [
+                    "spread-only; not probabilistically interpretable",
+                    "spread-only; not probabilistically interpretable",
+                ],
+            }
+        )
         refreshed_ridge_df = pd.DataFrame(
             {
                 "n_train": [2, 3],
                 "rmse_mean": [0.4, 0.3],
                 "rmse_std": [0.05, 0.04],
+            }
+        )
+        refreshed_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "miscalibration_area": [0.14, 0.13],
+                "sharpness": [0.24, 0.23],
+                "dispersion": [0.34, 0.33],
+                "uncertainty_kind": ["spread_only", "spread_only"],
+                "uncertainty_note": [
+                    "spread-only; not probabilistically interpretable",
+                    "spread-only; not probabilistically interpretable",
+                ],
             }
         )
         cached_weighted_linear_df = pd.DataFrame(
@@ -4182,7 +4208,12 @@ class ExpIntegrationTests(unittest.TestCase):
                 self.calls += 1
                 del payload
                 return LearningCurveResults.from_mapping(
-                    {self.result_field: self.result_df}
+                    {
+                        self.result_field: self.result_df,
+                        "ridge_uq_df": refreshed_ridge_uq_df
+                        if self.result_field == "ridge_df"
+                        else None,
+                    }
                 )
 
         ridge_family = StubFamily("ridge", "ridge_df", refreshed_ridge_df)
@@ -4197,6 +4228,7 @@ class ExpIntegrationTests(unittest.TestCase):
             save_learning_curve_results_artifact(
                 LearningCurveResults(
                     ridge_df=cached_ridge_df,
+                    ridge_uq_df=cached_ridge_uq_df,
                     weighted_linear_df=cached_weighted_linear_df,
                 ),
                 LearningCurveSweepMetadata(
@@ -4255,6 +4287,7 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(ridge_family.calls, 1)
         self.assertEqual(weighted_linear_family.calls, 0)
         pd.testing.assert_frame_equal(results.ridge_df, refreshed_ridge_df)
+        pd.testing.assert_frame_equal(results.ridge_uq_df, refreshed_ridge_uq_df)
         pd.testing.assert_frame_equal(
             results.weighted_linear_df,
             cached_weighted_linear_df,
@@ -4262,6 +4295,10 @@ class ExpIntegrationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             bundle_artifact.results.ridge_df,
             refreshed_ridge_df,
+        )
+        pd.testing.assert_frame_equal(
+            bundle_artifact.results.ridge_uq_df,
+            refreshed_ridge_uq_df,
         )
         pd.testing.assert_frame_equal(
             bundle_artifact.results.weighted_linear_df,
@@ -4285,11 +4322,35 @@ class ExpIntegrationTests(unittest.TestCase):
                 "rmse_std": [0.07, 0.06, 0.05],
             }
         )
+        cached_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "miscalibration_area": [0.32, 0.22, 0.12],
+                "sharpness": [0.42, 0.32, 0.22],
+                "dispersion": [0.52, 0.42, 0.32],
+                "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
+                "uncertainty_note": [
+                    "spread-only; not probabilistically interpretable",
+                    "spread-only; not probabilistically interpretable",
+                    "spread-only; not probabilistically interpretable",
+                ],
+            }
+        )
         refreshed_ridge_df = pd.DataFrame(
             {
                 "n_train": [3],
                 "rmse_mean": [0.35],
                 "rmse_std": [0.035],
+            }
+        )
+        refreshed_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [3],
+                "miscalibration_area": [0.11],
+                "sharpness": [0.21],
+                "dispersion": [0.31],
+                "uncertainty_kind": ["spread_only"],
+                "uncertainty_note": ["spread-only; not probabilistically interpretable"],
             }
         )
         cached_weighted_linear_df = pd.DataFrame(
@@ -4320,7 +4381,12 @@ class ExpIntegrationTests(unittest.TestCase):
                 self.calls += 1
                 self.last_payload = payload
                 return LearningCurveResults.from_mapping(
-                    {self.result_field: self.result_df}
+                    {
+                        self.result_field: self.result_df,
+                        "ridge_uq_df": refreshed_ridge_uq_df
+                        if self.result_field == "ridge_df"
+                        else None,
+                    }
                 )
 
         ridge_family = StubFamily("ridge", "ridge_df", refreshed_ridge_df)
@@ -4335,6 +4401,7 @@ class ExpIntegrationTests(unittest.TestCase):
             save_learning_curve_results_artifact(
                 LearningCurveResults(
                     ridge_df=cached_ridge_df,
+                    ridge_uq_df=cached_ridge_uq_df,
                     weighted_linear_df=cached_weighted_linear_df,
                 ),
                 LearningCurveSweepMetadata(
@@ -4408,6 +4475,27 @@ class ExpIntegrationTests(unittest.TestCase):
             ),
         )
         pd.testing.assert_frame_equal(
+            results.ridge_uq_df,
+            pd.DataFrame(
+                {
+                    "n_train": [2, 3, 4],
+                    "miscalibration_area": [0.32, 0.11, 0.12],
+                    "sharpness": [0.42, 0.21, 0.22],
+                    "dispersion": [0.52, 0.31, 0.32],
+                    "uncertainty_kind": [
+                        "spread_only",
+                        "spread_only",
+                        "spread_only",
+                    ],
+                    "uncertainty_note": [
+                        "spread-only; not probabilistically interpretable",
+                        "spread-only; not probabilistically interpretable",
+                        "spread-only; not probabilistically interpretable",
+                    ],
+                }
+            ),
+        )
+        pd.testing.assert_frame_equal(
             results.weighted_linear_df,
             cached_weighted_linear_df,
         )
@@ -4420,6 +4508,10 @@ class ExpIntegrationTests(unittest.TestCase):
                     "rmse_std": [0.07, 0.035, 0.05],
                 }
             ),
+        )
+        pd.testing.assert_frame_equal(
+            bundle_artifact.results.ridge_uq_df,
+            results.ridge_uq_df,
         )
 
     def test_run_learning_curve_experiments_from_config_preserves_prior_bundle_methods(

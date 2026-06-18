@@ -765,6 +765,10 @@ def learning_curve_selection_field_for_method_name(method_name: str) -> str | No
     return _METHOD_SELECTION_FIELDS.get(method_name)
 
 
+def learning_curve_uq_field_for_method_name(method_name: str) -> str | None:
+    return _METHOD_UQ_FIELDS.get(method_name)
+
+
 def learning_curve_method_names() -> tuple[str, ...]:
     return tuple(_METHOD_RESULT_FIELDS)
 
