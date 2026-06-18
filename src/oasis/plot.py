@@ -108,6 +108,7 @@ def _plot_uq_metric_curve(
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
     show_xlabel: bool = True,
+    zero_shot_value: float | None = None,
     title: str,
     ylabel: str,
 ) -> Path:
@@ -144,6 +145,18 @@ def _plot_uq_metric_curve(
                 color=color,
                 alpha=0.2,
             )
+    if zero_shot_value is not None:
+        x_min, x_max = ax.get_xlim()
+        ax.hlines(
+            y=zero_shot_value,
+            xmin=x_min,
+            xmax=x_max,
+            colors="black",
+            linestyles="--",
+            linewidth=1.25,
+            label="Zero-shot mean-MLIP baseline",
+        )
+        ax.set_xlim(x_min, x_max)
     if show_xlabel:
         ax.set_xlabel("Train size", fontsize=fontsize)
     else:
@@ -527,6 +540,7 @@ def miscalibration_area_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
     show_xlabel: bool = True,
+    zero_shot_value: float | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -538,6 +552,7 @@ def miscalibration_area_plot(
         include_x=include_x,
         show_legend=show_legend,
         show_xlabel=show_xlabel,
+        zero_shot_value=zero_shot_value,
         title="Miscalibration area vs train size",
         ylabel="Miscalibration area",
     )
@@ -552,6 +567,7 @@ def sharpness_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
     show_xlabel: bool = True,
+    zero_shot_value: float | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -563,6 +579,7 @@ def sharpness_plot(
         include_x=include_x,
         show_legend=show_legend,
         show_xlabel=show_xlabel,
+        zero_shot_value=zero_shot_value,
         title="Sharpness vs train size",
         ylabel="Sharpness",
     )
@@ -577,6 +594,7 @@ def dispersion_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
     show_xlabel: bool = True,
+    zero_shot_value: float | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -588,6 +606,7 @@ def dispersion_plot(
         include_x=include_x,
         show_legend=show_legend,
         show_xlabel=show_xlabel,
+        zero_shot_value=zero_shot_value,
         title="Dispersion vs train size",
         ylabel="Dispersion",
     )

@@ -846,17 +846,32 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_miscalibration_plot.call_args.kwargs["max_x"], 10)
         self.assertEqual(mock_miscalibration_plot.call_args.kwargs["include_x"], [5, 10])
         self.assertEqual(mock_miscalibration_plot.call_args.kwargs["show_xlabel"], False)
+        self.assertAlmostEqual(
+            mock_miscalibration_plot.call_args.kwargs["zero_shot_value"],
+            0.4,
+            places=12,
+        )
         self.assertEqual(
             Path(mock_sharpness_plot.call_args.kwargs["output_path"]).name,
             "sharpness_panel_anomalyaware_off.png",
         )
         self.assertEqual(mock_sharpness_plot.call_args.kwargs["show_legend"], False)
         self.assertEqual(mock_sharpness_plot.call_args.kwargs["show_xlabel"], False)
+        self.assertAlmostEqual(
+            mock_sharpness_plot.call_args.kwargs["zero_shot_value"],
+            0.1,
+            places=12,
+        )
         self.assertEqual(
             Path(mock_dispersion_plot.call_args.kwargs["output_path"]).name,
             "dispersion_panel_anomalyaware_off.png",
         )
         self.assertEqual(mock_dispersion_plot.call_args.kwargs["show_legend"], False)
+        self.assertAlmostEqual(
+            mock_dispersion_plot.call_args.kwargs["zero_shot_value"],
+            0.0,
+            places=12,
+        )
         self.assertEqual(
             mock_uq_summary_figure.call_args.kwargs["output_path"],
             tmp_path / "plots" / "uq_summary_figure_anomalyaware_off.png",

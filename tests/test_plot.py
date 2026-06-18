@@ -117,6 +117,34 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(getattr(locator, "_integer", False))
 
+    def test_uq_metric_plot_can_render_zero_shot_baseline_line(self) -> None:
+        uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "miscalibration_area": [0.2, 0.15, 0.1],
+                "miscalibration_area_std": [0.03, 0.02, 0.01],
+                "sharpness": [0.3, 0.25, 0.2],
+                "sharpness_std": [0.04, 0.03, 0.02],
+                "dispersion": [0.4, 0.35, 0.3],
+                "dispersion_std": [0.05, 0.04, 0.03],
+                "uncertainty_kind": ["spread_only"] * 3,
+            }
+        )
+        results = LearningCurveResults(ridge_uq_df=uq_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "miscalibration_zero_shot.png"
+            with patch("oasis.plot.plt.close"):
+                miscalibration_area_plot(
+                    results,
+                    output_path=output_path,
+                    zero_shot_value=0.12,
+                )
+                fig = miscalibration_area_plot.__globals__["plt"].gcf()
+                labels = [collection.get_label() for collection in fig.axes[0].collections]
+
+            self.assertIn("Zero-shot mean-MLIP baseline", labels)
+
     def test_learning_curve_plot_renders_from_results_only(self) -> None:
         result_df = pd.DataFrame(
             {

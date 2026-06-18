@@ -18,6 +18,11 @@ from oasis.exp import (
     prepare_parity_plot_data,
 )
 from oasis.figure import learning_screening_figure, uq_summary_figure
+from oasis.learning_curve.execution import (
+    dispersion_from_spread,
+    miscalibration_area,
+    sharpness_from_spread,
+)
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
     build_probe_dataset,
@@ -380,6 +385,28 @@ def _has_uq_summary(results: object) -> bool:
     return False
 
 
+def _zero_shot_uq_baselines(parity_plot_data: object) -> dict[str, float]:
+    zero_shot_preds = np.mean(
+        np.column_stack(list(parity_plot_data.predictions.values())),
+        axis=1,
+    )
+    zero_shot_spread = np.std(
+        np.column_stack(list(parity_plot_data.predictions.values())),
+        axis=1,
+    )
+    return {
+        "miscalibration_area": float(
+            miscalibration_area(
+                parity_plot_data.reference,
+                zero_shot_preds,
+                zero_shot_spread,
+            )
+        ),
+        "sharpness": float(sharpness_from_spread(zero_shot_spread)),
+        "dispersion": float(dispersion_from_spread(zero_shot_spread)),
+    }
+
+
 def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
@@ -412,6 +439,7 @@ def run_experiment(cfg: object):
     zero_shot_rmse = float(
         np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
     )
+    zero_shot_uq = _zero_shot_uq_baselines(parity_plot_data)
     learning_curve_results = None
     learning_curve_plot_path = None
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
@@ -435,6 +463,7 @@ def run_experiment(cfg: object):
                     output_path=Path(tmpdir)
                     / f"miscalibration_area_panel_{run_suffix}.png",
                     show_xlabel=False,
+                    zero_shot_value=zero_shot_uq["miscalibration_area"],
                     **plot_kwargs,
                 )
                 sharpness_path = sharpness_plot(
@@ -442,12 +471,14 @@ def run_experiment(cfg: object):
                     output_path=Path(tmpdir) / f"sharpness_panel_{run_suffix}.png",
                     show_legend=False,
                     show_xlabel=False,
+                    zero_shot_value=zero_shot_uq["sharpness"],
                     **plot_kwargs,
                 )
                 dispersion_path = dispersion_plot(
                     learning_curve_results,
                     output_path=Path(tmpdir) / f"dispersion_panel_{run_suffix}.png",
                     show_legend=False,
+                    zero_shot_value=zero_shot_uq["dispersion"],
                     **plot_kwargs,
                 )
                 uq_summary_figure(
