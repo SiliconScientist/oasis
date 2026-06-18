@@ -1038,28 +1038,47 @@ class LearningCurveResults:
     Selection-aware families may also populate `*_selection_df` metadata frames.
     Those are optional companion outputs keyed by `n_train` that surface the
     chosen hyperparameters for each sweep size without changing the RMSE frames.
+
+    Methods that expose uncertainty summaries may also populate `*_uq_df`
+    companion frames keyed by `n_train`. Those frames are intended to carry the
+    aggregate uncertainty metrics `miscalibration_area`, `sharpness`, and
+    `dispersion`, plus an `uncertainty_kind` column describing whether the
+    spread is calibrated (`"calibrated"`) or only a spread proxy
+    (`"spread_only"`).
     """
 
     ridge_df: pd.DataFrame | None = None
     kernel_ridge_df: pd.DataFrame | None = None
     ridge_selection_df: pd.DataFrame | None = None
+    ridge_uq_df: pd.DataFrame | None = None
     lasso_df: pd.DataFrame | None = None
     lasso_selection_df: pd.DataFrame | None = None
+    lasso_uq_df: pd.DataFrame | None = None
     elastic_df: pd.DataFrame | None = None
     elastic_selection_df: pd.DataFrame | None = None
+    elastic_uq_df: pd.DataFrame | None = None
     resid_df: pd.DataFrame | None = None
+    resid_uq_df: pd.DataFrame | None = None
     weighted_linear_df: pd.DataFrame | None = None
+    weighted_linear_uq_df: pd.DataFrame | None = None
     weighted_simplex_df: pd.DataFrame | None = None
+    weighted_simplex_uq_df: pd.DataFrame | None = None
     graph_mean_df: pd.DataFrame | None = None
     graph_mean_selection_df: pd.DataFrame | None = None
+    graph_mean_uq_df: pd.DataFrame | None = None
     kernel_ridge_selection_df: pd.DataFrame | None = None
+    kernel_ridge_uq_df: pd.DataFrame | None = None
     moe_df: pd.DataFrame | None = None
     moe_selection_df: pd.DataFrame | None = None
+    moe_uq_df: pd.DataFrame | None = None
     probe_gnn_df: pd.DataFrame | None = None
     probe_gnn_selection_df: pd.DataFrame | None = None
+    probe_gnn_uq_df: pd.DataFrame | None = None
     gnn_direct_df: pd.DataFrame | None = None
     gnn_direct_selection_df: pd.DataFrame | None = None
+    gnn_direct_uq_df: pd.DataFrame | None = None
     latent_df: pd.DataFrame | None = None
+    latent_uq_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:

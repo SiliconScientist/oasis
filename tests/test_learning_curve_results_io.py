@@ -52,6 +52,15 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     "best_validation_score": [0.52, 0.44],
                 }
             ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "miscalibration_area": [0.13, 0.09],
+                    "sharpness": [0.2, 0.16],
+                    "dispersion": [0.4, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
             probe_gnn_selection_df=pd.DataFrame(
                 {
                     "n_train": [8],
@@ -71,6 +80,10 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.ridge_selection_df,
             results.ridge_selection_df,
+        )
+        pd.testing.assert_frame_equal(
+            restored.ridge_uq_df,
+            results.ridge_uq_df,
         )
         pd.testing.assert_frame_equal(
             restored.probe_gnn_selection_df,
@@ -112,6 +125,15 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                 {
                     "n_train": [4, 8],
                     "alpha": [0.1, 1.0],
+                }
+            ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "miscalibration_area": [0.13, 0.09],
+                    "sharpness": [0.2, 0.16],
+                    "dispersion": [0.4, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
                 }
             ),
             moe_df=pd.DataFrame(
@@ -159,6 +181,10 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.ridge_selection_df,
             results.ridge_selection_df,
+        )
+        pd.testing.assert_frame_equal(
+            restored.ridge_uq_df,
+            results.ridge_uq_df,
         )
         pd.testing.assert_frame_equal(restored.moe_df, results.moe_df)
 
@@ -470,6 +496,15 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     "alpha": [0.1, 1.0],
                 }
             ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "miscalibration_area": [0.13, 0.09],
+                    "sharpness": [0.2, 0.16],
+                    "dispersion": [0.4, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
         )
         metadata = LearningCurveSweepMetadata(
             seed=17,
@@ -503,6 +538,10 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.point_provenance["ridge_selection_df"],
             point_provenance["ridge_selection_df"],
+        )
+        pd.testing.assert_frame_equal(
+            restored.point_provenance["ridge_uq_df"],
+            point_provenance["ridge_uq_df"],
         )
 
     def test_single_method_artifact_file_round_trip_preserves_point_provenance(self) -> None:

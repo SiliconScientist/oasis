@@ -229,6 +229,7 @@ class LearnedTrialTuningSpec(Protocol):
 class SweepRunnerArtifacts:
     metrics: pd.DataFrame
     selection_metadata: pd.DataFrame | None = None
+    uq_summary: pd.DataFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)

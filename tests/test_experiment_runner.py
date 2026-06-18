@@ -6,6 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
+
 from oasis.experiment_runner import (
     load_filtered_wide_predictions,
     run_experiment,
@@ -22,7 +24,7 @@ class _FakeColumn:
         return list(self._values)
 
     def to_numpy(self):
-        return self._values
+        return np.asarray(self._values)
 
 
 class _FakeWideFrame:
@@ -31,15 +33,20 @@ class _FakeWideFrame:
         self._columns = {
             "reaction": _FakeColumn(reactions),
             "reference_ads_eng": _FakeColumn([float(i + 1) for i in range(len(reactions))]),
-            "fake_mlip_ads_eng_median": _FakeColumn(
-                [float(i + 1) for i in range(len(reactions))]
+            "model_a_mlip_ads_eng_median": _FakeColumn(
+                [float(i + 1) + 0.1 for i in range(len(reactions))]
+            ),
+            "model_b_mlip_ads_eng_median": _FakeColumn(
+                [float(i + 1) - 0.1 for i in range(len(reactions))]
             ),
         }
-        self.columns = tuple(self._columns)
 
     def get_column(self, name: str):
         return self._columns[name]
 
+    @property
+    def columns(self) -> list[str]:
+        return list(self._columns)
     def __getitem__(self, name: str):
         return self._columns[name]
 

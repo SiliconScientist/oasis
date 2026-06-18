@@ -5,6 +5,7 @@ from unittest.mock import PropertyMock, patch
 
 import numpy as np
 import pandas as pd
+from oasis.tune import SweepRunnerArtifacts
 
 from oasis.sweep import (
     build_sweep_batches,
@@ -1554,20 +1555,95 @@ class LearningCurveResultsTests(unittest.TestCase):
         ridge_df = pd.DataFrame(
             {"n_train": [4, 8], "rmse_mean": [0.4, 0.3], "rmse_std": [0.05, 0.02]}
         )
+        ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [4, 8],
+                "miscalibration_area": [0.11, 0.08],
+                "sharpness": [0.21, 0.18],
+                "dispersion": [0.31, 0.28],
+                "uncertainty_kind": ["spread_only", "spread_only"],
+            }
+        )
         probe_gnn_selection_df = pd.DataFrame(
             {"n_train": [8], "hidden_dim": [32], "best_validation_score": [0.12]}
         )
         results = LearningCurveResults(
             ridge_df=ridge_df,
+            ridge_uq_df=ridge_uq_df,
             probe_gnn_selection_df=probe_gnn_selection_df,
         )
 
         mapping = results.to_mapping()
 
         self.assertIs(mapping["ridge_df"], ridge_df)
+        self.assertIs(mapping["ridge_uq_df"], ridge_uq_df)
         self.assertIs(mapping["probe_gnn_selection_df"], probe_gnn_selection_df)
-        self.assertIn("latent_df", mapping)
-        self.assertIsNone(mapping["latent_df"])
+        self.assertIn("latent_uq_df", mapping)
+        self.assertIsNone(mapping["latent_uq_df"])
+
+    def test_merge_unions_uq_frames_by_n_train(self) -> None:
+        base = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [1, 10],
+                    "miscalibration_area": [0.3, 0.2],
+                    "sharpness": [0.4, 0.3],
+                    "dispersion": [0.5, 0.4],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [20, 30],
+                    "miscalibration_area": [0.15, 0.1],
+                    "sharpness": [0.25, 0.2],
+                    "dispersion": [0.35, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            )
+        )
+
+        merged = base.merge(update)
+
+        pd.testing.assert_frame_equal(
+            merged.ridge_uq_df,
+            pd.DataFrame(
+                {
+                    "n_train": [1, 10, 20, 30],
+                    "miscalibration_area": [0.3, 0.2, 0.15, 0.1],
+                    "sharpness": [0.4, 0.3, 0.25, 0.2],
+                    "dispersion": [0.5, 0.4, 0.35, 0.3],
+                    "uncertainty_kind": [
+                        "spread_only",
+                        "spread_only",
+                        "spread_only",
+                        "spread_only",
+                    ],
+                }
+            ),
+        )
+
+    def test_sweep_runner_artifacts_can_hold_uq_summary(self) -> None:
+        metrics = pd.DataFrame(
+            {"n_train": [4], "rmse_mean": [0.3], "rmse_std": [0.05]}
+        )
+        uq_summary = pd.DataFrame(
+            {
+                "n_train": [4],
+                "miscalibration_area": [0.08],
+                "sharpness": [0.18],
+                "dispersion": [0.28],
+                "uncertainty_kind": ["calibrated"],
+            }
+        )
+
+        artifacts = SweepRunnerArtifacts(metrics=metrics, uq_summary=uq_summary)
+
+        self.assertIs(artifacts.metrics, metrics)
+        self.assertIsNone(artifacts.selection_metadata)
+        self.assertIs(artifacts.uq_summary, uq_summary)
 
     def test_merge_unions_metric_frames_by_n_train(self) -> None:
         base = LearningCurveResults(

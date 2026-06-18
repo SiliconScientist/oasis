@@ -42,6 +42,20 @@ _METHOD_SELECTION_FIELDS = {
     "probe_gnn": "probe_gnn_selection_df",
     "gnn_direct": "gnn_direct_selection_df",
 }
+_METHOD_UQ_FIELDS = {
+    "ridge": "ridge_uq_df",
+    "kernel_ridge": "kernel_ridge_uq_df",
+    "lasso": "lasso_uq_df",
+    "elastic": "elastic_uq_df",
+    "residual": "resid_uq_df",
+    "weighted_linear": "weighted_linear_uq_df",
+    "weighted_simplex": "weighted_simplex_uq_df",
+    "graph_mean": "graph_mean_uq_df",
+    "moe": "moe_uq_df",
+    "probe_gnn": "probe_gnn_uq_df",
+    "gnn_direct": "gnn_direct_uq_df",
+    "latent": "latent_uq_df",
+}
 _RESULT_FIELD_TO_METHOD = {
     result_field: method_name
     for method_name, result_field in _METHOD_RESULT_FIELDS.items()
@@ -793,6 +807,9 @@ def _extract_method_results(
     selection_field = _METHOD_SELECTION_FIELDS.get(method_name)
     if selection_field is not None:
         field_mapping[selection_field] = getattr(results, selection_field)
+    uq_field = _METHOD_UQ_FIELDS.get(method_name)
+    if uq_field is not None:
+        field_mapping[uq_field] = getattr(results, uq_field)
     return LearningCurveResults.from_mapping(field_mapping)
 
 
@@ -1017,4 +1034,7 @@ def _extract_method_point_provenance(
     selection_field = _METHOD_SELECTION_FIELDS.get(method_name)
     if selection_field is not None and selection_field in point_provenance:
         selected[selection_field] = point_provenance[selection_field]
+    uq_field = _METHOD_UQ_FIELDS.get(method_name)
+    if uq_field is not None and uq_field in point_provenance:
+        selected[uq_field] = point_provenance[uq_field]
     return selected
