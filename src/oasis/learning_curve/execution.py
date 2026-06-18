@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from statistics import NormalDist
 from typing import TYPE_CHECKING
 import warnings
 
@@ -31,6 +33,38 @@ if TYPE_CHECKING:
 
 
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+_UQ_SUMMARY_COLUMNS = [
+    "n_train",
+    "miscalibration_area",
+    "sharpness",
+    "dispersion",
+    "uncertainty_kind",
+]
+_DEFAULT_CALIBRATION_COVERAGES = np.linspace(0.1, 0.9, 9, dtype=float)
+_STANDARD_NORMAL = NormalDist()
+_TRAPEZOID = getattr(np, "trapezoid", np.trapz)
+
+
+@dataclass(frozen=True, slots=True)
+class SplitPredictionArtifact:
+    sweep_size: int
+    y_true: np.ndarray
+    y_pred: np.ndarray
+    spread: np.ndarray
+
+    def __post_init__(self) -> None:
+        y_true = np.asarray(self.y_true, dtype=float).reshape(-1)
+        y_pred = np.asarray(self.y_pred, dtype=float).reshape(-1)
+        spread = np.asarray(self.spread, dtype=float).reshape(-1)
+        if len(y_true) != len(y_pred) or len(y_true) != len(spread):
+            raise ValueError(
+                "y_true, y_pred, and spread must have the same number of rows."
+            )
+        if np.any(spread < 0.0):
+            raise ValueError("spread must be nonnegative.")
+        object.__setattr__(self, "y_true", y_true)
+        object.__setattr__(self, "y_pred", y_pred)
+        object.__setattr__(self, "spread", spread)
 
 
 def require_min_mlip_feature_count(
@@ -127,6 +161,150 @@ def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
         for n_train, rmses in sorted(rmses_by_size.items())
     ]
     return pd.DataFrame(rows, columns=_SWEEP_RESULT_COLUMNS)
+
+
+def calibration_curve_frame(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    spread: np.ndarray,
+    *,
+    nominal_coverages: np.ndarray | None = None,
+) -> pd.DataFrame:
+    resolved_coverages = _resolve_nominal_coverages(nominal_coverages)
+    abs_errors = np.abs(np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float))
+    resolved_spread = np.asarray(spread, dtype=float).reshape(-1)
+    if len(abs_errors) != len(resolved_spread):
+        raise ValueError("y_true, y_pred, and spread must have the same number of rows.")
+    z_scores = np.asarray(
+        [
+            _STANDARD_NORMAL.inv_cdf((1.0 + float(coverage)) / 2.0)
+            for coverage in resolved_coverages
+        ],
+        dtype=float,
+    )
+    observed_coverages = np.asarray(
+        [
+            float(np.mean(abs_errors <= z_score * resolved_spread))
+            for z_score in z_scores
+        ],
+        dtype=float,
+    )
+    absolute_gap = np.abs(observed_coverages - resolved_coverages)
+    return pd.DataFrame(
+        {
+            "nominal_coverage": resolved_coverages,
+            "observed_coverage": observed_coverages,
+            "absolute_gap": absolute_gap,
+        }
+    )
+
+
+def miscalibration_area(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    spread: np.ndarray,
+    *,
+    nominal_coverages: np.ndarray | None = None,
+) -> float:
+    curve = calibration_curve_frame(
+        y_true,
+        y_pred,
+        spread,
+        nominal_coverages=nominal_coverages,
+    )
+    if len(curve) == 1:
+        return float(curve["absolute_gap"].iloc[0])
+    return float(
+        _TRAPEZOID(
+            curve["absolute_gap"].to_numpy(),
+            curve["nominal_coverage"].to_numpy(),
+        )
+    )
+
+
+def sharpness_from_spread(spread: np.ndarray) -> float:
+    resolved_spread = np.abs(np.asarray(spread, dtype=float).reshape(-1))
+    if len(resolved_spread) == 0:
+        return 0.0
+    return float(np.mean(resolved_spread))
+
+
+def dispersion_from_spread(spread: np.ndarray) -> float:
+    resolved_spread = np.abs(np.asarray(spread, dtype=float).reshape(-1))
+    if len(resolved_spread) == 0:
+        return 0.0
+    mean_spread = float(np.mean(resolved_spread))
+    if mean_spread <= 0.0:
+        return 0.0
+    return float(np.std(resolved_spread) / mean_spread)
+
+
+def aggregate_uq_summary(
+    split_artifacts: list[SplitPredictionArtifact] | tuple[SplitPredictionArtifact, ...],
+    *,
+    uncertainty_kind: str,
+    nominal_coverages: np.ndarray | None = None,
+) -> pd.DataFrame:
+    grouped = collect_split_prediction_artifacts(split_artifacts)
+    rows: list[dict[str, float | int | str]] = []
+    for sweep_size, artifacts in sorted(grouped.items()):
+        y_true = np.concatenate([artifact.y_true for artifact in artifacts])
+        y_pred = np.concatenate([artifact.y_pred for artifact in artifacts])
+        spread = np.concatenate([artifact.spread for artifact in artifacts])
+        rows.append(
+            {
+                "n_train": sweep_size,
+                "miscalibration_area": miscalibration_area(
+                    y_true,
+                    y_pred,
+                    spread,
+                    nominal_coverages=nominal_coverages,
+                ),
+                "sharpness": sharpness_from_spread(spread),
+                "dispersion": dispersion_from_spread(spread),
+                "uncertainty_kind": uncertainty_kind,
+            }
+        )
+    return pd.DataFrame(rows, columns=_UQ_SUMMARY_COLUMNS)
+
+
+def collect_split_prediction_artifacts(
+    split_artifacts: list[SplitPredictionArtifact] | tuple[SplitPredictionArtifact, ...],
+) -> dict[int, list[SplitPredictionArtifact]]:
+    grouped: dict[int, list[SplitPredictionArtifact]] = {}
+    for artifact in split_artifacts:
+        grouped.setdefault(int(artifact.sweep_size), []).append(artifact)
+    return grouped
+
+
+def build_split_prediction_artifact(
+    *,
+    sweep_size: int,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    spread: np.ndarray,
+) -> SplitPredictionArtifact:
+    return SplitPredictionArtifact(
+        sweep_size=int(sweep_size),
+        y_true=y_true,
+        y_pred=y_pred,
+        spread=spread,
+    )
+
+
+def _resolve_nominal_coverages(
+    nominal_coverages: np.ndarray | None,
+) -> np.ndarray:
+    resolved_coverages = (
+        _DEFAULT_CALIBRATION_COVERAGES
+        if nominal_coverages is None
+        else np.asarray(nominal_coverages, dtype=float).reshape(-1)
+    )
+    if len(resolved_coverages) == 0:
+        raise ValueError("nominal_coverages must contain at least one value.")
+    if np.any((resolved_coverages <= 0.0) | (resolved_coverages >= 1.0)):
+        raise ValueError("nominal_coverages must lie strictly between 0 and 1.")
+    return resolved_coverages
 
 
 def sweep_model(

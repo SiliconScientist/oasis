@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -43,7 +44,15 @@ from tests.support import regression_dataset, regression_train_test_payload, wei
 try:
     import oasis.learning_curve.sklearn_specs as sklearn_specs_module
     from oasis.learning_curve.execution import (
+        aggregate_uq_summary,
+        build_split_prediction_artifact,
+        calibration_curve_frame,
+        collect_split_prediction_artifacts,
+        dispersion_from_spread,
+        miscalibration_area,
         residual_sweep,
+        sharpness_from_spread,
+        SplitPredictionArtifact,
         sweep_learned_model,
         sweep_learned_model_with_validation,
         sweep_model,
@@ -1280,6 +1289,157 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
             baseline_result,
             result_with_auxiliary_views,
         )
+
+
+@unittest.skipUnless(HAS_METHOD, "requires method dependencies")
+class UQMetricHelperTests(unittest.TestCase):
+    def test_calibration_curve_matches_expected_coverages_for_constructed_example(
+        self,
+    ) -> None:
+        normal = NormalDist()
+        y_pred = np.zeros(4, dtype=float)
+        spread = np.ones(4, dtype=float)
+        nominal_coverages = np.array([0.25, 0.5, 0.75], dtype=float)
+        residual_magnitudes = np.array(
+            [
+                0.1,
+                0.5,
+                1.0,
+                normal.inv_cdf((1.0 + 0.75) / 2.0) + 1.0,
+            ],
+            dtype=float,
+        )
+        signs = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
+        y_true = signs * residual_magnitudes
+
+        curve = calibration_curve_frame(
+            y_true,
+            y_pred,
+            spread,
+            nominal_coverages=nominal_coverages,
+        )
+
+        np.testing.assert_allclose(
+            curve["nominal_coverage"].to_numpy(),
+            nominal_coverages,
+        )
+        np.testing.assert_allclose(
+            curve["observed_coverage"].to_numpy(),
+            nominal_coverages,
+            atol=1e-12,
+        )
+        self.assertAlmostEqual(
+            miscalibration_area(
+                y_true,
+                y_pred,
+                spread,
+                nominal_coverages=nominal_coverages,
+            ),
+            0.0,
+            places=12,
+        )
+
+    def test_miscalibration_area_handles_zero_spread(self) -> None:
+        y_true = np.array([0.0, 1.0], dtype=float)
+        y_pred = np.zeros(2, dtype=float)
+        spread = np.zeros(2, dtype=float)
+
+        value = miscalibration_area(
+            y_true,
+            y_pred,
+            spread,
+            nominal_coverages=np.array([0.9], dtype=float),
+        )
+
+        self.assertAlmostEqual(value, 0.4, places=12)
+
+    def test_sharpness_and_dispersion_handle_zero_spread(self) -> None:
+        spread = np.zeros(3, dtype=float)
+
+        self.assertEqual(sharpness_from_spread(spread), 0.0)
+        self.assertEqual(dispersion_from_spread(spread), 0.0)
+
+    def test_build_split_prediction_artifact_rejects_negative_spread(self) -> None:
+        with self.assertRaisesRegex(ValueError, "spread must be nonnegative"):
+            build_split_prediction_artifact(
+                sweep_size=4,
+                y_true=np.array([1.0]),
+                y_pred=np.array([1.0]),
+                spread=np.array([-0.1]),
+            )
+
+    def test_collect_split_prediction_artifacts_groups_by_sweep_size(self) -> None:
+        first = build_split_prediction_artifact(
+            sweep_size=4,
+            y_true=np.array([1.0]),
+            y_pred=np.array([1.1]),
+            spread=np.array([0.2]),
+        )
+        second = build_split_prediction_artifact(
+            sweep_size=4,
+            y_true=np.array([2.0]),
+            y_pred=np.array([1.9]),
+            spread=np.array([0.3]),
+        )
+        third = build_split_prediction_artifact(
+            sweep_size=5,
+            y_true=np.array([3.0]),
+            y_pred=np.array([3.1]),
+            spread=np.array([0.4]),
+        )
+
+        grouped = collect_split_prediction_artifacts((first, second, third))
+
+        self.assertEqual(sorted(grouped), [4, 5])
+        self.assertEqual(grouped[4], [first, second])
+        self.assertEqual(grouped[5], [third])
+
+    def test_aggregate_uq_summary_combines_repeats_by_sweep_size(self) -> None:
+        artifacts = (
+            SplitPredictionArtifact(
+                sweep_size=4,
+                y_true=np.array([0.0, 1.0]),
+                y_pred=np.array([0.0, 1.0]),
+                spread=np.array([0.2, 0.4]),
+            ),
+            SplitPredictionArtifact(
+                sweep_size=4,
+                y_true=np.array([2.0]),
+                y_pred=np.array([2.0]),
+                spread=np.array([0.6]),
+            ),
+            SplitPredictionArtifact(
+                sweep_size=5,
+                y_true=np.array([1.0]),
+                y_pred=np.array([1.2]),
+                spread=np.array([0.5]),
+            ),
+        )
+
+        summary = aggregate_uq_summary(
+            artifacts,
+            uncertainty_kind="spread_only",
+            nominal_coverages=np.array([0.5], dtype=float),
+        )
+
+        self.assertEqual(
+            summary.columns.tolist(),
+            [
+                "n_train",
+                "miscalibration_area",
+                "sharpness",
+                "dispersion",
+                "uncertainty_kind",
+            ],
+        )
+        self.assertEqual(summary["n_train"].tolist(), [4, 5])
+        np.testing.assert_allclose(summary["sharpness"].to_numpy(), [0.4, 0.5])
+        np.testing.assert_allclose(
+            summary["dispersion"].to_numpy(),
+            [np.std([0.2, 0.4, 0.6]) / np.mean([0.2, 0.4, 0.6]), 0.0],
+        )
+        self.assertEqual(summary["uncertainty_kind"].tolist(), ["spread_only", "spread_only"])
+        np.testing.assert_allclose(summary["miscalibration_area"].to_numpy(), [0.5, 0.5])
 
 
 @unittest.skipUnless(HAS_METHOD, "requires method dependencies")
