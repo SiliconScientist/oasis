@@ -6,8 +6,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from oasis.figure import learning_screening_figure, vertical_panel_figure
-from oasis.plot import learning_curve_plot, screening_budget_plot
+from oasis.figure import learning_screening_figure, uq_summary_figure, vertical_panel_figure
+from oasis.plot import (
+    dispersion_plot,
+    learning_curve_plot,
+    miscalibration_area_plot,
+    screening_budget_plot,
+    sharpness_plot,
+)
 from oasis.sweep import LearningCurveResults
 
 
@@ -92,4 +98,60 @@ class FigureTests(unittest.TestCase):
             )
 
             self.assertEqual(output_path, tmp_path / "learning_screening_figure.png")
+            self.assertTrue(output_path.exists())
+
+    def test_uq_summary_figure_stitches_three_uq_metric_panels(self) -> None:
+        uq_results = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 3, 4],
+                    "miscalibration_area": [0.2, 0.15, 0.1],
+                    "sharpness": [0.3, 0.25, 0.2],
+                    "dispersion": [0.4, 0.35, 0.3],
+                    "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
+                }
+            ),
+            weighted_simplex_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 3, 4],
+                    "miscalibration_area": [0.18, 0.14, 0.09],
+                    "sharpness": [0.28, 0.24, 0.19],
+                    "dispersion": [0.38, 0.34, 0.29],
+                    "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
+                }
+            ),
+            moe_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 3, 4],
+                    "miscalibration_area": [0.17, 0.12, 0.08],
+                    "sharpness": [0.27, 0.22, 0.18],
+                    "dispersion": [0.37, 0.32, 0.28],
+                    "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
+                }
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            miscalibration_path = miscalibration_area_plot(
+                uq_results,
+                output_path=tmp_path / "miscalibration.png",
+            )
+            sharpness_path = sharpness_plot(
+                uq_results,
+                output_path=tmp_path / "sharpness.png",
+            )
+            dispersion_path = dispersion_plot(
+                uq_results,
+                output_path=tmp_path / "dispersion.png",
+            )
+
+            output_path = uq_summary_figure(
+                miscalibration_area_path=miscalibration_path,
+                sharpness_path=sharpness_path,
+                dispersion_path=dispersion_path,
+                output_path=tmp_path / "uq_summary_figure.png",
+            )
+
+            self.assertEqual(output_path, tmp_path / "uq_summary_figure.png")
             self.assertTrue(output_path.exists())

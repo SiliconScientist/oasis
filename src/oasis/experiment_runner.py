@@ -17,7 +17,7 @@ from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
     prepare_parity_plot_data,
 )
-from oasis.figure import learning_screening_figure
+from oasis.figure import learning_screening_figure, uq_summary_figure
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
     build_probe_dataset,
@@ -31,7 +31,14 @@ from oasis.mlip.artifacts import (
     find_result_files,
     load_wide_predictions,
 )
-from oasis.plot import learning_curve_plot, parity_plot, screening_budget_plot
+from oasis.plot import (
+    dispersion_plot,
+    learning_curve_plot,
+    miscalibration_area_plot,
+    parity_plot,
+    screening_budget_plot,
+    sharpness_plot,
+)
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 
@@ -358,6 +365,21 @@ def prepare_graph_view(cfg: object, wide_df: object):
     return graph_view
 
 
+def _has_uq_summary(results: object) -> bool:
+    if results is None:
+        return False
+    for field_name in (
+        "resid_uq_df",
+        "weighted_simplex_uq_df",
+        "ridge_uq_df",
+        "moe_uq_df",
+    ):
+        frame = getattr(results, field_name, None)
+        if frame is not None and not frame.empty:
+            return True
+    return False
+
+
 def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
@@ -406,6 +428,32 @@ def run_experiment(cfg: object):
             zero_shot_rmse=zero_shot_rmse,
             **plot_kwargs,
         )
+        if _has_uq_summary(learning_curve_results):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                miscalibration_path = miscalibration_area_plot(
+                    learning_curve_results,
+                    output_path=Path(tmpdir)
+                    / f"miscalibration_area_panel_{run_suffix}.png",
+                    **plot_kwargs,
+                )
+                sharpness_path = sharpness_plot(
+                    learning_curve_results,
+                    output_path=Path(tmpdir) / f"sharpness_panel_{run_suffix}.png",
+                    show_legend=False,
+                    **plot_kwargs,
+                )
+                dispersion_path = dispersion_plot(
+                    learning_curve_results,
+                    output_path=Path(tmpdir) / f"dispersion_panel_{run_suffix}.png",
+                    show_legend=False,
+                    **plot_kwargs,
+                )
+                uq_summary_figure(
+                    miscalibration_area_path=miscalibration_path,
+                    sharpness_path=sharpness_path,
+                    dispersion_path=dispersion_path,
+                    output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
+                )
 
     screening_run_cfg = _screening_run_cfg(cfg)
     screening_results = None

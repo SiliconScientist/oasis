@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 
 from oasis.experiment_runner import (
     load_filtered_wide_predictions,
@@ -55,6 +56,33 @@ class _FakeWideFrame:
 
 
 class ExperimentRunnerTests(unittest.TestCase):
+    @staticmethod
+    def _uq_results() -> LearningCurveResults:
+        uq_frame = pd.DataFrame(
+            {
+                "n_train": [5, 10],
+                "miscalibration_area": [0.1, 0.05],
+                "sharpness": [0.2, 0.15],
+                "dispersion": [0.3, 0.25],
+                "uncertainty_kind": ["calibrated", "calibrated"],
+            }
+        )
+        spread_only_frame = pd.DataFrame(
+            {
+                "n_train": [5, 10],
+                "miscalibration_area": [0.4, 0.35],
+                "sharpness": [0.5, 0.45],
+                "dispersion": [0.6, 0.55],
+                "uncertainty_kind": ["spread_only", "spread_only"],
+            }
+        )
+        return LearningCurveResults(
+            resid_uq_df=uq_frame,
+            weighted_simplex_uq_df=uq_frame,
+            ridge_uq_df=spread_only_frame,
+            moe_uq_df=spread_only_frame,
+        )
+
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
 
@@ -736,4 +764,110 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+        )
+
+    def test_run_experiment_emits_uq_summary_figure_when_learning_curve_results_have_uq(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    filters=SimpleNamespace(
+                        adsorbate=None,
+                        anomaly_label=None,
+                        reaction_contains=None,
+                    ),
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+            results = self._uq_results()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ), patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                return_value=tmp_path / "tmp" / "miscalibration.png",
+            ) as mock_miscalibration_plot, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                return_value=tmp_path / "tmp" / "sharpness.png",
+            ) as mock_sharpness_plot, patch(
+                "oasis.experiment_runner.dispersion_plot",
+                return_value=tmp_path / "tmp" / "dispersion.png",
+            ) as mock_dispersion_plot, patch(
+                "oasis.experiment_runner.uq_summary_figure",
+                return_value=tmp_path / "plots" / "uq_summary_figure.png",
+            ) as mock_uq_summary_figure:
+                run_experiment(cfg)
+
+        mock_miscalibration_plot.assert_called_once()
+        self.assertEqual(
+            Path(mock_miscalibration_plot.call_args.kwargs["output_path"]).name,
+            "miscalibration_area_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(mock_miscalibration_plot.call_args.kwargs["min_x"], 5)
+        self.assertEqual(mock_miscalibration_plot.call_args.kwargs["max_x"], 10)
+        self.assertEqual(mock_miscalibration_plot.call_args.kwargs["include_x"], [5, 10])
+        self.assertEqual(
+            Path(mock_sharpness_plot.call_args.kwargs["output_path"]).name,
+            "sharpness_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(mock_sharpness_plot.call_args.kwargs["show_legend"], False)
+        self.assertEqual(
+            Path(mock_dispersion_plot.call_args.kwargs["output_path"]).name,
+            "dispersion_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(mock_dispersion_plot.call_args.kwargs["show_legend"], False)
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["output_path"],
+            tmp_path / "plots" / "uq_summary_figure_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["miscalibration_area_path"],
+            tmp_path / "tmp" / "miscalibration.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["sharpness_path"],
+            tmp_path / "tmp" / "sharpness.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["dispersion_path"],
+            tmp_path / "tmp" / "dispersion.png",
         )

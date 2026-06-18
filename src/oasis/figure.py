@@ -86,3 +86,22 @@ def learning_screening_figure(
         panel_labels=panel_labels,
         panel_label_positions=((0.02, 0.98), (0.02, 1.01)),
     )
+
+
+def uq_summary_figure(
+    *,
+    miscalibration_area_path: str | Path,
+    sharpness_path: str | Path,
+    dispersion_path: str | Path,
+    output_path: str | Path,
+    panel_labels: Sequence[str] = ("a)", "b)", "c)"),
+) -> Path:
+    return vertical_panel_figure(
+        [
+            miscalibration_area_path,
+            sharpness_path,
+            dispersion_path,
+        ],
+        output_path=output_path,
+        panel_labels=panel_labels,
+    )
