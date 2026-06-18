@@ -126,6 +126,26 @@ force_refresh_methods = ["moe", "probe_gnn"]
 force_refresh_train_sizes = { ridge = [20, 30] }
 ```
 
+## Uncertainty Metrics
+
+Learning-curve runs can also persist uncertainty-summary companions for methods
+that emit a predictive spread. Oasis currently uses three aggregate metrics:
+
+- `miscalibration_area`: area between the empirical calibration curve and the
+  ideal curve. Lower is better.
+- `sharpness`: average predicted spread magnitude. Lower means tighter
+  predictions, though sharpness alone is not sufficient without calibration.
+- `dispersion`: coefficient of variation of the predicted spread. This measures
+  how much the spread varies across samples.
+
+Method semantics matter:
+
+- `residual`, `weighted_simplex`, and other explicitly uncertainty-aware
+  methods should be interpreted as uncertainty summaries.
+- `ridge` contributes a useful spread proxy for ranking or relative comparison,
+  but it is not a calibrated probabilistic uncertainty and should not be
+  interpreted as one.
+
 ## OH-BMA Comparison Workflow
 
 For the anomaly-aware MLIP-selection branch, keep two experiment presets and
