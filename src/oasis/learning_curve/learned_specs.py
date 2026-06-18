@@ -233,6 +233,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
                 SweepFamilySpec(
                     result_field="weighted_linear_df",
                     runner=WeightedLinearSweepRunner(fit_intercept=True),
+                    uq_summary_field="weighted_linear_uq_df",
                 )
             ),
         ),

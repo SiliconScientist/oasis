@@ -452,20 +452,45 @@ def weighted_linear_sweep(
     payload: SweepRunPayload | SweepRunnerPayload,
     *,
     fit_intercept: bool = True,
-) -> pd.DataFrame:
+) -> SweepRunnerArtifacts:
     """Fit an unconstrained linear combiner over MLIP columns on each sweep split."""
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = LinearRegression(fit_intercept=fit_intercept)
         _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
-        preds = model.predict(X[split.test_idx])
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        X_test = X[split.test_idx]
+        preds = model.predict(X_test)
+        centered = X_test - preds[:, None]
+        coef_weights = np.abs(np.asarray(model.coef_, dtype=float).reshape(-1))
+        weight_sum = float(coef_weights.sum())
+        if weight_sum <= 0.0:
+            normalized_weights = np.full(X_test.shape[1], 1.0 / X_test.shape[1], dtype=float)
+        else:
+            normalized_weights = coef_weights / weight_sum
+        spread = np.sqrt(np.sum(normalized_weights[None, :] * centered**2, axis=1))
+        y_true = y[split.test_idx]
+        rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        split_artifacts.append(
+            build_split_prediction_artifact(
+                sweep_size=split.sweep_size,
+                y_true=y_true,
+                y_pred=preds,
+                spread=spread,
+            )
+        )
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        uq_summary=aggregate_uq_summary(
+            split_artifacts,
+            uncertainty_kind="spread_only",
+        ),
+    )
 
 
 def _simplex_weights(

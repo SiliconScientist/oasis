@@ -292,6 +292,21 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertEqual(moe_family.spec.uq_summary_field, "moe_uq_df")
 
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_linear_registration_exposes_uq_summary_field(self) -> None:
+        registry = {
+            registration.name: registration
+            for registration in learning_curve_model_registry()
+        }
+
+        weighted_linear_family = registry["weighted_linear"].family_factory()
+
+        self.assertIsInstance(weighted_linear_family, ConfiguredSweepModelFamily)
+        self.assertEqual(
+            weighted_linear_family.spec.uq_summary_field,
+            "weighted_linear_uq_df",
+        )
+
     @staticmethod
     def _graph_dataset() -> SweepDataset:
         graph_view = GraphDatasetView.from_records(
@@ -902,7 +917,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 sklearn_specs["elastic"].hyperparameter_spec,
             ),
             "resid_df": residual_sweep(payload).metrics,
-            "weighted_linear_df": weighted_linear_sweep(payload),
+            "weighted_linear_df": weighted_linear_sweep(payload).metrics,
             "weighted_simplex_df": weighted_simplex_sweep(payload).metrics,
         }
 
@@ -928,11 +943,16 @@ class SweepOutputRegressionTests(unittest.TestCase):
             self.assertIsNotNone(actual_df, field_name)
             pd.testing.assert_frame_equal(actual_df, expected_df)
         self.assertIsNotNone(actual.resid_uq_df)
+        self.assertIsNotNone(actual.weighted_linear_uq_df)
         self.assertIsNotNone(actual.weighted_simplex_uq_df)
         self.assertIsNotNone(actual.ridge_uq_df)
         self.assertEqual(
             actual.resid_uq_df["n_train"].tolist(),
             actual.resid_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            actual.weighted_linear_uq_df["n_train"].tolist(),
+            actual.weighted_linear_df["n_train"].tolist(),
         )
         self.assertEqual(
             actual.weighted_simplex_uq_df["n_train"].tolist(),
@@ -980,6 +1000,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         self.assertIsNotNone(results.ridge_df)
         self.assertIsNotNone(results.weighted_linear_df)
+        self.assertIsNotNone(results.weighted_linear_uq_df)
         self.assertEqual(
             results.ridge_df.columns.tolist(),
             ["n_train", "rmse_mean", "rmse_std"],
@@ -1188,11 +1209,29 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         result = weighted_linear_sweep(self._fixed_payload())
 
         self.assertEqual(
-            result.columns.tolist(),
+            result.metrics.columns.tolist(),
             ["n_train", "rmse_mean", "rmse_std"],
         )
-        self.assertEqual(result["n_train"].tolist(), [4, 5])
-        self.assertEqual(len(result), 2)
+        self.assertEqual(result.metrics["n_train"].tolist(), [4, 5])
+        self.assertEqual(len(result.metrics), 2)
+        self.assertIsNotNone(result.uq_summary)
+        self.assertEqual(
+            result.uq_summary.columns.tolist(),
+            [
+                "n_train",
+                "miscalibration_area",
+                "miscalibration_area_std",
+                "sharpness",
+                "sharpness_std",
+                "dispersion",
+                "dispersion_std",
+                "uncertainty_kind",
+            ],
+        )
+        self.assertEqual(
+            result.uq_summary["uncertainty_kind"].tolist(),
+            ["spread_only", "spread_only"],
+        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_linear_is_deterministic_for_fixed_splits(self) -> None:
@@ -1201,14 +1240,16 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         first = weighted_linear_sweep(payload)
         second = weighted_linear_sweep(payload)
 
-        pd.testing.assert_frame_equal(first, second)
+        pd.testing.assert_frame_equal(first.metrics, second.metrics)
+        pd.testing.assert_frame_equal(first.uq_summary, second.uq_summary)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_linear_has_near_zero_error_on_noiseless_toy_data(self) -> None:
         result = weighted_linear_sweep(self._fixed_payload())
 
-        np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
-        np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result.metrics["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result.metrics["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+        self.assertTrue(np.all(result.uq_summary["sharpness"].to_numpy() >= 0.0))
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_simplex_keeps_standard_result_shape(self) -> None:
@@ -1336,8 +1377,12 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         )
 
         pd.testing.assert_frame_equal(
-            baseline_result,
-            result_with_auxiliary_views,
+            baseline_result.metrics,
+            result_with_auxiliary_views.metrics,
+        )
+        pd.testing.assert_frame_equal(
+            baseline_result.uq_summary,
+            result_with_auxiliary_views.uq_summary,
         )
 
 

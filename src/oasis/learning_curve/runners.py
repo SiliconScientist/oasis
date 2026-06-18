@@ -134,7 +134,7 @@ class ValidationAwareLearnedModelSweepRunner:
 class WeightedLinearSweepRunner:
     fit_intercept: bool = True
 
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame | SweepRunnerArtifacts:
         return weighted_linear_sweep(
             payload,
             fit_intercept=self.fit_intercept,
