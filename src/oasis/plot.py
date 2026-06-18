@@ -27,6 +27,20 @@ _MLIP_DISPLAY_NAMES = {
     "orb-v3-conservative-inf-omat": "ORB-v3\nconservative",
     "uma-s-1p1": "UMA-s-1p1",
 }
+_METHOD_PLOT_STYLES = (
+    ("ridge", "ridge_df", "ridge_uq_df", "Ridge", "o", "tab:blue"),
+    ("kernel_ridge", "kernel_ridge_df", "kernel_ridge_uq_df", "Kernel Ridge", "X", "tab:cyan"),
+    ("lasso", "lasso_df", "lasso_uq_df", "Lasso", "s", "tab:orange"),
+    ("elastic", "elastic_df", "elastic_uq_df", "Elastic Net", "D", "tab:purple"),
+    ("residual", "resid_df", "resid_uq_df", "Residual", "^", "tab:green"),
+    ("weighted_linear", "weighted_linear_df", "weighted_linear_uq_df", "Weighted linear", "*", "tab:gray"),
+    ("weighted_simplex", "weighted_simplex_df", "weighted_simplex_uq_df", "Weighted simplex", "8", "teal"),
+    ("graph_mean", "graph_mean_df", "graph_mean_uq_df", "Graph mean", "P", "tab:red"),
+    ("moe", "moe_df", "moe_uq_df", "MoE", "*", "tab:purple"),
+    ("gnn_direct", "gnn_direct_df", "gnn_direct_uq_df", "GNN direct", "s", "tab:cyan"),
+    ("probe_gnn", "probe_gnn_df", "probe_gnn_uq_df", "Probe GNN", "D", "tab:olive"),
+    ("latent", "latent_df", "latent_uq_df", "Latent", "v", "tab:brown"),
+)
 
 
 def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -78,6 +92,61 @@ def _screening_metric_columns(frame: pd.DataFrame) -> tuple[str, str]:
 
 def _set_integer_x_ticks(ax: Any) -> None:
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+
+def _plot_uq_metric_curve(
+    results: LearningCurveResults,
+    *,
+    metric_column: str,
+    output_path: str | Path,
+    fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
+    title: str,
+    ylabel: str,
+) -> Path:
+    results = LearningCurveResults.from_mapping(
+        {
+            field_name: _filter_curve_frame(
+                _ordered_learning_curve_frame(frame),
+                x_column="n_train",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+            )
+            for field_name, frame in results.to_mapping().items()
+        }
+    )
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for _, _, uq_field, display_name, marker, color in _METHOD_PLOT_STYLES:
+        frame = getattr(results, uq_field)
+        if frame is None or frame.empty or metric_column not in frame.columns:
+            continue
+        ax.plot(
+            frame["n_train"],
+            frame[metric_column],
+            marker=marker,
+            color=color,
+            label=display_name,
+        )
+    ax.set_xlabel("Train size", fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    ax.set_title(title, fontsize=fontsize)
+    _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    if show_legend:
+        ax.legend(fontsize=fontsize)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
 
 
 def mae_comparison_plot(
@@ -430,6 +499,75 @@ def learning_curve_plot(
     plt.close(fig)
 
     return output_path
+
+
+def miscalibration_area_plot(
+    results: LearningCurveResults,
+    output_path: str | Path,
+    fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
+) -> Path:
+    return _plot_uq_metric_curve(
+        results,
+        metric_column="miscalibration_area",
+        output_path=output_path,
+        fontsize=fontsize,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        show_legend=show_legend,
+        title="Miscalibration area vs train size",
+        ylabel="Miscalibration area",
+    )
+
+
+def sharpness_plot(
+    results: LearningCurveResults,
+    output_path: str | Path,
+    fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
+) -> Path:
+    return _plot_uq_metric_curve(
+        results,
+        metric_column="sharpness",
+        output_path=output_path,
+        fontsize=fontsize,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        show_legend=show_legend,
+        title="Sharpness vs train size",
+        ylabel="Sharpness",
+    )
+
+
+def dispersion_plot(
+    results: LearningCurveResults,
+    output_path: str | Path,
+    fontsize: int = 8,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
+) -> Path:
+    return _plot_uq_metric_curve(
+        results,
+        metric_column="dispersion",
+        output_path=output_path,
+        fontsize=fontsize,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        show_legend=show_legend,
+        title="Dispersion vs train size",
+        ylabel="Dispersion",
+    )
 
 
 def screening_budget_plot(

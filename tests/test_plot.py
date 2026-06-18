@@ -14,11 +14,100 @@ from oasis.learning_curve.results_io import (
     save_learning_curve_results_artifact,
     save_learning_curve_method_artifacts,
 )
-from oasis.plot import learning_curve_plot, screening_budget_plot
+from oasis.plot import (
+    dispersion_plot,
+    learning_curve_plot,
+    miscalibration_area_plot,
+    screening_budget_plot,
+    sharpness_plot,
+)
 from oasis.sweep import LearningCurveResults
 
 
 class PlotTests(unittest.TestCase):
+    def test_uq_metric_plots_render_from_results_only(self) -> None:
+        uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "miscalibration_area": [0.2, 0.15, 0.1],
+                "sharpness": [0.3, 0.25, 0.2],
+                "dispersion": [0.4, 0.35, 0.3],
+                "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
+            }
+        )
+        results = LearningCurveResults(
+            ridge_uq_df=uq_df,
+            weighted_simplex_uq_df=uq_df,
+            moe_uq_df=uq_df,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            miscalibration_path = miscalibration_area_plot(
+                results,
+                output_path=tmp_path / "miscalibration.png",
+            )
+            sharpness_path = sharpness_plot(
+                results,
+                output_path=tmp_path / "sharpness.png",
+            )
+            dispersion_path = dispersion_plot(
+                results,
+                output_path=tmp_path / "dispersion.png",
+            )
+
+            self.assertEqual(miscalibration_path, tmp_path / "miscalibration.png")
+            self.assertEqual(sharpness_path, tmp_path / "sharpness.png")
+            self.assertEqual(dispersion_path, tmp_path / "dispersion.png")
+            self.assertTrue(miscalibration_path.exists())
+            self.assertTrue(sharpness_path.exists())
+            self.assertTrue(dispersion_path.exists())
+
+    def test_uq_metric_plots_filter_to_requested_x_window(self) -> None:
+        uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4, 5],
+                "miscalibration_area": [0.2, 0.15, 0.1, 0.08],
+                "sharpness": [0.3, 0.25, 0.2, 0.18],
+                "dispersion": [0.4, 0.35, 0.3, 0.28],
+                "uncertainty_kind": ["spread_only"] * 4,
+            }
+        )
+        results = LearningCurveResults(ridge_uq_df=uq_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "miscalibration_windowed.png"
+            saved_path = miscalibration_area_plot(
+                results,
+                output_path=output_path,
+                min_x=3,
+                max_x=4,
+            )
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+
+    def test_uq_metric_plots_use_integer_x_ticks(self) -> None:
+        uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4, 5],
+                "miscalibration_area": [0.2, 0.15, 0.1, 0.08],
+                "sharpness": [0.3, 0.25, 0.2, 0.18],
+                "dispersion": [0.4, 0.35, 0.3, 0.28],
+                "uncertainty_kind": ["spread_only"] * 4,
+            }
+        )
+        results = LearningCurveResults(ridge_uq_df=uq_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "sharpness_ticks.png"
+            with patch("oasis.plot.plt.close"):
+                sharpness_plot(results, output_path=output_path)
+                fig = sharpness_plot.__globals__["plt"].gcf()
+                locator = fig.axes[0].xaxis.get_major_locator()
+
+            self.assertTrue(getattr(locator, "_integer", False))
+
     def test_learning_curve_plot_renders_from_results_only(self) -> None:
         result_df = pd.DataFrame(
             {
