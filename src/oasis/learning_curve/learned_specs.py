@@ -89,6 +89,7 @@ class LearnedFamilyRegistrationSpec:
     optuna_timeout_s: int | None = None
     optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
     selection_metadata_field: str | None = None
+    uq_summary_field: str | None = None
     config_key: str | None = None
     is_enabled: Callable[[Any], bool] | None = None
     config_tuning_spec_factory: Callable[[Any], LearnedTrialTuningSpec] | None = None
@@ -220,6 +221,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
                 SweepFamilySpec(
                     result_field="resid_df",
                     runner=FunctionalSweepRunner(base_runner=residual_sweep),
+                    uq_summary_field="resid_uq_df",
                 )
             ),
         ),
@@ -242,6 +244,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
                 SweepFamilySpec(
                     result_field="weighted_simplex_df",
                     runner=WeightedSimplexSweepRunner(),
+                    uq_summary_field="weighted_simplex_uq_df",
                 )
             ),
         ),

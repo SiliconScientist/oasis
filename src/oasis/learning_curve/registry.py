@@ -139,6 +139,7 @@ def _configured_trial_tuned_family_for_learned_family_spec(
             result_field=spec.result_field,
             runner=runner,
             selection_metadata_field=spec.selection_metadata_field,
+            uq_summary_field=spec.uq_summary_field,
             capabilities=spec.capabilities,
         )
     )
@@ -169,6 +170,7 @@ def _config_factory_for_learned_family_spec(
                 result_field=spec.result_field,
                 runner=runner,
                 selection_metadata_field=spec.selection_metadata_field,
+                uq_summary_field=spec.uq_summary_field,
                 capabilities=spec.capabilities,
             )
         )

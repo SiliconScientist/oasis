@@ -392,11 +392,12 @@ def sweep_learned_model_with_validation(
 
 def residual_sweep(
     payload: SweepRunPayload | SweepRunnerPayload,
-) -> pd.DataFrame:
+) -> SweepRunnerArtifacts:
     """Evaluate residual correction across precomputed sweep splits."""
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
@@ -408,9 +409,25 @@ def residual_sweep(
 
         X_corrected = X[split.test_idx] + mean_residuals
         preds = X_corrected.mean(axis=1)
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        spread = np.std(X_corrected, axis=1)
+        y_true = y[split.test_idx]
+        rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        split_artifacts.append(
+            build_split_prediction_artifact(
+                sweep_size=split.sweep_size,
+                y_true=y_true,
+                y_pred=preds,
+                spread=spread,
+            )
+        )
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        uq_summary=aggregate_uq_summary(
+            split_artifacts,
+            uncertainty_kind="spread_only",
+        ),
+    )
 
 
 def weighted_linear_sweep(
@@ -448,11 +465,12 @@ def _simplex_weights(
 
 def weighted_simplex_sweep(
     payload: SweepRunPayload | SweepRunnerPayload,
-) -> pd.DataFrame:
+) -> SweepRunnerArtifacts:
     """Fit a simplex-style combiner with nonnegative weights that sum to one."""
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
@@ -465,7 +483,25 @@ def weighted_simplex_sweep(
             X[split.train_idx],
             y[split.train_idx],
         )
-        preds = X[split.test_idx] @ weights
-        rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
+        X_test = X[split.test_idx]
+        preds = X_test @ weights
+        centered = X_test - preds[:, None]
+        spread = np.sqrt(np.sum(weights[None, :] * centered**2, axis=1))
+        y_true = y[split.test_idx]
+        rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        split_artifacts.append(
+            build_split_prediction_artifact(
+                sweep_size=split.sweep_size,
+                y_true=y_true,
+                y_pred=preds,
+                spread=spread,
+            )
+        )
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        uq_summary=aggregate_uq_summary(
+            split_artifacts,
+            uncertainty_kind="spread_only",
+        ),
+    )

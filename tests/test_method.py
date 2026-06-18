@@ -33,6 +33,7 @@ from oasis.sweep import (
 )
 from oasis.tune import (
     OptunaModelSelectionSweepRunner,
+    SweepRunnerArtifacts,
     SupervisedModelSelectionSweepRunner,
     TrialTuningSpec,
     _select_candidate_factory_by_validation,
@@ -855,7 +856,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
             weighted_simplex_sweep(payload),
         ]
 
-        for df in results:
+        for result in results:
+            df = result.metrics if isinstance(result, SweepRunnerArtifacts) else result
             self.assertEqual(df["n_train"].tolist(), expected_counts)
             self.assertEqual(df.columns.tolist(), expected_columns)
 
@@ -898,9 +900,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 validation_payload,
                 sklearn_specs["elastic"].hyperparameter_spec,
             ),
-            "resid_df": residual_sweep(payload),
+            "resid_df": residual_sweep(payload).metrics,
             "weighted_linear_df": weighted_linear_sweep(payload),
-            "weighted_simplex_df": weighted_simplex_sweep(payload),
+            "weighted_simplex_df": weighted_simplex_sweep(payload).metrics,
         }
 
         actual = run_learning_curve_experiments(
@@ -924,6 +926,16 @@ class SweepOutputRegressionTests(unittest.TestCase):
             actual_df = getattr(actual, field_name)
             self.assertIsNotNone(actual_df, field_name)
             pd.testing.assert_frame_equal(actual_df, expected_df)
+        self.assertIsNotNone(actual.resid_uq_df)
+        self.assertIsNotNone(actual.weighted_simplex_uq_df)
+        self.assertEqual(
+            actual.resid_uq_df["n_train"].tolist(),
+            actual.resid_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            actual.weighted_simplex_uq_df["n_train"].tolist(),
+            actual.weighted_simplex_df["n_train"].tolist(),
+        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_is_registered_as_validation_aware_selection_method(self) -> None:
@@ -1142,7 +1154,8 @@ class SweepOutputRegressionTests(unittest.TestCase):
         legacy = residual_sweep(payload)
         split_aware = residual_sweep(runner_payload)
 
-        pd.testing.assert_frame_equal(split_aware, legacy)
+        pd.testing.assert_frame_equal(split_aware.metrics, legacy.metrics)
+        pd.testing.assert_frame_equal(split_aware.uq_summary, legacy.uq_summary)
 
 
 @unittest.skipUnless(HAS_METHOD, "requires method dependencies")
@@ -1182,11 +1195,23 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         result = weighted_simplex_sweep(self._fixed_payload())
 
         self.assertEqual(
-            result.columns.tolist(),
+            result.metrics.columns.tolist(),
             ["n_train", "rmse_mean", "rmse_std"],
         )
-        self.assertEqual(result["n_train"].tolist(), [4, 5])
-        self.assertEqual(len(result), 2)
+        self.assertEqual(result.metrics["n_train"].tolist(), [4, 5])
+        self.assertEqual(len(result.metrics), 2)
+        self.assertIsNotNone(result.uq_summary)
+        self.assertEqual(
+            result.uq_summary.columns.tolist(),
+            [
+                "n_train",
+                "miscalibration_area",
+                "sharpness",
+                "dispersion",
+                "uncertainty_kind",
+            ],
+        )
+        self.assertEqual(result.uq_summary["uncertainty_kind"].tolist(), ["spread_only", "spread_only"])
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_simplex_is_deterministic_for_fixed_splits(self) -> None:
@@ -1195,7 +1220,8 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         first = weighted_simplex_sweep(payload)
         second = weighted_simplex_sweep(payload)
 
-        pd.testing.assert_frame_equal(first, second)
+        pd.testing.assert_frame_equal(first.metrics, second.metrics)
+        pd.testing.assert_frame_equal(first.uq_summary, second.uq_summary)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_simplex_exactly_recovers_convex_toy_target(
@@ -1210,8 +1236,9 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
         result = weighted_simplex_sweep(payload)
 
-        np.testing.assert_allclose(result["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
-        np.testing.assert_allclose(result["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result.metrics["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
+        np.testing.assert_allclose(result.metrics["rmse_std"].to_numpy(), 0.0, atol=1e-12)
+        self.assertTrue(np.all(result.uq_summary["sharpness"].to_numpy() >= 0.0))
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_simplex_rejects_single_mlip_feature(self) -> None:

@@ -25,7 +25,7 @@ from oasis.sweep import (
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
-from oasis.tune import ValidationAwareEstimator
+from oasis.tune import SweepRunnerArtifacts, ValidationAwareEstimator
 
 
 class SweepModelFamily(Protocol):
@@ -42,14 +42,17 @@ class SweepModelFamily(Protocol):
 class SweepExperimentRunner(Protocol):
     """Common runner interface for train/test sweep methods."""
 
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame | SweepRunnerArtifacts: ...
 
 
 @runtime_checkable
 class ValidationAwareSweepExperimentRunner(Protocol):
     """Runner interface for methods that select on val and evaluate on outer test."""
 
-    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame: ...
+    def run_with_validation(
+        self,
+        payload: SweepRunnerPayload,
+    ) -> pd.DataFrame | SweepRunnerArtifacts: ...
 
 
 @runtime_checkable
@@ -75,6 +78,7 @@ class SweepFamilySpec:
     result_field: str
     runner: SweepExperimentRunner | ValidationAwareSweepExperimentRunner
     selection_metadata_field: str | None = None
+    uq_summary_field: str | None = None
     capabilities: SweepModelCapabilities = field(default_factory=SweepModelCapabilities)
 
 
@@ -90,9 +94,9 @@ class SupervisedModelSweepRunner:
 
 @dataclass(frozen=True, slots=True)
 class FunctionalSweepRunner:
-    base_runner: Callable[[SweepRunnerPayload], pd.DataFrame]
+    base_runner: Callable[[SweepRunnerPayload], pd.DataFrame | SweepRunnerArtifacts]
 
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame | SweepRunnerArtifacts:
         return self.base_runner(payload)
 
 
@@ -139,7 +143,7 @@ class WeightedLinearSweepRunner:
 
 @dataclass(frozen=True, slots=True)
 class WeightedSimplexSweepRunner:
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame | SweepRunnerArtifacts:
         return weighted_simplex_sweep(payload)
 
 
@@ -162,6 +166,8 @@ class ConfiguredSweepModelFamily:
         }
         if self.spec.selection_metadata_field is not None:
             results[self.spec.selection_metadata_field] = base_output.selection_metadata
+        if self.spec.uq_summary_field is not None:
+            results[self.spec.uq_summary_field] = base_output.uq_summary
         return LearningCurveResults.from_mapping(results)
 
 

@@ -3263,8 +3263,13 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(results.lasso_df)
         self.assertIsNone(results.elastic_df)
         self.assertIsNotNone(results.resid_df)
+        self.assertIsNotNone(results.resid_uq_df)
         self.assertIsNotNone(results.weighted_linear_df)
         self.assertIsNone(results.weighted_simplex_df)
+        self.assertEqual(
+            results.resid_uq_df["n_train"].tolist(),
+            results.resid_df["n_train"].tolist(),
+        )
 
     def test_run_learning_curve_experiments_from_frame_runs_weighted_baselines(
         self,
@@ -3297,8 +3302,13 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNone(results.resid_df)
         self.assertIsNotNone(results.weighted_linear_df)
         self.assertIsNotNone(results.weighted_simplex_df)
+        self.assertIsNotNone(results.weighted_simplex_uq_df)
         self.assertEqual(results.weighted_linear_df["n_train"].tolist(), [2, 3, 4])
         self.assertEqual(results.weighted_simplex_df["n_train"].tolist(), [2, 3, 4])
+        self.assertEqual(
+            results.weighted_simplex_uq_df["n_train"].tolist(),
+            [2, 3, 4],
+        )
 
     def test_run_learning_curve_experiments_from_config_honors_weighted_baseline_flags(
         self,
