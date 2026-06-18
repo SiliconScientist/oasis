@@ -123,6 +123,19 @@ class MlipBaselineGateTuningSpecTests(unittest.TestCase):
         self.assertEqual(preds.shape, (2,))
         self.assertTrue(np.all(np.isfinite(preds)))
 
+    def test_predictive_spread_shape_and_nonnegativity(self) -> None:
+        spec = MlipBaselineGateTuningSpec()
+        split = _make_split()
+        model = spec.fit_selected_model(
+            split, _MockTrial([2.0, -2.0]), refit_policy="train_plus_val"
+        )
+
+        spread = spec.predictive_spread(model, split.dataset_subsets().test)
+
+        self.assertEqual(spread.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(spread)))
+        self.assertTrue(np.all(spread >= 0.0))
+
     def test_refit_policy_train_only_vs_train_plus_val_same_weights(self) -> None:
         spec = MlipBaselineGateTuningSpec()
         split = _make_split()
@@ -196,6 +209,7 @@ class MoEGateDispatchTests(unittest.TestCase):
         registration = self._moe_registration()
         family = registration.config_factory(_model_cfg("mlip_baseline"))
         self.assertIsInstance(family.spec.runner.tuning_spec, MlipBaselineGateTuningSpec)
+        self.assertEqual(family.spec.uq_summary_field, "moe_uq_df")
 
     def test_unknown_gate_type_raises(self) -> None:
         with self.assertRaises(ValueError):

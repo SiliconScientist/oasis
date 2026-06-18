@@ -290,6 +290,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
             moe_family.requirements(),
             SweepFamilyRequirements(requires_inner_validation=True),
         )
+        self.assertEqual(moe_family.spec.uq_summary_field, "moe_uq_df")
 
     @staticmethod
     def _graph_dataset() -> SweepDataset:
@@ -928,6 +929,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
             pd.testing.assert_frame_equal(actual_df, expected_df)
         self.assertIsNotNone(actual.resid_uq_df)
         self.assertIsNotNone(actual.weighted_simplex_uq_df)
+        self.assertIsNotNone(actual.ridge_uq_df)
         self.assertEqual(
             actual.resid_uq_df["n_train"].tolist(),
             actual.resid_df["n_train"].tolist(),
@@ -935,6 +937,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             actual.weighted_simplex_uq_df["n_train"].tolist(),
             actual.weighted_simplex_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            actual.ridge_uq_df["n_train"].tolist(),
+            actual.ridge_df["n_train"].tolist(),
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1087,6 +1093,20 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertTrue(
             set(results.ridge_selection_df["alpha"]).issubset({0.01, 0.1, 1.0, 10.0})
+        )
+        self.assertIsNotNone(results.ridge_uq_df)
+        self.assertEqual(
+            results.ridge_uq_df["n_train"].tolist(),
+            results.ridge_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            results.ridge_uq_df["uncertainty_kind"].tolist(),
+            ["spread_only"] * len(results.ridge_uq_df),
+        )
+        self.assertEqual(
+            results.ridge_uq_df["uncertainty_note"].tolist(),
+            ["spread-only; not probabilistically interpretable"]
+            * len(results.ridge_uq_df),
         )
 
         self.assertIsNotNone(results.kernel_ridge_selection_df)

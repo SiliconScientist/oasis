@@ -3349,10 +3349,21 @@ class ExpIntegrationTests(unittest.TestCase):
         results = run_learning_curve_experiments_from_config(df, cfg=cfg)
 
         self.assertIsNotNone(results.ridge_df)
+        self.assertIsNotNone(results.ridge_uq_df)
         self.assertIsNotNone(results.weighted_linear_df)
         self.assertIsNone(results.weighted_simplex_df)
         self.assertIsNone(results.lasso_df)
         self.assertIsNone(results.resid_df)
+        self.assertEqual(
+            results.ridge_uq_df["n_train"].tolist(),
+            results.ridge_df["n_train"].tolist(),
+        )
+        self.assertTrue(
+            (
+                results.ridge_uq_df["uncertainty_note"]
+                == "spread-only; not probabilistically interpretable"
+            ).all()
+        )
 
     def test_run_learning_curve_experiments_from_config_saves_bundle_artifact(
         self,

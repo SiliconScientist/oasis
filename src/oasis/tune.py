@@ -100,6 +100,9 @@ class GridHyperparameterSpec:
     grid: Mapping[str, tuple[Any, ...]]
     fixed_params: Mapping[str, Any] = field(default_factory=dict)
     metadata_keys: tuple[str, ...] | None = None
+    predictive_spread_extractor: Callable[[object, np.ndarray], np.ndarray] | None = None
+    uncertainty_kind: str | None = None
+    uncertainty_note: str | None = None
 
     def candidate_factories(self) -> tuple[Callable[[], object], ...]:
         items = tuple(self.grid.items())
@@ -517,6 +520,56 @@ def _selection_metadata_frame(
     return pd.DataFrame(rows)
 
 
+def _uq_summary_frame(
+    split_artifacts: list[dict[str, Any]],
+    *,
+    uncertainty_kind: str,
+    uncertainty_note: str | None = None,
+) -> pd.DataFrame:
+    from oasis.learning_curve.execution import (
+        aggregate_uq_summary,
+        build_split_prediction_artifact,
+    )
+
+    summary = aggregate_uq_summary(
+        [
+            build_split_prediction_artifact(
+                sweep_size=artifact["sweep_size"],
+                y_true=artifact["y_true"],
+                y_pred=artifact["y_pred"],
+                spread=artifact["spread"],
+            )
+            for artifact in split_artifacts
+        ],
+        uncertainty_kind=uncertainty_kind,
+    )
+    if uncertainty_note is not None and not summary.empty:
+        summary["uncertainty_note"] = uncertainty_note
+    return summary
+
+
+def _hyperparameter_spec_predictive_spread(
+    hyperparameter_spec: HyperparameterSpec,
+    model: object,
+    X_test: np.ndarray,
+) -> np.ndarray | None:
+    extractor = getattr(hyperparameter_spec, "predictive_spread_extractor", None)
+    if extractor is None:
+        return None
+    return np.asarray(extractor(model, X_test), dtype=float)
+
+
+def _learned_tuning_spec_predictive_spread(
+    tuning_spec: LearnedTrialTuningSpec,
+    model: object,
+    dataset: SweepDataset,
+) -> np.ndarray | None:
+    extractor = getattr(tuning_spec, "predictive_spread", None)
+    if extractor is None:
+        return None
+    return np.asarray(extractor(model, dataset), dtype=float)
+
+
 def _select_best_trial_by_validation(
     split: TrainValTestSweepRunnerInput,
     tuning_spec: TrialTuningSpec,
@@ -690,6 +743,9 @@ def sweep_supervised_model_selection(
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    uq_artifacts: list[dict[str, Any]] = []
+    uncertainty_kind = getattr(hyperparameter_spec, "uncertainty_kind", None)
+    uncertainty_note = getattr(hyperparameter_spec, "uncertainty_note", None)
     for split in splits:
         y = split.dataset.targets
         model, metadata = _fit_selected_supervised_model(
@@ -697,13 +753,37 @@ def sweep_supervised_model_selection(
             hyperparameter_spec,
             refit_policy=refit_policy,
         )
-        preds = model.predict(split.dataset.mlip_features[split.test_idx])
-        rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
+        X_test = split.dataset.mlip_features[split.test_idx]
+        y_test = y[split.test_idx]
+        preds = model.predict(X_test)
+        rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+        spread = _hyperparameter_spec_predictive_spread(
+            hyperparameter_spec,
+            model,
+            X_test,
+        )
+        if spread is not None and uncertainty_kind is not None:
+            uq_artifacts.append(
+                {
+                    "sweep_size": split.sweep_size,
+                    "y_true": y_test,
+                    "y_pred": preds,
+                    "spread": spread,
+                }
+            )
+    uq_summary = None
+    if uq_artifacts and uncertainty_kind is not None:
+        uq_summary = _uq_summary_frame(
+            uq_artifacts,
+            uncertainty_kind=uncertainty_kind,
+            uncertainty_note=uncertainty_note,
+        )
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
+        uq_summary=uq_summary,
     )
 
 
@@ -751,6 +831,9 @@ def sweep_learned_trial_model_selection(
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    uq_artifacts: list[dict[str, Any]] = []
+    uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
+    uncertainty_note = getattr(tuning_spec, "uncertainty_note", None)
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
@@ -764,9 +847,31 @@ def sweep_learned_trial_model_selection(
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+        spread = _learned_tuning_spec_predictive_spread(
+            tuning_spec,
+            model,
+            test_dataset,
+        )
+        if spread is not None and uncertainty_kind is not None:
+            uq_artifacts.append(
+                {
+                    "sweep_size": split.sweep_size,
+                    "y_true": y_test,
+                    "y_pred": preds,
+                    "spread": spread,
+                }
+            )
+    uq_summary = None
+    if uq_artifacts and uncertainty_kind is not None:
+        uq_summary = _uq_summary_frame(
+            uq_artifacts,
+            uncertainty_kind=uncertainty_kind,
+            uncertainty_note=uncertainty_note,
+        )
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
+        uq_summary=uq_summary,
     )
 
 
@@ -824,6 +929,9 @@ def sweep_learned_optuna_model_selection(
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
+    uq_artifacts: list[dict[str, Any]] = []
+    uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
+    uncertainty_note = getattr(tuning_spec, "uncertainty_note", None)
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
@@ -839,9 +947,31 @@ def sweep_learned_optuna_model_selection(
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+        spread = _learned_tuning_spec_predictive_spread(
+            tuning_spec,
+            model,
+            test_dataset,
+        )
+        if spread is not None and uncertainty_kind is not None:
+            uq_artifacts.append(
+                {
+                    "sweep_size": split.sweep_size,
+                    "y_true": y_test,
+                    "y_pred": preds,
+                    "spread": spread,
+                }
+            )
+    uq_summary = None
+    if uq_artifacts and uncertainty_kind is not None:
+        uq_summary = _uq_summary_frame(
+            uq_artifacts,
+            uncertainty_kind=uncertainty_kind,
+            uncertainty_note=uncertainty_note,
+        )
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
+        uq_summary=uq_summary,
     )
 
 

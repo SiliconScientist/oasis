@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from oasis.sweep import TrainValTestSweepRunnerInput
 from oasis.tune import (
     GridHyperparameterSpec,
@@ -31,7 +32,25 @@ class SklearnSweepModelSpec:
     optuna_timeout_s: int | None = None
     optuna_study_factory: Callable[[TrainValTestSweepRunnerInput], Any] | None = None
     selection_metadata_field: str | None = None
+    uq_summary_field: str | None = None
     selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
+
+
+def _linear_model_spread(model: object, X: np.ndarray) -> np.ndarray:
+    X_arr = np.asarray(X, dtype=float)
+    preds = np.asarray(model.predict(X_arr), dtype=float).reshape(-1)
+    coefs = np.ravel(np.asarray(getattr(model, "coef_", np.ones(X_arr.shape[1])), dtype=float))
+    if len(coefs) != X_arr.shape[1]:
+        coefs = np.ones(X_arr.shape[1], dtype=float)
+    weights = np.abs(coefs)
+    weight_sum = float(weights.sum())
+    normalized = (
+        np.full(X_arr.shape[1], 1.0 / X_arr.shape[1], dtype=float)
+        if weight_sum <= 0.0
+        else weights / weight_sum
+    )
+    centered = X_arr - preds[:, None]
+    return np.sqrt(np.sum(normalized[None, :] * centered**2, axis=1))
 
 
 def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec], ...]:
@@ -45,8 +64,12 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
                 hyperparameter_spec=GridHyperparameterSpec(
                     estimator_factory=Ridge,
                     grid={"alpha": (0.01, 0.1, 1.0, 10.0)},
+                    predictive_spread_extractor=_linear_model_spread,
+                    uncertainty_kind="spread_only",
+                    uncertainty_note="spread-only; not probabilistically interpretable",
                 ),
                 selection_metadata_field="ridge_selection_df",
+                uq_summary_field="ridge_uq_df",
             ),
         ),
         (

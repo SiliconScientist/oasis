@@ -24,6 +24,8 @@ class MoEModel:
 @dataclass(frozen=True, slots=True)
 class MlipBaselineGateTuningSpec:
     policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
+    uncertainty_kind: str = "spread_only"
+    uncertainty_note: str | None = None
 
     def build_trial_objective(
         self,
@@ -78,6 +80,16 @@ class MlipBaselineGateTuningSpec:
         dataset: SweepDataset,
     ) -> np.ndarray:
         return model.predict(dataset.mlip_features)
+
+    def predictive_spread(
+        self,
+        model: MoEModel,
+        dataset: SweepDataset,
+    ) -> np.ndarray:
+        X = np.asarray(dataset.mlip_features, dtype=float)
+        preds = model.predict(X)
+        centered = X - preds[:, None]
+        return np.sqrt(np.sum(model.weights[None, :] * centered**2, axis=1))
 
     def trial_metadata(
         self,

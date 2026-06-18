@@ -276,6 +276,12 @@ def _sklearn_selection_metadata_field_for_spec(
     return spec.selection_metadata_field
 
 
+def _sklearn_uq_summary_field_for_spec(
+    spec: Any,
+) -> str | None:
+    return getattr(spec, "uq_summary_field", None)
+
+
 def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...]:
     sklearn_registrations = tuple(
         LearningCurveModelRegistration(
@@ -287,6 +293,7 @@ def learning_curve_model_registry() -> tuple[LearningCurveModelRegistration, ...
                     selection_metadata_field=_sklearn_selection_metadata_field_for_spec(
                         spec
                     ),
+                    uq_summary_field=_sklearn_uq_summary_field_for_spec(spec),
                     runner=_sklearn_runner_for_spec(spec),
                     capabilities=_sklearn_capabilities_for_spec(spec),
                 )
@@ -310,6 +317,7 @@ def sklearn_model_families(
                 selection_metadata_field=_sklearn_selection_metadata_field_for_spec(
                     spec
                 ),
+                uq_summary_field=_sklearn_uq_summary_field_for_spec(spec),
                 runner=_sklearn_runner_for_spec(spec),
                 capabilities=_sklearn_capabilities_for_spec(spec),
             )
