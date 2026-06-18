@@ -1559,8 +1559,11 @@ class LearningCurveResultsTests(unittest.TestCase):
             {
                 "n_train": [4, 8],
                 "miscalibration_area": [0.11, 0.08],
+                "miscalibration_area_std": [0.01, 0.01],
                 "sharpness": [0.21, 0.18],
+                "sharpness_std": [0.02, 0.02],
                 "dispersion": [0.31, 0.28],
+                "dispersion_std": [0.03, 0.03],
                 "uncertainty_kind": ["spread_only", "spread_only"],
             }
         )
@@ -1587,8 +1590,11 @@ class LearningCurveResultsTests(unittest.TestCase):
                 {
                     "n_train": [1, 10],
                     "miscalibration_area": [0.3, 0.2],
+                    "miscalibration_area_std": [0.03, 0.02],
                     "sharpness": [0.4, 0.3],
+                    "sharpness_std": [0.04, 0.03],
                     "dispersion": [0.5, 0.4],
+                    "dispersion_std": [0.05, 0.04],
                     "uncertainty_kind": ["spread_only", "spread_only"],
                 }
             )
@@ -1598,8 +1604,11 @@ class LearningCurveResultsTests(unittest.TestCase):
                 {
                     "n_train": [20, 30],
                     "miscalibration_area": [0.15, 0.1],
+                    "miscalibration_area_std": [0.02, 0.01],
                     "sharpness": [0.25, 0.2],
+                    "sharpness_std": [0.03, 0.02],
                     "dispersion": [0.35, 0.3],
+                    "dispersion_std": [0.04, 0.03],
                     "uncertainty_kind": ["spread_only", "spread_only"],
                 }
             )
@@ -1613,8 +1622,11 @@ class LearningCurveResultsTests(unittest.TestCase):
                 {
                     "n_train": [1, 10, 20, 30],
                     "miscalibration_area": [0.3, 0.2, 0.15, 0.1],
+                    "miscalibration_area_std": [0.03, 0.02, 0.02, 0.01],
                     "sharpness": [0.4, 0.3, 0.25, 0.2],
+                    "sharpness_std": [0.04, 0.03, 0.03, 0.02],
                     "dispersion": [0.5, 0.4, 0.35, 0.3],
+                    "dispersion_std": [0.05, 0.04, 0.04, 0.03],
                     "uncertainty_kind": [
                         "spread_only",
                         "spread_only",
@@ -1633,8 +1645,11 @@ class LearningCurveResultsTests(unittest.TestCase):
             {
                 "n_train": [4],
                 "miscalibration_area": [0.08],
+                "miscalibration_area_std": [0.01],
                 "sharpness": [0.18],
+                "sharpness_std": [0.02],
                 "dispersion": [0.28],
+                "dispersion_std": [0.03],
                 "uncertainty_kind": ["calibrated"],
             }
         )

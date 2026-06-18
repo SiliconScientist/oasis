@@ -30,8 +30,11 @@ class PlotTests(unittest.TestCase):
             {
                 "n_train": [2, 3, 4],
                 "miscalibration_area": [0.2, 0.15, 0.1],
+                "miscalibration_area_std": [0.03, 0.02, 0.01],
                 "sharpness": [0.3, 0.25, 0.2],
+                "sharpness_std": [0.04, 0.03, 0.02],
                 "dispersion": [0.4, 0.35, 0.3],
+                "dispersion_std": [0.05, 0.04, 0.03],
                 "uncertainty_kind": ["spread_only", "spread_only", "spread_only"],
             }
         )
@@ -68,8 +71,11 @@ class PlotTests(unittest.TestCase):
             {
                 "n_train": [2, 3, 4, 5],
                 "miscalibration_area": [0.2, 0.15, 0.1, 0.08],
+                "miscalibration_area_std": [0.03, 0.02, 0.01, 0.01],
                 "sharpness": [0.3, 0.25, 0.2, 0.18],
+                "sharpness_std": [0.04, 0.03, 0.02, 0.02],
                 "dispersion": [0.4, 0.35, 0.3, 0.28],
+                "dispersion_std": [0.05, 0.04, 0.03, 0.02],
                 "uncertainty_kind": ["spread_only"] * 4,
             }
         )
@@ -92,8 +98,11 @@ class PlotTests(unittest.TestCase):
             {
                 "n_train": [2, 3, 4, 5],
                 "miscalibration_area": [0.2, 0.15, 0.1, 0.08],
+                "miscalibration_area_std": [0.03, 0.02, 0.01, 0.01],
                 "sharpness": [0.3, 0.25, 0.2, 0.18],
+                "sharpness_std": [0.04, 0.03, 0.02, 0.02],
                 "dispersion": [0.4, 0.35, 0.3, 0.28],
+                "dispersion_std": [0.05, 0.04, 0.03, 0.02],
                 "uncertainty_kind": ["spread_only"] * 4,
             }
         )

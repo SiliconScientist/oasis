@@ -1226,8 +1226,11 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
             [
                 "n_train",
                 "miscalibration_area",
+                "miscalibration_area_std",
                 "sharpness",
+                "sharpness_std",
                 "dispersion",
+                "dispersion_std",
                 "uncertainty_kind",
             ],
         )
@@ -1474,19 +1477,44 @@ class UQMetricHelperTests(unittest.TestCase):
             [
                 "n_train",
                 "miscalibration_area",
+                "miscalibration_area_std",
                 "sharpness",
+                "sharpness_std",
                 "dispersion",
+                "dispersion_std",
                 "uncertainty_kind",
             ],
         )
         self.assertEqual(summary["n_train"].tolist(), [4, 5])
-        np.testing.assert_allclose(summary["sharpness"].to_numpy(), [0.4, 0.5])
+        np.testing.assert_allclose(summary["miscalibration_area"].to_numpy(), [0.5, 0.5])
+        np.testing.assert_allclose(summary["miscalibration_area_std"].to_numpy(), [0.0, 0.0])
+        np.testing.assert_allclose(summary["sharpness"].to_numpy(), [0.45, 0.5])
+        np.testing.assert_allclose(summary["sharpness_std"].to_numpy(), [np.std([0.3, 0.6]), 0.0])
         np.testing.assert_allclose(
             summary["dispersion"].to_numpy(),
-            [np.std([0.2, 0.4, 0.6]) / np.mean([0.2, 0.4, 0.6]), 0.0],
+            [
+                np.mean(
+                    [
+                        np.std([0.2, 0.4]) / np.mean([0.2, 0.4]),
+                        0.0,
+                    ]
+                ),
+                0.0,
+            ],
+        )
+        np.testing.assert_allclose(
+            summary["dispersion_std"].to_numpy(),
+            [
+                np.std(
+                    [
+                        np.std([0.2, 0.4]) / np.mean([0.2, 0.4]),
+                        0.0,
+                    ]
+                ),
+                0.0,
+            ],
         )
         self.assertEqual(summary["uncertainty_kind"].tolist(), ["spread_only", "spread_only"])
-        np.testing.assert_allclose(summary["miscalibration_area"].to_numpy(), [0.5, 0.5])
 
 
 @unittest.skipUnless(HAS_METHOD, "requires method dependencies")

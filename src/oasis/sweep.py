@@ -1042,7 +1042,9 @@ class LearningCurveResults:
     Methods that expose uncertainty summaries may also populate `*_uq_df`
     companion frames keyed by `n_train`. Those frames are intended to carry the
     aggregate uncertainty metrics `miscalibration_area`, `sharpness`, and
-    `dispersion`, plus an `uncertainty_kind` column describing whether the
+    `dispersion`. The metric columns store repeat means, and optional
+    `*_std` companions store repeat-to-repeat variation across `n_repeats`.
+    Frames also carry an `uncertainty_kind` column describing whether the
     spread is calibrated (`"calibrated"`) or only a spread proxy
     (`"spread_only"`).
     """

@@ -36,8 +36,11 @@ _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
 _UQ_SUMMARY_COLUMNS = [
     "n_train",
     "miscalibration_area",
+    "miscalibration_area_std",
     "sharpness",
+    "sharpness_std",
     "dispersion",
+    "dispersion_std",
     "uncertainty_kind",
 ]
 _DEFAULT_CALIBRATION_COVERAGES = np.linspace(0.1, 0.9, 9, dtype=float)
@@ -248,20 +251,35 @@ def aggregate_uq_summary(
     grouped = collect_split_prediction_artifacts(split_artifacts)
     rows: list[dict[str, float | int | str]] = []
     for sweep_size, artifacts in sorted(grouped.items()):
-        y_true = np.concatenate([artifact.y_true for artifact in artifacts])
-        y_pred = np.concatenate([artifact.y_pred for artifact in artifacts])
-        spread = np.concatenate([artifact.spread for artifact in artifacts])
+        miscalibration_values = np.asarray(
+            [
+                miscalibration_area(
+                    artifact.y_true,
+                    artifact.y_pred,
+                    artifact.spread,
+                    nominal_coverages=nominal_coverages,
+                )
+                for artifact in artifacts
+            ],
+            dtype=float,
+        )
+        sharpness_values = np.asarray(
+            [sharpness_from_spread(artifact.spread) for artifact in artifacts],
+            dtype=float,
+        )
+        dispersion_values = np.asarray(
+            [dispersion_from_spread(artifact.spread) for artifact in artifacts],
+            dtype=float,
+        )
         rows.append(
             {
                 "n_train": sweep_size,
-                "miscalibration_area": miscalibration_area(
-                    y_true,
-                    y_pred,
-                    spread,
-                    nominal_coverages=nominal_coverages,
-                ),
-                "sharpness": sharpness_from_spread(spread),
-                "dispersion": dispersion_from_spread(spread),
+                "miscalibration_area": float(np.mean(miscalibration_values)),
+                "miscalibration_area_std": float(np.std(miscalibration_values)),
+                "sharpness": float(np.mean(sharpness_values)),
+                "sharpness_std": float(np.std(sharpness_values)),
+                "dispersion": float(np.mean(dispersion_values)),
+                "dispersion_std": float(np.std(dispersion_values)),
                 "uncertainty_kind": uncertainty_kind,
             }
         )

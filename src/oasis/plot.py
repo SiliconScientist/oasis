@@ -27,6 +27,9 @@ _MLIP_DISPLAY_NAMES = {
     "orb-v3-conservative-inf-omat": "ORB-v3\nconservative",
     "uma-s-1p1": "UMA-s-1p1",
 }
+_DEFAULT_PLOT_FONTSIZE = 16
+_DEFAULT_TICK_FONTSIZE = 8
+_DEFAULT_LEGEND_FONTSIZE = 8
 _METHOD_PLOT_STYLES = (
     ("ridge", "ridge_df", "ridge_uq_df", "Ridge", "o", "tab:blue"),
     ("kernel_ridge", "kernel_ridge_df", "kernel_ridge_uq_df", "Kernel Ridge", "X", "tab:cyan"),
@@ -99,11 +102,12 @@ def _plot_uq_metric_curve(
     *,
     metric_column: str,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    show_xlabel: bool = True,
     title: str,
     ylabel: str,
 ) -> Path:
@@ -124,6 +128,7 @@ def _plot_uq_metric_curve(
         frame = getattr(results, uq_field)
         if frame is None or frame.empty or metric_column not in frame.columns:
             continue
+        metric_std_column = f"{metric_column}_std"
         ax.plot(
             frame["n_train"],
             frame[metric_column],
@@ -131,14 +136,25 @@ def _plot_uq_metric_curve(
             color=color,
             label=display_name,
         )
-    ax.set_xlabel("Train size", fontsize=fontsize)
+        if metric_std_column in frame.columns:
+            ax.fill_between(
+                frame["n_train"],
+                frame[metric_column] - frame[metric_std_column],
+                frame[metric_column] + frame[metric_std_column],
+                color=color,
+                alpha=0.2,
+            )
+    if show_xlabel:
+        ax.set_xlabel("Train size", fontsize=fontsize)
+    else:
+        ax.set_xlabel("")
     ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=fontsize)
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)
@@ -236,11 +252,12 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
     max_val = max(ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
 
-    ax.set_xlabel("Reference adsorption energy (eV)")
-    ax.set_ylabel("MLIP adsorption energy (eV)")
-    ax.set_title("Parity plot (all MLIPs)")
+    ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.set_title("Parity plot (all MLIPs)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
-    ax.legend()
+    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     plt.tight_layout()
 
@@ -255,7 +272,7 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
 def learning_curve_plot(
     results: LearningCurveResults,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
@@ -487,10 +504,10 @@ def learning_curve_plot(
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
     ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=fontsize)
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)
@@ -504,11 +521,12 @@ def learning_curve_plot(
 def miscalibration_area_plot(
     results: LearningCurveResults,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    show_xlabel: bool = True,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -519,6 +537,7 @@ def miscalibration_area_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        show_xlabel=show_xlabel,
         title="Miscalibration area vs train size",
         ylabel="Miscalibration area",
     )
@@ -527,11 +546,12 @@ def miscalibration_area_plot(
 def sharpness_plot(
     results: LearningCurveResults,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    show_xlabel: bool = True,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -542,6 +562,7 @@ def sharpness_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        show_xlabel=show_xlabel,
         title="Sharpness vs train size",
         ylabel="Sharpness",
     )
@@ -550,11 +571,12 @@ def sharpness_plot(
 def dispersion_plot(
     results: LearningCurveResults,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    show_xlabel: bool = True,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -565,6 +587,7 @@ def dispersion_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        show_xlabel=show_xlabel,
         title="Dispersion vs train size",
         ylabel="Dispersion",
     )
@@ -573,7 +596,7 @@ def dispersion_plot(
 def screening_budget_plot(
     results: LearningCurveResults,
     output_path: str | Path,
-    fontsize: int = 8,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
@@ -804,10 +827,10 @@ def screening_budget_plot(
     ax.set_ylabel("CV RMSE (eV)", fontsize=fontsize)
     ax.set_title("Screening curve (method performance vs budget)", fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=fontsize)
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)

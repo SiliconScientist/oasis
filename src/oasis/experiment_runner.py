@@ -434,12 +434,14 @@ def run_experiment(cfg: object):
                     learning_curve_results,
                     output_path=Path(tmpdir)
                     / f"miscalibration_area_panel_{run_suffix}.png",
+                    show_xlabel=False,
                     **plot_kwargs,
                 )
                 sharpness_path = sharpness_plot(
                     learning_curve_results,
                     output_path=Path(tmpdir) / f"sharpness_panel_{run_suffix}.png",
                     show_legend=False,
+                    show_xlabel=False,
                     **plot_kwargs,
                 )
                 dispersion_path = dispersion_plot(
