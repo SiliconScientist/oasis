@@ -2,11 +2,65 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import math
+from typing import Collection
 
 import numpy as np
 
 from oasis.experiment_config import LearningCurveBudgetMode
 from oasis.sweep import SweepFamilyRequirements, SweepSplit, SweepSplitCollection
+
+
+def normalize_requested_sweep_sizes(
+    requested_sweep_sizes: Collection[int],
+) -> tuple[int, ...]:
+    normalized = tuple(
+        sorted({int(sweep_size) for sweep_size in requested_sweep_sizes})
+    )
+    if any(sweep_size <= 0 for sweep_size in normalized):
+        raise ValueError("requested sweep sizes must be positive.")
+    return normalized
+
+
+def resolve_configured_sweep_sizes(
+    n_samples: int,
+    *,
+    min_train: int | None,
+    max_train: int | None,
+    step: int = 1,
+    sweep_sizes: Collection[int] | None = None,
+    sweep_fractions: Collection[float] | None = None,
+) -> tuple[int, ...]:
+    if n_samples <= 0:
+        raise ValueError("n_samples must be positive.")
+    if step <= 0:
+        raise ValueError("step must be positive.")
+
+    explicit_sweep_sizes = normalize_requested_sweep_sizes(sweep_sizes or ())
+    explicit_sweep_fractions = tuple(float(value) for value in (sweep_fractions or ()))
+    if explicit_sweep_sizes and explicit_sweep_fractions:
+        raise ValueError("sweep_sizes and sweep_fractions cannot both be provided.")
+    if explicit_sweep_fractions:
+        if any(value <= 0 or value > 1 for value in explicit_sweep_fractions):
+            raise ValueError("sweep_fractions must be between 0 and 1.")
+        return tuple(
+            sorted(
+                {
+                    max(1, int(math.floor(value * n_samples)))
+                    for value in explicit_sweep_fractions
+                }
+            )
+        )
+    if explicit_sweep_sizes:
+        return explicit_sweep_sizes
+    if min_train is None or max_train is None:
+        raise ValueError(
+            "min_train and max_train must be provided when no explicit sweep sizes are configured."
+        )
+    if min_train <= 0:
+        raise ValueError("min_train must be positive.")
+    if max_train <= 0:
+        raise ValueError("max_train must be positive.")
+    return tuple(range(min_train, max_train + 1, step))
 
 
 def _screening_cv_test_folds(
@@ -126,6 +180,7 @@ def generate_sweep_splits(
     *,
     step: int = 1,
     min_test_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
 ) -> Iterator[SweepSplit]:
     """Yield repeated outer train/test splits for each sweep size in the range."""
 
@@ -133,8 +188,12 @@ def generate_sweep_splits(
         raise ValueError("min_test_size must be positive.")
 
     idx = np.arange(n_samples)
-    max_train = min(max_train, n_samples - min_test_size)
-    for n_train in range(min_train, max_train + 1, step):
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples - min_test_size) + 1, step))
+    )
+    for n_train in sweep_sizes:
         for _ in range(n_repeats):
             train_idx = rng.choice(idx, size=n_train, replace=False)
             test_idx = np.setdiff1d(idx, train_idx, assume_unique=False)
@@ -156,12 +215,17 @@ def generate_screening_sweep_splits(
     screen_fraction: float,
     min_screen_size: int = 1,
     min_outer_train_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
 ) -> Iterator[SweepSplit]:
     """Yield screening-mode outer CV splits over fixed total-budget sweep sizes."""
 
     idx = np.arange(n_samples)
-    max_budget = min(max_train, n_samples)
-    for sweep_size in range(min_train, max_budget + 1, step):
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
         n_outer_train = outer_train_size_if_screening_feasible(
             sweep_size,
             screen_fraction=screen_fraction,
@@ -238,6 +302,7 @@ def generate_screening_sweep_splits_with_validation(
     min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_outer_train_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
 ) -> Iterator[SweepSplit]:
     """Yield screening-mode outer CV splits with nested validation inside outer train."""
 
@@ -245,8 +310,12 @@ def generate_screening_sweep_splits_with_validation(
         raise ValueError("min_outer_train_size must be positive.")
 
     idx = np.arange(n_samples)
-    max_budget = min(max_train, n_samples)
-    for sweep_size in range(min_train, max_budget + 1, step):
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
         n_outer_train = outer_train_size_if_screening_feasible(
             sweep_size,
             screen_fraction=screen_fraction,
@@ -295,6 +364,7 @@ def generate_inner_validation_sweep_splits(
     min_tuning_val_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
 ) -> Iterator[SweepSplit]:
     """Yield sweep splits with policy-sized inner validation holdouts."""
 
@@ -303,8 +373,12 @@ def generate_inner_validation_sweep_splits(
     if min_test_size <= 0:
         raise ValueError("min_test_size must be positive.")
 
-    max_train = min(max_train, n_samples - min_test_size)
-    for sweep_size in range(min_train, max_train + 1, step):
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples - min_test_size) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
         n_val = validation_size_if_sweep_feasible(
             sweep_size,
             validation_fraction=validation_fraction,
@@ -329,11 +403,12 @@ def generate_inner_validation_sweep_splits(
 def build_sweep_split_collection(
     n_samples: int,
     *,
-    min_train: int,
-    max_train: int,
+    min_train: int | None,
+    max_train: int | None,
     step: int = 1,
     n_repeats: int,
     seed: int,
+    requested_sweep_sizes: Collection[int] | None = None,
     requirements: SweepFamilyRequirements | None = None,
     budget_mode: LearningCurveBudgetMode = "full_remainder_test",
     screen_fraction: float | None = None,
@@ -349,12 +424,10 @@ def build_sweep_split_collection(
     requirements = requirements or SweepFamilyRequirements()
     if n_samples <= 0:
         raise ValueError("n_samples must be positive.")
-    if min_train <= 0:
-        raise ValueError("min_train must be positive.")
-    if max_train <= 0:
-        raise ValueError("max_train must be positive.")
     if n_repeats <= 0:
         raise ValueError("n_repeats must be positive.")
+    if step <= 0:
+        raise ValueError("step must be positive.")
     if min_screen_size <= 0:
         raise ValueError("min_screen_size must be positive.")
     if min_test_size <= 0:
@@ -366,64 +439,67 @@ def build_sweep_split_collection(
     if min_inner_train_size <= 0:
         raise ValueError("min_inner_train_size must be positive.")
 
-    if budget_mode == "screening_fraction":
-        if screen_fraction is None:
-            raise ValueError(
-                "screen_fraction must be provided when budget_mode='screening_fraction'."
-            )
-        feasible_max_train = min(max_train, n_samples)
-        effective_min_train = min_train
-    else:
-        feasible_max_train = min(max_train, n_samples - min_test_size)
-        effective_min_train = max(min_train, requirements.min_train_size)
-    if feasible_max_train < effective_min_train:
+    candidate_sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else resolve_configured_sweep_sizes(
+            n_samples,
+            min_train=min_train,
+            max_train=max_train,
+            step=step,
+        )
+    )
+    if not candidate_sweep_sizes:
         return SweepSplitCollection(
             splits=(),
             planning_requirements=requirements,
         )
 
+    if budget_mode == "screening_fraction":
+        if screen_fraction is None:
+            raise ValueError(
+                "screen_fraction must be provided when budget_mode='screening_fraction'."
+            )
+
     rng = np.random.default_rng(seed)
     if budget_mode == "screening_fraction":
-        first_feasible_budget = next(
-            (
-                sweep_size
-                for sweep_size in range(effective_min_train, feasible_max_train + 1, step)
-                if (
-                    outer_train_size := outer_train_size_if_screening_feasible(
-                        sweep_size,
-                        screen_fraction=screen_fraction,
-                        min_screen_size=min_screen_size,
-                        min_outer_train_size=max(requirements.min_train_size, 1),
-                    )
+        feasible_sweep_sizes = tuple(
+            sweep_size
+            for sweep_size in candidate_sweep_sizes
+            if sweep_size <= n_samples
+            if (
+                outer_train_size := outer_train_size_if_screening_feasible(
+                    sweep_size,
+                    screen_fraction=screen_fraction,
+                    min_screen_size=min_screen_size,
+                    min_outer_train_size=max(requirements.min_train_size, 1),
                 )
-                is not None
-                if not requirements.requires_inner_validation
-                or validation_size_if_sweep_feasible(
-                    outer_train_size,
-                    validation_fraction=validation_fraction,
-                    min_val_size=min_val_size,
-                    min_tuning_val_size=min_tuning_val_size,
-                    min_inner_train_size=min_inner_train_size,
-                )
-                is not None
-            ),
-            None,
+            )
+            is not None
+            if not requirements.requires_inner_validation
+            or validation_size_if_sweep_feasible(
+                outer_train_size,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
+                min_inner_train_size=min_inner_train_size,
+            )
+            is not None
         )
-        if first_feasible_budget is None:
+        if not feasible_sweep_sizes:
             return SweepSplitCollection(
                 splits=(),
                 planning_requirements=requirements,
             )
-        effective_min_train = first_feasible_budget
         if requirements.requires_inner_validation:
             splits = tuple(
                 generate_screening_sweep_splits_with_validation(
-                    n_samples,
-                    effective_min_train,
-                    feasible_max_train,
-                    n_repeats,
-                    rng,
-                    step=step,
+                    n_samples=n_samples,
+                    min_train=1,
+                    max_train=1,
+                    n_repeats=n_repeats,
+                    rng=rng,
+                    step=1,
                     screen_fraction=screen_fraction,
                     min_screen_size=min_screen_size,
                     validation_fraction=validation_fraction,
@@ -431,69 +507,75 @@ def build_sweep_split_collection(
                     min_tuning_val_size=min_tuning_val_size,
                     min_inner_train_size=min_inner_train_size,
                     min_outer_train_size=max(requirements.min_train_size, 1),
+                    requested_sweep_sizes=feasible_sweep_sizes,
                 )
             )
         else:
             splits = tuple(
                 generate_screening_sweep_splits(
-                    n_samples,
-                    effective_min_train,
-                    feasible_max_train,
-                    n_repeats,
-                    rng,
-                    step=step,
+                    n_samples=n_samples,
+                    min_train=1,
+                    max_train=1,
+                    n_repeats=n_repeats,
+                    rng=rng,
+                    step=1,
                     screen_fraction=screen_fraction,
                     min_screen_size=min_screen_size,
                     min_outer_train_size=max(requirements.min_train_size, 1),
+                    requested_sweep_sizes=feasible_sweep_sizes,
                 )
             )
     elif requirements.requires_inner_validation:
-        first_feasible_train = next(
-            (
-                sweep_size
-                for sweep_size in range(effective_min_train, feasible_max_train + 1, step)
-                if validation_size_if_sweep_feasible(
-                    sweep_size,
-                    validation_fraction=validation_fraction,
-                    min_val_size=min_val_size,
-                    min_tuning_val_size=min_tuning_val_size,
-                    min_inner_train_size=min_inner_train_size,
-                )
-                is not None
-            ),
-            None,
+        feasible_sweep_sizes = tuple(
+            sweep_size
+            for sweep_size in candidate_sweep_sizes
+            if requirements.min_train_size <= sweep_size <= n_samples - min_test_size
+            if validation_size_if_sweep_feasible(
+                sweep_size,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
+                min_inner_train_size=min_inner_train_size,
+            )
+            is not None
         )
-        if first_feasible_train is None:
+        if not feasible_sweep_sizes:
             return SweepSplitCollection(
                 splits=(),
                 planning_requirements=requirements,
             )
-        effective_min_train = first_feasible_train
         splits = tuple(
             generate_inner_validation_sweep_splits(
-                n_samples,
-                effective_min_train,
-                feasible_max_train,
-                n_repeats,
-                rng,
-                step=step,
+                n_samples=n_samples,
+                min_train=1,
+                max_train=1,
+                n_repeats=n_repeats,
+                rng=rng,
+                step=1,
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
                 min_tuning_val_size=min_tuning_val_size,
                 min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
+                requested_sweep_sizes=feasible_sweep_sizes,
             )
         )
     else:
+        feasible_sweep_sizes = tuple(
+            sweep_size
+            for sweep_size in candidate_sweep_sizes
+            if requirements.min_train_size <= sweep_size <= n_samples - min_test_size
+        )
         splits = tuple(
             generate_sweep_splits(
-                n_samples,
-                effective_min_train,
-                feasible_max_train,
-                n_repeats,
-                rng,
-                step=step,
+                n_samples=n_samples,
+                min_train=1,
+                max_train=1,
+                n_repeats=n_repeats,
+                rng=rng,
+                step=1,
                 min_test_size=min_test_size,
+                requested_sweep_sizes=feasible_sweep_sizes,
             )
         )
     return SweepSplitCollection(

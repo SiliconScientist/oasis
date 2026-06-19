@@ -766,6 +766,71 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
         )
 
+    def test_run_experiment_curve_window_all_disables_plot_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    filters=SimpleNamespace(
+                        adsorbate=None,
+                        anomaly_label=None,
+                        reaction_contains=None,
+                    ),
+                    curve_window=SimpleNamespace(
+                        all=True,
+                        min_x=10,
+                        max_x=50,
+                        include_x=[10, 30],
+                    ),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ) as mock_learning_curve_plot:
+                run_experiment(cfg)
+
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["min_x"])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["max_x"])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
+
     def test_run_experiment_emits_uq_summary_figure_when_learning_curve_results_have_uq(
         self,
     ) -> None:

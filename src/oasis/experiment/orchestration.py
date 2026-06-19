@@ -21,6 +21,7 @@ from oasis.experiment.dataset import (
 )
 from oasis.experiment.learning_curve import run_standard_learning_curve_experiments
 from oasis.experiment.screening import run_screening_learning_curve_experiments
+from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.experiment_config import LearningCurveBudgetMode
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
@@ -46,11 +47,12 @@ if TYPE_CHECKING:
 def run_learning_curve_experiments(
     dataset: SweepDataset,
     *,
-    min_train: int,
-    max_train: int,
+    min_train: int | None,
+    max_train: int | None,
     step: int = 1,
     n_repeats: int,
     seed: int = 42,
+    requested_sweep_sizes: Collection[int] | None = None,
     enabled_model_names: Sequence[str] | None = None,
     model_cfg: Any | None = None,
     budget_mode: LearningCurveBudgetMode = "full_remainder_test",
@@ -74,6 +76,7 @@ def run_learning_curve_experiments(
             step=step,
             n_repeats=n_repeats,
             seed=seed,
+            requested_sweep_sizes=requested_sweep_sizes,
             enabled_model_names=enabled_model_names,
             model_cfg=model_cfg,
             validation_fraction=validation_fraction,
@@ -96,6 +99,7 @@ def run_learning_curve_experiments(
             step=step,
             n_repeats=n_repeats,
             seed=seed,
+            requested_sweep_sizes=requested_sweep_sizes,
             enabled_model_names=enabled_model_names,
             model_cfg=model_cfg,
             screen_fraction=screen_fraction,
@@ -307,6 +311,14 @@ def run_learning_curve_experiments_from_config(
                     step=getattr(experiment_cfg, "step", 1),
                     n_repeats=experiment_cfg.n_repeats,
                     seed=cfg.seed if cfg.seed is not None else 42,
+                    requested_sweep_sizes=resolve_configured_sweep_sizes(
+                        dataset.n_samples,
+                        min_train=experiment_cfg.min_train,
+                        max_train=experiment_cfg.max_train,
+                        step=getattr(experiment_cfg, "step", 1),
+                        sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
+                        sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
+                    ),
                     budget_mode=getattr(
                         experiment_cfg, "budget_mode", "full_remainder_test"
                     ),
@@ -364,6 +376,18 @@ def run_learning_curve_experiments_from_config(
             step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
             n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
             seed=cfg.seed if cfg and cfg.seed is not None else 42,
+            requested_sweep_sizes=(
+                resolve_configured_sweep_sizes(
+                    dataset.n_samples,
+                    min_train=experiment_cfg.min_train,
+                    max_train=experiment_cfg.max_train,
+                    step=getattr(experiment_cfg, "step", 1),
+                    sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
+                    sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
+                )
+                if experiment_cfg
+                else None
+            ),
             enabled_model_names=enabled_model_names_to_run,
             model_cfg=model_cfg,
             budget_mode=(
@@ -580,6 +604,14 @@ def load_or_run_learning_curve_results_from_config(
                         step=getattr(experiment_cfg, "step", 1),
                         n_repeats=experiment_cfg.n_repeats,
                         seed=cfg.seed if cfg.seed is not None else 42,
+                        requested_sweep_sizes=resolve_configured_sweep_sizes(
+                            dataset.n_samples,
+                            min_train=experiment_cfg.min_train,
+                            max_train=experiment_cfg.max_train,
+                            step=getattr(experiment_cfg, "step", 1),
+                            sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
+                            sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
+                        ),
                         budget_mode=getattr(
                             experiment_cfg, "budget_mode", "full_remainder_test"
                         ),

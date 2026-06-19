@@ -83,6 +83,8 @@ class LearningCurveSweepMetadata:
     step: int
     n_repeats: int
     enabled_models: tuple[str, ...]
+    requested_sweep_sizes: tuple[int, ...] | None = None
+    requested_sweep_fractions: tuple[float, ...] | None = None
     budget_mode: str = "full_remainder_test"
     screen_fraction: float | None = None
     min_screen_size: int | None = None
@@ -118,6 +120,22 @@ class LearningCurveSweepMetadata:
                 "mlip_feature_names",
                 tuple(dict.fromkeys(mlip_feature_names)),
             )
+        requested_sweep_sizes = self.requested_sweep_sizes
+        if requested_sweep_sizes is not None:
+            object.__setattr__(
+                self,
+                "requested_sweep_sizes",
+                tuple(sorted(dict.fromkeys(int(value) for value in requested_sweep_sizes))),
+            )
+        requested_sweep_fractions = self.requested_sweep_fractions
+        if requested_sweep_fractions is not None:
+            object.__setattr__(
+                self,
+                "requested_sweep_fractions",
+                tuple(
+                    sorted(dict.fromkeys(float(value) for value in requested_sweep_fractions))
+                ),
+            )
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -125,6 +143,16 @@ class LearningCurveSweepMetadata:
             "min_train": self.min_train,
             "max_train": self.max_train,
             "step": self.step,
+            "requested_sweep_sizes": (
+                None
+                if self.requested_sweep_sizes is None
+                else list(self.requested_sweep_sizes)
+            ),
+            "requested_sweep_fractions": (
+                None
+                if self.requested_sweep_fractions is None
+                else list(self.requested_sweep_fractions)
+            ),
             "n_repeats": self.n_repeats,
             "enabled_models": list(self.enabled_models),
             "budget_mode": self.budget_mode,
@@ -167,6 +195,16 @@ class LearningCurveSweepMetadata:
             min_train=int(payload["min_train"]),
             max_train=int(payload["max_train"]),
             step=int(payload["step"]),
+            requested_sweep_sizes=(
+                None
+                if payload.get("requested_sweep_sizes") is None
+                else tuple(int(value) for value in payload["requested_sweep_sizes"])
+            ),
+            requested_sweep_fractions=(
+                None
+                if payload.get("requested_sweep_fractions") is None
+                else tuple(float(value) for value in payload["requested_sweep_fractions"])
+            ),
             n_repeats=int(payload["n_repeats"]),
             enabled_models=tuple(payload.get("enabled_models", ())),
             budget_mode=payload.get("budget_mode", "full_remainder_test"),
@@ -215,6 +253,24 @@ class LearningCurveSweepMetadata:
                 fallback.step
                 if fallback is not None
                 else int(payload.get("step", 0))
+            ),
+            requested_sweep_sizes=(
+                fallback.requested_sweep_sizes
+                if fallback is not None
+                else (
+                    None
+                    if payload.get("requested_sweep_sizes") is None
+                    else tuple(int(value) for value in payload["requested_sweep_sizes"])
+                )
+            ),
+            requested_sweep_fractions=(
+                fallback.requested_sweep_fractions
+                if fallback is not None
+                else (
+                    None
+                    if payload.get("requested_sweep_fractions") is None
+                    else tuple(float(value) for value in payload["requested_sweep_fractions"])
+                )
             ),
             n_repeats=(
                 fallback.n_repeats
@@ -284,7 +340,15 @@ class LearningCurveSweepMetadata:
         if ignore_enabled_models:
             ignored_keys.add("enabled_models")
         if ignore_train_grid:
-            ignored_keys.update({"min_train", "max_train", "step"})
+            ignored_keys.update(
+                {
+                    "min_train",
+                    "max_train",
+                    "step",
+                    "requested_sweep_sizes",
+                    "requested_sweep_fractions",
+                }
+            )
         if ignore_repeat_count:
             ignored_keys.add("n_repeats")
         mismatches = [
@@ -335,6 +399,7 @@ def learning_curve_sweep_metadata_from_config(
     mlip_feature_names: tuple[str, ...] | None = None,
 ) -> LearningCurveSweepMetadata:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+    from oasis.experiment.splits import resolve_configured_sweep_sizes
 
     experiment_cfg = cfg.experiment.learning_curve if cfg.experiment else None
     if experiment_cfg is None:
@@ -347,11 +412,55 @@ def learning_curve_sweep_metadata_from_config(
         else tuple(value for value in plot_filters.reaction_contains if value)
     )
     dataset_profile = getattr(cfg, "dataset_profile", None)
-    return LearningCurveSweepMetadata(
-        seed=cfg.seed,
+    configured_sweep_fractions = tuple(
+        float(value) for value in getattr(experiment_cfg, "sweep_fractions", ())
+    )
+    configured_sweep_sizes = tuple(
+        int(value) for value in getattr(experiment_cfg, "sweep_sizes", ())
+    )
+    if dataset_size is None and configured_sweep_fractions:
+        raise ValueError(
+            "dataset_size is required to build metadata for sweep_fractions."
+        )
+    resolution_n_samples = dataset_size
+    if resolution_n_samples is None:
+        if configured_sweep_sizes:
+            resolution_n_samples = max(configured_sweep_sizes)
+        elif experiment_cfg.max_train is not None:
+            resolution_n_samples = experiment_cfg.max_train
+        else:
+            raise ValueError(
+                "dataset_size is required when the learning-curve sweep cannot be resolved from config bounds."
+            )
+    resolved_sweep_sizes = resolve_configured_sweep_sizes(
+        resolution_n_samples,
         min_train=experiment_cfg.min_train,
         max_train=experiment_cfg.max_train,
         step=getattr(experiment_cfg, "step", 1),
+        sweep_sizes=configured_sweep_sizes,
+        sweep_fractions=configured_sweep_fractions,
+    )
+    inferred_step = (
+        0
+        if len(resolved_sweep_sizes) >= 3
+        and len(
+            {
+                resolved_sweep_sizes[index + 1] - resolved_sweep_sizes[index]
+                for index in range(len(resolved_sweep_sizes) - 1)
+            }
+        )
+        > 1
+        else getattr(experiment_cfg, "step", 1)
+    )
+    return LearningCurveSweepMetadata(
+        seed=cfg.seed,
+        min_train=resolved_sweep_sizes[0],
+        max_train=resolved_sweep_sizes[-1],
+        step=inferred_step,
+        requested_sweep_sizes=resolved_sweep_sizes,
+        requested_sweep_fractions=(
+            configured_sweep_fractions or None
+        ),
         n_repeats=experiment_cfg.n_repeats,
         enabled_models=enabled_learning_curve_model_names_from_config(
             experiment_cfg.models

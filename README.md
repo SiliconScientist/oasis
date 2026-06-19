@@ -83,7 +83,24 @@ tag = "example_oh"
 
 [experiment.learning_curve]
 reuse_results = true
+
+[plot.curve_window]
+all = true
 ```
+
+For sparse paper sweeps, you can replace the contiguous `min_train` /
+`max_train` / `step` grid with explicit points:
+
+```toml
+[experiment.learning_curve]
+sweep_fractions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+n_repeats = 10
+reuse_results = true
+```
+
+Oasis resolves `sweep_fractions` against the active dataset size, deduplicates
+any collisions after rounding down to counts, and reuses cached rows by the
+resolved `n_train` / `n_budget` values.
 
 Workflow:
 

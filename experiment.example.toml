@@ -33,6 +33,7 @@ output_dir = "data/results/plots"
 
 [plot.curve_window]
 # Optional x-axis window for learning-curve and screening plots.
+# all = true
 # min_x = 10
 # max_x = 50
 # include_x = [10, 20, 30, 40, 50]
@@ -42,9 +43,15 @@ output_dir = "data/results/plots"
 # Models that require validation spend part of that budget on inner validation.
 # The test split is always an outer holdout used only for final evaluation.
 # Validation-aware points are skipped when these minima cannot all fit together.
+# Choose one sweep style:
+# 1. contiguous integer range via `min_train` / `max_train` / `step`
+# 2. explicit sparse counts via `sweep_sizes`
+# 3. explicit dataset fractions via `sweep_fractions`
 min_train = 5
 max_train = 25
 step = 1
+# sweep_sizes = [5, 10, 20, 25]
+# sweep_fractions = [0.1, 0.2, 0.3, 0.5, 0.7, 0.9]
 validation_fraction = 0.2
 min_val_size = 1
 min_tuning_val_size = 1

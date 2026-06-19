@@ -426,11 +426,20 @@ def run_experiment(cfg: object):
     graph_view = prepare_graph_view(cfg, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
-    plot_kwargs = {
-        "min_x": getattr(curve_window_cfg, "min_x", None),
-        "max_x": getattr(curve_window_cfg, "max_x", None),
-        "include_x": getattr(curve_window_cfg, "include_x", None),
-    }
+    use_full_curve_window = bool(getattr(curve_window_cfg, "all", False))
+    plot_kwargs = (
+        {
+            "min_x": None,
+            "max_x": None,
+            "include_x": None,
+        }
+        if use_full_curve_window
+        else {
+            "min_x": getattr(curve_window_cfg, "min_x", None),
+            "max_x": getattr(curve_window_cfg, "max_x", None),
+            "include_x": getattr(curve_window_cfg, "include_x", None),
+        }
+    )
     parity_plot_data = prepare_parity_plot_data(wide_df)
     zero_shot_preds = np.mean(
         np.column_stack(list(parity_plot_data.predictions.values())),

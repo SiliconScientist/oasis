@@ -30,6 +30,7 @@ from oasis.exp import (
     inner_validation_size_for_sweep,
     outer_train_size_if_screening_feasible,
     prepare_parity_plot_data,
+    resolve_configured_sweep_sizes,
     run_learning_curve_experiments,
     run_learning_curve_experiments_from_config,
     run_learning_curve_experiments_from_frame,
@@ -81,6 +82,34 @@ except ModuleNotFoundError:
 
 
 class _GenerateSweepSplitsTests(unittest.TestCase):
+    def test_resolve_configured_sweep_sizes_from_fractions(self) -> None:
+        self.assertEqual(
+            resolve_configured_sweep_sizes(
+                100,
+                min_train=None,
+                max_train=None,
+                sweep_fractions=[0.1, 0.2, 0.9],
+            ),
+            (10, 20, 90),
+        )
+
+    def test_generate_sweep_splits_honors_requested_sweep_sizes(self) -> None:
+        splits = list(
+            generate_sweep_splits(
+                n_samples=12,
+                min_train=1,
+                max_train=1,
+                n_repeats=2,
+                rng=np.random.default_rng(7),
+                requested_sweep_sizes=(2, 5, 9),
+            )
+        )
+
+        self.assertEqual(
+            [split.sweep_size for split in splits],
+            [2, 2, 5, 5, 9, 9],
+        )
+
     def test_generate_sweep_splits_yields_disjoint_full_partitions(self) -> None:
         rng = np.random.default_rng(123)
 
@@ -1309,6 +1338,21 @@ class _GenerateSweepSplitsWithValidationTests(unittest.TestCase):
         self.assertEqual(
             [len(split.train_idx) for split in split_collection.splits],
             [3, 3, 4, 4, 4, 5, 5, 5],
+        )
+
+    def test_build_sweep_split_collection_honors_requested_sparse_sizes(self) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=20,
+            min_train=None,
+            max_train=None,
+            requested_sweep_sizes=(2, 10, 18),
+            n_repeats=2,
+            seed=11,
+        )
+
+        self.assertEqual(
+            sorted({split.sweep_size for split in split_collection.splits}),
+            [2, 10, 18],
         )
 
     def test_build_sweep_split_collection_screening_mode_honors_validation_requirements(

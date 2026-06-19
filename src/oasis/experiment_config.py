@@ -137,6 +137,7 @@ class PlotFiltersConfig(BaseModel):
 
 
 class PlotCurveWindowConfig(BaseModel):
+    all: bool = False
     min_x: Optional[int] = None
     max_x: Optional[int] = None
     include_x: Optional[List[int]] = None
@@ -154,9 +155,11 @@ class MlipSelectionConfig(BaseModel):
 
 
 class LearningCurveExperimentConfig(BaseModel):
-    min_train: int
-    max_train: int
+    min_train: int | None = None
+    max_train: int | None = None
     step: int = 1
+    sweep_sizes: List[int] = Field(default_factory=list)
+    sweep_fractions: List[float] = Field(default_factory=list)
     n_repeats: int
     budget_mode: LearningCurveBudgetMode = "full_remainder_test"
     screen_fraction: float | None = None

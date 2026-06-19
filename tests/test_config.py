@@ -1386,6 +1386,7 @@ class ConfigParsingTests(unittest.TestCase):
                 "plot": {
                     "output_dir": "data/results/plots",
                     "curve_window": {
+                        "all": True,
                         "min_x": 10,
                         "max_x": 50,
                         "include_x": [10, 30, 50],
@@ -1395,6 +1396,7 @@ class ConfigParsingTests(unittest.TestCase):
         )
 
         assert cfg.plot is not None
+        self.assertTrue(cfg.plot.curve_window.all)
         self.assertEqual(cfg.plot.curve_window.min_x, 10)
         self.assertEqual(cfg.plot.curve_window.max_x, 50)
         self.assertEqual(cfg.plot.curve_window.include_x, [10, 30, 50])
