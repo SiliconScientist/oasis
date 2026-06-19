@@ -85,8 +85,22 @@ tag = "example_oh"
 reuse_results = true
 
 [plot.curve_window]
-all = true
+full_dataset_window = true
 ```
+
+`full_dataset_window = true` only disables the `min_x` / `max_x` crop. It does
+not disable `include_x` or `include_fractions`.
+
+If you want to keep the full sweep on disk but only plot selected fractional
+budgets, use:
+
+```toml
+[plot.curve_window]
+include_fractions = [0.1, 0.2, 0.5, 0.9]
+```
+
+These fractions are resolved against the filtered dataset size, then passed to
+the plotting layer as explicit `n_train` points.
 
 For sparse paper sweeps, you can replace the contiguous `min_train` /
 `max_train` / `step` grid with explicit points:

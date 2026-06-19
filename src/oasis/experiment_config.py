@@ -137,10 +137,12 @@ class PlotFiltersConfig(BaseModel):
 
 
 class PlotCurveWindowConfig(BaseModel):
+    full_dataset_window: bool = False
     all: bool = False
     min_x: Optional[int] = None
     max_x: Optional[int] = None
     include_x: Optional[List[int]] = None
+    include_fractions: Optional[List[float]] = None
 
 
 class GraphDatasetInputConfig(BaseModel):

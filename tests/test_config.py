@@ -1386,20 +1386,24 @@ class ConfigParsingTests(unittest.TestCase):
                 "plot": {
                     "output_dir": "data/results/plots",
                     "curve_window": {
+                        "full_dataset_window": True,
                         "all": True,
                         "min_x": 10,
                         "max_x": 50,
                         "include_x": [10, 30, 50],
+                        "include_fractions": [0.1, 0.3, 0.5],
                     },
                 },
             }
         )
 
         assert cfg.plot is not None
+        self.assertTrue(cfg.plot.curve_window.full_dataset_window)
         self.assertTrue(cfg.plot.curve_window.all)
         self.assertEqual(cfg.plot.curve_window.min_x, 10)
         self.assertEqual(cfg.plot.curve_window.max_x, 50)
         self.assertEqual(cfg.plot.curve_window.include_x, [10, 30, 50])
+        self.assertEqual(cfg.plot.curve_window.include_fractions, [0.1, 0.3, 0.5])
 
     def test_screening_section_overrides_legacy_learning_curve_screening_fields(self) -> None:
         cfg = Config(

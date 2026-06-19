@@ -33,10 +33,11 @@ output_dir = "data/results/plots"
 
 [plot.curve_window]
 # Optional x-axis window for learning-curve and screening plots.
-# all = true
+# full_dataset_window = true  # ignore min_x/max_x but still honor include filters
 # min_x = 10
 # max_x = 50
 # include_x = [10, 20, 30, 40, 50]
+# include_fractions = [0.1, 0.2, 0.5, 0.9]
 
 [experiment.learning_curve]
 # Learning-curve sweep sizes refer to the outer training budget.

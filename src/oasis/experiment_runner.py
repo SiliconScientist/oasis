@@ -17,6 +17,7 @@ from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
     prepare_parity_plot_data,
 )
+from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
 from oasis.learning_curve.execution import (
     dispersion_from_spread,
@@ -426,18 +427,47 @@ def run_experiment(cfg: object):
     graph_view = prepare_graph_view(cfg, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
-    use_full_curve_window = bool(getattr(curve_window_cfg, "all", False))
+    use_full_curve_window = bool(
+        getattr(curve_window_cfg, "full_dataset_window", False)
+    ) or bool(getattr(curve_window_cfg, "all", False))
+    configured_include_x = getattr(curve_window_cfg, "include_x", None)
+    configured_include_fractions = getattr(
+        curve_window_cfg, "include_fractions", None
+    )
+    resolved_include_fraction_x = (
+        list(
+            resolve_configured_sweep_sizes(
+                _frame_height(wide_df),
+                min_train=None,
+                max_train=None,
+                sweep_fractions=configured_include_fractions,
+            )
+        )
+        if configured_include_fractions
+        else None
+    )
+    resolved_include_x = None
+    if configured_include_x or resolved_include_fraction_x:
+        resolved_include_x = sorted(
+            {
+                int(value)
+                for value in (
+                    list(configured_include_x or [])
+                    + list(resolved_include_fraction_x or [])
+                )
+            }
+        )
     plot_kwargs = (
         {
             "min_x": None,
             "max_x": None,
-            "include_x": None,
+            "include_x": resolved_include_x,
         }
         if use_full_curve_window
         else {
             "min_x": getattr(curve_window_cfg, "min_x", None),
             "max_x": getattr(curve_window_cfg, "max_x", None),
-            "include_x": getattr(curve_window_cfg, "include_x", None),
+            "include_x": resolved_include_x,
         }
     )
     parity_plot_data = prepare_parity_plot_data(wide_df)
