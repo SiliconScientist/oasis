@@ -13,7 +13,7 @@ from torch import Tensor
 from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gnn_gate import collate_graphs
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
-from oasis.tune import SelectionRefitPolicy
+from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
 
 def _scatter_mean(src: Tensor, idx: Tensor, n_bins: int) -> Tensor:
@@ -211,11 +211,11 @@ class ProbeGnnTuningSpec:
         y_train = torch.tensor(train_ds.targets, dtype=torch.float32)
         y_val_np = val_ds.targets
 
-        epochs = self.training_cfg.epochs
         seed = self.training_cfg.seed
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
+            epochs = resolved_training_epochs(self.training_cfg, trial)
             lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
             weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
@@ -253,6 +253,7 @@ class ProbeGnnTuningSpec:
 
         in_features = fit_graphs[0].node_features.shape[1]
         hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        epochs = resolved_training_epochs(self.training_cfg, best_trial)
         lr: float = best_trial.params["lr"]
         weight_decay: float = best_trial.params["weight_decay"]
 
@@ -264,7 +265,7 @@ class ProbeGnnTuningSpec:
         encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
         _train_probe_encoder(
             encoder, nf, ei, bv, y,
-            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
         )
 
         encoder.eval()
@@ -288,6 +289,7 @@ class ProbeGnnTuningSpec:
             "in_features": model.in_features,
             "hidden_dim": model.hidden_dim,
             "n_layers": model.n_layers,
+            "epochs": resolved_training_epochs(self.training_cfg, best_trial),
             "bias": model.bias,
         }
 
@@ -360,11 +362,11 @@ class GnnDirectTuningSpec:
         y_train = torch.tensor(train_ds.targets, dtype=torch.float32)
         y_val_np = val_ds.targets
 
-        epochs = self.training_cfg.epochs
         seed = self.training_cfg.seed
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
+            epochs = resolved_training_epochs(self.training_cfg, trial)
             lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
             weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
@@ -403,6 +405,7 @@ class GnnDirectTuningSpec:
 
         in_features = fit_graphs[0].node_features.shape[1]
         hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        epochs = resolved_training_epochs(self.training_cfg, best_trial)
         lr: float = best_trial.params["lr"]
         weight_decay: float = best_trial.params["weight_decay"]
 
@@ -414,7 +417,7 @@ class GnnDirectTuningSpec:
         encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
         _train_probe_encoder(
             encoder, nf, ei, bv, y,
-            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
         )
 
         encoder.eval()
@@ -438,5 +441,6 @@ class GnnDirectTuningSpec:
             "in_features": model.in_features,
             "hidden_dim": model.hidden_dim,
             "n_layers": model.n_layers,
+            "epochs": resolved_training_epochs(self.training_cfg, best_trial),
             "bias": model.bias,
         }

@@ -51,6 +51,20 @@ class OptunaTuningConfig(BaseModel):
     seed: int | None = None
 
 
+DEFAULT_TRAINING_EPOCH_CHOICES: tuple[int, ...] = (25, 50, 100)
+
+
+def resolved_training_epochs(training_cfg: Any, trial: Any | None = None) -> int:
+    configured_epochs = getattr(training_cfg, "epochs", None)
+    if configured_epochs is not None:
+        return int(configured_epochs)
+    if trial is None:
+        raise ValueError("trial is required when training epochs are not fixed.")
+    return int(
+        trial.suggest_categorical("epochs", list(DEFAULT_TRAINING_EPOCH_CHOICES))
+    )
+
+
 def _mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_true_arr = np.asarray(y_true, dtype=float)
     y_pred_arr = np.asarray(y_pred, dtype=float)

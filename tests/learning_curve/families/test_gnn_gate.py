@@ -236,6 +236,7 @@ class _GnnMockTrial:
     weight_decay: float = 1e-4
     hidden_dim: int = 32
     n_layers: int = 1
+    epochs: int = 25
 
     def __post_init__(self) -> None:
         self.params: dict[str, Any] = {
@@ -243,6 +244,7 @@ class _GnnMockTrial:
             "weight_decay": self.weight_decay,
             "hidden_dim": self.hidden_dim,
             "n_layers": self.n_layers,
+            "epochs": self.epochs,
         }
 
     def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
@@ -332,8 +334,17 @@ class GnnGateTuningSpecTests(unittest.TestCase):
         trial = _GnnMockTrial()
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         metadata = spec.trial_metadata(trial, model)
-        for key in ("hidden_dim", "n_layers", "n_experts", "bias"):
+        for key in ("hidden_dim", "n_layers", "n_experts", "epochs", "bias"):
             self.assertIn(key, metadata)
+
+    def test_omitted_epochs_are_tuned_from_trial(self) -> None:
+        split = _make_split_with_graphs()
+        spec = GnnGateTuningSpec(training_cfg=MoETrainingConfig(seed=0), hidden_dims=(8,))
+        trial = _GnnMockTrial(epochs=25)
+        rmse = spec.build_trial_objective(split)(trial)
+        self.assertTrue(np.isfinite(rmse))
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertEqual(spec.trial_metadata(trial, model)["epochs"], 25)
 
     def test_trial_metadata_n_experts_matches_dataset(self) -> None:
         split = _make_split_with_graphs(n_experts=3)

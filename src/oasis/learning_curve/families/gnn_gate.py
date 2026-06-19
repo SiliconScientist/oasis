@@ -14,7 +14,7 @@ from oasis.config import MoETrainingConfig
 from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
-from oasis.tune import SelectionRefitPolicy
+from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
 
 def collate_graphs(graphs: Sequence[GraphRecord]) -> tuple[Tensor, Tensor, Tensor]:
@@ -249,12 +249,12 @@ class GnnGateTuningSpec:
         X_val_np = val_ds.mlip_features
         y_val_np = val_ds.targets
 
-        epochs = self.training_cfg.epochs
         seed = self.training_cfg.seed
         policy = self.policy
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
+            epochs = resolved_training_epochs(self.training_cfg, trial)
             lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
             weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
@@ -302,6 +302,7 @@ class GnnGateTuningSpec:
             method_name="moe",
         )
         hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        epochs = resolved_training_epochs(self.training_cfg, best_trial)
         lr: float = best_trial.params["lr"]
         weight_decay: float = best_trial.params["weight_decay"]
 
@@ -314,7 +315,7 @@ class GnnGateTuningSpec:
         encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers)
         _train_encoder(
             encoder, nf, ei, bv, X, y,
-            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
         )
 
         encoder.eval()
@@ -341,5 +342,6 @@ class GnnGateTuningSpec:
             "hidden_dim": model.hidden_dim,
             "n_layers": model.n_layers,
             "n_experts": model.n_experts,
+            "epochs": resolved_training_epochs(self.training_cfg, best_trial),
             "bias": model.bias,
         }

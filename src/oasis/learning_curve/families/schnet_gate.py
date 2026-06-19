@@ -15,7 +15,7 @@ from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
 from oasis.learning_curve.families.gnn_gate import collate_graphs_with_distances
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
-from oasis.tune import SelectionRefitPolicy
+from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
 
 def _global_mean_pool(x: Tensor, batch: Tensor, n_graphs: int) -> Tensor:
@@ -270,7 +270,6 @@ class SchNetGateTuningSpec:
         X_val_np = val_ds.mlip_features
         y_val_np = val_ds.targets
 
-        epochs = self.training_cfg.epochs
         seed = self.training_cfg.seed
         n_rbf = self.n_rbf
         r_max = self.r_max
@@ -278,6 +277,7 @@ class SchNetGateTuningSpec:
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
+            epochs = resolved_training_epochs(self.training_cfg, trial)
             lr: float = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
             weight_decay: float = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
@@ -323,6 +323,7 @@ class SchNetGateTuningSpec:
             method_name="moe",
         )
         hidden_dim, n_layers = self._arch_from_trial(best_trial)
+        epochs = resolved_training_epochs(self.training_cfg, best_trial)
         lr: float = best_trial.params["lr"]
         weight_decay: float = best_trial.params["weight_decay"]
 
@@ -335,7 +336,7 @@ class SchNetGateTuningSpec:
         encoder = SchNetEncoder(hidden_dim, n_experts, n_layers, n_rbf=self.n_rbf, r_max=self.r_max)
         _train_schnet_encoder(
             encoder, z, ei, ed, bv, X, y,
-            epochs=self.training_cfg.epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
         )
 
         encoder.eval()
@@ -364,6 +365,7 @@ class SchNetGateTuningSpec:
             "hidden_dim": model.hidden_dim,
             "n_layers": model.n_layers,
             "n_experts": model.n_experts,
+            "epochs": resolved_training_epochs(self.training_cfg, best_trial),
             "n_rbf": model.n_rbf,
             "r_max": model.r_max,
             "bias": model.bias,

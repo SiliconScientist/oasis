@@ -148,8 +148,9 @@ gating_mode = "dense" # "dense" | "top_k"
 n_rbf = 20
 r_max = 6.0
 
+# Optional fixed training overrides. Omit `epochs` to let Optuna tune it.
 [experiment.learning_curve.models.moe.training]
-epochs = 50
+# epochs = 50
 
 [experiment.learning_curve.models.moe.tuning.optuna]
 n_trials = 10
@@ -160,7 +161,7 @@ enabled = false  # set true to run GNN direct regression (no probe features) as 
 # hidden_dims = [64, 64]
 
 [experiment.learning_curve.models.gnn_direct.training]
-epochs = 50
+# epochs = 50
 
 [experiment.learning_curve.models.gnn_direct.tuning.optuna]
 n_trials = 10
@@ -171,7 +172,7 @@ enabled = false # set true to run probe-GNN direct regression alongside MoE
 # hidden_dims = [64, 64]
 
 [experiment.learning_curve.models.probe_gnn.training]
-epochs = 50
+# epochs = 50
 
 # Optional explicit overrides. When omitted, both paths are derived from
 # `dataset_profile.tag` and `[datasets.<tag>]`.

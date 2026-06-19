@@ -1642,7 +1642,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [])
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.batch_size, 32)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.eval_batch_size)
-        self.assertEqual(cfg.experiment.learning_curve.models.moe.training.epochs, 100)
+        self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.epochs)
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.lr, 1e-3)
         self.assertEqual(
             cfg.experiment.learning_curve.models.moe.training.weight_decay,

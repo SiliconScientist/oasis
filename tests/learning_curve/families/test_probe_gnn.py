@@ -238,6 +238,7 @@ class _ProbeGnnMockTrial:
     weight_decay: float = 1e-4
     hidden_dim: int = 8
     n_layers: int = 1
+    epochs: int = 25
 
     def __post_init__(self) -> None:
         self.params: dict[str, Any] = {
@@ -245,6 +246,7 @@ class _ProbeGnnMockTrial:
             "weight_decay": self.weight_decay,
             "hidden_dim": self.hidden_dim,
             "n_layers": self.n_layers,
+            "epochs": self.epochs,
         }
 
     def suggest_float(self, name: str, low: float, high: float, **kwargs: Any) -> float:
@@ -354,8 +356,17 @@ class ProbeGnnTuningSpecTests(unittest.TestCase):
         trial = _ProbeGnnMockTrial()
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         metadata = spec.trial_metadata(trial, model)
-        for key in ("in_features", "hidden_dim", "n_layers", "bias"):
+        for key in ("in_features", "hidden_dim", "n_layers", "epochs", "bias"):
             self.assertIn(key, metadata)
+
+    def test_omitted_epochs_are_tuned_from_trial(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = ProbeGnnTuningSpec(training_cfg=MoETrainingConfig(seed=0), hidden_dims=(8,))
+        trial = _ProbeGnnMockTrial(epochs=25)
+        rmse = spec.build_trial_objective(split)(trial)
+        self.assertTrue(np.isfinite(rmse))
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertEqual(spec.trial_metadata(trial, model)["epochs"], 25)
 
 
 # ---------------------------------------------------------------------------
@@ -436,8 +447,17 @@ class GnnDirectTuningSpecTests(unittest.TestCase):
         spec = _fast_direct_spec()
         model = spec.fit_selected_model(split, _ProbeGnnMockTrial(), refit_policy="train_plus_val")
         metadata = spec.trial_metadata(_ProbeGnnMockTrial(), model)
-        for key in ("in_features", "hidden_dim", "n_layers", "bias"):
+        for key in ("in_features", "hidden_dim", "n_layers", "epochs", "bias"):
             self.assertIn(key, metadata)
+
+    def test_direct_omitted_epochs_are_tuned_from_trial(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = GnnDirectTuningSpec(training_cfg=MoETrainingConfig(seed=0), hidden_dims=(8,))
+        trial = _ProbeGnnMockTrial(epochs=25)
+        rmse = spec.build_trial_objective(split)(trial)
+        self.assertTrue(np.isfinite(rmse))
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+        self.assertEqual(spec.trial_metadata(trial, model)["epochs"], 25)
 
     def test_ignores_probe_records_in_auxiliary_views(self) -> None:
         """GnnDirectTuningSpec must use graph_view, not probe_gnn_records."""

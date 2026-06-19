@@ -116,6 +116,10 @@ Oasis resolves `sweep_fractions` against the active dataset size, deduplicates
 any collisions after rounding down to counts, and reuses cached rows by the
 resolved `n_train` / `n_budget` values.
 
+For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
+SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a
+built-in candidate set. Keep `training.epochs` only when you want to pin it.
+
 Workflow:
 
 - Build results incrementally. Run one method or one `n_train` range now, then
