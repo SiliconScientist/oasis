@@ -136,12 +136,10 @@ sampler = "tpe"
 
 `[models]` is normalized into the learning-curve model config, and
 `[tuning.optuna]` provides shared Optuna defaults for `moe`,
-`gnn_direct`, and `probe_gnn`. Per-model tuning blocks still override the
-shared defaults when needed.
+`gnn_direct`, and `probe_gnn`.
 
 `gnn_direct` and `probe_gnn` can now be toggled directly in `[models]` via
-`use_gnn_direct` and `use_probe_gnn`. Their dedicated subsections are only
-needed for advanced overrides such as `hidden_dims` or training settings.
+`use_gnn_direct` and `use_probe_gnn`.
 
 For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
 SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a

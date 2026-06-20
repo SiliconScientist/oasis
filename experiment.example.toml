@@ -158,19 +158,6 @@ r_max = 6.0
 n_trials = 10
 sampler = "tpe"
 
-# Optional advanced overrides for graph models:
-# [models.gnn_direct]
-# hidden_dims = [64, 64]
-#
-# [models.gnn_direct.training]
-# # epochs = 50
-#
-# [models.probe_gnn]
-# hidden_dims = [64, 64]
-#
-# [models.probe_gnn.training]
-# # epochs = 50
-
 # Optional explicit overrides. When omitted, both paths are derived from
 # `dataset_profile.tag` and `[datasets.<tag>]`.
 #
