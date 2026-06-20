@@ -114,6 +114,9 @@ def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
     with open(config_path, "rb") as f:
         raw_cfg = tomllib.load(f)
     experiment_path = vendor_dir / raw_cfg["experiment_path"]
+    model_fitting_cfg = raw_cfg.get("model_fitting", {})
+    cobyla_initial_guess = model_fitting_cfg.get("cobyla_initial_guess", 0.1)
+    cobyla_max_iter = model_fitting_cfg.get("cobyla_max_iter", 100)
 
     spec = importlib.util.spec_from_file_location(
         "latent_vendor_config", vendor_dir / "config.py"
@@ -136,8 +139,8 @@ def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
     runner = LatentSweepRunner(
         exp_cfg=exp_cfg,
         vendor_dir=vendor_dir,
-        cobyla_initial_guess=latent_cfg.cobyla_initial_guess,
-        cobyla_max_iter=latent_cfg.cobyla_max_iter,
+        cobyla_initial_guess=cobyla_initial_guess,
+        cobyla_max_iter=cobyla_max_iter,
     )
     return ConfiguredSweepModelFamily(
         SweepFamilySpec(

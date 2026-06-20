@@ -96,8 +96,6 @@ class MoEConfig(BaseModel):
 class LatentModelConfig(BaseModel):
     experiment_config_path: Path
     csv_path: Path
-    cobyla_initial_guess: float = 0.1
-    cobyla_max_iter: int = 100
 
 
 class ProbeGnnConfig(BaseModel):

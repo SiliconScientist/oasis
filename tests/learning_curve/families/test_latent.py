@@ -3,11 +3,13 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
 
+from oasis.learning_curve.learned_specs import _latent_config_family_factory
 from oasis.learning_curve.families.latent import (
     LatentSweepRunner,
     _align_df_to_sample_ids,
@@ -165,6 +167,20 @@ class TestLatentSweepRunner(unittest.TestCase):
 
         self.assertEqual(len(captured), 1)
         self.assertEqual(list(captured[0]["reaction"]), ["A", "B"])
+
+    def test_latent_family_factory_reads_cobyla_settings_from_vendor_config(self) -> None:
+        family = _latent_config_family_factory(
+            SimpleNamespace(
+                latent=SimpleNamespace(
+                    experiment_config_path="vendor/latent/config.toml",
+                )
+            )
+        )
+
+        runner = family.spec.runner
+        self.assertIsInstance(runner, LatentSweepRunner)
+        self.assertEqual(runner.cobyla_initial_guess, 0.1)
+        self.assertEqual(runner.cobyla_max_iter, 100)
 
 
 if __name__ == "__main__":

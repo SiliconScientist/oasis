@@ -139,8 +139,6 @@ use_latent = true
 experiment_config_path = "vendor/latent/config.toml"
 # Kept explicit because the vendor artifact name does not follow the dataset tag.
 csv_path = "vendor/latent/data/processed/example_latent.csv"
-cobyla_initial_guess = 0.1
-cobyla_max_iter = 100
 
 [models.moe]
 enabled = false
