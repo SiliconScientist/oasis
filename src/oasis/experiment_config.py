@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 
 from oasis.mlip_config import mlip_results_dir, raw_dataset_path
 from oasis.tune import OptunaTuningConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
@@ -194,9 +194,39 @@ class ScreeningExperimentConfig(BaseModel):
     force_refresh_train_sizes: dict[str, list[int]] = Field(default_factory=dict)
 
 
+class ExperimentDefaultsConfig(BaseModel):
+    validation_fraction: float | None = None
+    min_val_size: int | None = None
+    min_tuning_val_size: int | None = None
+    min_inner_train_size: int | None = None
+    reuse_results: bool | None = None
+    force_refresh_methods: list[str] | None = None
+
+
 class ExperimentConfig(BaseModel):
+    defaults: Optional[ExperimentDefaultsConfig] = None
     learning_curve: Optional[LearningCurveExperimentConfig] = None
     screening: Optional[ScreeningExperimentConfig] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_shared_defaults(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        shared_defaults = data.get("defaults")
+        if not isinstance(shared_defaults, dict):
+            return data
+
+        merged = dict(data)
+        for section_name in ("learning_curve", "screening"):
+            section_cfg = merged.get(section_name)
+            if not isinstance(section_cfg, dict):
+                continue
+            merged[section_name] = {
+                **shared_defaults,
+                **section_cfg,
+            }
+        return merged
 
     def validate_screening_dependency(self) -> None:
         if self.screening is not None and self.learning_curve is None:

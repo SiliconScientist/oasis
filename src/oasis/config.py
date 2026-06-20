@@ -58,6 +58,17 @@ def _normalize_experiment_layout(raw_cfg: dict) -> dict:
         learning_curve_cfg = {}
         experiment_cfg["learning_curve"] = learning_curve_cfg
 
+    shared_experiment_cfg = experiment_cfg.pop("defaults", None)
+    if isinstance(shared_experiment_cfg, dict):
+        for section_name in ("learning_curve", "screening"):
+            section_cfg = experiment_cfg.get(section_name)
+            if not isinstance(section_cfg, dict):
+                continue
+            experiment_cfg[section_name] = deep_merge_dicts(
+                shared_experiment_cfg,
+                section_cfg,
+            )
+
     top_level_models_cfg = raw_cfg.pop("models", None)
     if isinstance(top_level_models_cfg, dict):
         learning_curve_models = learning_curve_cfg.get("models")

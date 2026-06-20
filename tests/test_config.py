@@ -1409,6 +1409,120 @@ class ConfigParsingTests(unittest.TestCase):
             {"ridge": [5, 10]},
         )
 
+    def test_experiment_defaults_shared_by_learning_curve_and_screening(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "defaults": {
+                        "validation_fraction": 0.3,
+                        "min_val_size": 2,
+                        "min_tuning_val_size": 4,
+                        "min_inner_train_size": 5,
+                        "reuse_results": True,
+                        "force_refresh_methods": ["ridge"],
+                    },
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                    },
+                    "screening": {
+                        "budget_mode": "screening_fraction",
+                        "screen_fraction": 0.25,
+                        "min_screen_size": 2,
+                    },
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.screening is not None
+        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.3)
+        self.assertEqual(cfg.experiment.learning_curve.min_val_size, 2)
+        self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 4)
+        self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 5)
+        self.assertTrue(cfg.experiment.learning_curve.reuse_results)
+        self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, ["ridge"])
+        self.assertEqual(cfg.experiment.screening.validation_fraction, 0.3)
+        self.assertEqual(cfg.experiment.screening.min_val_size, 2)
+        self.assertEqual(cfg.experiment.screening.min_tuning_val_size, 4)
+        self.assertEqual(cfg.experiment.screening.min_inner_train_size, 5)
+        self.assertTrue(cfg.experiment.screening.reuse_results)
+        self.assertEqual(cfg.experiment.screening.force_refresh_methods, ["ridge"])
+
+    def test_experiment_defaults_allow_section_level_overrides(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "defaults": {
+                        "validation_fraction": 0.3,
+                        "min_val_size": 2,
+                        "min_tuning_val_size": 4,
+                        "min_inner_train_size": 5,
+                        "reuse_results": False,
+                        "force_refresh_methods": ["ridge"],
+                    },
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "validation_fraction": 0.4,
+                        "reuse_results": True,
+                    },
+                    "screening": {
+                        "budget_mode": "screening_fraction",
+                        "screen_fraction": 0.25,
+                        "min_screen_size": 2,
+                        "force_refresh_methods": ["weighted_simplex"],
+                    },
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.screening is not None
+        self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.4)
+        self.assertTrue(cfg.experiment.learning_curve.reuse_results)
+        self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, ["ridge"])
+        self.assertEqual(cfg.experiment.screening.validation_fraction, 0.3)
+        self.assertFalse(cfg.experiment.screening.reuse_results)
+        self.assertEqual(
+            cfg.experiment.screening.force_refresh_methods,
+            ["weighted_simplex"],
+        )
+
     def test_learning_curve_mlip_selection_defaults_parse(self) -> None:
         cfg = Config(
             **{

@@ -81,9 +81,10 @@ tag = "example_oh"
 # Omit this when the processed basename is exactly the tag.
 # processed_basename = "example_oh"
 
-[experiment.learning_curve]
-reuse_results = true
+[experiment.defaults]
+reuse_results = false
 
+[experiment.learning_curve]
 [plot.curve_window]
 full_dataset_window = true
 ```
@@ -106,10 +107,12 @@ For sparse paper sweeps, you can replace the contiguous `min_train` /
 `max_train` / `step` grid with explicit points:
 
 ```toml
+[experiment.defaults]
+reuse_results = false
+
 [experiment.learning_curve]
 sweep_fractions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 n_repeats = 10
-reuse_results = true
 ```
 
 Oasis resolves `sweep_fractions` against the active dataset size, deduplicates
@@ -141,6 +144,10 @@ sampler = "tpe"
 `gnn_direct` and `probe_gnn` can now be toggled directly in `[models]` via
 `use_gnn_direct` and `use_probe_gnn`.
 
+Shared split/cache defaults can now live in `[experiment.defaults]`. Values set
+there apply to both `[experiment.learning_curve]` and `[experiment.screening]`,
+while section-local values still win when they differ.
+
 For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
 SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a
 built-in candidate set. Keep `training.epochs` only when you want to pin it.
@@ -171,9 +178,10 @@ tag = "example_oh"
 # Omit this when the processed basename is exactly the tag.
 # processed_basename = "example_oh"
 
-[experiment.learning_curve]
+[experiment.defaults]
 reuse_results = true
 
+[experiment.learning_curve]
 # First pass: run one method or one range.
 # enabled methods example:
 # use_ridge = true
