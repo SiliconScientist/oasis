@@ -10,7 +10,6 @@ import pandas as pd
 from oasis.analysis import (
     filter_anomalous_mlip_columns,
     filter_structures_with_insufficient_valid_mlips,
-    filter_wide_predictions,
 )
 from oasis.config import get_config
 from oasis.exp import (
@@ -201,31 +200,7 @@ def load_filtered_wide_predictions(cfg: object):
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir)
     wide_df = load_wide_predictions(result_files)
-    print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows before filters")
-
-    plot_filters = cfg.plot.filters if cfg.plot else None
-    adsorbate_filter = plot_filters.adsorbate if plot_filters else None
-    anomaly_filter = plot_filters.anomaly_label if plot_filters else None
-    reaction_contains_filter = plot_filters.reaction_contains if plot_filters else None
-    if reaction_contains_filter is not None:
-        reaction_contains_filter = [s for s in reaction_contains_filter if s]
-        if not reaction_contains_filter:
-            reaction_contains_filter = None
-
-    pre_filter_rows = _frame_height(wide_df)
-    wide_df = filter_wide_predictions(
-        wide_df,
-        adsorbate_filter=adsorbate_filter,
-        anomaly_filter=anomaly_filter,
-        reaction_contains_filter=reaction_contains_filter,
-    )
-    print(
-        "Applied plot filters"
-        f" adsorbate={adsorbate_filter!r}"
-        f" anomaly_label={anomaly_filter!r}"
-        f" reaction_contains={reaction_contains_filter!r}"
-        f": {pre_filter_rows} -> {_frame_height(wide_df)} rows"
-    )
+    print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows")
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
     wide_df = filter_structures_with_insufficient_valid_mlips(
         wide_df,
@@ -255,7 +230,7 @@ def load_filtered_wide_predictions(cfg: object):
             getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
         ),
     )
-    return wide_df, result_files, adsorbate_filter, anomaly_filter, reaction_contains_filter
+    return wide_df, result_files
 
 
 def build_auxiliary_views(cfg: object, wide_df: object, probe_gnn_enabled: bool) -> dict:
@@ -301,30 +276,16 @@ def write_parity_plot(
     cfg: object,
     wide_df: object,
     result_files: list[Path],
-    adsorbate_filter: object,
-    anomaly_filter: object,
-    reaction_contains_filter: object,
     run_suffix: str,
 ) -> Path:
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     output_dir.mkdir(parents=True, exist_ok=True)
-    suffix_parts: list[str] = []
-    if adsorbate_filter:
-        suffix_parts.append(f"adsorbate_{adsorbate_filter}")
-    if anomaly_filter:
-        suffix_parts.append(f"anomaly_{anomaly_filter}")
-    if reaction_contains_filter:
-        joined = "-".join(reaction_contains_filter)
-        suffix_parts.append(f"reaction_contains_{joined}")
-    suffix_parts.append(run_suffix)
+    suffix_parts: list[str] = [run_suffix]
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
     saved_path = parity_plot(wide_df, output_path=output_path)
     print(
         f"Processed {len(result_files)} MLIP files"
-        f"{f' with adsorbate={adsorbate_filter}' if adsorbate_filter else ''}"
-        f"{f' with anomaly_label={anomaly_filter}' if anomaly_filter else ''}"
-        f"{f' with reaction_contains={reaction_contains_filter}' if reaction_contains_filter else ''}"
         f" -> parity plot: {saved_path}"
     )
     print(f"Rows in combined parity dataset: {len(wide_df)}")
@@ -411,17 +372,12 @@ def _zero_shot_uq_baselines(parity_plot_data: object) -> dict[str, float]:
 def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
-    wide_df, result_files, adsorbate_filter, anomaly_filter, reaction_contains_filter = (
-        load_filtered_wide_predictions(cfg)
-    )
+    wide_df, result_files = load_filtered_wide_predictions(cfg)
     auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
     write_parity_plot(
         cfg,
         wide_df,
         result_files,
-        adsorbate_filter,
-        anomaly_filter,
-        reaction_contains_filter,
         run_suffix,
     )
     graph_view = prepare_graph_view(cfg, wide_df)

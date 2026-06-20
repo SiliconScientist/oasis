@@ -187,9 +187,6 @@ def _metadata_for_available_results(
         dataset_tag=expected_metadata.dataset_tag,
         dataset_size=expected_metadata.dataset_size,
         mlip_feature_names=expected_metadata.mlip_feature_names,
-        adsorbate_filter=expected_metadata.adsorbate_filter,
-        anomaly_filter=expected_metadata.anomaly_filter,
-        reaction_contains_filter=expected_metadata.reaction_contains_filter,
     )
 
 

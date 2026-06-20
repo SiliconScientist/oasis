@@ -24,13 +24,6 @@ prefixes = ["ol", "sa", "ss"]
 [plot]
 output_dir = "data/results/plots"
 
-[plot.filters]
-# adsorbate = "OH"
-# anomaly_label = "normal"
-# anomaly_label = "inference_anomaly"
-# anomaly_label = "!adsorbate_migration"
-# reaction_contains = ["Pt", "OH"]
-
 [plot.curve_window]
 # Optional x-axis window for learning-curve and screening plots.
 # full_dataset_window = true  # ignore min_x/max_x but still honor include filters

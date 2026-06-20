@@ -643,17 +643,11 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             point_provenance["ridge_selection_df"],
         )
 
-    def test_sweep_metadata_from_config_collects_enabled_models_and_filters(self) -> None:
+    def test_sweep_metadata_from_config_collects_enabled_models(self) -> None:
         cfg = SimpleNamespace(
             seed=23,
             dataset_profile=SimpleNamespace(tag="mamun_oh"),
-            plot=SimpleNamespace(
-                filters=SimpleNamespace(
-                    adsorbate="OH",
-                    anomaly_label="!inference_anomaly",
-                    reaction_contains=["Pt", "", "Ni"],
-                )
-            ),
+            plot=None,
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
                     min_train=2,
@@ -693,9 +687,6 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         self.assertEqual(metadata.dataset_tag, "mamun_oh")
         self.assertEqual(metadata.dataset_size, 12)
         self.assertEqual(metadata.mlip_feature_names, ("ridge", "linear"))
-        self.assertEqual(metadata.adsorbate_filter, "OH")
-        self.assertEqual(metadata.anomaly_filter, "!inference_anomaly")
-        self.assertEqual(metadata.reaction_contains_filter, ("Pt", "Ni"))
 
     def test_results_artifact_rejects_mismatched_mlip_feature_names(self) -> None:
         results = LearningCurveResults(

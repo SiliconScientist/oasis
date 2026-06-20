@@ -130,12 +130,6 @@ class LearningCurveModelsConfig(BaseModel):
     latent: Optional[LatentModelConfig] = None
 
 
-class PlotFiltersConfig(BaseModel):
-    adsorbate: Optional[str] = None
-    anomaly_label: Optional[str] = None
-    reaction_contains: Optional[List[str]] = None
-
-
 class PlotCurveWindowConfig(BaseModel):
     full_dataset_window: bool = False
     all: bool = False
@@ -267,7 +261,6 @@ class ExperimentConfig(BaseModel):
 
 class PlotConfig(BaseModel):
     output_dir: Path
-    filters: PlotFiltersConfig = Field(default_factory=PlotFiltersConfig)
     curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
 
 

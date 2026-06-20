@@ -1823,11 +1823,6 @@ class ConfigParsingTests(unittest.TestCase):
                 },
                 "plot": {
                     "output_dir": "data/results/plots",
-                    "filters": {
-                        "adsorbate": "OH",
-                        "anomaly_label": "!inference_anomaly",
-                        "reaction_contains": ["Pt"],
-                    },
                 },
                 "experiment": {
                         "learning_curve": {
@@ -1915,9 +1910,6 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.min_train, 2)
         self.assertEqual(cfg.experiment.learning_curve.max_train, 4)
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
-        self.assertEqual(cfg.plot.filters.adsorbate, "OH")
-        self.assertEqual(cfg.plot.filters.anomaly_label, "!inference_anomaly")
-        self.assertEqual(cfg.plot.filters.reaction_contains, ["Pt"])
 
     def test_learning_curve_models_moe_defaults_parse(self) -> None:
         cfg = Config(
@@ -2117,9 +2109,6 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.min_train, 2)
         self.assertEqual(cfg.experiment.learning_curve.max_train, 4)
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
-        self.assertIsNone(cfg.plot.filters.adsorbate)
-        self.assertIsNone(cfg.plot.filters.anomaly_label)
-        self.assertIsNone(cfg.plot.filters.reaction_contains)
 
     def test_experiment_can_be_omitted(self) -> None:
         cfg = Config(

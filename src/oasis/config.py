@@ -20,7 +20,6 @@ from oasis.experiment_config import (
     NamedDatasetConfig,
     PlotConfig,
     PlotCurveWindowConfig,
-    PlotFiltersConfig,
     ProbeFeatureConfig,
     ProbeGnnConfig,
     derive_dataset_profile_paths,

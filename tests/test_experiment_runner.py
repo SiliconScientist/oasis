@@ -118,11 +118,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -142,32 +137,28 @@ class ExperimentRunnerTests(unittest.TestCase):
                             return_value=fake_wide_df,
                         ):
                             with patch(
-                                "oasis.experiment_runner.filter_wide_predictions",
-                                return_value=fake_wide_df,
+                                "oasis.experiment_runner.parity_plot",
+                                return_value=tmp_path / "plots" / "parity.png",
                             ):
                                 with patch(
-                                    "oasis.experiment_runner.parity_plot",
-                                    return_value=tmp_path / "plots" / "parity.png",
+                                    "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                                    return_value=[],
                                 ):
                                     with patch(
-                                        "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                                        "oasis.experiment_runner.atoms_to_graph_dataset_view",
                                         return_value=[],
                                     ):
                                         with patch(
-                                            "oasis.experiment_runner.atoms_to_graph_dataset_view",
-                                            return_value=[],
+                                            "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                                            return_value=LearningCurveResults.empty(),
                                         ):
                                             with patch(
-                                                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
-                                                return_value=LearningCurveResults.empty(),
+                                                "oasis.experiment_runner.learning_curve_plot",
+                                                return_value=tmp_path
+                                                / "plots"
+                                                / "learning_curve.png",
                                             ):
-                                                with patch(
-                                                    "oasis.experiment_runner.learning_curve_plot",
-                                                    return_value=tmp_path
-                                                    / "plots"
-                                                    / "learning_curve.png",
-                                                ):
-                                                    run_experiment(cfg)
+                                                run_experiment(cfg)
 
             self.assertFalse(mock_build_probe.called)
             self.assertFalse(mock_add_probe_features.called)
@@ -177,13 +168,6 @@ class ExperimentRunnerTests(unittest.TestCase):
     ) -> None:
         cfg = SimpleNamespace(
             analysis=SimpleNamespace(base_dir=Path("data/mlips/OH-BMA")),
-            plot=SimpleNamespace(
-                filters=SimpleNamespace(
-                    adsorbate=None,
-                    anomaly_label=None,
-                    reaction_contains=None,
-                )
-            ),
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
                     mlip_selection=SimpleNamespace(
@@ -205,18 +189,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=fake_wide_df,
             ):
                 with patch(
-                    "oasis.experiment_runner.filter_wide_predictions",
+                    "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
                     return_value=fake_wide_df,
-                ):
+                ) as mock_filter_structures:
                     with patch(
-                        "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
+                        "oasis.experiment_runner.filter_anomalous_mlip_columns",
                         return_value=fake_wide_df,
-                    ) as mock_filter_structures:
-                        with patch(
-                            "oasis.experiment_runner.filter_anomalous_mlip_columns",
-                            return_value=fake_wide_df,
-                        ) as mock_filter_mlips:
-                            wide_df, *_ = load_filtered_wide_predictions(cfg)
+                    ) as mock_filter_mlips:
+                        wide_df, *_ = load_filtered_wide_predictions(cfg)
 
         self.assertIs(wide_df, fake_wide_df)
         mock_filter_structures.assert_called_once_with(
@@ -265,11 +245,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -279,9 +254,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
@@ -373,11 +345,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -387,9 +354,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.filter_anomalous_mlip_columns",
@@ -466,11 +430,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame(["r0", "r1", "r2"])
@@ -483,10 +442,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oasis.experiment_runner.load_wide_predictions",
                     return_value=fake_wide_df,
                 ):
-                    with patch(
-                        "oasis.experiment_runner.filter_wide_predictions",
-                        return_value=fake_wide_df,
-                    ):
                         with patch(
                             "oasis.experiment_runner.parity_plot",
                             return_value=tmp_path / "plots" / "parity.png",
@@ -542,11 +497,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame(["r0", "r1", "r2"])
@@ -559,10 +509,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oasis.experiment_runner.load_wide_predictions",
                     return_value=fake_wide_df,
                 ):
-                    with patch(
-                        "oasis.experiment_runner.filter_wide_predictions",
-                        return_value=fake_wide_df,
-                    ):
                         with patch(
                             "oasis.experiment_runner.parity_plot",
                             return_value=tmp_path / "plots" / "parity.png",
@@ -630,11 +576,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -644,9 +585,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -721,11 +659,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(min_x=10, max_x=50, include_x=[10, 30]),
                 ),
             )
@@ -736,9 +669,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -785,11 +715,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(
                         min_x=None,
                         max_x=None,
@@ -805,9 +730,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -848,11 +770,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(
                         min_x=None,
                         max_x=None,
@@ -868,9 +785,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -911,11 +825,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(
                         full_dataset_window=True,
                         min_x=10,
@@ -931,9 +840,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -976,11 +882,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(
                         all=True,
                         min_x=10,
@@ -996,9 +897,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -1041,11 +939,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(
                         full_dataset_window=True,
                         min_x=10,
@@ -1061,9 +954,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -1108,11 +998,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    filters=SimpleNamespace(
-                        adsorbate=None,
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    ),
                     curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
                 ),
             )
@@ -1124,9 +1009,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_wide_predictions",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",

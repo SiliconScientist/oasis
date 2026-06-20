@@ -337,6 +337,9 @@ class LearningCurveSweepMetadata:
         this_mapping = self.to_mapping()
         other_mapping = other.to_mapping()
         ignored_keys = set()
+        ignored_keys.update(
+            {"adsorbate_filter", "anomaly_filter", "reaction_contains_filter"}
+        )
         if ignore_enabled_models:
             ignored_keys.add("enabled_models")
         if ignore_train_grid:
@@ -404,13 +407,6 @@ def learning_curve_sweep_metadata_from_config(
     experiment_cfg = cfg.experiment.learning_curve if cfg.experiment else None
     if experiment_cfg is None:
         raise ValueError("config does not define experiment.learning_curve.")
-    plot_cfg = getattr(cfg, "plot", None)
-    plot_filters = getattr(plot_cfg, "filters", None)
-    reaction_contains_filter = (
-        None
-        if plot_filters is None or plot_filters.reaction_contains is None
-        else tuple(value for value in plot_filters.reaction_contains if value)
-    )
     dataset_profile = getattr(cfg, "dataset_profile", None)
     configured_sweep_fractions = tuple(
         float(value) for value in getattr(experiment_cfg, "sweep_fractions", ())
@@ -471,9 +467,6 @@ def learning_curve_sweep_metadata_from_config(
         dataset_tag=getattr(dataset_profile, "tag", None),
         dataset_size=dataset_size,
         mlip_feature_names=mlip_feature_names,
-        adsorbate_filter=plot_filters.adsorbate if plot_filters else None,
-        anomaly_filter=plot_filters.anomaly_label if plot_filters else None,
-        reaction_contains_filter=reaction_contains_filter,
     )
 
 

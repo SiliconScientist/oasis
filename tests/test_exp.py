@@ -3453,13 +3453,6 @@ class ExpIntegrationTests(unittest.TestCase):
             cfg = SimpleNamespace(
                 seed=23,
                 dataset_profile=SimpleNamespace(tag="mamun_oh"),
-                plot=SimpleNamespace(
-                    filters=SimpleNamespace(
-                        adsorbate="OH",
-                        anomaly_label=None,
-                        reaction_contains=["Pt"],
-                    )
-                ),
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=2,
@@ -3627,13 +3620,6 @@ class ExpIntegrationTests(unittest.TestCase):
             )
             cfg = SimpleNamespace(
                 seed=23,
-                plot=SimpleNamespace(
-                    filters=SimpleNamespace(
-                        adsorbate="OH",
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    )
-                ),
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=20,
@@ -3708,13 +3694,6 @@ class ExpIntegrationTests(unittest.TestCase):
             )
             cfg = SimpleNamespace(
                 seed=23,
-                plot=SimpleNamespace(
-                    filters=SimpleNamespace(
-                        adsorbate="OH",
-                        anomaly_label=None,
-                        reaction_contains=None,
-                    )
-                ),
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=1,
