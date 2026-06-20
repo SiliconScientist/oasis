@@ -122,7 +122,7 @@ reuse_results = true
 # # `path` is derived from the active dataset profile.
 # join_key = "reaction"
 
-[experiment.models]
+[models]
 use_ridge = true
 use_kernel_ridge = false
 use_lasso = false
@@ -131,16 +131,18 @@ use_residual = true
 use_weighted_linear = false
 use_weighted_simplex = true
 use_graph_mean = false
+use_gnn_direct = false
+use_probe_gnn = false
 use_latent = true
 
-[experiment.models.latent]
+[models.latent]
 experiment_config_path = "vendor/latent/config.toml"
 # Kept explicit because the vendor artifact name does not follow the dataset tag.
 csv_path = "vendor/latent/data/processed/example_latent.csv"
 cobyla_initial_guess = 0.1
 cobyla_max_iter = 100
 
-[experiment.models.moe]
+[models.moe]
 enabled = false
 gate_type = "schnet"  # "mlip_baseline" | "gnn" | "schnet"
 gating_mode = "dense" # "dense" | "top_k"
@@ -149,26 +151,25 @@ n_rbf = 20
 r_max = 6.0
 
 # Optional fixed training overrides. Omit `epochs` to let Optuna tune it.
-[experiment.models.moe.training]
+[models.moe.training]
 # epochs = 50
 
-[experiment.tuning.optuna]
+[tuning.optuna]
 n_trials = 10
 sampler = "tpe"
 
-[experiment.models.gnn_direct]
-enabled = false  # set true to run GNN direct regression (no probe features) as a baseline
+# Optional advanced overrides for graph models:
+# [models.gnn_direct]
 # hidden_dims = [64, 64]
-
-[experiment.models.gnn_direct.training]
-# epochs = 50
-
-[experiment.models.probe_gnn]
-enabled = false # set true to run probe-GNN direct regression alongside MoE
+#
+# [models.gnn_direct.training]
+# # epochs = 50
+#
+# [models.probe_gnn]
 # hidden_dims = [64, 64]
-
-[experiment.models.probe_gnn.training]
-# epochs = 50
+#
+# [models.probe_gnn.training]
+# # epochs = 50
 
 # Optional explicit overrides. When omitted, both paths are derived from
 # `dataset_profile.tag` and `[datasets.<tag>]`.

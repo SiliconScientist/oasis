@@ -123,6 +123,8 @@ class LearningCurveModelsConfig(BaseModel):
     use_weighted_linear: bool = False
     use_weighted_simplex: bool = False
     use_graph_mean: bool = False
+    use_gnn_direct: bool = False
+    use_probe_gnn: bool = False
     moe: MoEConfig = Field(default_factory=MoEConfig)
     probe_gnn: ProbeGnnConfig = Field(default_factory=ProbeGnnConfig)
     gnn_direct: GnnDirectConfig = Field(default_factory=GnnDirectConfig)

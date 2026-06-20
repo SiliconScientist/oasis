@@ -40,14 +40,33 @@ DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
 
 
 def _normalize_experiment_layout(raw_cfg: dict) -> dict:
+    top_level_models_cfg = raw_cfg.get("models")
+    top_level_tuning_cfg = raw_cfg.get("tuning")
     experiment_cfg = raw_cfg.get("experiment")
-    if not isinstance(experiment_cfg, dict):
+    if (
+        not isinstance(experiment_cfg, dict)
+        and not isinstance(top_level_models_cfg, dict)
+        and not isinstance(top_level_tuning_cfg, dict)
+    ):
         return raw_cfg
+    if not isinstance(experiment_cfg, dict):
+        experiment_cfg = {}
+        raw_cfg["experiment"] = experiment_cfg
 
     learning_curve_cfg = experiment_cfg.get("learning_curve")
     if not isinstance(learning_curve_cfg, dict):
         learning_curve_cfg = {}
         experiment_cfg["learning_curve"] = learning_curve_cfg
+
+    top_level_models_cfg = raw_cfg.pop("models", None)
+    if isinstance(top_level_models_cfg, dict):
+        learning_curve_models = learning_curve_cfg.get("models")
+        if not isinstance(learning_curve_models, dict):
+            learning_curve_models = {}
+        learning_curve_cfg["models"] = deep_merge_dicts(
+            top_level_models_cfg,
+            learning_curve_models,
+        )
 
     if isinstance(experiment_cfg.get("models"), dict):
         learning_curve_models = learning_curve_cfg.get("models")
@@ -57,16 +76,39 @@ def _normalize_experiment_layout(raw_cfg: dict) -> dict:
             experiment_cfg["models"],
             learning_curve_models,
         )
-
-    tuning_cfg = experiment_cfg.get("tuning")
-    if not isinstance(tuning_cfg, dict):
-        return raw_cfg
-
-    shared_optuna_cfg = tuning_cfg.get("optuna")
-    if not isinstance(shared_optuna_cfg, dict):
-        return raw_cfg
+        experiment_cfg.pop("models", None)
 
     models_cfg = learning_curve_cfg.get("models")
+    if isinstance(models_cfg, dict):
+        for alias_key, family_key in (
+            ("use_probe_gnn", "probe_gnn"),
+            ("use_gnn_direct", "gnn_direct"),
+        ):
+            if alias_key not in models_cfg:
+                continue
+            family_cfg = models_cfg.get(family_key)
+            if not isinstance(family_cfg, dict):
+                family_cfg = {}
+                models_cfg[family_key] = family_cfg
+            family_cfg.setdefault("enabled", bool(models_cfg[alias_key]))
+
+    shared_optuna_cfg: dict | None = None
+    top_level_tuning_cfg = raw_cfg.pop("tuning", None)
+    if isinstance(top_level_tuning_cfg, dict) and isinstance(
+        top_level_tuning_cfg.get("optuna"), dict
+    ):
+        shared_optuna_cfg = dict(top_level_tuning_cfg["optuna"])
+    tuning_cfg = experiment_cfg.get("tuning")
+    if isinstance(tuning_cfg, dict) and isinstance(tuning_cfg.get("optuna"), dict):
+        shared_optuna_cfg = (
+            deep_merge_dicts(shared_optuna_cfg, tuning_cfg["optuna"])
+            if shared_optuna_cfg is not None
+            else dict(tuning_cfg["optuna"])
+        )
+        experiment_cfg.pop("tuning", None)
+    if shared_optuna_cfg is None:
+        return raw_cfg
+
     if not isinstance(models_cfg, dict):
         return raw_cfg
 

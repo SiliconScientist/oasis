@@ -49,11 +49,15 @@ def _latent_enabled(config_section: Any) -> bool:
 
 
 def _probe_gnn_enabled(config_section: Any) -> bool:
-    return bool(getattr(getattr(config_section, "probe_gnn", None), "enabled", False))
+    return bool(getattr(config_section, "use_probe_gnn", False)) or bool(
+        getattr(getattr(config_section, "probe_gnn", None), "enabled", False)
+    )
 
 
 def _gnn_direct_enabled(config_section: Any) -> bool:
-    return bool(getattr(getattr(config_section, "gnn_direct", None), "enabled", False))
+    return bool(getattr(config_section, "use_gnn_direct", False)) or bool(
+        getattr(getattr(config_section, "gnn_direct", None), "enabled", False)
+    )
 
 
 def _is_enabled_for_learned_family_spec(
