@@ -300,6 +300,150 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(data["analysis"]["prefixes"], ["ol"])
         self.assertEqual(data["experiment"]["learning_curve"]["max_train"], 4)
 
+    def test_load_config_data_normalizes_experiment_models_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 7",
+                        "",
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[experiment.models]",
+                        "use_ridge = true",
+                        "use_kernel_ridge = false",
+                        "use_lasso = false",
+                        "use_elastic_net = false",
+                        "use_residual = true",
+                        "",
+                        "[experiment.models.moe]",
+                        "enabled = true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            data = load_config_data(experiment_path)
+            cfg = get_config(experiment_path)
+
+        self.assertTrue(data["experiment"]["learning_curve"]["models"]["use_ridge"])
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        self.assertTrue(cfg.experiment.learning_curve.models.use_ridge)
+        self.assertTrue(cfg.experiment.learning_curve.models.moe.enabled)
+
+    def test_load_config_data_applies_shared_experiment_tuning_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "seed = 7",
+                        "",
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[experiment.models]",
+                        "use_ridge = false",
+                        "use_kernel_ridge = false",
+                        "use_lasso = false",
+                        "use_elastic_net = false",
+                        "use_residual = true",
+                        "",
+                        "[experiment.models.moe]",
+                        "enabled = true",
+                        "",
+                        "[experiment.models.probe_gnn]",
+                        "enabled = true",
+                        "",
+                        "[experiment.tuning.optuna]",
+                        "n_trials = 12",
+                        'sampler = "tpe"',
+                        "",
+                        "[experiment.models.probe_gnn.tuning.optuna]",
+                        "n_trials = 5",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(experiment_path)
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        moe_optuna = cfg.experiment.learning_curve.models.moe.tuning.optuna
+        probe_optuna = cfg.experiment.learning_curve.models.probe_gnn.tuning.optuna
+        assert moe_optuna is not None
+        assert probe_optuna is not None
+        self.assertEqual(moe_optuna.n_trials, 12)
+        self.assertEqual(moe_optuna.sampler, "tpe")
+        self.assertEqual(probe_optuna.n_trials, 5)
+        self.assertEqual(probe_optuna.sampler, "tpe")
+
     def test_dataset_profile_derives_common_paths(self) -> None:
         cfg = Config(
             **{

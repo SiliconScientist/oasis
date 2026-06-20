@@ -39,6 +39,52 @@ from oasis.mlip_config import (
 DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
 
 
+def _normalize_experiment_layout(raw_cfg: dict) -> dict:
+    experiment_cfg = raw_cfg.get("experiment")
+    if not isinstance(experiment_cfg, dict):
+        return raw_cfg
+
+    learning_curve_cfg = experiment_cfg.get("learning_curve")
+    if not isinstance(learning_curve_cfg, dict):
+        learning_curve_cfg = {}
+        experiment_cfg["learning_curve"] = learning_curve_cfg
+
+    if isinstance(experiment_cfg.get("models"), dict):
+        learning_curve_models = learning_curve_cfg.get("models")
+        if not isinstance(learning_curve_models, dict):
+            learning_curve_models = {}
+        learning_curve_cfg["models"] = deep_merge_dicts(
+            experiment_cfg["models"],
+            learning_curve_models,
+        )
+
+    tuning_cfg = experiment_cfg.get("tuning")
+    if not isinstance(tuning_cfg, dict):
+        return raw_cfg
+
+    shared_optuna_cfg = tuning_cfg.get("optuna")
+    if not isinstance(shared_optuna_cfg, dict):
+        return raw_cfg
+
+    models_cfg = learning_curve_cfg.get("models")
+    if not isinstance(models_cfg, dict):
+        return raw_cfg
+
+    for family_name in ("moe", "probe_gnn", "gnn_direct"):
+        family_cfg = models_cfg.get(family_name)
+        if not isinstance(family_cfg, dict):
+            continue
+        tuning_section = family_cfg.get("tuning")
+        if not isinstance(tuning_section, dict):
+            tuning_section = {}
+            family_cfg["tuning"] = tuning_section
+        family_optuna_cfg = tuning_section.get("optuna")
+        if not isinstance(family_optuna_cfg, dict):
+            family_optuna_cfg = {}
+        tuning_section["optuna"] = deep_merge_dicts(shared_optuna_cfg, family_optuna_cfg)
+    return raw_cfg
+
+
 def load_config_data(
     config_paths: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
 ) -> dict:
@@ -63,7 +109,7 @@ def load_config_data(
     if missing and not use_default_discovery:
         missing_str = ", ".join(str(path) for path in missing)
         raise FileNotFoundError(f"Explicit config file(s) not found: {missing_str}")
-    return merged
+    return _normalize_experiment_layout(merged)
 
 
 def get_config(

@@ -116,6 +116,27 @@ Oasis resolves `sweep_fractions` against the active dataset size, deduplicates
 any collisions after rounding down to counts, and reuses cached rows by the
 resolved `n_train` / `n_budget` values.
 
+Model toggles now support a flatter config layout:
+
+```toml
+[experiment.models]
+use_ridge = true
+use_residual = true
+
+[experiment.models.moe]
+enabled = true
+gate_type = "gnn"
+
+[experiment.tuning.optuna]
+n_trials = 10
+sampler = "tpe"
+```
+
+`[experiment.models]` is normalized into the learning-curve model config, and
+`[experiment.tuning.optuna]` provides shared Optuna defaults for `moe`,
+`gnn_direct`, and `probe_gnn`. Per-model tuning blocks still override the
+shared defaults when needed.
+
 For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
 SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a
 built-in candidate set. Keep `training.epochs` only when you want to pin it.
