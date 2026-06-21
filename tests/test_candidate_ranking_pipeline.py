@@ -8,15 +8,16 @@ import unittest
 from oasis.candidate_ranking import (
     MlipAnomalyMetadata,
     MlipModelPrediction,
+    PredictorSpec,
     RankingResult,
     ScreeningInputRecord,
     ValidatedReference,
-    clear_registered_strategies,
+    clear_registered_predictors,
     rank_candidates,
     rank_candidates_from_result_files,
     target_uncertainty_cost,
 )
-from oasis.candidate_ranking.registry import register_strategy
+from oasis.candidate_ranking.registry import register_predictor
 
 
 def _prediction(model_name: str, energy: float) -> MlipModelPrediction:
@@ -92,10 +93,10 @@ def _write_result_file(path: Path, entries: list[dict[str, object]]) -> None:
 
 class CandidateRankingPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def tearDown(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def test_target_uncertainty_cost_matches_transfer_shot_formula(self) -> None:
         costs = target_uncertainty_cost(
@@ -132,7 +133,6 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                     ),
                 ),
             ),
-            method_name="zero_shot",
             target_binding_energy=1.0,
         )
 
@@ -144,32 +144,52 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             "target_uncertainty_cost",
         )
 
-    def test_rank_candidates_supports_future_registered_methods_without_branching(self) -> None:
-        class _TwoShotStrategy:
-            name = "two_shot"
-
-            def rank(self, context) -> RankingResult:
-                return RankingResult(
-                    strategy_name=self.name,
-                    adslab_candidates=(),
-                    parent_candidates=(),
-                    ranked_candidates=(),
-                    metadata={"shot_count": context.inferred_shot_count},
-                )
-
-        register_strategy(_TwoShotStrategy())
+    def test_rank_candidates_uses_zero_shot_as_no_reference_fallback(self) -> None:
         result = rank_candidates(
-            candidate_records=(),
-            method_name="two_shot",
-            target_binding_energy=1.0,
-            validated_references=(
-                ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
-                ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-1",
+                    predictions=(
+                        _prediction("mace", 0.8),
+                        _prediction("orb", 1.2),
+                    ),
+                ),
             ),
+            target_binding_energy=1.0,
+            predictor_name="ridge",
         )
 
-        self.assertEqual(result.strategy_name, "two_shot")
-        self.assertEqual(result.metadata["shot_count"], 2)
+        self.assertEqual(result.strategy_name, "zero_shot")
+        self.assertEqual(result.metadata["shot_count"], 0)
+
+    def test_rank_candidates_requires_registered_predictor_for_n_shot_path(self) -> None:
+        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+
+        with self.assertRaisesRegex(NotImplementedError, "Predictor-backed n-shot ranking"):
+            rank_candidates(
+                candidate_records=(),
+                predictor_name="ridge",
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                    ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+                ),
+            )
+
+    def test_rank_candidates_checks_predictor_feasibility_by_validated_reference_count(self) -> None:
+        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+
+        with self.assertRaisesRegex(ValueError, "requires at least 2 validated references"):
+            rank_candidates(
+                candidate_records=(),
+                predictor_name="ridge",
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                ),
+            )
 
     def test_build_ranking_context_infers_shot_count_from_validated_references(self) -> None:
         from oasis.candidate_ranking import build_ranking_context
@@ -216,7 +236,6 @@ class CandidateRankingPipelineTests(unittest.TestCase):
 
             result = rank_candidates_from_result_files(
                 [mace_path, orb_path],
-                method_name="zero_shot",
                 target_binding_energy=1.0,
             )
 

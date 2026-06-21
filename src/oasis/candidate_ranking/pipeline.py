@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from oasis.candidate_ranking.loaders import load_screening_input_records
-from oasis.candidate_ranking.registry import ensure_strategy
+from oasis.candidate_ranking.methods import ZeroShotCandidateRanker
+from oasis.candidate_ranking.registry import ensure_predictor
 from oasis.candidate_ranking.types import (
     RankingContext,
     RankingResult,
@@ -45,7 +46,8 @@ def build_ranking_context(
 def rank_candidates(
     *,
     candidate_records: tuple[ScreeningInputRecord, ...],
-    method_name: str = "zero_shot",
+    predictor_name: str | None = None,
+    method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
@@ -53,9 +55,13 @@ def rank_candidates(
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingResult:
-    """Resolve one registered strategy and rank normalized candidate records."""
+    """Rank normalized candidate records via zero-shot fallback or predictor path.
 
-    strategy = ensure_strategy(method_name)
+    When there are no validated references, zero-shot ranking is the unfitted
+    fallback and no predictor registry lookup occurs. When validated references
+    exist, the caller must select a registered predictor.
+    """
+
     context = build_ranking_context(
         candidate_records=candidate_records,
         shot_count=shot_count,
@@ -65,13 +71,32 @@ def rank_candidates(
         prior_observations=prior_observations,
         method_config=method_config,
     )
-    return strategy.rank(context)
+    if context.inferred_shot_count == 0:
+        return ZeroShotCandidateRanker().rank(context)
+
+    resolved_predictor_name = predictor_name or method_name
+    if resolved_predictor_name is None:
+        raise ValueError(
+            "predictor_name must be provided when validated references are available."
+        )
+    predictor = ensure_predictor(resolved_predictor_name)
+    if not predictor.is_feasible(context.inferred_shot_count):
+        raise ValueError(
+            f"Predictor {predictor.name!r} requires at least "
+            f"{predictor.min_validated_references} validated references; "
+            f"got {context.inferred_shot_count}."
+        )
+    raise NotImplementedError(
+        f"Predictor-backed n-shot ranking is not implemented yet for "
+        f"{predictor.name!r}."
+    )
 
 
 def rank_candidates_from_result_files(
     result_files: list[Path],
     *,
-    method_name: str = "zero_shot",
+    predictor_name: str | None = None,
+    method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
@@ -84,6 +109,7 @@ def rank_candidates_from_result_files(
     candidate_records = load_screening_input_records(result_files)
     return rank_candidates(
         candidate_records=candidate_records,
+        predictor_name=predictor_name,
         method_name=method_name,
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
@@ -99,7 +125,8 @@ def rank_candidates_from_results_dir(
     *,
     pattern: str = "*/*_result.json",
     exclude_processed: bool = True,
-    method_name: str = "zero_shot",
+    predictor_name: str | None = None,
+    method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
@@ -116,6 +143,7 @@ def rank_candidates_from_results_dir(
     )
     return rank_candidates_from_result_files(
         result_files,
+        predictor_name=predictor_name,
         method_name=method_name,
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,

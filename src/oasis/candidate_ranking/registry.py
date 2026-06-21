@@ -1,77 +1,104 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from collections.abc import Iterable
 
-from oasis.candidate_ranking.interfaces import RankingStrategy
+from oasis.candidate_ranking.interfaces import CandidatePredictor
 
-_STRATEGY_REGISTRY: dict[str, RankingStrategy] = {}
+_PREDICTOR_REGISTRY: dict[str, CandidatePredictor] = {}
 
 
-def register_strategy(strategy: RankingStrategy) -> RankingStrategy:
-    """Register a ranking strategy by name.
+@dataclass(frozen=True, slots=True)
+class PredictorSpec:
+    """Lightweight registry record for one candidate-ranking predictor."""
 
-    New ranking methods should register here rather than branching orchestration
-    code elsewhere in the pipeline.
+    name: str
+    min_validated_references: int
+    metadata: dict[str, object] = field(default_factory=dict)
+
+    def is_feasible(self, validated_reference_count: int) -> bool:
+        return validated_reference_count >= self.min_validated_references
+
+
+def register_predictor(predictor: CandidatePredictor) -> CandidatePredictor:
+    """Register a predictor by name.
+
+    This corrects the abstraction boundary: extension happens by adding fitted
+    predictors such as `residual`, `weighted_simplex`, or `ridge`, while
+    zero-shot remains the unfitted fallback when no validated references exist.
     """
 
-    name = getattr(strategy, "name", None)
+    name = getattr(predictor, "name", None)
     if not isinstance(name, str) or not name.strip():
-        raise ValueError("Ranking strategies must define a non-empty string name.")
-    if name in _STRATEGY_REGISTRY:
-        raise ValueError(f"Ranking strategy {name!r} is already registered.")
-    _STRATEGY_REGISTRY[name] = strategy
-    return strategy
+        raise ValueError("Candidate predictors must define a non-empty string name.")
+    if name in _PREDICTOR_REGISTRY:
+        raise ValueError(f"Candidate predictor {name!r} is already registered.")
+    _PREDICTOR_REGISTRY[name] = predictor
+    return predictor
 
 
-def register_builtin_strategies() -> None:
-    """Register built-in ranking strategies.
+def register_builtin_predictors() -> None:
+    """Register built-in predictor specs.
 
-    Extend candidate ranking by registering a new strategy object here or in a
-    caller-owned bootstrap path. Future `two_shot` or iterative `n_shot`
-    methods should plug in by registration rather than branching orchestration
-    code on method names.
+    New few-shot predictors should plug in by registration here or in a
+    caller-owned bootstrap path, rather than by branching on shot regime.
     """
+    builtins = (
+        PredictorSpec(
+            name="residual",
+            min_validated_references=1,
+            metadata={"family": "few_shot", "hyperparameter_free": True},
+        ),
+        PredictorSpec(
+            name="weighted_simplex",
+            min_validated_references=1,
+            metadata={"family": "few_shot", "hyperparameter_free": True},
+        ),
+        PredictorSpec(
+            name="ridge",
+            min_validated_references=2,
+            metadata={"family": "few_shot", "hyperparameter_free": False},
+        ),
+    )
+    for predictor in builtins:
+        if predictor.name not in _PREDICTOR_REGISTRY:
+            register_predictor(predictor)
 
-    from oasis.candidate_ranking.methods import ZeroShotCandidateRanker
 
-    if "zero_shot" not in _STRATEGY_REGISTRY:
-        register_strategy(ZeroShotCandidateRanker())
+def ensure_predictor(name: str) -> CandidatePredictor:
+    """Resolve one predictor, lazily registering built-ins on first use."""
 
-
-def ensure_strategy(name: str) -> RankingStrategy:
-    """Resolve one strategy, lazily registering built-ins on first use."""
-
-    if name not in _STRATEGY_REGISTRY:
-        register_builtin_strategies()
-    return get_strategy(name)
+    if name not in _PREDICTOR_REGISTRY:
+        register_builtin_predictors()
+    return get_predictor(name)
 
 
-def get_strategy(name: str) -> RankingStrategy:
-    """Return one registered strategy by name."""
+def get_predictor(name: str) -> CandidatePredictor:
+    """Return one registered predictor by name."""
 
     try:
-        return _STRATEGY_REGISTRY[name]
+        return _PREDICTOR_REGISTRY[name]
     except KeyError as exc:
-        known = ", ".join(sorted(_STRATEGY_REGISTRY)) or "<none>"
+        known = ", ".join(sorted(_PREDICTOR_REGISTRY)) or "<none>"
         raise KeyError(
-            f"Unknown ranking strategy {name!r}. Registered strategies: {known}"
+            f"Unknown candidate predictor {name!r}. Registered predictors: {known}"
         ) from exc
 
 
-def registered_strategy_names() -> tuple[str, ...]:
-    """Return registered strategy names in sorted order."""
+def registered_predictor_names() -> tuple[str, ...]:
+    """Return registered predictor names in sorted order."""
 
-    return tuple(sorted(_STRATEGY_REGISTRY))
-
-
-def clear_registered_strategies() -> None:
-    """Test helper for resetting the ranking strategy registry."""
-
-    _STRATEGY_REGISTRY.clear()
+    return tuple(sorted(_PREDICTOR_REGISTRY))
 
 
-def register_strategies(strategies: Iterable[RankingStrategy]) -> None:
-    """Register several ranking strategies."""
+def clear_registered_predictors() -> None:
+    """Test helper for resetting the predictor registry."""
 
-    for strategy in strategies:
-        register_strategy(strategy)
+    _PREDICTOR_REGISTRY.clear()
+
+
+def register_predictors(predictors: Iterable[CandidatePredictor]) -> None:
+    """Register several predictors."""
+
+    for predictor in predictors:
+        register_predictor(predictor)

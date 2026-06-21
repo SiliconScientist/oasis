@@ -13,9 +13,7 @@ from oasis.candidate_ranking import (
     ZeroShotCandidateRanker,
 )
 from oasis.candidate_ranking.registry import (
-    clear_registered_strategies,
-    get_strategy,
-    register_strategy,
+    clear_registered_predictors,
 )
 
 
@@ -57,10 +55,10 @@ def _prediction(
 
 class ZeroShotCandidateRankingTests(unittest.TestCase):
     def setUp(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def tearDown(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def test_zero_shot_generator_averages_valid_mlips_and_tracks_provenance(self) -> None:
         generator = ZeroShotCandidateGenerator()
@@ -156,12 +154,9 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[0].predicted_binding_energy or -1.0, 1.0)
         self.assertEqual(candidates[0].method_provenance.source_methods, ("mace",))
 
-    def test_zero_shot_ranker_is_registry_compatible(self) -> None:
-        strategy = ZeroShotCandidateRanker()
-        register_strategy(strategy)
-
-        resolved = get_strategy("zero_shot")
-        result = resolved.rank(
+    def test_zero_shot_ranker_is_zero_reference_fallback(self) -> None:
+        ranker = ZeroShotCandidateRanker()
+        result = ranker.rank(
             RankingContext(
                 candidate_records=(
                     _record(
@@ -178,7 +173,6 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             )
         )
 
-        self.assertIs(resolved, strategy)
         self.assertEqual(result.strategy_name, "zero_shot")
         self.assertEqual(len(result.adslab_candidates), 1)
         self.assertEqual(len(result.parent_candidates), 1)

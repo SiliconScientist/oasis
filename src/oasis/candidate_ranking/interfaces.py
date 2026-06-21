@@ -58,6 +58,20 @@ class MethodSignalProvider(Protocol):
 
 
 @runtime_checkable
+class CandidatePredictor(Protocol):
+    """Extension point for fitted n-shot predictors over validated references.
+
+    Predictors such as `residual`, `weighted_simplex`, and `ridge` should plug
+    in here by registration rather than by branching orchestration code.
+    """
+
+    name: str
+    min_validated_references: int
+
+    def is_feasible(self, validated_reference_count: int) -> bool: ...
+
+
+@runtime_checkable
 class RankingStrategy(Protocol):
     """Extension point for zero-shot, few-shot, and n-shot ranking workflows."""
 

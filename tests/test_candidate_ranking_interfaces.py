@@ -6,22 +6,24 @@ from dataclasses import replace
 from oasis.candidate_ranking import (
     AdslabCandidate,
     CandidateGenerator,
+    CandidatePredictor,
     CandidateScorer,
     MethodProvenance,
     ParentCandidate,
     ParentReducer,
+    PredictorSpec,
     RankingContext,
     RankingResult,
     SupportingSignal,
     UncertaintyEstimate,
     ValidatedReference,
-    clear_registered_strategies,
-    ensure_strategy,
-    get_strategy,
-    register_builtin_strategies,
-    register_strategies,
-    register_strategy,
-    registered_strategy_names,
+    clear_registered_predictors,
+    ensure_predictor,
+    get_predictor,
+    register_builtin_predictors,
+    register_predictors,
+    register_predictor,
+    registered_predictor_names,
 )
 
 
@@ -92,119 +94,93 @@ class _FakeScorer:
         ]
 
 
-class _FakeStrategy:
-    name = "zero_shot"
+class _FakePredictor:
+    name = "residual"
+    min_validated_references = 1
 
-    def __init__(self) -> None:
-        self.generator = _FakeGenerator()
-        self.reducer = _FakeReducer()
-        self.scorer = _FakeScorer()
-
-    def rank(self, context: RankingContext) -> RankingResult:
-        adslab_candidates = self.generator.generate(context)
-        parent_candidates = self.reducer.reduce(adslab_candidates, context)
-        ranked_candidates = self.scorer.score(parent_candidates, context)
-        return RankingResult(
-            strategy_name=self.name,
-            adslab_candidates=tuple(adslab_candidates),
-            parent_candidates=tuple(parent_candidates),
-            ranked_candidates=tuple(ranked_candidates),
-        )
+    def is_feasible(self, validated_reference_count: int) -> bool:
+        return validated_reference_count >= self.min_validated_references
 
 
 class CandidateRankingInterfaceTests(unittest.TestCase):
     def setUp(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def tearDown(self) -> None:
-        clear_registered_strategies()
+        clear_registered_predictors()
 
     def test_fake_components_satisfy_protocols(self) -> None:
         self.assertIsInstance(_FakeGenerator(), CandidateGenerator)
         self.assertIsInstance(_FakeReducer(), ParentReducer)
         self.assertIsInstance(_FakeScorer(), CandidateScorer)
+        self.assertIsInstance(_FakePredictor(), CandidatePredictor)
 
-    def test_register_and_resolve_strategy_by_name(self) -> None:
-        strategy = _FakeStrategy()
+    def test_register_and_resolve_predictor_by_name(self) -> None:
+        predictor = _FakePredictor()
 
-        register_strategy(strategy)
+        register_predictor(predictor)
 
-        self.assertEqual(registered_strategy_names(), ("zero_shot",))
-        self.assertIs(get_strategy("zero_shot"), strategy)
+        self.assertEqual(registered_predictor_names(), ("residual",))
+        self.assertIs(get_predictor("residual"), predictor)
 
     def test_duplicate_registration_fails_cleanly(self) -> None:
-        register_strategy(_FakeStrategy())
+        register_predictor(_FakePredictor())
 
         with self.assertRaisesRegex(ValueError, "already registered"):
-            register_strategy(_FakeStrategy())
+            register_predictor(_FakePredictor())
 
-    def test_register_builtin_strategies_seeds_zero_shot(self) -> None:
-        register_builtin_strategies()
-
-        self.assertEqual(registered_strategy_names(), ("zero_shot",))
-        self.assertEqual(get_strategy("zero_shot").name, "zero_shot")
-
-    def test_ensure_strategy_lazily_registers_builtins(self) -> None:
-        strategy = ensure_strategy("zero_shot")
-
-        self.assertEqual(strategy.name, "zero_shot")
-        self.assertEqual(registered_strategy_names(), ("zero_shot",))
-
-    def test_future_methods_extend_registry_by_registration(self) -> None:
-        class _TwoShotStrategy:
-            name = "two_shot"
-
-            def rank(self, context: RankingContext) -> RankingResult:
-                del context
-                return RankingResult(
-                    strategy_name=self.name,
-                    adslab_candidates=(),
-                    parent_candidates=(),
-                    ranked_candidates=(),
-                    metadata={"note": "registered extension seam"},
-                )
-
-        class _NShotStrategy:
-            name = "n_shot"
-
-            def rank(self, context: RankingContext) -> RankingResult:
-                del context
-                return RankingResult(
-                    strategy_name=self.name,
-                    adslab_candidates=(),
-                    parent_candidates=(),
-                    ranked_candidates=(),
-                )
-
-        register_builtin_strategies()
-        register_strategies([_TwoShotStrategy(), _NShotStrategy()])
+    def test_register_builtin_predictors_seeds_predictor_names(self) -> None:
+        register_builtin_predictors()
 
         self.assertEqual(
-            registered_strategy_names(),
-            ("n_shot", "two_shot", "zero_shot"),
+            registered_predictor_names(),
+            ("residual", "ridge", "weighted_simplex"),
+        )
+        self.assertEqual(get_predictor("ridge").min_validated_references, 2)
+
+    def test_ensure_predictor_lazily_registers_builtins(self) -> None:
+        predictor = ensure_predictor("weighted_simplex")
+
+        self.assertEqual(predictor.name, "weighted_simplex")
+        self.assertEqual(
+            registered_predictor_names(),
+            ("residual", "ridge", "weighted_simplex"),
+        )
+
+    def test_future_predictors_extend_registry_by_registration(self) -> None:
+        register_builtin_predictors()
+        register_predictors(
+            (
+                PredictorSpec(name="lasso", min_validated_references=2),
+                PredictorSpec(name="kernel_ridge", min_validated_references=2),
+            )
+        )
+
+        self.assertEqual(
+            registered_predictor_names(),
+            ("kernel_ridge", "lasso", "residual", "ridge", "weighted_simplex"),
         )
 
     def test_strategy_composes_generator_reducer_and_scorer(self) -> None:
-        strategy = _FakeStrategy()
+        adslab_candidates = _FakeGenerator().generate(RankingContext(target_binding_energy=0.0))
+        parent_candidates = _FakeReducer().reduce(adslab_candidates, RankingContext())
+        ranked_candidates = _FakeScorer().score(parent_candidates, RankingContext(target_binding_energy=0.0))
 
-        result = strategy.rank(RankingContext(target_binding_energy=0.0))
-
-        self.assertEqual(result.strategy_name, "zero_shot")
-        self.assertEqual(len(result.adslab_candidates), 1)
-        self.assertEqual(len(result.parent_candidates), 1)
-        self.assertEqual(len(result.ranked_candidates), 1)
-        self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")
-        self.assertAlmostEqual(result.ranked_candidates[0].score or -1.0, 0.4)
+        self.assertEqual(len(adslab_candidates), 1)
+        self.assertEqual(len(parent_candidates), 1)
+        self.assertEqual(len(ranked_candidates), 1)
+        self.assertEqual(ranked_candidates[0].selected_adslab_id, "adslab-1")
+        self.assertAlmostEqual(ranked_candidates[0].score or -1.0, 0.4)
         self.assertEqual(
-            result.ranked_candidates[0].method_provenance.method_name,
+            ranked_candidates[0].method_provenance.method_name,
             "zero_shot",
         )
         self.assertEqual(
-            result.ranked_candidates[0].uncertainty.metric,
+            ranked_candidates[0].uncertainty.metric,
             "ensemble_std",
         )
         self.assertEqual(
-            result.ranked_candidates[0].supporting_signals[0].name,
+            ranked_candidates[0].supporting_signals[0].name,
             "target_distance_proxy",
         )
 
