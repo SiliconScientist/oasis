@@ -15,7 +15,10 @@ from oasis.candidate_ranking import (
     SupportingSignal,
     UncertaintyEstimate,
     clear_registered_strategies,
+    ensure_strategy,
     get_strategy,
+    register_builtin_strategies,
+    register_strategies,
     register_strategy,
     registered_strategy_names,
 )
@@ -133,6 +136,52 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "already registered"):
             register_strategy(_FakeStrategy())
+
+    def test_register_builtin_strategies_seeds_zero_shot(self) -> None:
+        register_builtin_strategies()
+
+        self.assertEqual(registered_strategy_names(), ("zero_shot",))
+        self.assertEqual(get_strategy("zero_shot").name, "zero_shot")
+
+    def test_ensure_strategy_lazily_registers_builtins(self) -> None:
+        strategy = ensure_strategy("zero_shot")
+
+        self.assertEqual(strategy.name, "zero_shot")
+        self.assertEqual(registered_strategy_names(), ("zero_shot",))
+
+    def test_future_methods_extend_registry_by_registration(self) -> None:
+        class _TwoShotStrategy:
+            name = "two_shot"
+
+            def rank(self, context: RankingContext) -> RankingResult:
+                del context
+                return RankingResult(
+                    strategy_name=self.name,
+                    adslab_candidates=(),
+                    parent_candidates=(),
+                    ranked_candidates=(),
+                    metadata={"note": "registered extension seam"},
+                )
+
+        class _NShotStrategy:
+            name = "n_shot"
+
+            def rank(self, context: RankingContext) -> RankingResult:
+                del context
+                return RankingResult(
+                    strategy_name=self.name,
+                    adslab_candidates=(),
+                    parent_candidates=(),
+                    ranked_candidates=(),
+                )
+
+        register_builtin_strategies()
+        register_strategies([_TwoShotStrategy(), _NShotStrategy()])
+
+        self.assertEqual(
+            registered_strategy_names(),
+            ("n_shot", "two_shot", "zero_shot"),
+        )
 
     def test_strategy_composes_generator_reducer_and_scorer(self) -> None:
         strategy = _FakeStrategy()

@@ -23,6 +23,29 @@ def register_strategy(strategy: RankingStrategy) -> RankingStrategy:
     return strategy
 
 
+def register_builtin_strategies() -> None:
+    """Register built-in ranking strategies.
+
+    Extend candidate ranking by registering a new strategy object here or in a
+    caller-owned bootstrap path. Future `two_shot` or iterative `n_shot`
+    methods should plug in by registration rather than branching orchestration
+    code on method names.
+    """
+
+    from oasis.candidate_ranking.methods import ZeroShotCandidateRanker
+
+    if "zero_shot" not in _STRATEGY_REGISTRY:
+        register_strategy(ZeroShotCandidateRanker())
+
+
+def ensure_strategy(name: str) -> RankingStrategy:
+    """Resolve one strategy, lazily registering built-ins on first use."""
+
+    if name not in _STRATEGY_REGISTRY:
+        register_builtin_strategies()
+    return get_strategy(name)
+
+
 def get_strategy(name: str) -> RankingStrategy:
     """Return one registered strategy by name."""
 

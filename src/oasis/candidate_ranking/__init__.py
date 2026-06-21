@@ -8,7 +8,9 @@ from oasis.candidate_ranking.interfaces import (
 from oasis.candidate_ranking.loaders import load_screening_input_records
 from oasis.candidate_ranking.registry import (
     clear_registered_strategies,
+    ensure_strategy,
     get_strategy,
+    register_builtin_strategies,
     register_strategies,
     register_strategy,
     registered_strategy_names,
@@ -57,8 +59,10 @@ __all__ = [
     "ZeroShotCandidateRanker",
     "ZeroShotRankingConfig",
     "clear_registered_strategies",
+    "ensure_strategy",
     "get_strategy",
     "load_screening_input_records",
+    "register_builtin_strategies",
     "register_strategies",
     "register_strategy",
     "registered_strategy_names",
