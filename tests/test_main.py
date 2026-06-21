@@ -18,3 +18,11 @@ class MainTests(unittest.TestCase):
             main(["experiment.toml"])
 
         mock_run.assert_called_once_with(["experiment.toml"])
+
+    def test_main_dispatches_candidate_ranking_cli(self) -> None:
+        with patch(
+            "oasis.candidate_ranking_runner.run_candidate_ranking_from_config"
+        ) as mock_run:
+            main(["rank-candidates", "experiment.toml"])
+
+        mock_run.assert_called_once_with(["experiment.toml"])

@@ -4,6 +4,7 @@ from oasis.app_config import Config
 from oasis.config_base import deep_merge_dicts, load_toml_file
 from oasis.experiment_config import (
     AnalysisConfig,
+    CandidateRankingConfig,
     DatasetProfileConfig,
     DatasetProfilePathsConfig,
     ExperimentConfig,

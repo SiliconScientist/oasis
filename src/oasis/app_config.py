@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from oasis.experiment_config import (
     AnalysisConfig,
+    CandidateRankingConfig,
     DatasetProfileConfig,
     DatasetProfilePathsConfig,
     ExperimentConfig,
@@ -33,6 +34,7 @@ class Config(BaseModel):
     analysis: Optional[AnalysisConfig] = None
     probe_features: Optional[ProbeFeatureConfig] = None
     experiment: Optional[ExperimentConfig] = None
+    candidate_ranking: Optional[CandidateRankingConfig] = None
     plot: Optional[PlotConfig] = None
 
     def model_post_init(self, __context: Any) -> None:
@@ -142,6 +144,13 @@ class Config(BaseModel):
                 profile_paths.analysis_base_dir,
             )
 
+        if self.candidate_ranking is not None:
+            self._fill_none(
+                self.candidate_ranking,
+                "results_dir",
+                profile_paths.analysis_base_dir,
+            )
+
     @staticmethod
     def _fill_none(model: BaseModel, field_name: str, value: Any) -> None:
         if value is None or getattr(model, field_name) is not None:
@@ -202,6 +211,21 @@ class Config(BaseModel):
                 missing = ", ".join(missing_analysis_fields)
                 raise ValueError(
                     f"{missing} must be provided explicitly or derived from dataset_profile.tag"
+                )
+
+        if self.candidate_ranking is not None:
+            if self.candidate_ranking.results_dir is None:
+                raise ValueError(
+                    "candidate_ranking.results_dir must be provided explicitly or "
+                    "derived from dataset_profile.tag"
+                )
+            if (
+                self.candidate_ranking.exclude_anomalous
+                and not self.candidate_ranking.label_allowlist
+            ):
+                raise ValueError(
+                    "candidate_ranking.label_allowlist must not be empty when "
+                    "exclude_anomalous is enabled"
                 )
 
     def _inherit_global_seed(self) -> None:

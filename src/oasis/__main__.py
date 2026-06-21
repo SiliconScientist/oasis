@@ -14,10 +14,19 @@ def _dispatch_experiment_cli(argv: list[str]) -> None:
     run_experiment_from_config(argv or None)
 
 
+def _dispatch_candidate_ranking_cli(argv: list[str]) -> None:
+    from oasis.candidate_ranking_runner import run_candidate_ranking_from_config
+
+    run_candidate_ranking_from_config(argv or None)
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "mlip":
         _dispatch_mlip_cli(argv[1:])
+        return
+    if argv and argv[0] == "rank-candidates":
+        _dispatch_candidate_ranking_cli(argv[1:])
         return
 
     _dispatch_experiment_cli(argv)

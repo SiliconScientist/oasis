@@ -104,6 +104,24 @@ min_screen_size = 1
 # results_bundle_path = "data/results/screening/example_oh.json"
 # force_refresh_train_sizes = { ridge = [10], weighted_simplex = [15] }
 
+[candidate_ranking]
+# Run with: `python -m oasis rank-candidates [config paths...]`
+method = "zero_shot"
+target_binding_energy = -0.5
+top_k = 10
+score_function = "target_uncertainty_cost"  # or "weighted_sum"
+target_uncertainty_alpha = 0.75
+uncertainty_weight = 1.0
+exclude_anomalous = true
+label_allowlist = ["normal"]
+strict_inference_anomaly = false
+min_valid_mlips = 2
+# `results_dir` defaults to the dataset profile's MLIP results directory.
+# results_dir = "data/mlips/oh_example"
+# Reserve per-method namespaces for future few-shot strategies.
+# [candidate_ranking.method_configs.two_shot]
+# acquisition_weight = 0.3
+
 # Optional graph dataset artifact. Omit this section to rebuild graphs in
 # memory each run and avoid writing an aligned Parquet cache.
 #

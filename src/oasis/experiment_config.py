@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from oasis.mlip_config import mlip_results_dir, raw_dataset_path
 from oasis.tune import OptunaTuningConfig
@@ -267,6 +267,39 @@ class PlotConfig(BaseModel):
 class ProbeFeatureConfig(BaseModel):
     dataset_path: Path
     mlip_results_dir: Path
+
+
+class CandidateRankingConfig(BaseModel):
+    method: str = "zero_shot"
+    shot_count: int = 0
+    target_binding_energy: float
+    top_k: int = 10
+    results_dir: Optional[Path] = None
+    score_function: str = "target_uncertainty_cost"
+    target_distance_weight: float = 1.0
+    uncertainty_weight: float = 1.0
+    target_uncertainty_alpha: float = 0.75
+    supporting_signal_weights: dict[str, float] = Field(default_factory=dict)
+    exclude_anomalous: bool = False
+    label_allowlist: List[str] = Field(default_factory=lambda: ["normal"])
+    strict_inference_anomaly: bool = False
+    min_valid_mlips: int = 2
+    method_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    def resolved_method_config(self) -> dict[str, Any]:
+        method_specific = dict(self.method_configs.get(self.method, {}))
+        return {
+            "score_function": self.score_function,
+            "target_distance_weight": self.target_distance_weight,
+            "uncertainty_weight": self.uncertainty_weight,
+            "target_uncertainty_alpha": self.target_uncertainty_alpha,
+            "supporting_signal_weights": dict(self.supporting_signal_weights),
+            "exclude_anomalous": self.exclude_anomalous,
+            "label_allowlist": list(self.label_allowlist),
+            "strict_inference_anomaly": self.strict_inference_anomaly,
+            "min_valid_mlips": self.min_valid_mlips,
+            **method_specific,
+        }
 
 
 def probe_dataset_path(raw_dataset_filename: str) -> Path:
