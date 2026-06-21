@@ -80,6 +80,14 @@ class CandidateRankingConfigTests(unittest.TestCase):
         self.assertEqual(resolved["uncertainty_weight"], 0.6)
         self.assertEqual(resolved["alpha_grid"], [0.1, 1.0])
 
+    def test_candidate_ranking_requires_nonempty_predictor_list(self) -> None:
+        with self.assertRaisesRegex(ValueError, "predictors must not be empty"):
+            CandidateRankingConfig(
+                predictors=[],
+                results_dir="data/mlips/example",
+                target_binding_energy=-0.1,
+            )
+
     def test_run_candidate_ranking_from_config_uses_predictor_list_surface(self) -> None:
         ranking_cfg = CandidateRankingConfig(
             predictors=["residual", "weighted_simplex", "ridge"],

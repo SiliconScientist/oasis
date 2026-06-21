@@ -273,7 +273,6 @@ class CandidateRankingConfig(BaseModel):
     predictors: List[str] = Field(
         default_factory=lambda: ["residual", "weighted_simplex", "ridge"]
     )
-    shot_count: int = 0
     target_binding_energy: float
     top_k: int = 10
     results_dir: Optional[Path] = None
@@ -288,6 +287,12 @@ class CandidateRankingConfig(BaseModel):
     strict_inference_anomaly: bool = False
     min_valid_mlips: int = 2
     predictor_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_predictor_surface(self) -> "CandidateRankingConfig":
+        if not self.predictors:
+            raise ValueError("candidate_ranking.predictors must not be empty.")
+        return self
 
     def resolved_predictor_config(self, predictor_name: str | None = None) -> dict[str, Any]:
         predictor_specific = (

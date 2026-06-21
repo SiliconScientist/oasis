@@ -28,7 +28,6 @@ def run_candidate_ranking_from_config(
 
     rank_kwargs = {
         "predictor_names": ranking_cfg.predictors,
-        "shot_count": ranking_cfg.shot_count,
         "target_binding_energy": ranking_cfg.target_binding_energy,
         "dataset_metadata": _candidate_ranking_dataset_metadata(cfg),
         "method_config": ranking_cfg.resolved_predictor_config(),
@@ -50,7 +49,7 @@ def run_candidate_ranking_from_config(
     print(
         "Candidate ranking"
         f" predictors={list(ranking_cfg.predictors)}"
-        f" shot_count={ranking_cfg.shot_count}"
+        f" validated_references_path={ranking_cfg.validated_references_path}"
         f" target_binding_energy={ranking_cfg.target_binding_energy}"
         f" top_k={top_k}"
     )

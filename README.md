@@ -48,6 +48,17 @@ python -m oasis.mlip run-one --config mlip.toml --line "mace example data/raw_da
 `python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
 otherwise exits with guidance to use the MLIP module entrypoint.
 
+The `rank-candidates` command stays stable:
+
+```bash
+python -m oasis rank-candidates experiment.toml
+```
+
+Its config is predictor-driven. Use `[candidate_ranking]` with an ordered
+`predictors = ["residual", "weighted_simplex", "ridge"]` list plus an optional
+`validated_references_path` JSON file. If no validated references are supplied,
+candidate ranking falls back automatically to the unfitted ensemble baseline.
+
 ## Related Repo
 
 MLIP ingestion/prediction repo:
