@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from statistics import NormalDist
+from time import perf_counter
 from typing import TYPE_CHECKING
 import warnings
 
@@ -33,6 +34,13 @@ if TYPE_CHECKING:
 
 
 _SWEEP_RESULT_COLUMNS = ["n_train", "rmse_mean", "rmse_std"]
+_TIMED_SWEEP_RESULT_COLUMNS = [
+    "n_train",
+    "rmse_mean",
+    "rmse_std",
+    "fit_time_mean_s",
+    "fit_time_std_s",
+]
 _UQ_SUMMARY_COLUMNS = [
     "n_train",
     "miscalibration_area",
@@ -152,6 +160,12 @@ def _normalize_runner_output(
     return SweepRunnerArtifacts(metrics=output)
 
 
+def _measure_duration_s(work: Callable[[], object]) -> float:
+    t0 = perf_counter()
+    work()
+    return float(perf_counter() - t0)
+
+
 def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
     """Build the standard sweep result frame from per-size RMSE samples."""
 
@@ -164,6 +178,29 @@ def sweep_results_frame(rmses_by_size: dict[int, list[float]]) -> pd.DataFrame:
         for n_train, rmses in sorted(rmses_by_size.items())
     ]
     return pd.DataFrame(rows, columns=_SWEEP_RESULT_COLUMNS)
+
+
+def timed_sweep_results_frame(
+    rmses_by_size: dict[int, list[float]],
+    fit_times_by_size: dict[int, list[float]],
+) -> pd.DataFrame:
+    rows = []
+    for n_train, rmses in sorted(rmses_by_size.items()):
+        fit_times = np.asarray(fit_times_by_size.get(n_train, ()), dtype=float)
+        rows.append(
+            {
+                "n_train": n_train,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+                "fit_time_mean_s": (
+                    0.0 if fit_times.size == 0 else float(np.mean(fit_times))
+                ),
+                "fit_time_std_s": (
+                    0.0 if fit_times.size == 0 else float(np.std(fit_times))
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=_TIMED_SWEEP_RESULT_COLUMNS)
 
 
 def calibration_curve_frame(
@@ -333,16 +370,20 @@ def sweep_model(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = model_factory()
-        _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
+        fit_time_s = _measure_duration_s(
+            lambda: _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
+        )
         X_test = X[split.test_idx]
         preds = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
+    return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
 
 
 def sweep_model_with_validation(
@@ -354,20 +395,24 @@ def sweep_model_with_validation(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     for split in splits:
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = model_factory()
-        model.fit(
-            X[split.train_idx],
-            y[split.train_idx],
-            X[split.val_idx],
-            y[split.val_idx],
+        fit_time_s = _measure_duration_s(
+            lambda: model.fit(
+                X[split.train_idx],
+                y[split.train_idx],
+                X[split.val_idx],
+                y[split.val_idx],
+            )
         )
         preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
+    return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
 
 
 def sweep_learned_model(
@@ -415,15 +460,22 @@ def residual_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
         X_train = X[split.train_idx]
         y_train = y[split.train_idx]
+        mean_residuals = None
 
-        residuals = y_train[:, None] - X_train
-        mean_residuals = residuals.mean(axis=0)
+        def fit_residual_model() -> None:
+            nonlocal mean_residuals
+            residuals = y_train[:, None] - X_train
+            mean_residuals = residuals.mean(axis=0)
+
+        fit_time_s = _measure_duration_s(fit_residual_model)
+        assert mean_residuals is not None
 
         X_corrected = X[split.test_idx] + mean_residuals
         preds = X_corrected.mean(axis=1)
@@ -431,6 +483,7 @@ def residual_sweep(
         y_true = y[split.test_idx]
         rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         split_artifacts.append(
             build_split_prediction_artifact(
                 sweep_size=split.sweep_size,
@@ -440,7 +493,7 @@ def residual_sweep(
             )
         )
     return SweepRunnerArtifacts(
-        metrics=sweep_results_frame(rmses_by_size),
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         uq_summary=aggregate_uq_summary(
             split_artifacts,
             uncertainty_kind="spread_only",
@@ -457,12 +510,15 @@ def weighted_linear_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = LinearRegression(fit_intercept=fit_intercept)
-        _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
+        fit_time_s = _measure_duration_s(
+            lambda: _fit_model_safely(model, X[split.train_idx], y[split.train_idx])
+        )
         X_test = X[split.test_idx]
         preds = model.predict(X_test)
         centered = X_test - preds[:, None]
@@ -476,6 +532,7 @@ def weighted_linear_sweep(
         y_true = y[split.test_idx]
         rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         split_artifacts.append(
             build_split_prediction_artifact(
                 sweep_size=split.sweep_size,
@@ -485,7 +542,7 @@ def weighted_linear_sweep(
             )
         )
     return SweepRunnerArtifacts(
-        metrics=sweep_results_frame(rmses_by_size),
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         uq_summary=aggregate_uq_summary(
             split_artifacts,
             uncertainty_kind="spread_only",
@@ -513,6 +570,7 @@ def weighted_simplex_sweep(
 
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     split_artifacts: list[SplitPredictionArtifact] = []
     for split in _assert_train_test_payload(payload):
         X = split.dataset.mlip_features
@@ -522,10 +580,17 @@ def weighted_simplex_sweep(
             min_features=2,
             method_name="weighted_simplex",
         )
-        weights = _simplex_weights(
-            X[split.train_idx],
-            y[split.train_idx],
-        )
+        weights = None
+
+        def fit_simplex_model() -> None:
+            nonlocal weights
+            weights = _simplex_weights(
+                X[split.train_idx],
+                y[split.train_idx],
+            )
+
+        fit_time_s = _measure_duration_s(fit_simplex_model)
+        assert weights is not None
         X_test = X[split.test_idx]
         preds = X_test @ weights
         centered = X_test - preds[:, None]
@@ -533,6 +598,7 @@ def weighted_simplex_sweep(
         y_true = y[split.test_idx]
         rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         split_artifacts.append(
             build_split_prediction_artifact(
                 sweep_size=split.sweep_size,
@@ -542,7 +608,7 @@ def weighted_simplex_sweep(
             )
         )
     return SweepRunnerArtifacts(
-        metrics=sweep_results_frame(rmses_by_size),
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         uq_summary=aggregate_uq_summary(
             split_artifacts,
             uncertainty_kind="spread_only",

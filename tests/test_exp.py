@@ -2888,7 +2888,14 @@ class ExpIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            results.ridge_df.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"]
+            results.ridge_df.columns.tolist(),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(
             results.ridge_df["n_train"].tolist(),
@@ -3077,7 +3084,13 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(results.weighted_linear_df)
         self.assertEqual(
             results.weighted_linear_df.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertTrue(results.weighted_linear_df.empty)
         self.assertEqual(len(baseline_runner.payloads), 1)
@@ -3132,7 +3145,13 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertTrue(results.weighted_linear_df.empty)
         self.assertEqual(
             results.weighted_linear_df.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(len(validation_runner.payloads), 1)
         self.assertEqual(validation_runner.payloads[0].splits, ())

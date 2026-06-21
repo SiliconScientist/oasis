@@ -855,7 +855,13 @@ class SweepOutputRegressionTests(unittest.TestCase):
             ),
         )
         expected_counts = [2, 3, 4]
-        expected_columns = ["n_train", "rmse_mean", "rmse_std"]
+        expected_columns = [
+            "n_train",
+            "rmse_mean",
+            "rmse_std",
+            "fit_time_mean_s",
+            "fit_time_std_s",
+        ]
 
         class DummyModel:
             def fit(self, X, y):
@@ -1024,7 +1030,13 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
         self.assertEqual(
             results.weighted_linear_df.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1226,7 +1238,13 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
         self.assertEqual(
             result.metrics.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(result.metrics["n_train"].tolist(), [4, 5])
         self.assertEqual(len(result.metrics), 2)
@@ -1273,7 +1291,13 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
 
         self.assertEqual(
             result.metrics.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(result.metrics["n_train"].tolist(), [4, 5])
         self.assertEqual(len(result.metrics), 2)
@@ -1832,10 +1856,75 @@ class BoundaryTests(unittest.TestCase):
 
         self.assertEqual(
             result.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(result["n_train"].tolist(), [4])
         pd.testing.assert_frame_equal(result, runner_result)
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_sweep_model_aggregates_fit_time_per_train_size(self) -> None:
+        payload = regression_train_test_payload(seed=13)
+
+        class DummyModel:
+            def fit(self, X, y):
+                X = np.asarray(X)
+                self.coef_ = np.ones(X.shape[1], dtype=float)
+                return self
+
+            def predict(self, X):
+                return np.asarray(X).mean(axis=1)
+
+        with patch(
+            "oasis.learning_curve.execution.perf_counter",
+            side_effect=[0.0, 0.1, 1.0, 1.3, 2.0, 2.5, 3.0, 3.2, 4.0, 4.4, 5.0, 5.6],
+        ):
+            result = sweep_model(payload, lambda: DummyModel())
+
+        self.assertEqual(
+            result.columns.tolist(),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
+        )
+        np.testing.assert_allclose(
+            result["fit_time_mean_s"].to_numpy(),
+            [0.2, 0.35, 0.5],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            result["fit_time_std_s"].to_numpy(),
+            [0.1, 0.15, 0.1],
+            atol=1e-12,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_weighted_linear_records_fit_time_columns(self) -> None:
+        with patch(
+            "oasis.learning_curve.execution.perf_counter",
+            side_effect=[0.0, 0.25, 1.0, 1.5],
+        ):
+            result = weighted_linear_sweep(weighted_fixed_payload())
+
+        np.testing.assert_allclose(
+            result.metrics["fit_time_mean_s"].to_numpy(),
+            [0.25, 0.5],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            result.metrics["fit_time_std_s"].to_numpy(),
+            [0.0, 0.0],
+            atol=1e-12,
+        )
 
     def test_learned_runner_uses_full_train_test_split_input(self) -> None:
         seen_splits: list[TrainTestSweepRunnerInput] = []
