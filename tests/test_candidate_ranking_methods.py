@@ -173,7 +173,8 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
                             _prediction("orb", 3.0),
                         ),
                     ),
-                )
+                ),
+                target_binding_energy=1.0,
             )
         )
 
@@ -292,7 +293,10 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
 
         ranked = scorer.score(
             candidates,
-            RankingContext(target_binding_energy=1.0),
+            RankingContext(
+                target_binding_energy=1.0,
+                method_config={"score_function": "weighted_sum"},
+            ),
         )
 
         self.assertEqual(ranked[0].selected_adslab_id, "adslab-2")
@@ -337,6 +341,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             RankingContext(
                 target_binding_energy=1.0,
                 method_config={
+                    "score_function": "weighted_sum",
                     "target_distance_weight": 0.1,
                     "uncertainty_weight": 2.0,
                 },
@@ -381,6 +386,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             RankingContext(
                 target_binding_energy=2.0,
                 method_config={
+                    "score_function": "weighted_sum",
                     "supporting_signal_weights": {"valid_mlip_count": 3.0},
                 },
             ),

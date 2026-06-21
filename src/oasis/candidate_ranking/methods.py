@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from statistics import fmean, pstdev
+import numpy as np
 
 from oasis.candidate_ranking.interfaces import (
     CandidateGenerator,
@@ -56,6 +57,8 @@ class TargetAwareScoringConfig:
 
     target_distance_weight: float = 1.0
     uncertainty_weight: float = 1.0
+    score_function: str = "greedy_cost"
+    greedy_cost_alpha: float = 0.75
     supporting_signal_weights: dict[str, float] | None = None
 
     @classmethod
@@ -65,6 +68,8 @@ class TargetAwareScoringConfig:
         return cls(
             target_distance_weight=float(method_cfg.get("target_distance_weight", 1.0)),
             uncertainty_weight=float(method_cfg.get("uncertainty_weight", 1.0)),
+            score_function=str(method_cfg.get("score_function", "greedy_cost")),
+            greedy_cost_alpha=float(method_cfg.get("greedy_cost_alpha", 0.75)),
             supporting_signal_weights={
                 str(name): float(weight)
                 for name, weight in dict(signal_weights).items()
@@ -329,6 +334,31 @@ def _supporting_signal_penalty(
     return total, components
 
 
+def greedy_cost(
+    mean: np.ndarray,
+    std: np.ndarray,
+    target: float,
+    alpha: float = 0.75,
+) -> np.ndarray:
+    """Normalized target/uncertainty tradeoff from transfer-shot.
+
+    Lower cost is better. The accuracy term uses absolute distance to target and
+    the uncertainty term uses the predicted spread, each normalized by their
+    respective range across the candidate set.
+    """
+
+    mean = np.asarray(mean, dtype=float)
+    std = np.asarray(std, dtype=float)
+    range_mu = np.ptp(mean)
+    range_sigma = np.ptp(std)
+    epsilon = 1e-8
+    range_mu = range_mu if range_mu > 0 else epsilon
+    range_sigma = range_sigma if range_sigma > 0 else epsilon
+    accuracy_term = np.abs(mean - float(target)) / range_mu
+    uncertainty_term = std / range_sigma
+    return alpha * accuracy_term + (1.0 - alpha) * uncertainty_term
+
+
 class TargetAwareCandidateScorer(CandidateScorer):
     """Rank reduced candidates using target proximity, uncertainty, and signals.
 
@@ -342,6 +372,75 @@ class TargetAwareCandidateScorer(CandidateScorer):
         context: RankingContext,
     ) -> list[ParentCandidate]:
         cfg = TargetAwareScoringConfig.from_context(context)
+        if cfg.score_function == "greedy_cost":
+            return self._score_with_greedy_cost(candidates, context, cfg)
+        if cfg.score_function == "weighted_sum":
+            return self._score_with_weighted_sum(candidates, context, cfg)
+        raise ValueError(
+            f"Unknown score_function {cfg.score_function!r}. "
+            "Expected 'greedy_cost' or 'weighted_sum'."
+        )
+
+    def _score_with_greedy_cost(
+        self,
+        candidates: list[ParentCandidate],
+        context: RankingContext,
+        cfg: TargetAwareScoringConfig,
+    ) -> list[ParentCandidate]:
+        if context.target_binding_energy is None:
+            raise ValueError(
+                "target_binding_energy must be provided for greedy_cost scoring."
+            )
+        means = np.asarray(
+            [
+                float(candidate.predicted_binding_energy or 0.0)
+                for candidate in candidates
+            ],
+            dtype=float,
+        )
+        stds = np.asarray(
+            [_uncertainty_value(candidate) for candidate in candidates],
+            dtype=float,
+        )
+        costs = greedy_cost(
+            mean=means,
+            std=stds,
+            target=float(context.target_binding_energy),
+            alpha=cfg.greedy_cost_alpha,
+        )
+        scored: list[ParentCandidate] = []
+        for candidate, cost in zip(candidates, costs, strict=False):
+            target_distance = _target_distance(candidate, context)
+            uncertainty_penalty = _uncertainty_value(candidate)
+            scored.append(
+                replace(
+                    candidate,
+                    score=float(cost),
+                    provenance={
+                        **dict(candidate.provenance),
+                        "scoring_policy": "greedy_cost",
+                        "score_components": {
+                            "target_distance": target_distance,
+                            "uncertainty": uncertainty_penalty,
+                            "greedy_cost_alpha": cfg.greedy_cost_alpha,
+                        },
+                    },
+                )
+            )
+        return sorted(
+            scored,
+            key=lambda candidate: (
+                float("inf") if candidate.score is None else float(candidate.score),
+                candidate.selected_adslab_id,
+            ),
+        )
+
+    def _score_with_weighted_sum(
+        self,
+        candidates: list[ParentCandidate],
+        context: RankingContext,
+        cfg: TargetAwareScoringConfig,
+    ) -> list[ParentCandidate]:
         scored = []
         for candidate in candidates:
             target_distance = _target_distance(candidate, context)

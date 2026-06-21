@@ -6,6 +6,12 @@ from oasis.candidate_ranking.interfaces import (
     RankingStrategy,
 )
 from oasis.candidate_ranking.loaders import load_screening_input_records
+from oasis.candidate_ranking.pipeline import (
+    build_ranking_context,
+    rank_candidates,
+    rank_candidates_from_result_files,
+    rank_candidates_from_results_dir,
+)
 from oasis.candidate_ranking.registry import (
     clear_registered_strategies,
     ensure_strategy,
@@ -28,6 +34,7 @@ from oasis.candidate_ranking.types import (
     UncertaintyEstimate,
 )
 from oasis.candidate_ranking.methods import (
+    greedy_cost,
     LowestEnergyParentReducer,
     TargetAwareCandidateScorer,
     TargetAwareScoringConfig,
@@ -58,10 +65,15 @@ __all__ = [
     "ZeroShotCandidateGenerator",
     "ZeroShotCandidateRanker",
     "ZeroShotRankingConfig",
+    "build_ranking_context",
     "clear_registered_strategies",
     "ensure_strategy",
+    "greedy_cost",
     "get_strategy",
     "load_screening_input_records",
+    "rank_candidates",
+    "rank_candidates_from_result_files",
+    "rank_candidates_from_results_dir",
     "register_builtin_strategies",
     "register_strategies",
     "register_strategy",
