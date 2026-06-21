@@ -100,6 +100,9 @@ PYTHONPATH=src python -m unittest tests.test_config
 
 ## Learning-Curve Result Artifacts
 
+Timing/benchmarking notes for the `feat/time-accuracy-plot` branch live in
+[docs/time_accuracy_protocol.md](docs/time_accuracy_protocol.md).
+
 Learning-curve runs can persist one bundle file per dataset so you do not need
 to retrain every model just to regenerate plots.
 
