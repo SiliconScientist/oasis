@@ -9,8 +9,8 @@ from oasis.candidate_ranking import (
     RankingContext,
     ScreeningInputRecord,
     TargetAwareCandidateScorer,
-    ZeroShotCandidateGenerator,
-    ZeroShotCandidateRanker,
+    UnfittedEnsembleBaselineGenerator,
+    UnfittedEnsembleBaselineRanker,
 )
 from oasis.candidate_ranking.registry import (
     clear_registered_predictors,
@@ -53,15 +53,15 @@ def _prediction(
     )
 
 
-class ZeroShotCandidateRankingTests(unittest.TestCase):
+class UnfittedEnsembleBaselineTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_registered_predictors()
 
     def tearDown(self) -> None:
         clear_registered_predictors()
 
-    def test_zero_shot_generator_averages_valid_mlips_and_tracks_provenance(self) -> None:
-        generator = ZeroShotCandidateGenerator()
+    def test_baseline_generator_averages_valid_mlips_and_tracks_provenance(self) -> None:
+        generator = UnfittedEnsembleBaselineGenerator()
         context = RankingContext(
             candidate_records=(
                 _record(
@@ -88,8 +88,8 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             "mace",
         )
 
-    def test_zero_shot_generator_reuses_label_based_anomaly_filtering(self) -> None:
-        generator = ZeroShotCandidateGenerator()
+    def test_baseline_generator_reuses_label_based_anomaly_filtering(self) -> None:
+        generator = UnfittedEnsembleBaselineGenerator()
         context = RankingContext(
             candidate_records=(
                 _record(
@@ -127,8 +127,8 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             ["mace"],
         )
 
-    def test_zero_shot_generator_can_use_strict_detail_filtering(self) -> None:
-        generator = ZeroShotCandidateGenerator()
+    def test_baseline_generator_can_use_strict_detail_filtering(self) -> None:
+        generator = UnfittedEnsembleBaselineGenerator()
         context = RankingContext(
             candidate_records=(
                 _record(
@@ -154,8 +154,8 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[0].predicted_binding_energy or -1.0, 1.0)
         self.assertEqual(candidates[0].method_provenance.source_methods, ("mace",))
 
-    def test_zero_shot_ranker_is_zero_reference_fallback(self) -> None:
-        ranker = ZeroShotCandidateRanker()
+    def test_baseline_ranker_is_zero_reference_fallback(self) -> None:
+        ranker = UnfittedEnsembleBaselineRanker()
         result = ranker.rank(
             RankingContext(
                 candidate_records=(
@@ -173,7 +173,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(result.strategy_name, "zero_shot")
+        self.assertEqual(result.strategy_name, "unfitted_ensemble_baseline")
         self.assertEqual(len(result.adslab_candidates), 1)
         self.assertEqual(len(result.parent_candidates), 1)
         self.assertEqual(result.parent_candidates[0].selected_adslab_id, "adslab-1")
@@ -181,7 +181,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
 
     def test_lowest_energy_parent_reducer_selects_one_child_per_parent(self) -> None:
         reducer = LowestEnergyParentReducer()
-        candidates = ZeroShotCandidateGenerator().generate(
+        candidates = UnfittedEnsembleBaselineGenerator().generate(
             RankingContext(
                 candidate_records=(
                     _record(
@@ -248,7 +248,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
                 ),
             )
         )
-        candidates = ZeroShotCandidateGenerator().generate(context)
+        candidates = UnfittedEnsembleBaselineGenerator().generate(context)
 
         reduced = reducer.reduce(candidates, RankingContext())
 
@@ -258,7 +258,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
     def test_target_aware_scorer_combines_target_proximity_and_uncertainty(self) -> None:
         scorer = TargetAwareCandidateScorer()
         candidates = LowestEnergyParentReducer().reduce(
-            ZeroShotCandidateGenerator().generate(
+            UnfittedEnsembleBaselineGenerator().generate(
                 RankingContext(
                     candidate_records=(
                         _record(
@@ -303,7 +303,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
     def test_target_aware_scorer_honors_configured_weights(self) -> None:
         scorer = TargetAwareCandidateScorer()
         candidates = LowestEnergyParentReducer().reduce(
-            ZeroShotCandidateGenerator().generate(
+            UnfittedEnsembleBaselineGenerator().generate(
                 RankingContext(
                     candidate_records=(
                         _record(
@@ -347,7 +347,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
     def test_target_aware_scorer_can_use_supporting_signal_weights(self) -> None:
         scorer = TargetAwareCandidateScorer()
         candidates = LowestEnergyParentReducer().reduce(
-            ZeroShotCandidateGenerator().generate(
+            UnfittedEnsembleBaselineGenerator().generate(
                 RankingContext(
                     candidate_records=(
                         _record(

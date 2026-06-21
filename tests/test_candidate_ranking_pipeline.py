@@ -113,7 +113,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         self.assertLess(float(costs[1]), float(costs[0]))
         self.assertLess(float(costs[1]), float(costs[2]))
 
-    def test_rank_candidates_runs_zero_shot_through_registry(self) -> None:
+    def test_rank_candidates_runs_unfitted_ensemble_baseline_for_zero_references(self) -> None:
         result = rank_candidates(
             candidate_records=(
                 _record(
@@ -138,7 +138,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             target_binding_energy=1.0,
         )
 
-        self.assertEqual(result.strategy_name, "zero_shot")
+        self.assertEqual(result.strategy_name, "unfitted_ensemble_baseline")
         self.assertEqual(result.metadata["shot_count"], 0)
         self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")
         self.assertEqual(
@@ -146,7 +146,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             "target_uncertainty_cost",
         )
 
-    def test_rank_candidates_uses_zero_shot_as_no_reference_fallback(self) -> None:
+    def test_rank_candidates_uses_baseline_as_no_reference_fallback(self) -> None:
         result = rank_candidates(
             candidate_records=(
                 _record(
@@ -163,7 +163,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             predictor_name="ridge",
         )
 
-        self.assertEqual(result.strategy_name, "zero_shot")
+        self.assertEqual(result.strategy_name, "unfitted_ensemble_baseline")
         self.assertEqual(result.metadata["shot_count"], 0)
 
     def test_rank_candidates_requires_registered_predictor_for_n_shot_path(self) -> None:
@@ -286,6 +286,6 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                 target_binding_energy=1.0,
             )
 
-        self.assertEqual(result.strategy_name, "zero_shot")
+        self.assertEqual(result.strategy_name, "unfitted_ensemble_baseline")
         self.assertEqual(len(result.adslab_candidates), 2)
         self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")

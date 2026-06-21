@@ -42,9 +42,9 @@ from oasis.candidate_ranking.methods import (
     TargetAwareCandidateScorer,
     TargetAwareScoringConfig,
     target_uncertainty_cost,
-    ZeroShotCandidateGenerator,
-    ZeroShotCandidateRanker,
-    ZeroShotRankingConfig,
+    UnfittedEnsembleBaselineConfig,
+    UnfittedEnsembleBaselineGenerator,
+    UnfittedEnsembleBaselineRanker,
 )
 
 __all__ = [
@@ -68,9 +68,9 @@ __all__ = [
     "TargetAwareScoringConfig",
     "UncertaintyEstimate",
     "ValidatedReference",
-    "ZeroShotCandidateGenerator",
-    "ZeroShotCandidateRanker",
-    "ZeroShotRankingConfig",
+    "UnfittedEnsembleBaselineConfig",
+    "UnfittedEnsembleBaselineGenerator",
+    "UnfittedEnsembleBaselineRanker",
     "build_ranking_context",
     "PredictorSpec",
     "clear_registered_predictors",

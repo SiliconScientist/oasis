@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from oasis.candidate_ranking.loaders import load_screening_input_records
-from oasis.candidate_ranking.methods import ZeroShotCandidateRanker
+from oasis.candidate_ranking.methods import UnfittedEnsembleBaselineRanker
 from oasis.candidate_ranking.registry import ensure_predictor
 from oasis.candidate_ranking.types import (
     RankingContext,
@@ -69,11 +69,11 @@ def rank_candidates(
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingResult:
-    """Rank normalized candidate records via zero-shot fallback or predictor path.
+    """Rank normalized candidate records via baseline fallback or predictor path.
 
-    When there are no validated references, zero-shot ranking is the unfitted
-    fallback and no predictor registry lookup occurs. When validated references
-    exist, the caller must select a registered predictor.
+    When there are no validated references, the unfitted ensemble baseline is
+    the fallback and no predictor registry lookup occurs. When validated
+    references exist, the caller must select a registered predictor.
     """
 
     context = build_ranking_context(
@@ -86,7 +86,7 @@ def rank_candidates(
         method_config=method_config,
     )
     if context.inferred_shot_count == 0:
-        return ZeroShotCandidateRanker().rank(context)
+        return UnfittedEnsembleBaselineRanker().rank(context)
 
     resolved_predictor_name = predictor_name or method_name
     if resolved_predictor_name is None:

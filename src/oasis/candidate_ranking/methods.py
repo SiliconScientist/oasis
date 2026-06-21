@@ -24,8 +24,8 @@ from oasis.mlip.artifacts import INFERENCE_DETAIL_COLUMNS
 
 
 @dataclass(frozen=True, slots=True)
-class ZeroShotRankingConfig:
-    """Configuration for anomaly-aware zero-shot candidate generation."""
+class UnfittedEnsembleBaselineConfig:
+    """Configuration for anomaly-aware unfitted ensemble candidate generation."""
 
     exclude_anomalous: bool = False
     label_allowlist: tuple[str, ...] = ("normal",)
@@ -33,7 +33,10 @@ class ZeroShotRankingConfig:
     min_valid_mlips: int = 2
 
     @classmethod
-    def from_context(cls, context: RankingContext) -> ZeroShotRankingConfig:
+    def from_context(
+        cls,
+        context: RankingContext,
+    ) -> UnfittedEnsembleBaselineConfig:
         method_cfg = dict(context.method_config)
         allowlist = tuple(method_cfg.get("label_allowlist", ("normal",)))
         return cls(
@@ -94,7 +97,7 @@ def _prediction_passes_strict_details(record: ScreeningInputRecord, model_name: 
 
 def _globally_allowed_model_names(
     records: tuple[ScreeningInputRecord, ...],
-    cfg: ZeroShotRankingConfig,
+    cfg: UnfittedEnsembleBaselineConfig,
 ) -> tuple[str, ...]:
     model_names = sorted(
         {
@@ -127,7 +130,7 @@ def _globally_allowed_model_names(
 def _valid_predictions_for_record(
     record: ScreeningInputRecord,
     *,
-    cfg: ZeroShotRankingConfig,
+    cfg: UnfittedEnsembleBaselineConfig,
     globally_allowed_model_names: tuple[str, ...],
 ) -> tuple:
     allowlist = set(cfg.label_allowlist)
@@ -151,16 +154,16 @@ def _valid_predictions_for_record(
     return tuple(valid_predictions)
 
 
-class ZeroShotCandidateGenerator(CandidateGenerator):
-    """Generate per-adslab zero-shot candidates from normalized MLIP inputs."""
+class UnfittedEnsembleBaselineGenerator(CandidateGenerator):
+    """Generate per-adslab baseline candidates from normalized MLIP inputs."""
 
-    method_name = "zero_shot"
+    method_name = "unfitted_ensemble_baseline"
 
     def generate(
         self,
         context: RankingContext,
     ) -> list[AdslabCandidate]:
-        cfg = ZeroShotRankingConfig.from_context(context)
+        cfg = UnfittedEnsembleBaselineConfig.from_context(context)
         globally_allowed_model_names = _globally_allowed_model_names(
             context.candidate_records,
             cfg,
@@ -483,10 +486,10 @@ class TargetAwareCandidateScorer(CandidateScorer):
         )
 
 
-class ZeroShotCandidateRanker(RankingStrategy):
-    """Registry-compatible zero-shot ranking strategy."""
+class UnfittedEnsembleBaselineRanker(RankingStrategy):
+    """Rank candidates with the unfitted MLIP-ensemble baseline path."""
 
-    name = "zero_shot"
+    name = "unfitted_ensemble_baseline"
 
     def __init__(
         self,
@@ -495,7 +498,7 @@ class ZeroShotCandidateRanker(RankingStrategy):
         reducer: ParentReducer | None = None,
         scorer: CandidateScorer | None = None,
     ) -> None:
-        self.generator = generator or ZeroShotCandidateGenerator()
+        self.generator = generator or UnfittedEnsembleBaselineGenerator()
         self.reducer = reducer or LowestEnergyParentReducer()
         self.scorer = scorer or TargetAwareCandidateScorer()
 

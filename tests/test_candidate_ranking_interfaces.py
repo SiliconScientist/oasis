@@ -32,7 +32,7 @@ class _FakeGenerator:
     def generate(self, context: RankingContext) -> list[AdslabCandidate]:
         del context
         provenance = MethodProvenance(
-            method_name="zero_shot",
+            method_name="unfitted_ensemble_baseline",
             stage="candidate_generation",
             source_methods=("ensemble_mean",),
         )
@@ -185,7 +185,7 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
         self.assertAlmostEqual(ranked_candidates[0].score or -1.0, 0.4)
         self.assertEqual(
             ranked_candidates[0].method_provenance.method_name,
-            "zero_shot",
+            "unfitted_ensemble_baseline",
         )
         self.assertEqual(
             ranked_candidates[0].uncertainty.metric,
@@ -201,7 +201,7 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
             method_name="two_shot",
             stage="ranking",
             shot_count=2,
-            source_methods=("zero_shot", "gp_refit"),
+            source_methods=("unfitted_ensemble_baseline", "gp_refit"),
             metadata={"fit_id": "trial-7"},
         )
         uncertainty = UncertaintyEstimate(
