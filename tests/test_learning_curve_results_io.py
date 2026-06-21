@@ -31,6 +31,18 @@ from oasis.sweep import LearningCurveResults
 
 
 class LearningCurveResultsIoTests(unittest.TestCase):
+    @staticmethod
+    def _timed_metrics_frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "n_train": [4, 8],
+                "rmse_mean": [0.41, 0.32],
+                "rmse_std": [0.06, 0.03],
+                "fit_time_mean_s": [0.12, 0.34],
+                "fit_time_std_s": [0.01, 0.02],
+            }
+        )
+
     def test_select_learning_curve_results_methods_keeps_uq_companions(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(
@@ -83,13 +95,7 @@ class LearningCurveResultsIoTests(unittest.TestCase):
 
     def test_round_trip_serialization_preserves_mixed_result_frames(self) -> None:
         results = LearningCurveResults(
-            ridge_df=pd.DataFrame(
-                {
-                    "n_train": [4, 8],
-                    "rmse_mean": [0.41, 0.32],
-                    "rmse_std": [0.06, 0.03],
-                }
-            ),
+            ridge_df=self._timed_metrics_frame(),
             moe_df=pd.DataFrame(
                 {
                     "n_train": [8],
@@ -149,6 +155,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     "n_train": [3, 5],
                     "rmse_mean": [0.7, 0.55],
                     "rmse_std": [0.1, 0.08],
+                    "fit_time_mean_s": [0.11, 0.22],
+                    "fit_time_std_s": [0.01, 0.02],
                 }
             )
         )
@@ -164,15 +172,45 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             results.weighted_simplex_df,
         )
 
-    def test_save_and_load_per_method_artifacts_with_metadata(self) -> None:
+    def test_results_bundle_artifact_round_trip_preserves_timing_columns(self) -> None:
         results = LearningCurveResults(
-            ridge_df=pd.DataFrame(
+            ridge_df=self._timed_metrics_frame(),
+            weighted_linear_df=pd.DataFrame(
                 {
                     "n_train": [4, 8],
-                    "rmse_mean": [0.41, 0.32],
-                    "rmse_std": [0.06, 0.03],
+                    "rmse_mean": [0.35, 0.25],
+                    "rmse_std": [0.04, 0.03],
+                    "fit_time_mean_s": [0.09, 0.18],
+                    "fit_time_std_s": [0.005, 0.01],
                 }
             ),
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=2,
+            n_repeats=3,
+            enabled_models=("ridge", "weighted_linear"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_path = Path(tmp_dir) / "learning_curve_results_bundle.json"
+            save_learning_curve_results_artifact(results, metadata, artifact_path)
+            restored = load_learning_curve_results_artifact(
+                artifact_path,
+                expected_metadata=metadata,
+            )
+
+        pd.testing.assert_frame_equal(restored.results.ridge_df, results.ridge_df)
+        pd.testing.assert_frame_equal(
+            restored.results.weighted_linear_df,
+            results.weighted_linear_df,
+        )
+
+    def test_save_and_load_per_method_artifacts_with_metadata(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=self._timed_metrics_frame(),
             ridge_selection_df=pd.DataFrame(
                 {
                     "n_train": [4, 8],
@@ -239,6 +277,41 @@ class LearningCurveResultsIoTests(unittest.TestCase):
             results.ridge_uq_df,
         )
         pd.testing.assert_frame_equal(restored.moe_df, results.moe_df)
+
+    def test_load_results_from_method_artifacts_preserves_timing_columns(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=self._timed_metrics_frame(),
+            weighted_simplex_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.52, 0.43],
+                    "rmse_std": [0.07, 0.05],
+                    "fit_time_mean_s": [0.03, 0.06],
+                    "fit_time_std_s": [0.004, 0.008],
+                }
+            ),
+        )
+        metadata = LearningCurveSweepMetadata(
+            seed=17,
+            min_train=2,
+            max_train=8,
+            step=2,
+            n_repeats=3,
+            enabled_models=("ridge", "weighted_simplex"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            save_learning_curve_method_artifacts(results, metadata, tmp_dir)
+            restored = load_learning_curve_results_from_method_artifacts(
+                tmp_dir,
+                expected_metadata=metadata,
+            )
+
+        pd.testing.assert_frame_equal(restored.ridge_df, results.ridge_df)
+        pd.testing.assert_frame_equal(
+            restored.weighted_simplex_df,
+            results.weighted_simplex_df,
+        )
 
     def test_incompatible_method_artifact_metadata_is_rejected(self) -> None:
         results = LearningCurveResults(
@@ -883,6 +956,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     "n_train": [4],
                     "rmse_mean": [0.41],
                     "rmse_std": [0.06],
+                    "fit_time_mean_s": [0.12],
+                    "fit_time_std_s": [0.01],
                 }
             ),
             ridge_selection_df=pd.DataFrame({"n_train": [4], "alpha": [0.1]}),
@@ -891,6 +966,8 @@ class LearningCurveResultsIoTests(unittest.TestCase):
                     "n_train": [8],
                     "rmse_mean": [0.28],
                     "rmse_std": [0.02],
+                    "fit_time_mean_s": [0.22],
+                    "fit_time_std_s": [0.03],
                 }
             ),
         )
