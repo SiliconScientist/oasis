@@ -14,21 +14,27 @@ from oasis.candidate_ranking.registry import (
 )
 from oasis.candidate_ranking.types import (
     AdslabCandidate,
+    MethodProvenance,
     ParentCandidate,
     RankingContext,
     RankingResult,
+    SupportingSignal,
+    UncertaintyEstimate,
 )
 
 __all__ = [
     "AdslabCandidate",
     "CandidateGenerator",
     "CandidateScorer",
+    "MethodProvenance",
     "MethodSignalProvider",
     "ParentCandidate",
     "ParentReducer",
     "RankingContext",
     "RankingResult",
     "RankingStrategy",
+    "SupportingSignal",
+    "UncertaintyEstimate",
     "clear_registered_strategies",
     "get_strategy",
     "register_strategies",

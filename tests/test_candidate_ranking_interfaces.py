@@ -7,10 +7,13 @@ from oasis.candidate_ranking import (
     AdslabCandidate,
     CandidateGenerator,
     CandidateScorer,
+    MethodProvenance,
     ParentCandidate,
     ParentReducer,
     RankingContext,
     RankingResult,
+    SupportingSignal,
+    UncertaintyEstimate,
     clear_registered_strategies,
     get_strategy,
     register_strategy,
@@ -21,12 +24,29 @@ from oasis.candidate_ranking import (
 class _FakeGenerator:
     def generate(self, context: RankingContext) -> list[AdslabCandidate]:
         del context
+        provenance = MethodProvenance(
+            method_name="zero_shot",
+            stage="candidate_generation",
+            source_methods=("ensemble_mean",),
+        )
         return [
             AdslabCandidate(
                 parent_slab_id="slab-1",
                 adslab_id="adslab-1",
                 predicted_binding_energy=0.4,
-                uncertainty=0.2,
+                method_provenance=provenance,
+                uncertainty=UncertaintyEstimate(
+                    value=0.2,
+                    metric="ensemble_std",
+                    provenance=provenance,
+                ),
+                supporting_signals=(
+                    SupportingSignal(
+                        name="target_distance_proxy",
+                        value=0.4,
+                        provenance=provenance,
+                    ),
+                ),
             )
         ]
 
@@ -44,7 +64,10 @@ class _FakeReducer:
                 parent_slab_id=candidate.parent_slab_id,
                 selected_adslab_id=candidate.adslab_id,
                 predicted_binding_energy=candidate.predicted_binding_energy,
+                method_provenance=candidate.method_provenance,
                 uncertainty=candidate.uncertainty,
+                supporting_signals=candidate.supporting_signals,
+                selected_adslab_ids=(candidate.adslab_id,),
             )
         ]
 
@@ -122,3 +145,65 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
         self.assertEqual(len(result.ranked_candidates), 1)
         self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")
         self.assertAlmostEqual(result.ranked_candidates[0].score or -1.0, 0.4)
+        self.assertEqual(
+            result.ranked_candidates[0].method_provenance.method_name,
+            "zero_shot",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].uncertainty.metric,
+            "ensemble_std",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].supporting_signals[0].name,
+            "target_distance_proxy",
+        )
+
+    def test_candidate_records_expose_future_method_hooks(self) -> None:
+        provenance = MethodProvenance(
+            method_name="two_shot",
+            stage="ranking",
+            shot_count=2,
+            source_methods=("zero_shot", "gp_refit"),
+            metadata={"fit_id": "trial-7"},
+        )
+        uncertainty = UncertaintyEstimate(
+            value=0.18,
+            metric="posterior_std",
+            provenance=provenance,
+            is_calibrated=True,
+            metadata={"calibration_split": "val"},
+        )
+        signal = SupportingSignal(
+            name="expected_improvement",
+            value=0.07,
+            provenance=provenance,
+            objective="maximize",
+            metadata={"target_binding_energy": -0.5},
+        )
+
+        candidate = AdslabCandidate(
+            parent_slab_id="slab-2",
+            adslab_id="adslab-4",
+            predicted_binding_energy=-0.4,
+            method_provenance=provenance,
+            uncertainty=uncertainty,
+            supporting_signals=(signal,),
+            metadata={"site_label": "bridge"},
+        )
+        parent = ParentCandidate(
+            parent_slab_id="slab-2",
+            selected_adslab_id="adslab-4",
+            predicted_binding_energy=-0.4,
+            method_provenance=provenance,
+            uncertainty=uncertainty,
+            score=0.11,
+            supporting_signals=(signal,),
+            selected_adslab_ids=("adslab-1", "adslab-4"),
+            adslab_metadata={"site_label": "bridge"},
+        )
+
+        self.assertEqual(candidate.method_provenance.shot_count, 2)
+        self.assertTrue(candidate.uncertainty.is_calibrated)
+        self.assertEqual(candidate.supporting_signals[0].objective, "maximize")
+        self.assertEqual(parent.selected_adslab_ids, ("adslab-1", "adslab-4"))
+        self.assertEqual(parent.adslab_metadata["site_label"], "bridge")
