@@ -57,8 +57,8 @@ class TargetAwareScoringConfig:
 
     target_distance_weight: float = 1.0
     uncertainty_weight: float = 1.0
-    score_function: str = "greedy_cost"
-    greedy_cost_alpha: float = 0.75
+    score_function: str = "target_uncertainty_cost"
+    target_uncertainty_alpha: float = 0.75
     supporting_signal_weights: dict[str, float] | None = None
 
     @classmethod
@@ -68,8 +68,12 @@ class TargetAwareScoringConfig:
         return cls(
             target_distance_weight=float(method_cfg.get("target_distance_weight", 1.0)),
             uncertainty_weight=float(method_cfg.get("uncertainty_weight", 1.0)),
-            score_function=str(method_cfg.get("score_function", "greedy_cost")),
-            greedy_cost_alpha=float(method_cfg.get("greedy_cost_alpha", 0.75)),
+            score_function=str(
+                method_cfg.get("score_function", "target_uncertainty_cost")
+            ),
+            target_uncertainty_alpha=float(
+                method_cfg.get("target_uncertainty_alpha", 0.75)
+            ),
             supporting_signal_weights={
                 str(name): float(weight)
                 for name, weight in dict(signal_weights).items()
@@ -334,7 +338,7 @@ def _supporting_signal_penalty(
     return total, components
 
 
-def greedy_cost(
+def target_uncertainty_cost(
     mean: np.ndarray,
     std: np.ndarray,
     target: float,
@@ -372,16 +376,16 @@ class TargetAwareCandidateScorer(CandidateScorer):
         context: RankingContext,
     ) -> list[ParentCandidate]:
         cfg = TargetAwareScoringConfig.from_context(context)
-        if cfg.score_function == "greedy_cost":
-            return self._score_with_greedy_cost(candidates, context, cfg)
+        if cfg.score_function == "target_uncertainty_cost":
+            return self._score_with_target_uncertainty_cost(candidates, context, cfg)
         if cfg.score_function == "weighted_sum":
             return self._score_with_weighted_sum(candidates, context, cfg)
         raise ValueError(
             f"Unknown score_function {cfg.score_function!r}. "
-            "Expected 'greedy_cost' or 'weighted_sum'."
+            "Expected 'target_uncertainty_cost' or 'weighted_sum'."
         )
 
-    def _score_with_greedy_cost(
+    def _score_with_target_uncertainty_cost(
         self,
         candidates: list[ParentCandidate],
         context: RankingContext,
@@ -389,7 +393,7 @@ class TargetAwareCandidateScorer(CandidateScorer):
     ) -> list[ParentCandidate]:
         if context.target_binding_energy is None:
             raise ValueError(
-                "target_binding_energy must be provided for greedy_cost scoring."
+                "target_binding_energy must be provided for target_uncertainty_cost scoring."
             )
         means = np.asarray(
             [
@@ -402,11 +406,11 @@ class TargetAwareCandidateScorer(CandidateScorer):
             [_uncertainty_value(candidate) for candidate in candidates],
             dtype=float,
         )
-        costs = greedy_cost(
+        costs = target_uncertainty_cost(
             mean=means,
             std=stds,
             target=float(context.target_binding_energy),
-            alpha=cfg.greedy_cost_alpha,
+            alpha=cfg.target_uncertainty_alpha,
         )
         scored: list[ParentCandidate] = []
         for candidate, cost in zip(candidates, costs, strict=False):
@@ -418,11 +422,11 @@ class TargetAwareCandidateScorer(CandidateScorer):
                     score=float(cost),
                     provenance={
                         **dict(candidate.provenance),
-                        "scoring_policy": "greedy_cost",
+                        "scoring_policy": "target_uncertainty_cost",
                         "score_components": {
                             "target_distance": target_distance,
                             "uncertainty": uncertainty_penalty,
-                            "greedy_cost_alpha": cfg.greedy_cost_alpha,
+                            "target_uncertainty_alpha": cfg.target_uncertainty_alpha,
                         },
                     },
                 )

@@ -34,10 +34,10 @@ from oasis.candidate_ranking.types import (
     UncertaintyEstimate,
 )
 from oasis.candidate_ranking.methods import (
-    greedy_cost,
     LowestEnergyParentReducer,
     TargetAwareCandidateScorer,
     TargetAwareScoringConfig,
+    target_uncertainty_cost,
     ZeroShotCandidateGenerator,
     ZeroShotCandidateRanker,
     ZeroShotRankingConfig,
@@ -68,7 +68,6 @@ __all__ = [
     "build_ranking_context",
     "clear_registered_strategies",
     "ensure_strategy",
-    "greedy_cost",
     "get_strategy",
     "load_screening_input_records",
     "rank_candidates",
@@ -78,4 +77,5 @@ __all__ = [
     "register_strategies",
     "register_strategy",
     "registered_strategy_names",
+    "target_uncertainty_cost",
 ]

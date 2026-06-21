@@ -11,9 +11,9 @@ from oasis.candidate_ranking import (
     RankingResult,
     ScreeningInputRecord,
     clear_registered_strategies,
-    greedy_cost,
     rank_candidates,
     rank_candidates_from_result_files,
+    target_uncertainty_cost,
 )
 from oasis.candidate_ranking.registry import register_strategy
 
@@ -96,8 +96,8 @@ class CandidateRankingPipelineTests(unittest.TestCase):
     def tearDown(self) -> None:
         clear_registered_strategies()
 
-    def test_greedy_cost_matches_transfer_shot_formula(self) -> None:
-        costs = greedy_cost(
+    def test_target_uncertainty_cost_matches_transfer_shot_formula(self) -> None:
+        costs = target_uncertainty_cost(
             mean=[0.0, 1.0, 2.0],
             std=[0.2, 0.4, 0.8],
             target=1.0,
@@ -139,7 +139,10 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         self.assertEqual(result.strategy_name, "zero_shot")
         self.assertEqual(result.metadata["shot_count"], 0)
         self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")
-        self.assertEqual(result.ranked_candidates[0].provenance["scoring_policy"], "greedy_cost")
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["scoring_policy"],
+            "target_uncertainty_cost",
+        )
 
     def test_rank_candidates_supports_future_registered_methods_without_branching(self) -> None:
         class _TwoShotStrategy:
