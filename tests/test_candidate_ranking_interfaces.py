@@ -244,3 +244,12 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
         )
 
         self.assertEqual(context.inferred_shot_count, 2)
+        self.assertEqual(context.validated_reference_count, 2)
+        self.assertEqual(
+            context.validated_reference_identities,
+            ("adslab:adslab-1", "adslab:adslab-2"),
+        )
+
+    def test_validated_reference_requires_one_stable_identifier(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires at least one stable identifier"):
+            ValidatedReference(adsorption_energy=-0.2).identity

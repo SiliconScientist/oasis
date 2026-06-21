@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from oasis.candidate_ranking.loaders import load_screening_input_records
 from oasis.candidate_ranking.methods import ZeroShotCandidateRanker
@@ -15,13 +15,27 @@ from oasis.candidate_ranking.types import (
 from oasis.mlip.artifacts import find_result_files
 
 
+def normalize_validated_references(
+    validated_references: Iterable[ValidatedReference | dict[str, Any]],
+) -> tuple[ValidatedReference, ...]:
+    """Normalize validated reference inputs into canonical records."""
+
+    normalized: list[ValidatedReference] = []
+    for reference in validated_references:
+        if isinstance(reference, ValidatedReference):
+            normalized.append(reference)
+            continue
+        normalized.append(ValidatedReference(**dict(reference)))
+    return tuple(normalized)
+
+
 def build_ranking_context(
     *,
     candidate_records: tuple[ScreeningInputRecord, ...],
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
-    validated_references: tuple[ValidatedReference, ...] = (),
+    validated_references: tuple[ValidatedReference, ...] | tuple[dict[str, Any], ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingContext:
@@ -37,7 +51,7 @@ def build_ranking_context(
         target_binding_energy=target_binding_energy,
         dataset_metadata=dict(dataset_metadata or {}),
         candidate_records=candidate_records,
-        validated_references=validated_references,
+        validated_references=normalize_validated_references(validated_references),
         prior_observations=prior_observations,
         method_config=dict(method_config or {}),
     )

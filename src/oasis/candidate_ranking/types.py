@@ -46,11 +46,27 @@ class ScreeningInputRecord:
 class ValidatedReference:
     """One experimentally or computationally validated DFT reference point."""
 
+    adsorption_energy: float
+    reference_source: str = "dft"
+    reference_id: str | None = None
     reaction: str | None = None
     parent_slab_id: str | None = None
     adslab_id: str | None = None
-    adsorption_energy: float | None = None
+    adsorbate: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def identity(self) -> str:
+        if self.adslab_id:
+            return f"adslab:{self.adslab_id}"
+        if self.reaction:
+            return f"reaction:{self.reaction}"
+        if self.reference_id:
+            return f"reference:{self.reference_id}"
+        raise ValueError(
+            "ValidatedReference requires at least one stable identifier among "
+            "adslab_id, reaction, or reference_id."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,10 +160,18 @@ class RankingContext:
     method_config: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def validated_reference_count(self) -> int:
+        return len(self.validated_references)
+
+    @property
     def inferred_shot_count(self) -> int:
         if self.validated_references:
-            return len(self.validated_references)
+            return self.validated_reference_count
         return int(self.shot_count)
+
+    @property
+    def validated_reference_identities(self) -> tuple[str, ...]:
+        return tuple(reference.identity for reference in self.validated_references)
 
 
 @dataclass(frozen=True, slots=True)

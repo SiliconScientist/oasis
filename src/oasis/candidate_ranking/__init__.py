@@ -9,6 +9,7 @@ from oasis.candidate_ranking.interfaces import (
 from oasis.candidate_ranking.loaders import load_screening_input_records
 from oasis.candidate_ranking.pipeline import (
     build_ranking_context,
+    normalize_validated_references,
     rank_candidates,
     rank_candidates_from_result_files,
     rank_candidates_from_results_dir,
@@ -76,6 +77,7 @@ __all__ = [
     "ensure_predictor",
     "get_predictor",
     "load_screening_input_records",
+    "normalize_validated_references",
     "rank_candidates",
     "rank_candidates_from_result_files",
     "rank_candidates_from_results_dir",

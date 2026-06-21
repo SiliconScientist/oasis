@@ -13,6 +13,8 @@ from oasis.candidate_ranking import (
     ScreeningInputRecord,
     ValidatedReference,
     clear_registered_predictors,
+    build_ranking_context,
+    normalize_validated_references,
     rank_candidates,
     rank_candidates_from_result_files,
     target_uncertainty_cost,
@@ -192,8 +194,6 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             )
 
     def test_build_ranking_context_infers_shot_count_from_validated_references(self) -> None:
-        from oasis.candidate_ranking import build_ranking_context
-
         context = build_ranking_context(
             candidate_records=(),
             shot_count=7,
@@ -203,6 +203,53 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(context.inferred_shot_count, 1)
+
+    def test_normalize_validated_references_accepts_mapping_inputs(self) -> None:
+        references = normalize_validated_references(
+            (
+                {
+                    "adslab_id": "adslab-1",
+                    "adsorption_energy": -0.2,
+                    "metadata": {"source_run": "dft-1"},
+                },
+                {
+                    "reaction": "rxn-2->N*",
+                    "adsorption_energy": -0.4,
+                },
+            )
+        )
+
+        self.assertEqual(len(references), 2)
+        self.assertEqual(references[0].identity, "adslab:adslab-1")
+        self.assertEqual(references[0].metadata["source_run"], "dft-1")
+        self.assertEqual(references[1].identity, "reaction:rxn-2->N*")
+
+    def test_validated_references_remain_separate_from_candidate_records(self) -> None:
+        context = build_ranking_context(
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-1",
+                    predictions=(
+                        _prediction("mace", 0.8),
+                        _prediction("orb", 1.2),
+                    ),
+                ),
+            ),
+            validated_references=(
+                ValidatedReference(
+                    adslab_id="adslab-9",
+                    adsorption_energy=-0.2,
+                    reference_source="dft",
+                ),
+            ),
+        )
+
+        self.assertEqual(len(context.candidate_records), 1)
+        self.assertEqual(len(context.validated_references), 1)
+        self.assertEqual(context.candidate_records[0].adslab_id, "adslab-1")
+        self.assertEqual(context.validated_references[0].adslab_id, "adslab-9")
 
     def test_rank_candidates_from_result_files_runs_end_to_end(self) -> None:
         with TemporaryDirectory() as tmp_dir:
