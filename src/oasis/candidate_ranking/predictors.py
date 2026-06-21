@@ -22,6 +22,8 @@ from oasis.candidate_ranking.types import (
     UncertaintyEstimate,
     ValidatedReference,
 )
+from oasis.experiment import build_sweep_split_collection
+from oasis.sweep import SweepFamilyRequirements
 from oasis.learning_curve.execution import (
     _simplex_weights,
     require_min_mlip_feature_count,
@@ -45,6 +47,22 @@ class PreparedPredictorInputs:
     training_references: tuple[ValidatedReference, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PredictorFitResult:
+    predicted_binding_energies: np.ndarray
+    spread: np.ndarray
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class PredictorSelectionResult:
+    predictor_name: str
+    cv_rmse_mean: float
+    evaluation_mode: str
+    split_count: int
+    metrics_by_predictor: dict[str, dict[str, object]]
+
+
 def _record_identity_keys(record: ScreeningInputRecord) -> tuple[str, ...]:
     return (
         f"adslab:{record.adslab_id}",
@@ -54,6 +72,63 @@ def _record_identity_keys(record: ScreeningInputRecord) -> tuple[str, ...]:
 
 def _resolve_reference_key(reference: ValidatedReference) -> str:
     return reference.identity
+
+
+def _fit_predictor_arrays(
+    predictor_name: str,
+    *,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    method_config: dict[str, object],
+) -> PredictorFitResult:
+    if predictor_name == "residual":
+        residuals = y_train[:, None] - X_train
+        mean_residuals = residuals.mean(axis=0)
+        corrected = X_test + mean_residuals
+        return PredictorFitResult(
+            predicted_binding_energies=corrected.mean(axis=1),
+            spread=np.std(corrected, axis=1),
+            metadata={"residual_mean_by_model": mean_residuals.tolist()},
+        )
+    if predictor_name == "weighted_simplex":
+        require_min_mlip_feature_count(
+            X_train,
+            min_features=2,
+            method_name="weighted_simplex",
+        )
+        weights = _simplex_weights(X_train, y_train)
+        predicted = X_test @ weights
+        centered = X_test - predicted[:, None]
+        return PredictorFitResult(
+            predicted_binding_energies=predicted,
+            spread=np.sqrt(np.sum(weights[None, :] * centered**2, axis=1)),
+            metadata={"simplex_weights": weights.tolist()},
+        )
+    if predictor_name == "ridge":
+        if Ridge is None:
+            raise ImportError("scikit-learn is required for predictor 'ridge'.")
+        alpha = float(method_config.get("alpha", 0.1))
+        model = Ridge(alpha=alpha)
+        model.fit(X_train, y_train)
+        predicted = np.asarray(model.predict(X_test), dtype=float)
+        return PredictorFitResult(
+            predicted_binding_energies=predicted,
+            spread=_linear_spread_from_coefficients(
+                features=X_test,
+                predicted=predicted,
+                coefficients=np.asarray(
+                    getattr(model, "coef_", np.ones(X_test.shape[1])),
+                    dtype=float,
+                ),
+            ),
+            metadata={
+                "alpha": alpha,
+                "coefficients": np.asarray(model.coef_, dtype=float).tolist(),
+                "intercept": float(model.intercept_),
+            },
+        )
+    raise KeyError(f"Unknown candidate predictor {predictor_name!r}.")
 
 
 def _prepare_predictor_inputs(
@@ -124,6 +199,93 @@ def _prepare_predictor_inputs(
         training_matrix=np.vstack(training_rows) if training_rows else np.empty((0, len(model_names))),
         training_targets=np.asarray(training_targets, dtype=float),
         training_references=tuple(matched_references),
+    )
+
+
+def select_best_predictor(
+    predictor_names: tuple[str, ...],
+    *,
+    context: RankingContext,
+) -> PredictorSelectionResult | None:
+    prepared = _prepare_predictor_inputs(context, predictor_name="selection")
+    if len(prepared.training_targets) == 0:
+        return None
+
+    split_collection = build_sweep_split_collection(
+        len(prepared.training_targets),
+        min_train=1,
+        max_train=1,
+        step=1,
+        n_repeats=int(context.method_config.get("selection_n_repeats", 1)),
+        seed=int(context.dataset_metadata.get("seed", 0) or 0),
+        requested_sweep_sizes=(len(prepared.training_targets),),
+        requirements=SweepFamilyRequirements(),
+        budget_mode="screening_fraction",
+        screen_fraction=float(context.method_config.get("selection_screen_fraction", 0.2)),
+        min_screen_size=int(context.method_config.get("selection_min_screen_size", 1)),
+        validation_fraction=float(context.method_config.get("validation_fraction", 0.2)),
+        min_val_size=int(context.method_config.get("min_val_size", 1)),
+        min_tuning_val_size=int(context.method_config.get("min_tuning_val_size", 1)),
+        min_inner_train_size=int(context.method_config.get("min_inner_train_size", 1)),
+        min_test_size=int(context.method_config.get("selection_min_test_size", 1)),
+    )
+    splits = tuple(split_collection.splits)
+
+    metrics_by_predictor: dict[str, dict[str, object]] = {}
+    selected_name: str | None = None
+    selected_rmse = float("inf")
+    selected_mode = "screening_cv"
+    selected_split_count = len(splits)
+
+    for predictor_name in predictor_names:
+        rmse_values: list[float] = []
+        evaluation_mode = "screening_cv"
+        if splits:
+            for split in splits:
+                fit = _fit_predictor_arrays(
+                    predictor_name,
+                    X_train=prepared.training_matrix[split.train_idx],
+                    y_train=prepared.training_targets[split.train_idx],
+                    X_test=prepared.training_matrix[split.test_idx],
+                    method_config=context.method_config,
+                )
+                residual = (
+                    prepared.training_targets[split.test_idx]
+                    - fit.predicted_binding_energies
+                )
+                rmse_values.append(float(np.sqrt(np.mean(residual**2))))
+        else:
+            evaluation_mode = "full_fit_train_rmse"
+            fit = _fit_predictor_arrays(
+                predictor_name,
+                X_train=prepared.training_matrix,
+                y_train=prepared.training_targets,
+                X_test=prepared.training_matrix,
+                method_config=context.method_config,
+            )
+            residual = prepared.training_targets - fit.predicted_binding_energies
+            rmse_values.append(float(np.sqrt(np.mean(residual**2))))
+
+        mean_rmse = float(np.mean(rmse_values))
+        metrics_by_predictor[predictor_name] = {
+            "cv_rmse_mean": mean_rmse,
+            "evaluation_mode": evaluation_mode,
+            "split_count": len(splits) if splits else 1,
+        }
+        if mean_rmse <= selected_rmse:
+            selected_name = predictor_name
+            selected_rmse = mean_rmse
+            selected_mode = evaluation_mode
+            selected_split_count = len(splits) if splits else 1
+
+    if selected_name is None:
+        return None
+    return PredictorSelectionResult(
+        predictor_name=selected_name,
+        cv_rmse_mean=selected_rmse,
+        evaluation_mode=selected_mode,
+        split_count=selected_split_count,
+        metrics_by_predictor=metrics_by_predictor,
     )
 
 
@@ -212,18 +374,20 @@ def generate_residual_candidates(context: RankingContext) -> list[AdslabCandidat
     if len(prepared.training_targets) < 1:
         raise ValueError("Predictor 'residual' requires at least 1 usable validated reference.")
 
-    residuals = prepared.training_targets[:, None] - prepared.training_matrix
-    mean_residuals = residuals.mean(axis=0)
-    corrected = prepared.candidate_matrix + mean_residuals
-    predicted = corrected.mean(axis=1)
-    spread = np.std(corrected, axis=1)
+    fit = _fit_predictor_arrays(
+        "residual",
+        X_train=prepared.training_matrix,
+        y_train=prepared.training_targets,
+        X_test=prepared.candidate_matrix,
+        method_config=context.method_config,
+    )
     return _build_candidate_outputs(
         context=context,
         predictor_name="residual",
         prepared=prepared,
-        predicted_binding_energies=predicted,
-        spread=spread,
-        extra_metadata={"residual_mean_by_model": mean_residuals.tolist()},
+        predicted_binding_energies=fit.predicted_binding_energies,
+        spread=fit.spread,
+        extra_metadata=fit.metadata,
     )
 
 
@@ -233,22 +397,20 @@ def generate_weighted_simplex_candidates(context: RankingContext) -> list[Adslab
         raise ValueError(
             "Predictor 'weighted_simplex' requires at least 1 usable validated reference."
         )
-    require_min_mlip_feature_count(
-        prepared.training_matrix,
-        min_features=2,
-        method_name="weighted_simplex",
+    fit = _fit_predictor_arrays(
+        "weighted_simplex",
+        X_train=prepared.training_matrix,
+        y_train=prepared.training_targets,
+        X_test=prepared.candidate_matrix,
+        method_config=context.method_config,
     )
-    weights = _simplex_weights(prepared.training_matrix, prepared.training_targets)
-    predicted = prepared.candidate_matrix @ weights
-    centered = prepared.candidate_matrix - predicted[:, None]
-    spread = np.sqrt(np.sum(weights[None, :] * centered**2, axis=1))
     return _build_candidate_outputs(
         context=context,
         predictor_name="weighted_simplex",
         prepared=prepared,
-        predicted_binding_energies=predicted,
-        spread=spread,
-        extra_metadata={"simplex_weights": weights.tolist()},
+        predicted_binding_energies=fit.predicted_binding_energies,
+        spread=fit.spread,
+        extra_metadata=fit.metadata,
     )
 
 
@@ -270,31 +432,23 @@ def _linear_spread_from_coefficients(
 
 
 def generate_ridge_candidates(context: RankingContext) -> list[AdslabCandidate]:
-    if Ridge is None:
-        raise ImportError("scikit-learn is required for predictor 'ridge'.")
     prepared = _prepare_predictor_inputs(context, predictor_name="ridge")
     if len(prepared.training_targets) < 2:
         raise ValueError("Predictor 'ridge' requires at least 2 usable validated references.")
-    alpha = float(context.method_config.get("alpha", 0.1))
-    model = Ridge(alpha=alpha)
-    model.fit(prepared.training_matrix, prepared.training_targets)
-    predicted = np.asarray(model.predict(prepared.candidate_matrix), dtype=float)
-    spread = _linear_spread_from_coefficients(
-        features=prepared.candidate_matrix,
-        predicted=predicted,
-        coefficients=np.asarray(getattr(model, "coef_", np.ones(prepared.candidate_matrix.shape[1]))),
+    fit = _fit_predictor_arrays(
+        "ridge",
+        X_train=prepared.training_matrix,
+        y_train=prepared.training_targets,
+        X_test=prepared.candidate_matrix,
+        method_config=context.method_config,
     )
     return _build_candidate_outputs(
         context=context,
         predictor_name="ridge",
         prepared=prepared,
-        predicted_binding_energies=predicted,
-        spread=spread,
-        extra_metadata={
-            "alpha": alpha,
-            "coefficients": np.asarray(model.coef_, dtype=float).tolist(),
-            "intercept": float(model.intercept_),
-        },
+        predicted_binding_energies=fit.predicted_binding_energies,
+        spread=fit.spread,
+        extra_metadata=fit.metadata,
     )
 
 

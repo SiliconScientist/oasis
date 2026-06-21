@@ -9,7 +9,10 @@ from oasis.candidate_ranking.loaders import (
     load_validated_references,
 )
 from oasis.candidate_ranking.methods import UnfittedEnsembleBaselineRanker
-from oasis.candidate_ranking.predictors import PredictorBackedRanker
+from oasis.candidate_ranking.predictors import (
+    PredictorBackedRanker,
+    select_best_predictor,
+)
 from oasis.candidate_ranking.registry import ensure_predictor
 from oasis.candidate_ranking.types import (
     RankingContext,
@@ -65,24 +68,21 @@ def build_ranking_context(
 def select_predictor_name(
     predictor_names: Iterable[str],
     *,
-    validated_reference_count: int,
+    context: RankingContext,
 ) -> str | None:
-    """Return the most capable feasible predictor from one ordered preference list."""
+    """Return the lowest-CV-RMSE feasible predictor from one ordered list."""
 
-    selected_name: str | None = None
-    selected_min_references = -1
-    for predictor_name in predictor_names:
-        predictor = ensure_predictor(predictor_name)
-        if not predictor.is_feasible(validated_reference_count):
-            continue
-        min_references = int(predictor.min_validated_references)
-        if min_references > selected_min_references:
-            selected_name = predictor.name
-            selected_min_references = min_references
-            continue
-        if min_references == selected_min_references:
-            selected_name = predictor.name
-    return selected_name
+    feasible_names = tuple(
+        predictor_name
+        for predictor_name in predictor_names
+        if ensure_predictor(predictor_name).is_feasible(context.inferred_shot_count)
+    )
+    if not feasible_names:
+        return None
+    selection = select_best_predictor(feasible_names, context=context)
+    if selection is None:
+        return None
+    return selection.predictor_name
 
 
 def rank_candidates(
@@ -122,7 +122,7 @@ def rank_candidates(
     if resolved_predictor_name is None and predictor_names:
         resolved_predictor_name = select_predictor_name(
             predictor_names,
-            validated_reference_count=context.inferred_shot_count,
+            context=context,
         )
     if resolved_predictor_name is None:
         raise ValueError(
@@ -142,10 +142,34 @@ def rank_candidates(
             f"{predictor.min_validated_references} validated references; "
             f"got {context.inferred_shot_count}."
         )
-    return PredictorBackedRanker(
+    selection = (
+        select_best_predictor((predictor.name,), context=context)
+        if predictor_name is not None or method_name is not None
+        else select_best_predictor(
+            tuple(
+                candidate_name
+                for candidate_name in predictor_names
+                if ensure_predictor(candidate_name).is_feasible(
+                    context.inferred_shot_count
+                )
+            ),
+            context=context,
+        )
+    )
+    result = PredictorBackedRanker(
         predictor_name=predictor.name,
         generate_candidates=predictor.generate,
     ).rank(context)
+    if selection is not None:
+        result.metadata.update(
+            {
+                "predictor_selection_mode": selection.evaluation_mode,
+                "predictor_selection_split_count": selection.split_count,
+                "predictor_cv_rmse_mean": selection.cv_rmse_mean,
+                "predictor_selection_metrics": selection.metrics_by_predictor,
+            }
+        )
+    return result
 
 
 def rank_candidates_from_result_files(

@@ -228,26 +228,43 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             1,
         )
 
-    def test_select_predictor_name_prefers_most_data_hungry_feasible_predictor(self) -> None:
-        register_predictor(PredictorSpec(name="residual", min_validated_references=1))
-        register_predictor(
-            PredictorSpec(name="weighted_simplex", min_validated_references=1)
+    def test_select_predictor_name_uses_reference_backed_evaluation(self) -> None:
+        register_builtin_predictors()
+
+        context = build_ranking_context(
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-1",
+                    predictions=(
+                        _prediction("mace", 0.0),
+                        _prediction("orb", 1.0),
+                    ),
+                ),
+                _record(
+                    reaction="rxn-2->N*",
+                    parent_slab_id="slab-2",
+                    adslab_id="adslab-2",
+                    predictions=(
+                        _prediction("mace", 2.0),
+                        _prediction("orb", 3.0),
+                    ),
+                ),
+            ),
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
+                ValidatedReference(adslab_id="adslab-2", adsorption_energy=2.5),
+            ),
+            target_binding_energy=1.0,
         )
-        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
 
         self.assertEqual(
             select_predictor_name(
-                ("residual", "weighted_simplex", "ridge"),
-                validated_reference_count=1,
+                ("residual", "ridge"),
+                context=context,
             ),
-            "weighted_simplex",
-        )
-        self.assertEqual(
-            select_predictor_name(
-                ("residual", "weighted_simplex", "ridge"),
-                validated_reference_count=2,
-            ),
-            "ridge",
+            "residual",
         )
 
     def test_rank_candidates_can_resolve_predictor_from_predictor_list(self) -> None:
@@ -282,15 +299,18 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(result.strategy_name, "ridge")
+        self.assertEqual(result.strategy_name, "residual")
         self.assertEqual(result.metadata["shot_count"], 2)
+        self.assertEqual(result.metadata["predictor_selection_mode"], "screening_cv")
+        self.assertEqual(result.metadata["predictor_selection_split_count"], 2)
+        self.assertIn("ridge", result.metadata["predictor_selection_metrics"])
         self.assertEqual(
             result.ranked_candidates[0].provenance["score_source"]["candidate_source_kind"],
             "predictor",
         )
         self.assertEqual(
             result.ranked_candidates[0].provenance["score_source"]["candidate_source_method"],
-            "ridge",
+            "residual",
         )
         self.assertEqual(
             result.ranked_candidates[0].provenance["score_source"]["candidate_source_shot_count"],
@@ -361,7 +381,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(result.strategy_name, "ridge")
+        self.assertEqual(result.strategy_name, "residual")
         self.assertEqual(len(result.ranked_candidates), 2)
 
     def test_load_validated_references_reads_json_list(self) -> None:
@@ -443,7 +463,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                 target_binding_energy=1.0,
             )
 
-        self.assertEqual(result.strategy_name, "ridge")
+        self.assertEqual(result.strategy_name, "residual")
 
     def test_build_ranking_context_infers_shot_count_from_validated_references(self) -> None:
         context = build_ranking_context(
