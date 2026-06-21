@@ -25,6 +25,11 @@ from oasis.candidate_ranking.types import (
     SupportingSignal,
     UncertaintyEstimate,
 )
+from oasis.candidate_ranking.zero_shot import (
+    ZeroShotCandidateGenerator,
+    ZeroShotCandidateRanker,
+    ZeroShotRankingConfig,
+)
 
 __all__ = [
     "AdslabCandidate",
@@ -42,6 +47,9 @@ __all__ = [
     "ScreeningInputRecord",
     "SupportingSignal",
     "UncertaintyEstimate",
+    "ZeroShotCandidateGenerator",
+    "ZeroShotCandidateRanker",
+    "ZeroShotRankingConfig",
     "clear_registered_strategies",
     "get_strategy",
     "load_screening_input_records",
