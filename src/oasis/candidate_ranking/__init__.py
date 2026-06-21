@@ -17,7 +17,6 @@ from oasis.candidate_ranking.pipeline import (
     rank_candidates_from_result_files,
     rank_candidates_from_results_dir,
     rank_candidates_from_results_dir_and_references,
-    select_predictor_name,
 )
 from oasis.candidate_ranking.registry import (
     PredictorSpec,
@@ -88,7 +87,6 @@ __all__ = [
     "rank_candidates_from_result_files",
     "rank_candidates_from_results_dir",
     "rank_candidates_from_results_dir_and_references",
-    "select_predictor_name",
     "register_builtin_predictors",
     "register_predictors",
     "register_predictor",

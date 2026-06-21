@@ -59,13 +59,15 @@ Its config is predictor-driven. Use `[candidate_ranking]` with an ordered
 `validated_references_path` JSON file. If no validated references are supplied,
 candidate ranking falls back automatically to the unfitted ensemble baseline.
 If validated references are supplied, Oasis infers the shot count from that
-file and selects the most capable feasible predictor from the ordered list.
+file, writes CV diagnostic plots for the feasible predictors, and uses the
+explicitly configured `selected_predictor` for the final screening decision.
 
 Minimal config shape:
 
 ```toml
 [candidate_ranking]
 predictors = ["residual", "weighted_simplex", "ridge"]
+selected_predictor = "residual"
 target_binding_energy = -0.5
 top_k = 10
 # validated_references_path = "data/validated_references/example.json"

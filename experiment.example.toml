@@ -108,12 +108,15 @@ min_screen_size = 1
 # Run with: `python -m oasis rank-candidates [config paths...]`
 # Shot count is inferred from the validated references you provide here.
 # With zero validated references, ranking falls back to the unfitted ensemble
-# baseline. With one or more validated references, Oasis picks the most capable
-# feasible predictor from this ordered list.
+# baseline. With one or more validated references, Oasis writes CV diagnostics
+# for the feasible predictors from this list, and uses `selected_predictor`
+# for the final screening decision.
 predictors = ["residual", "weighted_simplex", "ridge"]
+selected_predictor = "residual"
 target_binding_energy = -0.5
 top_k = 10
 # validated_references_path = "data/validated_references/example.json"
+# diagnostics_output_dir = "data/results/candidate_ranking/example_oh"
 # Example JSON payload:
 # [
 #   {"adslab_id": "adslab-000001", "adsorption_energy": -0.42},

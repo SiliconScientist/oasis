@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+import pandas as pd
 
 from oasis.candidate_ranking.methods import (
     LowestEnergyParentReducer,
@@ -25,7 +26,10 @@ from oasis.candidate_ranking.types import (
 from oasis.experiment import build_sweep_split_collection
 from oasis.sweep import SweepFamilyRequirements
 from oasis.learning_curve.execution import (
+    dispersion_from_spread,
+    miscalibration_area,
     _simplex_weights,
+    sharpness_from_spread,
     require_min_mlip_feature_count,
 )
 
@@ -55,11 +59,7 @@ class PredictorFitResult:
 
 
 @dataclass(frozen=True, slots=True)
-class PredictorSelectionResult:
-    predictor_name: str
-    cv_rmse_mean: float
-    evaluation_mode: str
-    split_count: int
+class PredictorDiagnosticsResult:
     metrics_by_predictor: dict[str, dict[str, object]]
 
 
@@ -202,11 +202,11 @@ def _prepare_predictor_inputs(
     )
 
 
-def select_best_predictor(
+def evaluate_predictors(
     predictor_names: tuple[str, ...],
     *,
     context: RankingContext,
-) -> PredictorSelectionResult | None:
+) -> PredictorDiagnosticsResult | None:
     prepared = _prepare_predictor_inputs(context, predictor_name="selection")
     if len(prepared.training_targets) == 0:
         return None
@@ -232,13 +232,11 @@ def select_best_predictor(
     splits = tuple(split_collection.splits)
 
     metrics_by_predictor: dict[str, dict[str, object]] = {}
-    selected_name: str | None = None
-    selected_rmse = float("inf")
-    selected_mode = "screening_cv"
-    selected_split_count = len(splits)
-
     for predictor_name in predictor_names:
         rmse_values: list[float] = []
+        miscalibration_values: list[float] = []
+        sharpness_values: list[float] = []
+        dispersion_values: list[float] = []
         evaluation_mode = "screening_cv"
         if splits:
             for split in splits:
@@ -253,7 +251,19 @@ def select_best_predictor(
                     prepared.training_targets[split.test_idx]
                     - fit.predicted_binding_energies
                 )
+                spread = np.asarray(fit.spread, dtype=float)
                 rmse_values.append(float(np.sqrt(np.mean(residual**2))))
+                miscalibration_values.append(
+                    float(
+                        miscalibration_area(
+                            prepared.training_targets[split.test_idx],
+                            fit.predicted_binding_energies,
+                            spread,
+                        )
+                    )
+                )
+                sharpness_values.append(float(sharpness_from_spread(spread)))
+                dispersion_values.append(float(dispersion_from_spread(spread)))
         else:
             evaluation_mode = "full_fit_train_rmse"
             fit = _fit_predictor_arrays(
@@ -264,29 +274,48 @@ def select_best_predictor(
                 method_config=context.method_config,
             )
             residual = prepared.training_targets - fit.predicted_binding_energies
+            spread = np.asarray(fit.spread, dtype=float)
             rmse_values.append(float(np.sqrt(np.mean(residual**2))))
+            miscalibration_values.append(
+                float(
+                    miscalibration_area(
+                        prepared.training_targets,
+                        fit.predicted_binding_energies,
+                        spread,
+                    )
+                )
+            )
+            sharpness_values.append(float(sharpness_from_spread(spread)))
+            dispersion_values.append(float(dispersion_from_spread(spread)))
 
-        mean_rmse = float(np.mean(rmse_values))
         metrics_by_predictor[predictor_name] = {
-            "cv_rmse_mean": mean_rmse,
+            "n_train": len(prepared.training_targets),
+            "cv_rmse_mean": float(np.mean(rmse_values)),
+            "cv_rmse_std": float(np.std(rmse_values)),
+            "miscalibration_area": float(np.mean(miscalibration_values)),
+            "miscalibration_area_std": float(np.std(miscalibration_values)),
+            "sharpness": float(np.mean(sharpness_values)),
+            "sharpness_std": float(np.std(sharpness_values)),
+            "dispersion": float(np.mean(dispersion_values)),
+            "dispersion_std": float(np.std(dispersion_values)),
+            "uncertainty_kind": "spread_only",
             "evaluation_mode": evaluation_mode,
             "split_count": len(splits) if splits else 1,
         }
-        if mean_rmse <= selected_rmse:
-            selected_name = predictor_name
-            selected_rmse = mean_rmse
-            selected_mode = evaluation_mode
-            selected_split_count = len(splits) if splits else 1
-
-    if selected_name is None:
+    if not metrics_by_predictor:
         return None
-    return PredictorSelectionResult(
-        predictor_name=selected_name,
-        cv_rmse_mean=selected_rmse,
-        evaluation_mode=selected_mode,
-        split_count=selected_split_count,
+    return PredictorDiagnosticsResult(
         metrics_by_predictor=metrics_by_predictor,
     )
+
+
+def predictor_diagnostics_frame(
+    diagnostics: PredictorDiagnosticsResult,
+    *,
+    predictor_name: str,
+) -> pd.DataFrame:
+    metrics = diagnostics.metrics_by_predictor[predictor_name]
+    return pd.DataFrame([metrics])
 
 
 def _build_candidate_outputs(

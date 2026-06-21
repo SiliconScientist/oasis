@@ -88,9 +88,28 @@ class CandidateRankingConfigTests(unittest.TestCase):
                 target_binding_energy=-0.1,
             )
 
+    def test_candidate_ranking_requires_selected_predictor_with_references(self) -> None:
+        with self.assertRaisesRegex(ValueError, "selected_predictor is required"):
+            CandidateRankingConfig(
+                predictors=["residual", "ridge"],
+                results_dir="data/mlips/example",
+                validated_references_path="data/validated_references/example.json",
+                target_binding_energy=-0.1,
+            )
+
+    def test_candidate_ranking_requires_selected_predictor_to_appear_in_list(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must also appear in"):
+            CandidateRankingConfig(
+                predictors=["residual", "ridge"],
+                selected_predictor="weighted_simplex",
+                results_dir="data/mlips/example",
+                target_binding_energy=-0.1,
+            )
+
     def test_run_candidate_ranking_from_config_uses_predictor_list_surface(self) -> None:
         ranking_cfg = CandidateRankingConfig(
             predictors=["residual", "weighted_simplex", "ridge"],
+            selected_predictor="residual",
             results_dir="data/mlips/example",
             target_binding_energy=-0.2,
             top_k=3,
@@ -117,6 +136,10 @@ class CandidateRankingConfigTests(unittest.TestCase):
             ["residual", "weighted_simplex", "ridge"],
         )
         self.assertEqual(
+            mock_rank.call_args.kwargs["predictor_name"],
+            "residual",
+        )
+        self.assertEqual(
             mock_rank.call_args.kwargs["target_binding_energy"],
             -0.2,
         )
@@ -127,6 +150,7 @@ class CandidateRankingConfigTests(unittest.TestCase):
     ) -> None:
         ranking_cfg = CandidateRankingConfig(
             predictors=["residual", "ridge"],
+            selected_predictor="residual",
             results_dir="data/mlips/example",
             validated_references_path="data/validated_references/example.json",
             target_binding_energy=-0.2,
@@ -158,6 +182,7 @@ class CandidateRankingConfigTests(unittest.TestCase):
     def test_candidate_ranking_config_surface_reflects_inferred_shot_inputs(self) -> None:
         cfg = CandidateRankingConfig(
             predictors=["residual", "weighted_simplex", "ridge"],
+            selected_predictor="residual",
             results_dir="data/mlips/example",
             validated_references_path="data/validated_references/example.json",
             target_binding_energy=-0.2,
@@ -172,3 +197,4 @@ class CandidateRankingConfigTests(unittest.TestCase):
             cfg.validated_references_path,
             Path("data/validated_references/example.json"),
         )
+        self.assertEqual(cfg.selected_predictor, "residual")

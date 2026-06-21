@@ -273,10 +273,12 @@ class CandidateRankingConfig(BaseModel):
     predictors: List[str] = Field(
         default_factory=lambda: ["residual", "weighted_simplex", "ridge"]
     )
+    selected_predictor: Optional[str] = None
     target_binding_energy: float
     top_k: int = 10
     results_dir: Optional[Path] = None
     validated_references_path: Optional[Path] = None
+    diagnostics_output_dir: Optional[Path] = None
     score_function: str = "target_uncertainty_cost"
     target_distance_weight: float = 1.0
     uncertainty_weight: float = 1.0
@@ -292,6 +294,22 @@ class CandidateRankingConfig(BaseModel):
     def validate_predictor_surface(self) -> "CandidateRankingConfig":
         if not self.predictors:
             raise ValueError("candidate_ranking.predictors must not be empty.")
+        if (
+            self.selected_predictor is not None
+            and self.selected_predictor not in self.predictors
+        ):
+            raise ValueError(
+                "candidate_ranking.selected_predictor must also appear in "
+                "candidate_ranking.predictors."
+            )
+        if (
+            self.validated_references_path is not None
+            and self.selected_predictor is None
+        ):
+            raise ValueError(
+                "candidate_ranking.selected_predictor is required when "
+                "validated_references_path is provided."
+            )
         return self
 
     def resolved_predictor_config(self, predictor_name: str | None = None) -> dict[str, Any]:

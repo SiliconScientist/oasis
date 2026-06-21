@@ -9,7 +9,6 @@ from oasis.candidate_ranking import (
     MlipAnomalyMetadata,
     MlipModelPrediction,
     PredictorSpec,
-    RankingResult,
     ScreeningInputRecord,
     ValidatedReference,
     clear_registered_predictors,
@@ -19,7 +18,6 @@ from oasis.candidate_ranking import (
     rank_candidates,
     rank_candidates_from_result_files,
     rank_candidates_from_results_dir_and_references,
-    select_predictor_name,
     target_uncertainty_cost,
 )
 from oasis.candidate_ranking.registry import register_builtin_predictors, register_predictor
@@ -228,46 +226,9 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             1,
         )
 
-    def test_select_predictor_name_uses_reference_backed_evaluation(self) -> None:
-        register_builtin_predictors()
-
-        context = build_ranking_context(
-            candidate_records=(
-                _record(
-                    reaction="rxn-1->N*",
-                    parent_slab_id="slab-1",
-                    adslab_id="adslab-1",
-                    predictions=(
-                        _prediction("mace", 0.0),
-                        _prediction("orb", 1.0),
-                    ),
-                ),
-                _record(
-                    reaction="rxn-2->N*",
-                    parent_slab_id="slab-2",
-                    adslab_id="adslab-2",
-                    predictions=(
-                        _prediction("mace", 2.0),
-                        _prediction("orb", 3.0),
-                    ),
-                ),
-            ),
-            validated_references=(
-                ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
-                ValidatedReference(adslab_id="adslab-2", adsorption_energy=2.5),
-            ),
-            target_binding_energy=1.0,
-        )
-
-        self.assertEqual(
-            select_predictor_name(
-                ("residual", "ridge"),
-                context=context,
-            ),
-            "residual",
-        )
-
-    def test_rank_candidates_can_resolve_predictor_from_predictor_list(self) -> None:
+    def test_rank_candidates_attaches_predictor_diagnostics_from_reference_backed_evaluation(
+        self,
+    ) -> None:
         register_builtin_predictors()
 
         result = rank_candidates(
@@ -291,31 +252,44 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                     ),
                 ),
             ),
+            predictor_name="residual",
             predictor_names=("residual", "ridge"),
-            target_binding_energy=1.0,
             validated_references=(
                 ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
                 ValidatedReference(adslab_id="adslab-2", adsorption_energy=2.5),
             ),
+            target_binding_energy=1.0,
         )
 
-        self.assertEqual(result.strategy_name, "residual")
-        self.assertEqual(result.metadata["shot_count"], 2)
-        self.assertEqual(result.metadata["predictor_selection_mode"], "screening_cv")
-        self.assertEqual(result.metadata["predictor_selection_split_count"], 2)
-        self.assertIn("ridge", result.metadata["predictor_selection_metrics"])
-        self.assertEqual(
-            result.ranked_candidates[0].provenance["score_source"]["candidate_source_kind"],
-            "predictor",
-        )
-        self.assertEqual(
-            result.ranked_candidates[0].provenance["score_source"]["candidate_source_method"],
-            "residual",
-        )
-        self.assertEqual(
-            result.ranked_candidates[0].provenance["score_source"]["candidate_source_shot_count"],
-            2,
-        )
+        diagnostics = result.metadata["predictor_diagnostics"]
+        self.assertIn("residual", diagnostics)
+        self.assertIn("ridge", diagnostics)
+        self.assertEqual(diagnostics["residual"]["evaluation_mode"], "screening_cv")
+        self.assertEqual(diagnostics["residual"]["split_count"], 2)
+        self.assertIn("miscalibration_area", diagnostics["ridge"])
+
+    def test_rank_candidates_requires_explicit_predictor_when_references_exist(self) -> None:
+        register_builtin_predictors()
+
+        with self.assertRaisesRegex(ValueError, "A predictor must be provided"):
+            rank_candidates(
+                candidate_records=(
+                    _record(
+                        reaction="rxn-1->N*",
+                        parent_slab_id="slab-1",
+                        adslab_id="adslab-1",
+                        predictions=(
+                            _prediction("mace", 0.0),
+                            _prediction("orb", 1.0),
+                        ),
+                    ),
+                ),
+                predictor_names=("residual", "ridge"),
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
+                ),
+            )
 
     def test_rank_candidates_checks_predictor_feasibility_by_validated_reference_count(self) -> None:
         register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
@@ -333,7 +307,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
     def test_rank_candidates_requires_feasible_predictor_from_predictor_list(self) -> None:
         register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
 
-        with self.assertRaisesRegex(ValueError, "feasible predictor must be provided"):
+        with self.assertRaisesRegex(ValueError, "A predictor must be provided"):
             rank_candidates(
                 candidate_records=(),
                 predictor_names=("ridge",),
@@ -373,6 +347,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
 
             result = rank_candidates_from_result_files(
                 [mace_path, orb_path],
+                predictor_name="residual",
                 predictor_names=("residual", "ridge"),
                 target_binding_energy=1.0,
                 validated_references=(
@@ -383,6 +358,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
 
         self.assertEqual(result.strategy_name, "residual")
         self.assertEqual(len(result.ranked_candidates), 2)
+        self.assertIn("predictor_diagnostics", result.metadata)
 
     def test_load_validated_references_reads_json_list(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -459,6 +435,7 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             result = rank_candidates_from_results_dir_and_references(
                 base_dir,
                 validated_references_path=references_path,
+                predictor_name="residual",
                 predictor_names=("residual", "ridge"),
                 target_binding_energy=1.0,
             )
