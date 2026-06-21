@@ -18,6 +18,8 @@ from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 from oasis.exp import prepare_parity_plot_data
+from oasis.learning_curve.time_accuracy import build_time_accuracy_table
+from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
 _MLIP_DISPLAY_NAMES = {
@@ -858,3 +860,137 @@ def screening_budget_plot(
     plt.close(fig)
 
     return output_path
+
+
+def _time_accuracy_scatter_plot(
+    table: pd.DataFrame,
+    *,
+    x_column: str,
+    output_path: str | Path,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    title: str,
+    xlabel: str,
+    ylabel: str = "RMSE (eV)",
+    show_legend: bool = True,
+) -> Path:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if not table.empty:
+        for method_name, _, _, display_name, marker, color in _METHOD_PLOT_STYLES:
+            method_table = table.loc[table["method"] == method_name]
+            if method_table.empty or x_column not in method_table.columns:
+                continue
+            ordered = method_table.sort_values("n_train").reset_index(drop=True)
+            ax.scatter(
+                ordered[x_column],
+                ordered["rmse_mean"],
+                marker=marker,
+                color=color,
+                label=display_name,
+                s=55,
+                alpha=0.9,
+            )
+            if len(ordered) > 1:
+                ax.plot(
+                    ordered[x_column],
+                    ordered["rmse_mean"],
+                    color=color,
+                    alpha=0.35,
+                    linewidth=1.0,
+                )
+
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    ax.set_title(title, fontsize=fontsize)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    if show_legend and not table.empty:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
+def generation_time_accuracy_plot(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    output_path: str | Path,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    table = build_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+        method_names=method_names,
+    )
+    return _time_accuracy_scatter_plot(
+        table,
+        x_column="generation_time_s",
+        output_path=output_path,
+        fontsize=fontsize,
+        title="Generation time vs RMSE",
+        xlabel="Generation time (s)",
+        show_legend=show_legend,
+    )
+
+
+def training_time_accuracy_plot(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    output_path: str | Path,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    table = build_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+        method_names=method_names,
+    )
+    return _time_accuracy_scatter_plot(
+        table,
+        x_column="training_time_s",
+        output_path=output_path,
+        fontsize=fontsize,
+        title="Training time vs RMSE",
+        xlabel="Training time (s)",
+        show_legend=show_legend,
+    )
+
+
+def total_time_accuracy_plot(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    output_path: str | Path,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    table = build_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+        method_names=method_names,
+    )
+    return _time_accuracy_scatter_plot(
+        table,
+        x_column="total_time_s",
+        output_path=output_path,
+        fontsize=fontsize,
+        title="Total time vs RMSE",
+        xlabel="Total time (s)",
+        show_legend=show_legend,
+    )
