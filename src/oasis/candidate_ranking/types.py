@@ -5,6 +5,44 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
+class MlipAnomalyMetadata:
+    """Normalized anomaly payload for one MLIP prediction."""
+
+    label: str
+    labels: tuple[str, ...] = ()
+    details: dict[str, int] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class MlipModelPrediction:
+    """One model-specific prediction carried into candidate screening."""
+
+    model_name: str
+    result_path: str
+    predicted_binding_energy: float | None = None
+    single_point_binding_energy: float | None = None
+    anomaly: MlipAnomalyMetadata | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningInputRecord:
+    """Method-agnostic per-adslab input shared by ranking strategies."""
+
+    reaction: str
+    parent_slab_id: str
+    adslab_id: str
+    adsorbate: str | None = None
+    reference_binding_energy: float | None = None
+    site_metadata: dict[str, Any] = field(default_factory=dict)
+    slab_metadata: dict[str, Any] = field(default_factory=dict)
+    adslab_metadata: dict[str, Any] = field(default_factory=dict)
+    shared_metadata: dict[str, Any] = field(default_factory=dict)
+    model_predictions: tuple[MlipModelPrediction, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class MethodProvenance:
     """Method-level provenance for one candidate or derived signal."""
 
@@ -84,7 +122,7 @@ class RankingContext:
     shot_count: int = 0
     target_binding_energy: float | None = None
     dataset_metadata: dict[str, Any] = field(default_factory=dict)
-    candidate_records: tuple[dict[str, Any], ...] = ()
+    candidate_records: tuple[ScreeningInputRecord, ...] = ()
     prior_observations: tuple[dict[str, Any], ...] = ()
     method_config: dict[str, Any] = field(default_factory=dict)
 
