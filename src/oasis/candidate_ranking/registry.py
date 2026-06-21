@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from collections.abc import Iterable
 
 from oasis.candidate_ranking.interfaces import CandidatePredictor
+from oasis.learning_curve.registry import minimum_training_size_for_learning_curve_model
 
 _PREDICTOR_REGISTRY: dict[str, CandidatePredictor] = {}
 
@@ -46,17 +47,23 @@ def register_builtin_predictors() -> None:
     builtins = (
         PredictorSpec(
             name="residual",
-            min_validated_references=1,
+            min_validated_references=minimum_training_size_for_learning_curve_model(
+                "residual"
+            ),
             metadata={"family": "few_shot", "hyperparameter_free": True},
         ),
         PredictorSpec(
             name="weighted_simplex",
-            min_validated_references=1,
+            min_validated_references=minimum_training_size_for_learning_curve_model(
+                "weighted_simplex"
+            ),
             metadata={"family": "few_shot", "hyperparameter_free": True},
         ),
         PredictorSpec(
             name="ridge",
-            min_validated_references=2,
+            min_validated_references=minimum_training_size_for_learning_curve_model(
+                "ridge"
+            ),
             metadata={"family": "few_shot", "hyperparameter_free": False},
         ),
     )

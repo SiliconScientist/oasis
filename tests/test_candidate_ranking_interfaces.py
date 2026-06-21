@@ -25,6 +25,7 @@ from oasis.candidate_ranking import (
     register_predictor,
     registered_predictor_names,
 )
+from oasis.learning_curve.registry import minimum_training_size_for_learning_curve_model
 
 
 class _FakeGenerator:
@@ -136,7 +137,18 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
             registered_predictor_names(),
             ("residual", "ridge", "weighted_simplex"),
         )
-        self.assertEqual(get_predictor("ridge").min_validated_references, 2)
+        self.assertEqual(
+            get_predictor("residual").min_validated_references,
+            minimum_training_size_for_learning_curve_model("residual"),
+        )
+        self.assertEqual(
+            get_predictor("weighted_simplex").min_validated_references,
+            minimum_training_size_for_learning_curve_model("weighted_simplex"),
+        )
+        self.assertEqual(
+            get_predictor("ridge").min_validated_references,
+            minimum_training_size_for_learning_curve_model("ridge"),
+        )
 
     def test_ensure_predictor_lazily_registers_builtins(self) -> None:
         predictor = ensure_predictor("weighted_simplex")

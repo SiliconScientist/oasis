@@ -129,6 +129,41 @@ def validation_size_if_sweep_feasible(
     return n_val
 
 
+def minimum_training_size_for_requirements(
+    requirements: SweepFamilyRequirements,
+    *,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    min_inner_train_size: int = 1,
+) -> int:
+    """Return the first training size that satisfies shared split-feasibility rules.
+
+    This centralizes the same minimum-data guard used by split planning so
+    callers can reason about method availability without reimplementing the
+    validation-aware budget thresholds.
+    """
+
+    minimum_size = max(int(requirements.min_train_size), 1)
+    if not requirements.requires_inner_validation:
+        return minimum_size
+
+    sweep_size = minimum_size
+    while True:
+        if (
+            validation_size_if_sweep_feasible(
+                sweep_size,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
+                min_inner_train_size=min_inner_train_size,
+            )
+            is not None
+        ):
+            return sweep_size
+        sweep_size += 1
+
+
 def screening_holdout_size_for_budget(
     sweep_size: int,
     *,

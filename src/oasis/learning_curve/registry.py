@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from oasis.experiment.splits import minimum_training_size_for_requirements
 from oasis.learning_curve.learned_specs import learned_family_registration_specs
 from oasis.learning_curve.runners import (
     ConfiguredSweepModelFamily,
@@ -238,6 +239,44 @@ def enabled_learning_curve_model_names_from_config(
         registration.name
         for registration in registrations
         if registration.is_enabled(model_cfg)
+    )
+
+
+def learning_curve_model_registration_by_name(
+    name: str,
+) -> LearningCurveModelRegistration:
+    """Return one registered learning-curve model by method name."""
+
+    registry = {
+        registration.name: registration
+        for registration in learning_curve_model_registry()
+    }
+    try:
+        return registry[name]
+    except KeyError as exc:
+        known = ", ".join(sorted(registry)) or "<none>"
+        raise KeyError(
+            f"Unknown learning-curve model {name!r}. Registered models: {known}"
+        ) from exc
+
+
+def minimum_training_size_for_learning_curve_model(
+    name: str,
+    *,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    min_inner_train_size: int = 1,
+) -> int:
+    """Return the first feasible training budget for one registered model."""
+
+    family = learning_curve_model_registration_by_name(name).family_factory()
+    return minimum_training_size_for_requirements(
+        family.requirements(),
+        validation_fraction=validation_fraction,
+        min_val_size=min_val_size,
+        min_tuning_val_size=min_tuning_val_size,
+        min_inner_train_size=min_inner_train_size,
     )
 
 

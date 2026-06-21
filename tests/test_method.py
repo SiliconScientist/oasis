@@ -31,6 +31,7 @@ from oasis.sweep import (
     TrainTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
+from oasis.learning_curve.registry import minimum_training_size_for_learning_curve_model
 from oasis.tune import (
     OptunaModelSelectionSweepRunner,
     SweepRunnerArtifacts,
@@ -983,6 +984,21 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertIsInstance(
             ridge_family.spec.runner,
             SupervisedModelSelectionSweepRunner,
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_learning_curve_models_expose_shared_minimum_training_sizes(self) -> None:
+        self.assertEqual(
+            minimum_training_size_for_learning_curve_model("residual"),
+            1,
+        )
+        self.assertEqual(
+            minimum_training_size_for_learning_curve_model("weighted_simplex"),
+            1,
+        )
+        self.assertEqual(
+            minimum_training_size_for_learning_curve_model("ridge"),
+            2,
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
