@@ -181,7 +181,7 @@ class ZeroShotCandidateGenerator(CandidateGenerator):
             provenance = MethodProvenance(
                 method_name=self.method_name,
                 stage="candidate_generation",
-                shot_count=context.shot_count,
+                shot_count=context.inferred_shot_count,
                 source_methods=tuple(pred.model_name for pred in valid_predictions),
                 metadata={
                     "globally_allowed_models": list(globally_allowed_model_names),
@@ -508,5 +508,5 @@ class ZeroShotCandidateRanker(RankingStrategy):
             adslab_candidates=adslab_candidates,
             parent_candidates=parent_candidates,
             ranked_candidates=ranked_candidates,
-            metadata={"shot_count": context.shot_count},
+            metadata={"shot_count": context.inferred_shot_count},
         )

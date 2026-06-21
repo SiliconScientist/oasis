@@ -10,6 +10,7 @@ from oasis.candidate_ranking import (
     MlipModelPrediction,
     RankingResult,
     ScreeningInputRecord,
+    ValidatedReference,
     clear_registered_strategies,
     rank_candidates,
     rank_candidates_from_result_files,
@@ -132,7 +133,6 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                 ),
             ),
             method_name="zero_shot",
-            shot_count=0,
             target_binding_energy=1.0,
         )
 
@@ -154,19 +154,35 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                     adslab_candidates=(),
                     parent_candidates=(),
                     ranked_candidates=(),
-                    metadata={"shot_count": context.shot_count},
+                    metadata={"shot_count": context.inferred_shot_count},
                 )
 
         register_strategy(_TwoShotStrategy())
         result = rank_candidates(
             candidate_records=(),
             method_name="two_shot",
-            shot_count=2,
             target_binding_energy=1.0,
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+            ),
         )
 
         self.assertEqual(result.strategy_name, "two_shot")
         self.assertEqual(result.metadata["shot_count"], 2)
+
+    def test_build_ranking_context_infers_shot_count_from_validated_references(self) -> None:
+        from oasis.candidate_ranking import build_ranking_context
+
+        context = build_ranking_context(
+            candidate_records=(),
+            shot_count=7,
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+            ),
+        )
+
+        self.assertEqual(context.inferred_shot_count, 1)
 
     def test_rank_candidates_from_result_files_runs_end_to_end(self) -> None:
         with TemporaryDirectory() as tmp_dir:

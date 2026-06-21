@@ -43,6 +43,17 @@ class ScreeningInputRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ValidatedReference:
+    """One experimentally or computationally validated DFT reference point."""
+
+    reaction: str | None = None
+    parent_slab_id: str | None = None
+    adslab_id: str | None = None
+    adsorption_energy: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class MethodProvenance:
     """Method-level provenance for one candidate or derived signal."""
 
@@ -117,14 +128,26 @@ class ParentCandidate:
 
 @dataclass(frozen=True, slots=True)
 class RankingContext:
-    """Method-agnostic inputs for zero-shot, few-shot, and iterative ranking."""
+    """Method-agnostic inputs for inferred-shot candidate ranking.
+
+    Shot count should be inferred from `validated_references` whenever possible.
+    The explicit `shot_count` field remains only as a compatibility fallback
+    while candidate-ranking call sites are being refactored.
+    """
 
     shot_count: int = 0
     target_binding_energy: float | None = None
     dataset_metadata: dict[str, Any] = field(default_factory=dict)
     candidate_records: tuple[ScreeningInputRecord, ...] = ()
+    validated_references: tuple[ValidatedReference, ...] = ()
     prior_observations: tuple[dict[str, Any], ...] = ()
     method_config: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def inferred_shot_count(self) -> int:
+        if self.validated_references:
+            return len(self.validated_references)
+        return int(self.shot_count)
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,7 @@ from oasis.candidate_ranking import (
     RankingResult,
     SupportingSignal,
     UncertaintyEstimate,
+    ValidatedReference,
     clear_registered_strategies,
     ensure_strategy,
     get_strategy,
@@ -256,3 +257,14 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
         self.assertEqual(candidate.supporting_signals[0].objective, "maximize")
         self.assertEqual(parent.selected_adslab_ids, ("adslab-1", "adslab-4"))
         self.assertEqual(parent.adslab_metadata["site_label"], "bridge")
+
+    def test_ranking_context_prefers_validated_reference_count_for_shot_inference(self) -> None:
+        context = RankingContext(
+            shot_count=9,
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+            ),
+        )
+
+        self.assertEqual(context.inferred_shot_count, 2)

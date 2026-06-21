@@ -9,6 +9,7 @@ from oasis.candidate_ranking.types import (
     RankingContext,
     RankingResult,
     ScreeningInputRecord,
+    ValidatedReference,
 )
 from oasis.mlip.artifacts import find_result_files
 
@@ -19,16 +20,23 @@ def build_ranking_context(
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
+    validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingContext:
-    """Build a method-agnostic ranking context for any registered strategy."""
+    """Build a method-agnostic ranking context for any registered strategy.
+
+    Shot count is inferred from `validated_references` when they are supplied.
+    The explicit `shot_count` argument remains as a temporary compatibility
+    fallback during the refactor away from user-selected shot modes.
+    """
 
     return RankingContext(
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
         dataset_metadata=dict(dataset_metadata or {}),
         candidate_records=candidate_records,
+        validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=dict(method_config or {}),
     )
@@ -41,6 +49,7 @@ def rank_candidates(
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
+    validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingResult:
@@ -52,6 +61,7 @@ def rank_candidates(
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
         dataset_metadata=dataset_metadata,
+        validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=method_config,
     )
@@ -65,6 +75,7 @@ def rank_candidates_from_result_files(
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
+    validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingResult:
@@ -77,6 +88,7 @@ def rank_candidates_from_result_files(
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
         dataset_metadata=dataset_metadata,
+        validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=method_config,
     )
@@ -91,6 +103,7 @@ def rank_candidates_from_results_dir(
     shot_count: int = 0,
     target_binding_energy: float | None = None,
     dataset_metadata: dict[str, Any] | None = None,
+    validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
 ) -> RankingResult:
@@ -107,6 +120,7 @@ def rank_candidates_from_results_dir(
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
         dataset_metadata=dataset_metadata,
+        validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=method_config,
     )

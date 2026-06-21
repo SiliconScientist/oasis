@@ -32,6 +32,7 @@ from oasis.candidate_ranking.types import (
     ScreeningInputRecord,
     SupportingSignal,
     UncertaintyEstimate,
+    ValidatedReference,
 )
 from oasis.candidate_ranking.methods import (
     LowestEnergyParentReducer,
@@ -62,6 +63,7 @@ __all__ = [
     "TargetAwareCandidateScorer",
     "TargetAwareScoringConfig",
     "UncertaintyEstimate",
+    "ValidatedReference",
     "ZeroShotCandidateGenerator",
     "ZeroShotCandidateRanker",
     "ZeroShotRankingConfig",
