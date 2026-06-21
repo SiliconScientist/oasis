@@ -57,10 +57,34 @@ def build_ranking_context(
     )
 
 
+def select_predictor_name(
+    predictor_names: Iterable[str],
+    *,
+    validated_reference_count: int,
+) -> str | None:
+    """Return the most capable feasible predictor from one ordered preference list."""
+
+    selected_name: str | None = None
+    selected_min_references = -1
+    for predictor_name in predictor_names:
+        predictor = ensure_predictor(predictor_name)
+        if not predictor.is_feasible(validated_reference_count):
+            continue
+        min_references = int(predictor.min_validated_references)
+        if min_references > selected_min_references:
+            selected_name = predictor.name
+            selected_min_references = min_references
+            continue
+        if min_references == selected_min_references:
+            selected_name = predictor.name
+    return selected_name
+
+
 def rank_candidates(
     *,
     candidate_records: tuple[ScreeningInputRecord, ...],
     predictor_name: str | None = None,
+    predictor_names: Iterable[str] = (),
     method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
@@ -89,9 +113,14 @@ def rank_candidates(
         return UnfittedEnsembleBaselineRanker().rank(context)
 
     resolved_predictor_name = predictor_name or method_name
+    if resolved_predictor_name is None and predictor_names:
+        resolved_predictor_name = select_predictor_name(
+            predictor_names,
+            validated_reference_count=context.inferred_shot_count,
+        )
     if resolved_predictor_name is None:
         raise ValueError(
-            "predictor_name must be provided when validated references are available."
+            "A feasible predictor must be provided when validated references are available."
         )
     predictor = ensure_predictor(resolved_predictor_name)
     if not predictor.is_feasible(context.inferred_shot_count):
@@ -110,6 +139,7 @@ def rank_candidates_from_result_files(
     result_files: list[Path],
     *,
     predictor_name: str | None = None,
+    predictor_names: Iterable[str] = (),
     method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
@@ -124,6 +154,7 @@ def rank_candidates_from_result_files(
     return rank_candidates(
         candidate_records=candidate_records,
         predictor_name=predictor_name,
+        predictor_names=predictor_names,
         method_name=method_name,
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,
@@ -140,6 +171,7 @@ def rank_candidates_from_results_dir(
     pattern: str = "*/*_result.json",
     exclude_processed: bool = True,
     predictor_name: str | None = None,
+    predictor_names: Iterable[str] = (),
     method_name: str | None = None,
     shot_count: int = 0,
     target_binding_energy: float | None = None,
@@ -158,6 +190,7 @@ def rank_candidates_from_results_dir(
     return rank_candidates_from_result_files(
         result_files,
         predictor_name=predictor_name,
+        predictor_names=predictor_names,
         method_name=method_name,
         shot_count=shot_count,
         target_binding_energy=target_binding_energy,

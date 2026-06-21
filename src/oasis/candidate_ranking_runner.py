@@ -25,17 +25,17 @@ def run_candidate_ranking_from_config(
 
     result = rank_candidates_from_results_dir(
         Path(ranking_cfg.results_dir),
-        method_name=ranking_cfg.method,
+        predictor_names=ranking_cfg.predictors,
         shot_count=ranking_cfg.shot_count,
         target_binding_energy=ranking_cfg.target_binding_energy,
         dataset_metadata=_candidate_ranking_dataset_metadata(cfg),
-        method_config=ranking_cfg.resolved_method_config(),
+        method_config=ranking_cfg.resolved_predictor_config(),
     )
 
     top_k = max(1, int(ranking_cfg.top_k))
     print(
         "Candidate ranking"
-        f" method={ranking_cfg.method}"
+        f" predictors={list(ranking_cfg.predictors)}"
         f" shot_count={ranking_cfg.shot_count}"
         f" target_binding_energy={ranking_cfg.target_binding_energy}"
         f" top_k={top_k}"

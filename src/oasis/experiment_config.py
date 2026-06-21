@@ -270,7 +270,9 @@ class ProbeFeatureConfig(BaseModel):
 
 
 class CandidateRankingConfig(BaseModel):
-    method: str = "zero_shot"
+    predictors: List[str] = Field(
+        default_factory=lambda: ["residual", "weighted_simplex", "ridge"]
+    )
     shot_count: int = 0
     target_binding_energy: float
     top_k: int = 10
@@ -284,10 +286,14 @@ class CandidateRankingConfig(BaseModel):
     label_allowlist: List[str] = Field(default_factory=lambda: ["normal"])
     strict_inference_anomaly: bool = False
     min_valid_mlips: int = 2
-    method_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    predictor_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
-    def resolved_method_config(self) -> dict[str, Any]:
-        method_specific = dict(self.method_configs.get(self.method, {}))
+    def resolved_predictor_config(self, predictor_name: str | None = None) -> dict[str, Any]:
+        predictor_specific = (
+            {}
+            if predictor_name is None
+            else dict(self.predictor_configs.get(predictor_name, {}))
+        )
         return {
             "score_function": self.score_function,
             "target_distance_weight": self.target_distance_weight,
@@ -298,7 +304,7 @@ class CandidateRankingConfig(BaseModel):
             "label_allowlist": list(self.label_allowlist),
             "strict_inference_anomaly": self.strict_inference_anomaly,
             "min_valid_mlips": self.min_valid_mlips,
-            **method_specific,
+            **predictor_specific,
         }
 
 

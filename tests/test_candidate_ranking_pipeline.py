@@ -17,6 +17,7 @@ from oasis.candidate_ranking import (
     normalize_validated_references,
     rank_candidates,
     rank_candidates_from_result_files,
+    select_predictor_name,
     target_uncertainty_cost,
 )
 from oasis.candidate_ranking.registry import register_predictor
@@ -180,6 +181,43 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                 ),
             )
 
+    def test_select_predictor_name_prefers_most_data_hungry_feasible_predictor(self) -> None:
+        register_predictor(PredictorSpec(name="residual", min_validated_references=1))
+        register_predictor(
+            PredictorSpec(name="weighted_simplex", min_validated_references=1)
+        )
+        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+
+        self.assertEqual(
+            select_predictor_name(
+                ("residual", "weighted_simplex", "ridge"),
+                validated_reference_count=1,
+            ),
+            "weighted_simplex",
+        )
+        self.assertEqual(
+            select_predictor_name(
+                ("residual", "weighted_simplex", "ridge"),
+                validated_reference_count=2,
+            ),
+            "ridge",
+        )
+
+    def test_rank_candidates_can_resolve_predictor_from_predictor_list(self) -> None:
+        register_predictor(PredictorSpec(name="residual", min_validated_references=1))
+        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+
+        with self.assertRaisesRegex(NotImplementedError, "Predictor-backed n-shot ranking"):
+            rank_candidates(
+                candidate_records=(),
+                predictor_names=("residual", "ridge"),
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                    ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+                ),
+            )
+
     def test_rank_candidates_checks_predictor_feasibility_by_validated_reference_count(self) -> None:
         register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
 
@@ -187,6 +225,19 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             rank_candidates(
                 candidate_records=(),
                 predictor_name="ridge",
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
+                ),
+            )
+
+    def test_rank_candidates_requires_feasible_predictor_from_predictor_list(self) -> None:
+        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+
+        with self.assertRaisesRegex(ValueError, "feasible predictor must be provided"):
+            rank_candidates(
+                candidate_records=(),
+                predictor_names=("ridge",),
                 target_binding_energy=1.0,
                 validated_references=(
                     ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),

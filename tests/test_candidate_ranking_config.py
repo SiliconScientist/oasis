@@ -39,12 +39,12 @@ class CandidateRankingConfigTests(unittest.TestCase):
                     }
                 },
                 "candidate_ranking": {
-                    "method": "zero_shot",
+                    "predictors": ["residual", "weighted_simplex", "ridge"],
                     "target_binding_energy": -0.5,
                     "top_k": 5,
                     "uncertainty_weight": 0.4,
-                    "method_configs": {
-                        "two_shot": {"acquisition_weight": 0.3},
+                    "predictor_configs": {
+                        "ridge": {"alpha_grid": [0.1, 1.0]},
                     },
                 },
             },
@@ -52,34 +52,37 @@ class CandidateRankingConfigTests(unittest.TestCase):
             cfg = get_config("experiment.toml")
 
         assert cfg.candidate_ranking is not None
-        self.assertEqual(cfg.candidate_ranking.method, "zero_shot")
+        self.assertEqual(
+            cfg.candidate_ranking.predictors,
+            ["residual", "weighted_simplex", "ridge"],
+        )
         self.assertEqual(cfg.candidate_ranking.top_k, 5)
         self.assertEqual(cfg.candidate_ranking.uncertainty_weight, 0.4)
         self.assertEqual(
-            cfg.candidate_ranking.method_configs["two_shot"]["acquisition_weight"],
-            0.3,
+            cfg.candidate_ranking.predictor_configs["ridge"]["alpha_grid"],
+            [0.1, 1.0],
         )
         self.assertEqual(cfg.candidate_ranking.results_dir, Path("data/mlips/OH-BMA"))
 
-    def test_candidate_ranking_resolved_method_config_merges_future_namespace(self) -> None:
+    def test_candidate_ranking_resolved_predictor_config_merges_future_namespace(self) -> None:
         cfg = CandidateRankingConfig(
-            method="two_shot",
+            predictors=["residual", "ridge"],
             results_dir="data/mlips/example",
             target_binding_energy=-0.1,
             uncertainty_weight=0.6,
-            method_configs={
-                "two_shot": {"acquisition_weight": 0.3},
+            predictor_configs={
+                "ridge": {"alpha_grid": [0.1, 1.0]},
             },
         )
 
-        resolved = cfg.resolved_method_config()
+        resolved = cfg.resolved_predictor_config("ridge")
 
         self.assertEqual(resolved["uncertainty_weight"], 0.6)
-        self.assertEqual(resolved["acquisition_weight"], 0.3)
+        self.assertEqual(resolved["alpha_grid"], [0.1, 1.0])
 
-    def test_run_candidate_ranking_from_config_uses_registry_selected_method(self) -> None:
+    def test_run_candidate_ranking_from_config_uses_predictor_list_surface(self) -> None:
         ranking_cfg = CandidateRankingConfig(
-            method="zero_shot",
+            predictors=["residual", "weighted_simplex", "ridge"],
             results_dir="data/mlips/example",
             target_binding_energy=-0.2,
             top_k=3,
@@ -101,7 +104,10 @@ class CandidateRankingConfigTests(unittest.TestCase):
             run_candidate_ranking_from_config(["experiment.toml"])
 
         mock_rank.assert_called_once()
-        self.assertEqual(mock_rank.call_args.kwargs["method_name"], "zero_shot")
+        self.assertEqual(
+            list(mock_rank.call_args.kwargs["predictor_names"]),
+            ["residual", "weighted_simplex", "ridge"],
+        )
         self.assertEqual(
             mock_rank.call_args.kwargs["target_binding_energy"],
             -0.2,
