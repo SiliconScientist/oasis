@@ -6,13 +6,17 @@ from oasis.candidate_ranking.interfaces import (
     ParentReducer,
     RankingStrategy,
 )
-from oasis.candidate_ranking.loaders import load_screening_input_records
+from oasis.candidate_ranking.loaders import (
+    load_screening_input_records,
+    load_validated_references,
+)
 from oasis.candidate_ranking.pipeline import (
     build_ranking_context,
     normalize_validated_references,
     rank_candidates,
     rank_candidates_from_result_files,
     rank_candidates_from_results_dir,
+    rank_candidates_from_results_dir_and_references,
     select_predictor_name,
 )
 from oasis.candidate_ranking.registry import (
@@ -78,10 +82,12 @@ __all__ = [
     "ensure_predictor",
     "get_predictor",
     "load_screening_input_records",
+    "load_validated_references",
     "normalize_validated_references",
     "rank_candidates",
     "rank_candidates_from_result_files",
     "rank_candidates_from_results_dir",
+    "rank_candidates_from_results_dir_and_references",
     "select_predictor_name",
     "register_builtin_predictors",
     "register_predictors",

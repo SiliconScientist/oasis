@@ -113,3 +113,36 @@ class CandidateRankingConfigTests(unittest.TestCase):
             -0.2,
         )
         mock_print.assert_called_once()
+
+    def test_run_candidate_ranking_from_config_loads_validated_references_when_configured(
+        self,
+    ) -> None:
+        ranking_cfg = CandidateRankingConfig(
+            predictors=["residual", "ridge"],
+            results_dir="data/mlips/example",
+            validated_references_path="data/validated_references/example.json",
+            target_binding_energy=-0.2,
+            top_k=3,
+        )
+        fake_cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="example"),
+            candidate_ranking=ranking_cfg,
+        )
+        with patch("oasis.candidate_ranking_runner.get_config", return_value=fake_cfg), patch(
+            "oasis.candidate_ranking_runner.rank_candidates_from_results_dir_and_references"
+        ) as mock_rank, patch("builtins.print") as mock_print:
+            mock_rank.return_value = type(
+                "_Result",
+                (),
+                {
+                    "ranked_candidates": [],
+                },
+            )()
+            run_candidate_ranking_from_config(["experiment.toml"])
+
+        mock_rank.assert_called_once()
+        self.assertEqual(
+            mock_rank.call_args.kwargs["validated_references_path"],
+            Path("data/validated_references/example.json"),
+        )
+        mock_print.assert_called_once()

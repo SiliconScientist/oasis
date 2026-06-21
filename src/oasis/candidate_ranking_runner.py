@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from oasis.candidate_ranking import rank_candidates_from_results_dir
+from oasis.candidate_ranking import (
+    rank_candidates_from_results_dir,
+    rank_candidates_from_results_dir_and_references,
+)
 from oasis.config import get_config
 
 
@@ -23,14 +26,25 @@ def run_candidate_ranking_from_config(
             "candidate_ranking config section is required for `oasis rank-candidates`."
         )
 
-    result = rank_candidates_from_results_dir(
-        Path(ranking_cfg.results_dir),
-        predictor_names=ranking_cfg.predictors,
-        shot_count=ranking_cfg.shot_count,
-        target_binding_energy=ranking_cfg.target_binding_energy,
-        dataset_metadata=_candidate_ranking_dataset_metadata(cfg),
-        method_config=ranking_cfg.resolved_predictor_config(),
-    )
+    rank_kwargs = {
+        "predictor_names": ranking_cfg.predictors,
+        "shot_count": ranking_cfg.shot_count,
+        "target_binding_energy": ranking_cfg.target_binding_energy,
+        "dataset_metadata": _candidate_ranking_dataset_metadata(cfg),
+        "method_config": ranking_cfg.resolved_predictor_config(),
+        "predictor_configs": ranking_cfg.predictor_configs,
+    }
+    if ranking_cfg.validated_references_path is None:
+        result = rank_candidates_from_results_dir(
+            Path(ranking_cfg.results_dir),
+            **rank_kwargs,
+        )
+    else:
+        result = rank_candidates_from_results_dir_and_references(
+            Path(ranking_cfg.results_dir),
+            validated_references_path=Path(ranking_cfg.validated_references_path),
+            **rank_kwargs,
+        )
 
     top_k = max(1, int(ranking_cfg.top_k))
     print(

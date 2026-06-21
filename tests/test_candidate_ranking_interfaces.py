@@ -102,6 +102,9 @@ class _FakePredictor:
     def is_feasible(self, validated_reference_count: int) -> bool:
         return validated_reference_count >= self.min_validated_references
 
+    def generate(self, context: RankingContext) -> list[AdslabCandidate]:
+        return _FakeGenerator().generate(context)
+
 
 class CandidateRankingInterfaceTests(unittest.TestCase):
     def setUp(self) -> None:

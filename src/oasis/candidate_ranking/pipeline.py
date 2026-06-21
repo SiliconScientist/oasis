@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable
 
-from oasis.candidate_ranking.loaders import load_screening_input_records
+from oasis.candidate_ranking.loaders import (
+    load_screening_input_records,
+    load_validated_references,
+)
 from oasis.candidate_ranking.methods import UnfittedEnsembleBaselineRanker
+from oasis.candidate_ranking.predictors import PredictorBackedRanker
 from oasis.candidate_ranking.registry import ensure_predictor
 from oasis.candidate_ranking.types import (
     RankingContext,
@@ -92,6 +97,7 @@ def rank_candidates(
     validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
+    predictor_configs: dict[str, dict[str, Any]] | None = None,
 ) -> RankingResult:
     """Rank normalized candidate records via baseline fallback or predictor path.
 
@@ -122,6 +128,13 @@ def rank_candidates(
         raise ValueError(
             "A feasible predictor must be provided when validated references are available."
         )
+    context = replace(
+        context,
+        method_config={
+            **dict(context.method_config),
+            **dict((predictor_configs or {}).get(resolved_predictor_name, {})),
+        },
+    )
     predictor = ensure_predictor(resolved_predictor_name)
     if not predictor.is_feasible(context.inferred_shot_count):
         raise ValueError(
@@ -129,10 +142,10 @@ def rank_candidates(
             f"{predictor.min_validated_references} validated references; "
             f"got {context.inferred_shot_count}."
         )
-    raise NotImplementedError(
-        f"Predictor-backed n-shot ranking is not implemented yet for "
-        f"{predictor.name!r}."
-    )
+    return PredictorBackedRanker(
+        predictor_name=predictor.name,
+        generate_candidates=predictor.generate,
+    ).rank(context)
 
 
 def rank_candidates_from_result_files(
@@ -147,6 +160,7 @@ def rank_candidates_from_result_files(
     validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
+    predictor_configs: dict[str, dict[str, Any]] | None = None,
 ) -> RankingResult:
     """Load MLIP bundles into normalized records and run one ranking strategy."""
 
@@ -162,6 +176,7 @@ def rank_candidates_from_result_files(
         validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=method_config,
+        predictor_configs=predictor_configs,
     )
 
 
@@ -179,6 +194,7 @@ def rank_candidates_from_results_dir(
     validated_references: tuple[ValidatedReference, ...] = (),
     prior_observations: tuple[dict[str, Any], ...] = (),
     method_config: dict[str, Any] | None = None,
+    predictor_configs: dict[str, dict[str, Any]] | None = None,
 ) -> RankingResult:
     """Discover MLIP result files under one directory and run ranking."""
 
@@ -198,4 +214,41 @@ def rank_candidates_from_results_dir(
         validated_references=validated_references,
         prior_observations=prior_observations,
         method_config=method_config,
+        predictor_configs=predictor_configs,
+    )
+
+
+def rank_candidates_from_results_dir_and_references(
+    results_dir: str | Path,
+    *,
+    validated_references_path: str | Path,
+    pattern: str = "*/*_result.json",
+    exclude_processed: bool = True,
+    predictor_name: str | None = None,
+    predictor_names: Iterable[str] = (),
+    method_name: str | None = None,
+    shot_count: int = 0,
+    target_binding_energy: float | None = None,
+    dataset_metadata: dict[str, Any] | None = None,
+    prior_observations: tuple[dict[str, Any], ...] = (),
+    method_config: dict[str, Any] | None = None,
+    predictor_configs: dict[str, dict[str, Any]] | None = None,
+) -> RankingResult:
+    """Run ranking from one MLIP results directory plus one validated-reference file."""
+
+    validated_references = load_validated_references(Path(validated_references_path))
+    return rank_candidates_from_results_dir(
+        results_dir,
+        pattern=pattern,
+        exclude_processed=exclude_processed,
+        predictor_name=predictor_name,
+        predictor_names=predictor_names,
+        method_name=method_name,
+        shot_count=shot_count,
+        target_binding_energy=target_binding_energy,
+        dataset_metadata=dataset_metadata,
+        validated_references=validated_references,
+        prior_observations=prior_observations,
+        method_config=method_config,
+        predictor_configs=predictor_configs,
     )

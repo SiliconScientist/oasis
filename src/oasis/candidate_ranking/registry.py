@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Iterable
+from typing import Callable
 
 from oasis.candidate_ranking.interfaces import CandidatePredictor
+from oasis.candidate_ranking.predictors import (
+    generate_residual_candidates,
+    generate_ridge_candidates,
+    generate_weighted_simplex_candidates,
+)
+from oasis.candidate_ranking.types import AdslabCandidate, RankingContext
 from oasis.learning_curve.registry import minimum_training_size_for_learning_curve_model
 
 _PREDICTOR_REGISTRY: dict[str, CandidatePredictor] = {}
@@ -15,10 +22,21 @@ class PredictorSpec:
 
     name: str
     min_validated_references: int
+    generate_candidates: Callable[[RankingContext], list[AdslabCandidate]] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
     def is_feasible(self, validated_reference_count: int) -> bool:
         return validated_reference_count >= self.min_validated_references
+
+    def generate(
+        self,
+        context: RankingContext,
+    ) -> list[AdslabCandidate]:
+        if self.generate_candidates is None:
+            raise NotImplementedError(
+                f"Candidate predictor {self.name!r} does not implement generate()."
+            )
+        return self.generate_candidates(context)
 
 
 def register_predictor(predictor: CandidatePredictor) -> CandidatePredictor:
@@ -50,6 +68,7 @@ def register_builtin_predictors() -> None:
             min_validated_references=minimum_training_size_for_learning_curve_model(
                 "residual"
             ),
+            generate_candidates=generate_residual_candidates,
             metadata={"family": "few_shot", "hyperparameter_free": True},
         ),
         PredictorSpec(
@@ -57,6 +76,7 @@ def register_builtin_predictors() -> None:
             min_validated_references=minimum_training_size_for_learning_curve_model(
                 "weighted_simplex"
             ),
+            generate_candidates=generate_weighted_simplex_candidates,
             metadata={"family": "few_shot", "hyperparameter_free": True},
         ),
         PredictorSpec(
@@ -64,6 +84,7 @@ def register_builtin_predictors() -> None:
             min_validated_references=minimum_training_size_for_learning_curve_model(
                 "ridge"
             ),
+            generate_candidates=generate_ridge_candidates,
             metadata={"family": "few_shot", "hyperparameter_free": False},
         ),
     )

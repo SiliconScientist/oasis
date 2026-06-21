@@ -277,6 +277,7 @@ class CandidateRankingConfig(BaseModel):
     target_binding_energy: float
     top_k: int = 10
     results_dir: Optional[Path] = None
+    validated_references_path: Optional[Path] = None
     score_function: str = "target_uncertainty_cost"
     target_distance_weight: float = 1.0
     uncertainty_weight: float = 1.0

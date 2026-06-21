@@ -14,13 +14,15 @@ from oasis.candidate_ranking import (
     ValidatedReference,
     clear_registered_predictors,
     build_ranking_context,
+    load_validated_references,
     normalize_validated_references,
     rank_candidates,
     rank_candidates_from_result_files,
+    rank_candidates_from_results_dir_and_references,
     select_predictor_name,
     target_uncertainty_cost,
 )
-from oasis.candidate_ranking.registry import register_predictor
+from oasis.candidate_ranking.registry import register_builtin_predictors, register_predictor
 
 
 def _prediction(model_name: str, energy: float) -> MlipModelPrediction:
@@ -167,19 +169,44 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         self.assertEqual(result.strategy_name, "unfitted_ensemble_baseline")
         self.assertEqual(result.metadata["shot_count"], 0)
 
-    def test_rank_candidates_requires_registered_predictor_for_n_shot_path(self) -> None:
-        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+    def test_rank_candidates_runs_residual_one_shot_path(self) -> None:
+        register_builtin_predictors()
 
-        with self.assertRaisesRegex(NotImplementedError, "Predictor-backed n-shot ranking"):
-            rank_candidates(
-                candidate_records=(),
-                predictor_name="ridge",
-                target_binding_energy=1.0,
-                validated_references=(
-                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
-                    ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+        result = rank_candidates(
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-1",
+                    predictions=(
+                        _prediction("mace", 0.0),
+                        _prediction("orb", 2.0),
+                    ),
                 ),
-            )
+                _record(
+                    reaction="rxn-2->N*",
+                    parent_slab_id="slab-2",
+                    adslab_id="adslab-2",
+                    predictions=(
+                        _prediction("mace", 1.0),
+                        _prediction("orb", 3.0),
+                    ),
+                ),
+            ),
+            predictor_name="residual",
+            target_binding_energy=1.0,
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=1.0),
+            ),
+        )
+
+        self.assertEqual(result.strategy_name, "residual")
+        self.assertEqual(result.metadata["shot_count"], 1)
+        self.assertEqual(result.ranked_candidates[0].selected_adslab_id, "adslab-1")
+        self.assertEqual(
+            result.adslab_candidates[0].method_provenance.source_methods,
+            ("mace", "orb"),
+        )
 
     def test_select_predictor_name_prefers_most_data_hungry_feasible_predictor(self) -> None:
         register_predictor(PredictorSpec(name="residual", min_validated_references=1))
@@ -204,19 +231,38 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         )
 
     def test_rank_candidates_can_resolve_predictor_from_predictor_list(self) -> None:
-        register_predictor(PredictorSpec(name="residual", min_validated_references=1))
-        register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
+        register_builtin_predictors()
 
-        with self.assertRaisesRegex(NotImplementedError, "Predictor-backed n-shot ranking"):
-            rank_candidates(
-                candidate_records=(),
-                predictor_names=("residual", "ridge"),
-                target_binding_energy=1.0,
-                validated_references=(
-                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
-                    ValidatedReference(adslab_id="adslab-2", adsorption_energy=-0.4),
+        result = rank_candidates(
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-1",
+                    predictions=(
+                        _prediction("mace", 0.0),
+                        _prediction("orb", 1.0),
+                    ),
                 ),
-            )
+                _record(
+                    reaction="rxn-2->N*",
+                    parent_slab_id="slab-2",
+                    adslab_id="adslab-2",
+                    predictions=(
+                        _prediction("mace", 2.0),
+                        _prediction("orb", 3.0),
+                    ),
+                ),
+            ),
+            predictor_names=("residual", "ridge"),
+            target_binding_energy=1.0,
+            validated_references=(
+                ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
+                ValidatedReference(adslab_id="adslab-2", adsorption_energy=2.5),
+            ),
+        )
+
+        self.assertEqual(result.strategy_name, "ridge")
 
     def test_rank_candidates_checks_predictor_feasibility_by_validated_reference_count(self) -> None:
         register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
@@ -243,6 +289,128 @@ class CandidateRankingPipelineTests(unittest.TestCase):
                     ValidatedReference(adslab_id="adslab-1", adsorption_energy=-0.2),
                 ),
             )
+
+    def test_rank_candidates_from_result_files_runs_predictor_backed_path(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            mace_path = base_dir / "mace" / "mace_result.json"
+            orb_path = base_dir / "orb" / "orb_result.json"
+            entries = [
+                {
+                    "reaction": "rxn-1->N*",
+                    "single": 1.0,
+                    "median": 0.0,
+                    "parent_slab_id": "slab-1",
+                    "adslab_id": "adslab-1",
+                },
+                {
+                    "reaction": "rxn-2->N*",
+                    "single": 1.0,
+                    "median": 2.0,
+                    "parent_slab_id": "slab-2",
+                    "adslab_id": "adslab-2",
+                },
+            ]
+            orb_entries = [
+                dict(entries[0], median=1.0),
+                dict(entries[1], median=3.0),
+            ]
+            _write_result_file(mace_path, entries)
+            _write_result_file(orb_path, orb_entries)
+
+            result = rank_candidates_from_result_files(
+                [mace_path, orb_path],
+                predictor_names=("residual", "ridge"),
+                target_binding_energy=1.0,
+                validated_references=(
+                    ValidatedReference(adslab_id="adslab-1", adsorption_energy=0.5),
+                    ValidatedReference(adslab_id="adslab-2", adsorption_energy=2.5),
+                ),
+            )
+
+        self.assertEqual(result.strategy_name, "ridge")
+        self.assertEqual(len(result.ranked_candidates), 2)
+
+    def test_load_validated_references_reads_json_list(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "validated_references.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {"adslab_id": "adslab-1", "adsorption_energy": -0.2},
+                        {"reaction": "rxn-2->N*", "adsorption_energy": -0.4},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            references = load_validated_references(path)
+
+        self.assertEqual(len(references), 2)
+        self.assertEqual(references[0].identity, "adslab:adslab-1")
+
+    def test_rank_candidates_from_results_dir_and_references_runs_end_to_end(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            mace_path = base_dir / "mace" / "mace_result.json"
+            orb_path = base_dir / "orb" / "orb_result.json"
+            references_path = base_dir / "validated_references.json"
+            _write_result_file(
+                mace_path,
+                [
+                    {
+                        "reaction": "rxn-1->N*",
+                        "single": 1.0,
+                        "median": 0.0,
+                        "parent_slab_id": "slab-1",
+                        "adslab_id": "adslab-1",
+                    },
+                    {
+                        "reaction": "rxn-2->N*",
+                        "single": 1.0,
+                        "median": 2.0,
+                        "parent_slab_id": "slab-2",
+                        "adslab_id": "adslab-2",
+                    },
+                ],
+            )
+            _write_result_file(
+                orb_path,
+                [
+                    {
+                        "reaction": "rxn-1->N*",
+                        "single": 1.0,
+                        "median": 1.0,
+                        "parent_slab_id": "slab-1",
+                        "adslab_id": "adslab-1",
+                    },
+                    {
+                        "reaction": "rxn-2->N*",
+                        "single": 1.0,
+                        "median": 3.0,
+                        "parent_slab_id": "slab-2",
+                        "adslab_id": "adslab-2",
+                    },
+                ],
+            )
+            references_path.write_text(
+                json.dumps(
+                    [
+                        {"adslab_id": "adslab-1", "adsorption_energy": 0.5},
+                        {"adslab_id": "adslab-2", "adsorption_energy": 2.5},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = rank_candidates_from_results_dir_and_references(
+                base_dir,
+                validated_references_path=references_path,
+                predictor_names=("residual", "ridge"),
+                target_binding_energy=1.0,
+            )
+
+        self.assertEqual(result.strategy_name, "ridge")
 
     def test_build_ranking_context_infers_shot_count_from_validated_references(self) -> None:
         context = build_ranking_context(

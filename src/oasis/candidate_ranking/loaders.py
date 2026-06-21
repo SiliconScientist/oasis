@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ from oasis.candidate_ranking.types import (
     MlipAnomalyMetadata,
     MlipModelPrediction,
     ScreeningInputRecord,
+    ValidatedReference,
 )
 from oasis.mlip.artifacts import (
     load_result_json,
@@ -201,3 +203,22 @@ def load_screening_input_records(
             )
         )
     return tuple(records)
+
+
+def load_validated_references(
+    path: Path,
+) -> tuple[ValidatedReference, ...]:
+    """Load validated DFT references from one JSON file."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_references = (
+        payload.get("validated_references", ())
+        if isinstance(payload, dict)
+        else payload
+    )
+    if not isinstance(raw_references, list):
+        raise ValueError(
+            f"Validated references file {path} must contain a JSON list or "
+            "an object with a 'validated_references' list."
+        )
+    return tuple(ValidatedReference(**dict(reference)) for reference in raw_references)

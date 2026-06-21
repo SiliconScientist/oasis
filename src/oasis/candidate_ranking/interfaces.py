@@ -70,6 +70,11 @@ class CandidatePredictor(Protocol):
 
     def is_feasible(self, validated_reference_count: int) -> bool: ...
 
+    def generate(
+        self,
+        context: RankingContext,
+    ) -> list[AdslabCandidate]: ...
+
 
 @runtime_checkable
 class RankingStrategy(Protocol):
