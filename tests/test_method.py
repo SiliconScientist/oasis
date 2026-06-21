@@ -94,6 +94,27 @@ except ModuleNotFoundError:
     HAS_SKLEARN = False
 
 
+def _assert_metric_frames_equal_ignoring_fit_time(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+) -> None:
+    timing_columns = {"fit_time_mean_s", "fit_time_std_s"}
+    left_timing = timing_columns.intersection(left.columns)
+    right_timing = timing_columns.intersection(right.columns)
+    if left_timing or right_timing:
+        if left_timing != right_timing:
+            raise AssertionError(
+                "metric frames must expose the same timing columns when compared"
+            )
+        for column in sorted(left_timing):
+            assert (left[column] >= 0.0).all()
+            assert (right[column] >= 0.0).all()
+    pd.testing.assert_frame_equal(
+        left.drop(columns=sorted(left_timing), errors="ignore"),
+        right.drop(columns=sorted(right_timing), errors="ignore"),
+    )
+
+
 @unittest.skipUnless(HAS_METHOD, "requires method dependencies")
 class SweepOutputRegressionTests(unittest.TestCase):
     _regression_dataset = staticmethod(regression_dataset)
@@ -948,7 +969,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         for field_name, expected_df in expected.items():
             actual_df = getattr(actual, field_name)
             self.assertIsNotNone(actual_df, field_name)
-            pd.testing.assert_frame_equal(actual_df, expected_df)
+        _assert_metric_frames_equal_ignoring_fit_time(actual_df, expected_df)
         self.assertIsNotNone(actual.resid_uq_df)
         self.assertIsNotNone(actual.weighted_linear_uq_df)
         self.assertIsNotNone(actual.weighted_simplex_uq_df)
@@ -1186,7 +1207,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         legacy = sweep_model(payload, ridge_spec.model_factory)
         split_aware = sweep_model(runner_payload, ridge_spec.model_factory)
 
-        pd.testing.assert_frame_equal(split_aware, legacy)
+        _assert_metric_frames_equal_ignoring_fit_time(split_aware, legacy)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_lasso_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
@@ -1206,7 +1227,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         legacy = sweep_model(payload, lasso_spec.model_factory)
         split_aware = sweep_model(runner_payload, lasso_spec.model_factory)
 
-        pd.testing.assert_frame_equal(split_aware, legacy)
+        _assert_metric_frames_equal_ignoring_fit_time(split_aware, legacy)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_residual_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
@@ -1223,7 +1244,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
         legacy = residual_sweep(payload)
         split_aware = residual_sweep(runner_payload)
 
-        pd.testing.assert_frame_equal(split_aware.metrics, legacy.metrics)
+        _assert_metric_frames_equal_ignoring_fit_time(
+            split_aware.metrics, legacy.metrics
+        )
         pd.testing.assert_frame_equal(split_aware.uq_summary, legacy.uq_summary)
 
 
@@ -1274,7 +1297,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         first = weighted_linear_sweep(payload)
         second = weighted_linear_sweep(payload)
 
-        pd.testing.assert_frame_equal(first.metrics, second.metrics)
+        _assert_metric_frames_equal_ignoring_fit_time(first.metrics, second.metrics)
         pd.testing.assert_frame_equal(first.uq_summary, second.uq_summary)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1324,7 +1347,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         first = weighted_simplex_sweep(payload)
         second = weighted_simplex_sweep(payload)
 
-        pd.testing.assert_frame_equal(first.metrics, second.metrics)
+        _assert_metric_frames_equal_ignoring_fit_time(first.metrics, second.metrics)
         pd.testing.assert_frame_equal(first.uq_summary, second.uq_summary)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1416,7 +1439,7 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
             payload_with_auxiliary_views
         )
 
-        pd.testing.assert_frame_equal(
+        _assert_metric_frames_equal_ignoring_fit_time(
             baseline_result.metrics,
             result_with_auxiliary_views.metrics,
         )
@@ -1768,7 +1791,7 @@ class BoundaryTests(unittest.TestCase):
             enabled_model_names=["weighted_linear", "lasso", "elastic"],
         )
 
-        pd.testing.assert_frame_equal(
+        _assert_metric_frames_equal_ignoring_fit_time(
             baseline_only.weighted_linear_df,
             with_selection_families.weighted_linear_df,
         )
@@ -1865,7 +1888,7 @@ class BoundaryTests(unittest.TestCase):
             ],
         )
         self.assertEqual(result["n_train"].tolist(), [4])
-        pd.testing.assert_frame_equal(result, runner_result)
+        _assert_metric_frames_equal_ignoring_fit_time(result, runner_result)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_sweep_model_aggregates_fit_time_per_train_size(self) -> None:
