@@ -8,6 +8,7 @@ from oasis.candidate_ranking import (
     MlipModelPrediction,
     RankingContext,
     ScreeningInputRecord,
+    TargetAwareCandidateScorer,
     ZeroShotCandidateGenerator,
     ZeroShotCandidateRanker,
 )
@@ -181,6 +182,7 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
         self.assertEqual(len(result.adslab_candidates), 1)
         self.assertEqual(len(result.parent_candidates), 1)
         self.assertEqual(result.parent_candidates[0].selected_adslab_id, "adslab-1")
+        self.assertIsNotNone(result.ranked_candidates[0].score)
 
     def test_lowest_energy_parent_reducer_selects_one_child_per_parent(self) -> None:
         reducer = LowestEnergyParentReducer()
@@ -257,3 +259,135 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
 
         self.assertEqual(len(reduced), 1)
         self.assertEqual(reduced[0].selected_adslab_id, "adslab-a")
+
+    def test_target_aware_scorer_combines_target_proximity_and_uncertainty(self) -> None:
+        scorer = TargetAwareCandidateScorer()
+        candidates = LowestEnergyParentReducer().reduce(
+            ZeroShotCandidateGenerator().generate(
+                RankingContext(
+                    candidate_records=(
+                        _record(
+                            reaction="rxn-1->N*",
+                            parent_slab_id="slab-1",
+                            adslab_id="adslab-1",
+                            predictions=(
+                                _prediction("mace", 0.0),
+                                _prediction("orb", 2.0),
+                            ),
+                        ),
+                        _record(
+                            reaction="rxn-2->N*",
+                            parent_slab_id="slab-2",
+                            adslab_id="adslab-2",
+                            predictions=(
+                                _prediction("mace", 0.8),
+                                _prediction("orb", 1.2),
+                            ),
+                        ),
+                    )
+                )
+            ),
+            RankingContext(),
+        )
+
+        ranked = scorer.score(
+            candidates,
+            RankingContext(target_binding_energy=1.0),
+        )
+
+        self.assertEqual(ranked[0].selected_adslab_id, "adslab-2")
+        self.assertLess(ranked[0].score, ranked[1].score)
+        self.assertEqual(
+            ranked[0].provenance["score_components"]["target_distance"],
+            0.0,
+        )
+
+    def test_target_aware_scorer_honors_configured_weights(self) -> None:
+        scorer = TargetAwareCandidateScorer()
+        candidates = LowestEnergyParentReducer().reduce(
+            ZeroShotCandidateGenerator().generate(
+                RankingContext(
+                    candidate_records=(
+                        _record(
+                            reaction="rxn-1->N*",
+                            parent_slab_id="slab-1",
+                            adslab_id="adslab-1",
+                            predictions=(
+                                _prediction("mace", 0.0),
+                                _prediction("orb", 0.0),
+                            ),
+                        ),
+                        _record(
+                            reaction="rxn-2->N*",
+                            parent_slab_id="slab-2",
+                            adslab_id="adslab-2",
+                            predictions=(
+                                _prediction("mace", 0.8),
+                                _prediction("orb", 1.2),
+                            ),
+                        ),
+                    )
+                )
+            ),
+            RankingContext(),
+        )
+
+        ranked = scorer.score(
+            candidates,
+            RankingContext(
+                target_binding_energy=1.0,
+                method_config={
+                    "target_distance_weight": 0.1,
+                    "uncertainty_weight": 2.0,
+                },
+            ),
+        )
+
+        self.assertEqual(ranked[0].selected_adslab_id, "adslab-1")
+
+    def test_target_aware_scorer_can_use_supporting_signal_weights(self) -> None:
+        scorer = TargetAwareCandidateScorer()
+        candidates = LowestEnergyParentReducer().reduce(
+            ZeroShotCandidateGenerator().generate(
+                RankingContext(
+                    candidate_records=(
+                        _record(
+                            reaction="rxn-1->N*",
+                            parent_slab_id="slab-1",
+                            adslab_id="adslab-1",
+                            predictions=(
+                                _prediction("mace", 1.0),
+                                _prediction("orb", 3.0),
+                            ),
+                        ),
+                        _record(
+                            reaction="rxn-2->N*",
+                            parent_slab_id="slab-2",
+                            adslab_id="adslab-2",
+                            predictions=(
+                                _prediction("mace", 1.0),
+                                _prediction("orb", 3.0),
+                                _prediction("uma", 5.0),
+                            ),
+                        ),
+                    )
+                )
+            ),
+            RankingContext(),
+        )
+
+        ranked = scorer.score(
+            candidates,
+            RankingContext(
+                target_binding_energy=2.0,
+                method_config={
+                    "supporting_signal_weights": {"valid_mlip_count": 3.0},
+                },
+            ),
+        )
+
+        self.assertEqual(ranked[0].selected_adslab_id, "adslab-2")
+        self.assertIn(
+            "valid_mlip_count",
+            ranked[0].provenance["score_components"]["supporting_signals"],
+        )

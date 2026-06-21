@@ -27,6 +27,8 @@ from oasis.candidate_ranking.types import (
 )
 from oasis.candidate_ranking.methods import (
     LowestEnergyParentReducer,
+    TargetAwareCandidateScorer,
+    TargetAwareScoringConfig,
     ZeroShotCandidateGenerator,
     ZeroShotCandidateRanker,
     ZeroShotRankingConfig,
@@ -48,6 +50,8 @@ __all__ = [
     "RankingStrategy",
     "ScreeningInputRecord",
     "SupportingSignal",
+    "TargetAwareCandidateScorer",
+    "TargetAwareScoringConfig",
     "UncertaintyEstimate",
     "ZeroShotCandidateGenerator",
     "ZeroShotCandidateRanker",

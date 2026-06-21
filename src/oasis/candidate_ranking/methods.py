@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import fmean, pstdev
 
 from oasis.candidate_ranking.interfaces import (
@@ -42,6 +42,33 @@ class ZeroShotRankingConfig:
                 method_cfg.get("strict_inference_anomaly", False)
             ),
             min_valid_mlips=int(method_cfg.get("min_valid_mlips", 2)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TargetAwareScoringConfig:
+    """Configurable scoring policy over reduced parent candidates.
+
+    This stage is intentionally separate from candidate generation so future
+    methods can reuse the same reducer output while swapping in acquisition,
+    few-shot, or registry-backed scoring policies.
+    """
+
+    target_distance_weight: float = 1.0
+    uncertainty_weight: float = 1.0
+    supporting_signal_weights: dict[str, float] | None = None
+
+    @classmethod
+    def from_context(cls, context: RankingContext) -> TargetAwareScoringConfig:
+        method_cfg = dict(context.method_config)
+        signal_weights = method_cfg.get("supporting_signal_weights", {})
+        return cls(
+            target_distance_weight=float(method_cfg.get("target_distance_weight", 1.0)),
+            uncertainty_weight=float(method_cfg.get("uncertainty_weight", 1.0)),
+            supporting_signal_weights={
+                str(name): float(weight)
+                for name, weight in dict(signal_weights).items()
+            },
         )
 
 
@@ -262,16 +289,95 @@ class LowestEnergyParentReducer(ParentReducer):
         return reduced
 
 
-class ZeroShotIdentityScorer(CandidateScorer):
-    """Temporary scorer that preserves generation order until ranking policy lands."""
+def _target_distance(
+    candidate: ParentCandidate,
+    context: RankingContext,
+) -> float:
+    if (
+        candidate.predicted_binding_energy is None
+        or context.target_binding_energy is None
+    ):
+        return 0.0
+    return abs(
+        float(candidate.predicted_binding_energy) - float(context.target_binding_energy)
+    )
+
+
+def _uncertainty_value(candidate: ParentCandidate) -> float:
+    if candidate.uncertainty is None:
+        return 0.0
+    return float(candidate.uncertainty.value)
+
+
+def _supporting_signal_penalty(
+    candidate: ParentCandidate,
+    *,
+    signal_weights: dict[str, float],
+) -> tuple[float, dict[str, float]]:
+    by_name = {signal.name: signal for signal in candidate.supporting_signals}
+    total = 0.0
+    components: dict[str, float] = {}
+    for signal_name, weight in sorted(signal_weights.items()):
+        signal = by_name.get(signal_name)
+        if signal is None:
+            continue
+        contribution = float(signal.value) * float(weight)
+        if signal.objective == "maximize":
+            contribution *= -1.0
+        total += contribution
+        components[signal_name] = contribution
+    return total, components
+
+
+class TargetAwareCandidateScorer(CandidateScorer):
+    """Rank reduced candidates using target proximity, uncertainty, and signals.
+
+    Future policies can replace this scorer entirely or extend it with new
+    supporting signals without modifying the generator or reducer stages.
+    """
 
     def score(
         self,
         candidates: list[ParentCandidate],
         context: RankingContext,
     ) -> list[ParentCandidate]:
-        del context
-        return candidates
+        cfg = TargetAwareScoringConfig.from_context(context)
+        scored = []
+        for candidate in candidates:
+            target_distance = _target_distance(candidate, context)
+            uncertainty_penalty = _uncertainty_value(candidate)
+            signal_penalty, signal_components = _supporting_signal_penalty(
+                candidate,
+                signal_weights=cfg.supporting_signal_weights or {},
+            )
+            score = (
+                cfg.target_distance_weight * target_distance
+                + cfg.uncertainty_weight * uncertainty_penalty
+                + signal_penalty
+            )
+            provenance = {
+                **dict(candidate.provenance),
+                "scoring_policy": "target_aware_weighted_sum",
+                "score_components": {
+                    "target_distance": cfg.target_distance_weight * target_distance,
+                    "uncertainty": cfg.uncertainty_weight * uncertainty_penalty,
+                    "supporting_signals": signal_components,
+                },
+            }
+            scored.append(
+                replace(
+                    candidate,
+                    score=float(score),
+                    provenance=provenance,
+                )
+            )
+        return sorted(
+            scored,
+            key=lambda candidate: (
+                float("inf") if candidate.score is None else float(candidate.score),
+                candidate.selected_adslab_id,
+            ),
+        )
 
 
 class ZeroShotCandidateRanker(RankingStrategy):
@@ -288,7 +394,7 @@ class ZeroShotCandidateRanker(RankingStrategy):
     ) -> None:
         self.generator = generator or ZeroShotCandidateGenerator()
         self.reducer = reducer or LowestEnergyParentReducer()
-        self.scorer = scorer or ZeroShotIdentityScorer()
+        self.scorer = scorer or TargetAwareCandidateScorer()
 
     def rank(self, context: RankingContext) -> RankingResult:
         adslab_candidates = tuple(self.generator.generate(context))
