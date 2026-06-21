@@ -16,8 +16,10 @@ from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
     prepare_parity_plot_data,
 )
+from oasis.experiment.dataset import mlip_feature_names
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
+from oasis.learning_curve.time_accuracy import aggregate_generation_timing
 from oasis.learning_curve.execution import (
     dispersion_from_spread,
     miscalibration_area,
@@ -36,13 +38,17 @@ from oasis.mlip.artifacts import (
     find_result_files,
     load_wide_predictions,
 )
+from oasis.mlip.timing import load_generation_timing_summaries
 from oasis.plot import (
     dispersion_plot,
+    generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
     parity_plot,
     screening_budget_plot,
     sharpness_plot,
+    total_time_accuracy_plot,
+    training_time_accuracy_plot,
 )
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
@@ -369,6 +375,54 @@ def _zero_shot_uq_baselines(parity_plot_data: object) -> dict[str, float]:
     }
 
 
+def write_time_accuracy_plots(
+    *,
+    learning_curve_results: object,
+    result_files: list[Path],
+    wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> tuple[Path, Path, Path] | None:
+    if not result_files:
+        print("Skipping time-accuracy plots: no MLIP result JSON files were found")
+        return None
+    generation_timing_by_mlip = load_generation_timing_summaries(result_files)
+    if not generation_timing_by_mlip:
+        print("Skipping time-accuracy plots: no MLIP timing summaries were loaded")
+        return None
+    feature_names = mlip_feature_names(wide_df)
+    if not feature_names:
+        print("Skipping time-accuracy plots: no MLIP feature columns were found")
+        return None
+    try:
+        aggregate_generation_timing(
+            generation_timing_by_mlip,
+            mlip_feature_names=feature_names,
+        )
+    except KeyError as exc:
+        print(f"Skipping time-accuracy plots: {exc}")
+        return None
+    generation_path = generation_time_accuracy_plot(
+        results=learning_curve_results,
+        generation_timing_by_mlip=generation_timing_by_mlip,
+        mlip_feature_names=feature_names,
+        output_path=output_dir / f"generation_time_accuracy_{run_suffix}.png",
+    )
+    training_path = training_time_accuracy_plot(
+        results=learning_curve_results,
+        generation_timing_by_mlip=generation_timing_by_mlip,
+        mlip_feature_names=feature_names,
+        output_path=output_dir / f"training_time_accuracy_{run_suffix}.png",
+    )
+    total_path = total_time_accuracy_plot(
+        results=learning_curve_results,
+        generation_timing_by_mlip=generation_timing_by_mlip,
+        mlip_feature_names=feature_names,
+        output_path=output_dir / f"total_time_accuracy_{run_suffix}.png",
+    )
+    return generation_path, training_path, total_path
+
+
 def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
@@ -450,6 +504,13 @@ def run_experiment(cfg: object):
             output_path=output_dir / f"learning_curve_{run_suffix}.png",
             zero_shot_rmse=zero_shot_rmse,
             **plot_kwargs,
+        )
+        write_time_accuracy_plots(
+            learning_curve_results=learning_curve_results,
+            result_files=result_files,
+            wide_df=wide_df,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
         )
         if _has_uq_summary(learning_curve_results):
             with tempfile.TemporaryDirectory() as tmpdir:

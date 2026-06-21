@@ -14,6 +14,7 @@ from oasis.experiment_runner import (
     run_experiment,
     run_experiment_from_config,
 )
+from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
 
@@ -82,6 +83,19 @@ class ExperimentRunnerTests(unittest.TestCase):
             ridge_uq_df=spread_only_frame,
             moe_uq_df=spread_only_frame,
         )
+
+    @staticmethod
+    def _timed_learning_curve_results() -> LearningCurveResults:
+        ridge_frame = pd.DataFrame(
+            {
+                "n_train": [5, 10],
+                "rmse_mean": [0.15, 0.12],
+                "rmse_std": [0.01, 0.02],
+                "fit_time_mean_s": [0.5, 0.8],
+                "fit_time_std_s": [0.05, 0.08],
+            }
+        )
+        return LearningCurveResults(ridge_df=ridge_frame)
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
@@ -404,6 +418,118 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_learning_screening_figure.call_args.kwargs["learning_curve_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
         )
+
+    def test_run_experiment_wires_time_accuracy_plots_from_saved_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(output_dir=tmp_path / "plots"),
+            )
+            fake_wide_df = _FakeWideFrame()
+            learning_curve_results = self._timed_learning_curve_results()
+            generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=2,
+                    generation_time_total_s=10.0,
+                    generation_time_slab_s=4.0,
+                    generation_time_adslab_s=6.0,
+                    generation_steps_total=20,
+                    generation_steps_slab=8,
+                    generation_steps_adslab=12,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=2,
+                    generation_time_total_s=12.0,
+                    generation_time_slab_s=5.0,
+                    generation_time_adslab_s=7.0,
+                    generation_steps_total=24,
+                    generation_steps_slab=10,
+                    generation_steps_adslab=14,
+                    time_per_step_s=0.5,
+                ),
+            }
+            result_files = [
+                tmp_path / "model_a_result.json",
+                tmp_path / "model_b_result.json",
+            ]
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=result_files,
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=learning_curve_results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.load_generation_timing_summaries",
+                return_value=generation_timing,
+            ) as mock_load_generation_timing, patch(
+                "oasis.experiment_runner.generation_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ) as mock_generation_plot, patch(
+                "oasis.experiment_runner.training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
+            ) as mock_training_plot, patch(
+                "oasis.experiment_runner.total_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
+            ) as mock_total_plot:
+                run_experiment(cfg)
+
+        mock_load_generation_timing.assert_called_once_with(result_files)
+        for mock_plot, expected_path in (
+            (
+                mock_generation_plot,
+                tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ),
+            (
+                mock_training_plot,
+                tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
+            ),
+            (
+                mock_total_plot,
+                tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
+            ),
+        ):
+            mock_plot.assert_called_once()
+            self.assertIs(mock_plot.call_args.kwargs["results"], learning_curve_results)
+            self.assertIs(
+                mock_plot.call_args.kwargs["generation_timing_by_mlip"],
+                generation_timing,
+            )
+            self.assertEqual(
+                mock_plot.call_args.kwargs["mlip_feature_names"],
+                ("model_a", "model_b"),
+            )
+            self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
 
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
         self,
