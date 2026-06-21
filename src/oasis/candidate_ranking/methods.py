@@ -321,6 +321,27 @@ def _uncertainty_value(candidate: ParentCandidate) -> float:
     return float(candidate.uncertainty.value)
 
 
+def _score_source_metadata(candidate: ParentCandidate) -> dict[str, object]:
+    provenance = candidate.method_provenance
+    if provenance is None:
+        return {
+            "candidate_source_kind": "unknown",
+            "candidate_source_method": None,
+            "candidate_source_stage": None,
+            "candidate_source_shot_count": None,
+        }
+    return {
+        "candidate_source_kind": (
+            "baseline"
+            if provenance.method_name == "unfitted_ensemble_baseline"
+            else "predictor"
+        ),
+        "candidate_source_method": provenance.method_name,
+        "candidate_source_stage": provenance.stage,
+        "candidate_source_shot_count": provenance.shot_count,
+    }
+
+
 def _supporting_signal_penalty(
     candidate: ParentCandidate,
     *,
@@ -426,6 +447,7 @@ class TargetAwareCandidateScorer(CandidateScorer):
                     provenance={
                         **dict(candidate.provenance),
                         "scoring_policy": "target_uncertainty_cost",
+                        "score_source": _score_source_metadata(candidate),
                         "score_components": {
                             "target_distance": target_distance,
                             "uncertainty": uncertainty_penalty,
@@ -464,6 +486,7 @@ class TargetAwareCandidateScorer(CandidateScorer):
             provenance = {
                 **dict(candidate.provenance),
                 "scoring_policy": "target_aware_weighted_sum",
+                "score_source": _score_source_metadata(candidate),
                 "score_components": {
                     "target_distance": cfg.target_distance_weight * target_distance,
                     "uncertainty": cfg.uncertainty_weight * uncertainty_penalty,

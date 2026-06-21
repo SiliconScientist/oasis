@@ -148,6 +148,14 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             result.ranked_candidates[0].provenance["scoring_policy"],
             "target_uncertainty_cost",
         )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_kind"],
+            "baseline",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_method"],
+            "unfitted_ensemble_baseline",
+        )
 
     def test_rank_candidates_uses_baseline_as_no_reference_fallback(self) -> None:
         result = rank_candidates(
@@ -207,6 +215,18 @@ class CandidateRankingPipelineTests(unittest.TestCase):
             result.adslab_candidates[0].method_provenance.source_methods,
             ("mace", "orb"),
         )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_kind"],
+            "predictor",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_method"],
+            "residual",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_shot_count"],
+            1,
+        )
 
     def test_select_predictor_name_prefers_most_data_hungry_feasible_predictor(self) -> None:
         register_predictor(PredictorSpec(name="residual", min_validated_references=1))
@@ -263,6 +283,19 @@ class CandidateRankingPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(result.strategy_name, "ridge")
+        self.assertEqual(result.metadata["shot_count"], 2)
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_kind"],
+            "predictor",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_method"],
+            "ridge",
+        )
+        self.assertEqual(
+            result.ranked_candidates[0].provenance["score_source"]["candidate_source_shot_count"],
+            2,
+        )
 
     def test_rank_candidates_checks_predictor_feasibility_by_validated_reference_count(self) -> None:
         register_predictor(PredictorSpec(name="ridge", min_validated_references=2))
