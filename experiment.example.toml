@@ -106,10 +106,19 @@ min_screen_size = 1
 
 [candidate_ranking]
 # Run with: `python -m oasis rank-candidates [config paths...]`
+# Shot count is inferred from the validated references you provide here.
+# With zero validated references, ranking falls back to the unfitted ensemble
+# baseline. With one or more validated references, Oasis picks the most capable
+# feasible predictor from this ordered list.
 predictors = ["residual", "weighted_simplex", "ridge"]
 target_binding_energy = -0.5
 top_k = 10
 # validated_references_path = "data/validated_references/example.json"
+# Example JSON payload:
+# [
+#   {"adslab_id": "adslab-000001", "adsorption_energy": -0.42},
+#   {"adslab_id": "adslab-000017", "adsorption_energy": -0.58}
+# ]
 score_function = "target_uncertainty_cost"  # or "weighted_sum"
 target_uncertainty_alpha = 0.75
 uncertainty_weight = 1.0

@@ -154,3 +154,21 @@ class CandidateRankingConfigTests(unittest.TestCase):
             Path("data/validated_references/example.json"),
         )
         mock_print.assert_called_once()
+
+    def test_candidate_ranking_config_surface_reflects_inferred_shot_inputs(self) -> None:
+        cfg = CandidateRankingConfig(
+            predictors=["residual", "weighted_simplex", "ridge"],
+            results_dir="data/mlips/example",
+            validated_references_path="data/validated_references/example.json",
+            target_binding_energy=-0.2,
+            top_k=3,
+        )
+
+        self.assertEqual(
+            cfg.predictors,
+            ["residual", "weighted_simplex", "ridge"],
+        )
+        self.assertEqual(
+            cfg.validated_references_path,
+            Path("data/validated_references/example.json"),
+        )

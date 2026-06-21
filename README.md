@@ -58,6 +58,27 @@ Its config is predictor-driven. Use `[candidate_ranking]` with an ordered
 `predictors = ["residual", "weighted_simplex", "ridge"]` list plus an optional
 `validated_references_path` JSON file. If no validated references are supplied,
 candidate ranking falls back automatically to the unfitted ensemble baseline.
+If validated references are supplied, Oasis infers the shot count from that
+file and selects the most capable feasible predictor from the ordered list.
+
+Minimal config shape:
+
+```toml
+[candidate_ranking]
+predictors = ["residual", "weighted_simplex", "ridge"]
+target_binding_energy = -0.5
+top_k = 10
+# validated_references_path = "data/validated_references/example.json"
+```
+
+Validated-reference files are JSON lists like:
+
+```json
+[
+  {"adslab_id": "adslab-000001", "adsorption_energy": -0.42},
+  {"adslab_id": "adslab-000017", "adsorption_energy": -0.58}
+]
+```
 
 ## Related Repo
 
