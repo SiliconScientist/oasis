@@ -25,7 +25,7 @@ from oasis.candidate_ranking.types import (
     SupportingSignal,
     UncertaintyEstimate,
 )
-from oasis.candidate_ranking.zero_shot import (
+from oasis.candidate_ranking.methods import (
     ZeroShotCandidateGenerator,
     ZeroShotCandidateRanker,
     ZeroShotRankingConfig,
