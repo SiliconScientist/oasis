@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from oasis.candidate_ranking import (
+    LowestEnergyParentReducer,
     MlipAnomalyMetadata,
     MlipModelPrediction,
     RankingContext,
@@ -180,3 +181,79 @@ class ZeroShotCandidateRankingTests(unittest.TestCase):
         self.assertEqual(len(result.adslab_candidates), 1)
         self.assertEqual(len(result.parent_candidates), 1)
         self.assertEqual(result.parent_candidates[0].selected_adslab_id, "adslab-1")
+
+    def test_lowest_energy_parent_reducer_selects_one_child_per_parent(self) -> None:
+        reducer = LowestEnergyParentReducer()
+        candidates = ZeroShotCandidateGenerator().generate(
+            RankingContext(
+                candidate_records=(
+                    _record(
+                        reaction="rxn-1->N*",
+                        parent_slab_id="slab-1",
+                        adslab_id="adslab-1",
+                        predictions=(
+                            _prediction("mace", 2.0),
+                            _prediction("orb", 4.0),
+                        ),
+                    ),
+                    _record(
+                        reaction="rxn-2->N*",
+                        parent_slab_id="slab-1",
+                        adslab_id="adslab-2",
+                        predictions=(
+                            _prediction("mace", 1.0),
+                            _prediction("orb", 3.0),
+                        ),
+                    ),
+                    _record(
+                        reaction="rxn-3->N*",
+                        parent_slab_id="slab-2",
+                        adslab_id="adslab-3",
+                        predictions=(
+                            _prediction("mace", 0.5),
+                            _prediction("orb", 0.7),
+                        ),
+                    ),
+                )
+            )
+        )
+
+        reduced = reducer.reduce(candidates, RankingContext())
+
+        self.assertEqual(len(reduced), 2)
+        self.assertEqual(reduced[0].parent_slab_id, "slab-1")
+        self.assertEqual(reduced[0].selected_adslab_id, "adslab-2")
+        self.assertEqual(reduced[0].selected_adslab_ids, ("adslab-1", "adslab-2"))
+        self.assertEqual(reduced[0].provenance["reduction_policy"], "lowest_energy_child_per_parent")
+        self.assertEqual(reduced[1].selected_adslab_id, "adslab-3")
+
+    def test_lowest_energy_parent_reducer_breaks_energy_ties_by_uncertainty_then_id(self) -> None:
+        reducer = LowestEnergyParentReducer()
+        context = RankingContext(
+            candidate_records=(
+                _record(
+                    reaction="rxn-1->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-b",
+                    predictions=(
+                        _prediction("mace", 1.0),
+                        _prediction("orb", 3.0),
+                    ),
+                ),
+                _record(
+                    reaction="rxn-2->N*",
+                    parent_slab_id="slab-1",
+                    adslab_id="adslab-a",
+                    predictions=(
+                        _prediction("mace", 2.0),
+                        _prediction("orb", 2.0),
+                    ),
+                ),
+            )
+        )
+        candidates = ZeroShotCandidateGenerator().generate(context)
+
+        reduced = reducer.reduce(candidates, RankingContext())
+
+        self.assertEqual(len(reduced), 1)
+        self.assertEqual(reduced[0].selected_adslab_id, "adslab-a")

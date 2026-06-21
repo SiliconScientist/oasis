@@ -26,6 +26,7 @@ from oasis.candidate_ranking.types import (
     UncertaintyEstimate,
 )
 from oasis.candidate_ranking.methods import (
+    LowestEnergyParentReducer,
     ZeroShotCandidateGenerator,
     ZeroShotCandidateRanker,
     ZeroShotRankingConfig,
@@ -39,6 +40,7 @@ __all__ = [
     "MlipModelPrediction",
     "MethodProvenance",
     "MethodSignalProvider",
+    "LowestEnergyParentReducer",
     "ParentCandidate",
     "ParentReducer",
     "RankingContext",

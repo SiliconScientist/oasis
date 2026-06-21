@@ -206,8 +206,13 @@ class ZeroShotCandidateGenerator(CandidateGenerator):
         return candidates
 
 
-class ZeroShotIdentityReducer(ParentReducer):
-    """Temporary reducer that preserves one adslab candidate per parent output."""
+class LowestEnergyParentReducer(ParentReducer):
+    """Reduce adslab candidates to one lowest-energy child per parent slab.
+
+    This reducer is intentionally standalone so future ranking methods can swap
+    it out or augment it with acquisition logic without changing candidate
+    generation.
+    """
 
     def reduce(
         self,
@@ -215,20 +220,46 @@ class ZeroShotIdentityReducer(ParentReducer):
         context: RankingContext,
     ) -> list[ParentCandidate]:
         del context
-        return [
-            ParentCandidate(
-                parent_slab_id=candidate.parent_slab_id,
-                selected_adslab_id=candidate.adslab_id,
-                predicted_binding_energy=candidate.predicted_binding_energy,
-                method_provenance=candidate.method_provenance,
-                uncertainty=candidate.uncertainty,
-                supporting_signals=candidate.supporting_signals,
-                selected_adslab_ids=(candidate.adslab_id,),
-                adslab_metadata=dict(candidate.metadata),
-                provenance=dict(candidate.provenance),
+        grouped_candidates: dict[str, list[AdslabCandidate]] = {}
+        for candidate in candidates:
+            grouped_candidates.setdefault(candidate.parent_slab_id, []).append(candidate)
+
+        reduced: list[ParentCandidate] = []
+        for parent_slab_id in sorted(grouped_candidates):
+            grouped = grouped_candidates[parent_slab_id]
+            selected = min(
+                grouped,
+                key=lambda candidate: (
+                    float("inf")
+                    if candidate.predicted_binding_energy is None
+                    else float(candidate.predicted_binding_energy),
+                    float("inf")
+                    if candidate.uncertainty is None
+                    else float(candidate.uncertainty.value),
+                    candidate.adslab_id,
+                ),
             )
-            for candidate in candidates
-        ]
+            reduced.append(
+                ParentCandidate(
+                    parent_slab_id=selected.parent_slab_id,
+                    selected_adslab_id=selected.adslab_id,
+                    predicted_binding_energy=selected.predicted_binding_energy,
+                    method_provenance=selected.method_provenance,
+                    uncertainty=selected.uncertainty,
+                    supporting_signals=selected.supporting_signals,
+                    selected_adslab_ids=tuple(
+                        candidate.adslab_id
+                        for candidate in sorted(grouped, key=lambda item: item.adslab_id)
+                    ),
+                    adslab_metadata=dict(selected.metadata),
+                    provenance={
+                        **dict(selected.provenance),
+                        "reduction_policy": "lowest_energy_child_per_parent",
+                        "candidate_count_for_parent": len(grouped),
+                    },
+                )
+            )
+        return reduced
 
 
 class ZeroShotIdentityScorer(CandidateScorer):
@@ -256,7 +287,7 @@ class ZeroShotCandidateRanker(RankingStrategy):
         scorer: CandidateScorer | None = None,
     ) -> None:
         self.generator = generator or ZeroShotCandidateGenerator()
-        self.reducer = reducer or ZeroShotIdentityReducer()
+        self.reducer = reducer or LowestEnergyParentReducer()
         self.scorer = scorer or ZeroShotIdentityScorer()
 
     def rank(self, context: RankingContext) -> RankingResult:
