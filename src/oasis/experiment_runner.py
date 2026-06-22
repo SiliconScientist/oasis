@@ -246,7 +246,11 @@ def load_filtered_wide_predictions(cfg: object):
     return wide_df, result_files
 
 
-def build_auxiliary_views(cfg: object, wide_df: object, probe_gnn_enabled: bool) -> dict:
+def build_auxiliary_views(
+    cfg: object,
+    wide_df: object,
+    probe_gnn_enabled: bool,
+) -> tuple[object, dict]:
     auxiliary_views: dict = {}
     models_cfg = (
         cfg.experiment.learning_curve.models
@@ -282,7 +286,7 @@ def build_auxiliary_views(cfg: object, wide_df: object, probe_gnn_enabled: bool)
             f"Loaded {len(reactions)} probe-augmented graphs from {probe_cfg.dataset_path}"
         )
 
-    return auxiliary_views
+    return wide_df, auxiliary_views
 
 
 def _method_generation_timing_overrides(
@@ -553,7 +557,7 @@ def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files = load_filtered_wide_predictions(cfg)
-    auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
+    wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
     generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
     write_parity_plot(
         cfg,

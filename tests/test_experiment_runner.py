@@ -239,6 +239,61 @@ class ExperimentRunnerTests(unittest.TestCase):
             strict_inference_anomaly=True,
         )
 
+    def test_run_experiment_uses_filtered_wide_df_from_auxiliary_view_builder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            original_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
+            filtered_wide_df = _FakeWideFrame([f"r{i}" for i in range(7)])
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=True,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=original_wide_df,
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value=(filtered_wide_df, {}),
+            ), patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ) as mock_learning_curve, patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ):
+                run_experiment(cfg)
+
+        self.assertIs(mock_learning_curve.call_args.args[0], filtered_wide_df)
+
     def test_run_experiment_suffixes_outputs_and_cache_paths_for_anomaly_aware_mode(
         self,
     ) -> None:
@@ -814,7 +869,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.build_auxiliary_views",
-                return_value={},
+                return_value=(fake_wide_df, {}),
             ), patch(
                 "oasis.experiment_runner.ensure_probe_artifacts",
                 return_value=False,
@@ -918,7 +973,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.build_auxiliary_views",
-                return_value={},
+                return_value=(fake_wide_df, {}),
             ), patch(
                 "oasis.experiment_runner.ensure_probe_artifacts",
                 return_value=False,
