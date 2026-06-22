@@ -221,6 +221,7 @@ data/
 
 # Local cluster submission script
 submit.sh
+interactive_gpu_dev.sh
 raw_data/
 models/*
 result*/
