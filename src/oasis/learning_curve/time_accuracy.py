@@ -14,7 +14,7 @@ from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
 
-_EXCLUDED_METHOD_NAMES = frozenset({"latent", "probe_gnn"})
+_METHODS_REQUIRING_EXPLICIT_GENERATION_TIMING = frozenset({"latent", "probe_gnn"})
 _TIME_ACCURACY_COLUMNS = [
     "method",
     "n_train",
@@ -106,17 +106,31 @@ def aggregate_generation_timing(
     )
 
 
+def _resolve_generation_timing_for_method(
+    method_name: str,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
+) -> GenerationTimingAggregate | None:
+    if generation_timing_by_method is not None and method_name in generation_timing_by_method:
+        return generation_timing_by_method[method_name]
+    if method_name in _METHODS_REQUIRING_EXPLICIT_GENERATION_TIMING:
+        return None
+    return aggregate_generation_timing(
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+    )
+
+
 def build_time_accuracy_table(
     results: LearningCurveResults,
     generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
     *,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
 ) -> pd.DataFrame:
-    generation_timing = aggregate_generation_timing(
-        generation_timing_by_mlip,
-        mlip_feature_names=mlip_feature_names,
-    )
     selected_method_names = (
         tuple(learning_curve_method_names())
         if method_names is None
@@ -125,8 +139,6 @@ def build_time_accuracy_table(
 
     rows: list[dict[str, Any]] = []
     for method_name in selected_method_names:
-        if method_name in _EXCLUDED_METHOD_NAMES:
-            continue
         result_field = learning_curve_result_field_for_method_name(method_name)
         if result_field is None:
             continue
@@ -141,6 +153,14 @@ def build_time_accuracy_table(
                 f"{result_field} is missing required columns: {missing_list}"
             )
         if "fit_time_mean_s" not in frame.columns:
+            continue
+        generation_timing = _resolve_generation_timing_for_method(
+            method_name,
+            generation_timing_by_mlip,
+            mlip_feature_names=mlip_feature_names,
+            generation_timing_by_method=generation_timing_by_method,
+        )
+        if generation_timing is None:
             continue
 
         for row in frame.itertuples(index=False):
@@ -180,15 +200,12 @@ def build_fixed_split_time_accuracy_table(
     dataset_size: int,
     train_fraction: float = 0.8,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
 ) -> pd.DataFrame:
     benchmark_n_train = fixed_split_train_size(
         dataset_size,
         train_fraction=train_fraction,
-    )
-    generation_timing = aggregate_generation_timing(
-        generation_timing_by_mlip,
-        mlip_feature_names=mlip_feature_names,
     )
     selected_method_names = (
         tuple(learning_curve_method_names())
@@ -197,8 +214,6 @@ def build_fixed_split_time_accuracy_table(
     )
     rows: list[dict[str, Any]] = []
     for method_name in selected_method_names:
-        if method_name in _EXCLUDED_METHOD_NAMES:
-            continue
         result_field = learning_curve_result_field_for_method_name(method_name)
         if result_field is None:
             continue
@@ -214,6 +229,14 @@ def build_fixed_split_time_accuracy_table(
         }
         missing_required_columns = required_columns.difference(frame.columns)
         if missing_required_columns:
+            continue
+        generation_timing = _resolve_generation_timing_for_method(
+            method_name,
+            generation_timing_by_mlip,
+            mlip_feature_names=mlip_feature_names,
+            generation_timing_by_method=generation_timing_by_method,
+        )
+        if generation_timing is None:
             continue
         matched = frame.loc[frame["n_train"] == benchmark_n_train]
         if matched.empty:

@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from oasis.exp import prepare_parity_plot_data
 from oasis.learning_curve.time_accuracy import (
+    GenerationTimingAggregate,
     build_fixed_split_time_accuracy_table,
     build_time_accuracy_table,
 )
@@ -925,6 +926,7 @@ def generation_time_accuracy_plot(
     *,
     output_path: str | Path,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
@@ -933,6 +935,7 @@ def generation_time_accuracy_plot(
         results,
         generation_timing_by_mlip,
         mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         method_names=method_names,
     )
     return _time_accuracy_scatter_plot(
@@ -952,6 +955,7 @@ def training_time_accuracy_plot(
     *,
     output_path: str | Path,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
@@ -960,6 +964,7 @@ def training_time_accuracy_plot(
         results,
         generation_timing_by_mlip,
         mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         method_names=method_names,
     )
     return _time_accuracy_scatter_plot(
@@ -979,6 +984,7 @@ def total_time_accuracy_plot(
     *,
     output_path: str | Path,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
@@ -987,6 +993,7 @@ def total_time_accuracy_plot(
         results,
         generation_timing_by_mlip,
         mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         method_names=method_names,
     )
     return _time_accuracy_scatter_plot(
@@ -1065,6 +1072,7 @@ def fixed_split_training_time_accuracy_plot(
     output_path: str | Path,
     train_fraction: float = 0.8,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
@@ -1075,6 +1083,7 @@ def fixed_split_training_time_accuracy_plot(
         dataset_size=dataset_size,
         train_fraction=train_fraction,
         mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         method_names=method_names,
     )
     return _fixed_split_time_accuracy_plot(
@@ -1097,6 +1106,7 @@ def fixed_split_total_time_accuracy_plot(
     output_path: str | Path,
     train_fraction: float = 0.8,
     mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
     method_names: tuple[str, ...] | list[str] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
@@ -1107,6 +1117,7 @@ def fixed_split_total_time_accuracy_plot(
         dataset_size=dataset_size,
         train_fraction=train_fraction,
         mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         method_names=method_names,
     )
     return _fixed_split_time_accuracy_plot(
