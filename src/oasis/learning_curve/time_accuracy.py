@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,17 @@ _TIME_ACCURACY_COLUMNS = [
     "generation_time_s",
     "training_time_s",
     "total_time_s",
+]
+_FIXED_SPLIT_TIME_ACCURACY_COLUMNS = [
+    "method",
+    "n_train",
+    "rmse_mean",
+    "rmse_std",
+    "generation_time_s",
+    "training_time_mean_s",
+    "training_time_std_s",
+    "total_time_mean_s",
+    "total_time_std_s",
 ]
 
 
@@ -147,3 +159,80 @@ def build_time_accuracy_table(
             )
 
     return pd.DataFrame(rows, columns=_TIME_ACCURACY_COLUMNS)
+
+
+def fixed_split_train_size(
+    dataset_size: int,
+    *,
+    train_fraction: float = 0.8,
+) -> int:
+    if dataset_size <= 0:
+        raise ValueError("dataset_size must be positive.")
+    if train_fraction <= 0.0 or train_fraction >= 1.0:
+        raise ValueError("train_fraction must lie strictly between 0 and 1.")
+    return max(1, int(math.floor(train_fraction * dataset_size)))
+
+
+def build_fixed_split_time_accuracy_table(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    dataset_size: int,
+    train_fraction: float = 0.8,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+) -> pd.DataFrame:
+    benchmark_n_train = fixed_split_train_size(
+        dataset_size,
+        train_fraction=train_fraction,
+    )
+    generation_timing = aggregate_generation_timing(
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+    )
+    selected_method_names = (
+        tuple(learning_curve_method_names())
+        if method_names is None
+        else tuple(method_names)
+    )
+    rows: list[dict[str, Any]] = []
+    for method_name in selected_method_names:
+        if method_name in _EXCLUDED_METHOD_NAMES:
+            continue
+        result_field = learning_curve_result_field_for_method_name(method_name)
+        if result_field is None:
+            continue
+        frame = getattr(results, result_field)
+        if frame is None or frame.empty:
+            continue
+        required_columns = {
+            "n_train",
+            "rmse_mean",
+            "rmse_std",
+            "fit_time_mean_s",
+            "fit_time_std_s",
+        }
+        missing_required_columns = required_columns.difference(frame.columns)
+        if missing_required_columns:
+            continue
+        matched = frame.loc[frame["n_train"] == benchmark_n_train]
+        if matched.empty:
+            continue
+        row_mapping = matched.iloc[0].to_dict()
+        training_time_mean_s = float(row_mapping["fit_time_mean_s"])
+        training_time_std_s = float(row_mapping["fit_time_std_s"])
+        rows.append(
+            {
+                "method": method_name,
+                "n_train": benchmark_n_train,
+                "rmse_mean": float(row_mapping["rmse_mean"]),
+                "rmse_std": float(row_mapping["rmse_std"]),
+                "generation_time_s": generation_timing.generation_time_s,
+                "training_time_mean_s": training_time_mean_s,
+                "training_time_std_s": training_time_std_s,
+                "total_time_mean_s": generation_timing.generation_time_s
+                + training_time_mean_s,
+                "total_time_std_s": training_time_std_s,
+            }
+        )
+    return pd.DataFrame(rows, columns=_FIXED_SPLIT_TIME_ACCURACY_COLUMNS)

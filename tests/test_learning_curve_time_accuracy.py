@@ -6,6 +6,7 @@ import pandas as pd
 
 from oasis.learning_curve.time_accuracy import (
     aggregate_generation_timing,
+    build_fixed_split_time_accuracy_table,
     build_time_accuracy_table,
 )
 from oasis.mlip.timing import MlipGenerationTimingSummary
@@ -179,3 +180,90 @@ class LearningCurveTimeAccuracyTests(unittest.TestCase):
                 generation_summaries,
                 mlip_feature_names=("mace", "orb"),
             )
+
+    def test_build_fixed_split_time_accuracy_table_selects_one_benchmark_point_per_method(
+        self,
+    ) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.41, 0.32],
+                    "rmse_std": [0.06, 0.03],
+                    "fit_time_mean_s": [0.12, 0.34],
+                    "fit_time_std_s": [0.01, 0.02],
+                }
+            ),
+            weighted_linear_df=pd.DataFrame(
+                {
+                    "n_train": [4, 8],
+                    "rmse_mean": [0.35, 0.25],
+                    "rmse_std": [0.04, 0.03],
+                    "fit_time_mean_s": [0.09, 0.18],
+                    "fit_time_std_s": [0.005, 0.01],
+                }
+            ),
+            graph_mean_df=pd.DataFrame(
+                {
+                    "n_train": [8],
+                    "rmse_mean": [0.5],
+                    "rmse_std": [0.07],
+                }
+            ),
+        )
+        generation_summaries = {
+            "mace": MlipGenerationTimingSummary(
+                model_name="mace",
+                reaction_count=2,
+                generation_time_total_s=10.0,
+                generation_time_slab_s=2.0,
+                generation_time_adslab_s=8.0,
+                generation_steps_total=20,
+                generation_steps_slab=4,
+                generation_steps_adslab=16,
+                time_per_step_s=0.5,
+            ),
+            "orb": MlipGenerationTimingSummary(
+                model_name="orb",
+                reaction_count=2,
+                generation_time_total_s=5.0,
+                generation_time_slab_s=1.0,
+                generation_time_adslab_s=4.0,
+                generation_steps_total=10,
+                generation_steps_slab=2,
+                generation_steps_adslab=8,
+                time_per_step_s=0.5,
+            ),
+        }
+
+        table = build_fixed_split_time_accuracy_table(
+            results,
+            generation_summaries,
+            dataset_size=10,
+            train_fraction=0.8,
+            mlip_feature_names=("mace", "orb"),
+        )
+
+        self.assertEqual(
+            table.columns.tolist(),
+            [
+                "method",
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "generation_time_s",
+                "training_time_mean_s",
+                "training_time_std_s",
+                "total_time_mean_s",
+                "total_time_std_s",
+            ],
+        )
+        self.assertEqual(table["method"].tolist(), ["ridge", "weighted_linear"])
+        self.assertEqual(table["n_train"].tolist(), [8, 8])
+        self.assertEqual(table["rmse_mean"].tolist(), [0.32, 0.25])
+        self.assertEqual(table["rmse_std"].tolist(), [0.03, 0.03])
+        self.assertEqual(table["generation_time_s"].tolist(), [15.0, 15.0])
+        self.assertEqual(table["training_time_mean_s"].tolist(), [0.34, 0.18])
+        self.assertEqual(table["training_time_std_s"].tolist(), [0.02, 0.01])
+        self.assertEqual(table["total_time_mean_s"].tolist(), [15.34, 15.18])
+        self.assertEqual(table["total_time_std_s"].tolist(), [0.02, 0.01])

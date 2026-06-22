@@ -18,7 +18,10 @@ from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 from oasis.exp import prepare_parity_plot_data
-from oasis.learning_curve.time_accuracy import build_time_accuracy_table
+from oasis.learning_curve.time_accuracy import (
+    build_fixed_split_time_accuracy_table,
+    build_time_accuracy_table,
+)
 from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
@@ -901,6 +904,7 @@ def _time_accuracy_scatter_plot(
     ax.set_xlabel(xlabel, fontsize=fontsize)
     ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_title(title, fontsize=fontsize)
+    ax.ticklabel_format(axis="x", style="plain", useOffset=False)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend and not table.empty:
@@ -991,6 +995,127 @@ def total_time_accuracy_plot(
         output_path=output_path,
         fontsize=fontsize,
         title="Total time vs RMSE",
+        xlabel="Total time (s)",
+        show_legend=show_legend,
+    )
+
+
+def _fixed_split_time_accuracy_plot(
+    table: pd.DataFrame,
+    *,
+    x_column: str,
+    xerr_column: str,
+    output_path: str | Path,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    title: str,
+    xlabel: str,
+    ylabel: str = "RMSE (eV)",
+    show_legend: bool = True,
+) -> Path:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if not table.empty:
+        for method_name, _, _, display_name, marker, color in _METHOD_PLOT_STYLES:
+            method_table = table.loc[table["method"] == method_name]
+            if method_table.empty:
+                continue
+            row = method_table.iloc[0]
+            ax.errorbar(
+                [row[x_column]],
+                [row["rmse_mean"]],
+                xerr=[row[xerr_column]],
+                yerr=[row["rmse_std"]],
+                fmt="none",
+                ecolor=color,
+                elinewidth=1.0,
+                capsize=3,
+                alpha=0.45,
+            )
+            ax.scatter(
+                [row[x_column]],
+                [row["rmse_mean"]],
+                marker=marker,
+                color=color,
+                label=display_name,
+                s=80,
+                alpha=0.9,
+            )
+
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    ax.set_title(title, fontsize=fontsize)
+    ax.ticklabel_format(axis="x", style="plain", useOffset=False)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    if show_legend and not table.empty:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+    return output_path
+
+
+def fixed_split_training_time_accuracy_plot(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    dataset_size: int,
+    output_path: str | Path,
+    train_fraction: float = 0.8,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    table = build_fixed_split_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        dataset_size=dataset_size,
+        train_fraction=train_fraction,
+        mlip_feature_names=mlip_feature_names,
+        method_names=method_names,
+    )
+    return _fixed_split_time_accuracy_plot(
+        table,
+        x_column="training_time_mean_s",
+        xerr_column="training_time_std_s",
+        output_path=output_path,
+        fontsize=fontsize,
+        title="Fixed-split training time vs RMSE",
+        xlabel="Training time (s)",
+        show_legend=show_legend,
+    )
+
+
+def fixed_split_total_time_accuracy_plot(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    dataset_size: int,
+    output_path: str | Path,
+    train_fraction: float = 0.8,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    table = build_fixed_split_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        dataset_size=dataset_size,
+        train_fraction=train_fraction,
+        mlip_feature_names=mlip_feature_names,
+        method_names=method_names,
+    )
+    return _fixed_split_time_accuracy_plot(
+        table,
+        x_column="total_time_mean_s",
+        xerr_column="total_time_std_s",
+        output_path=output_path,
+        fontsize=fontsize,
+        title="Fixed-split total time vs RMSE",
         xlabel="Total time (s)",
         show_legend=show_legend,
     )

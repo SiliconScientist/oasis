@@ -97,6 +97,19 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         return LearningCurveResults(ridge_df=ridge_frame)
 
+    @staticmethod
+    def _fixed_split_timed_learning_curve_results() -> LearningCurveResults:
+        ridge_frame = pd.DataFrame(
+            {
+                "n_train": [8],
+                "rmse_mean": [0.15],
+                "rmse_std": [0.01],
+                "fit_time_mean_s": [0.5],
+                "fit_time_std_s": [0.05],
+            }
+        )
+        return LearningCurveResults(ridge_df=ridge_frame)
+
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
 
@@ -437,8 +450,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(output_dir=tmp_path / "plots"),
             )
-            fake_wide_df = _FakeWideFrame()
-            learning_curve_results = self._timed_learning_curve_results()
+            fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
+            learning_curve_results = self._fixed_split_timed_learning_curve_results()
             generation_timing = {
                 "model_a": MlipGenerationTimingSummary(
                     model_name="model_a",
@@ -501,10 +514,18 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_training_plot, patch(
                 "oasis.experiment_runner.total_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
-            ) as mock_total_plot:
+            ) as mock_total_plot, patch(
+                "oasis.experiment_runner.fixed_split_training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "fixed_split_training_time_accuracy_anomalyaware_off.png",
+            ) as mock_fixed_training_plot, patch(
+                "oasis.experiment_runner.fixed_split_total_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "fixed_split_total_time_accuracy_anomalyaware_off.png",
+            ) as mock_fixed_total_plot:
                 run_experiment(cfg)
 
-        mock_load_generation_timing.assert_called_once_with(result_files)
+        self.assertEqual(mock_load_generation_timing.call_count, 2)
+        for call in mock_load_generation_timing.call_args_list:
+            self.assertEqual(call.args[0], result_files)
         for mock_plot, expected_path in (
             (
                 mock_generation_plot,
@@ -525,6 +546,32 @@ class ExperimentRunnerTests(unittest.TestCase):
                 mock_plot.call_args.kwargs["generation_timing_by_mlip"],
                 generation_timing,
             )
+            self.assertEqual(
+                mock_plot.call_args.kwargs["mlip_feature_names"],
+                ("model_a", "model_b"),
+            )
+            self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
+        for mock_plot, expected_path in (
+            (
+                mock_fixed_training_plot,
+                tmp_path
+                / "plots"
+                / "fixed_split_training_time_accuracy_anomalyaware_off.png",
+            ),
+            (
+                mock_fixed_total_plot,
+                tmp_path
+                / "plots"
+                / "fixed_split_total_time_accuracy_anomalyaware_off.png",
+            ),
+        ):
+            mock_plot.assert_called_once()
+            self.assertIs(mock_plot.call_args.kwargs["results"], learning_curve_results)
+            self.assertIs(
+                mock_plot.call_args.kwargs["generation_timing_by_mlip"],
+                generation_timing,
+            )
+            self.assertEqual(mock_plot.call_args.kwargs["dataset_size"], 10)
             self.assertEqual(
                 mock_plot.call_args.kwargs["mlip_feature_names"],
                 ("model_a", "model_b"),

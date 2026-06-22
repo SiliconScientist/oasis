@@ -17,6 +17,8 @@ from oasis.learning_curve.results_io import (
 from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.plot import (
     dispersion_plot,
+    fixed_split_total_time_accuracy_plot,
+    fixed_split_training_time_accuracy_plot,
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
@@ -445,6 +447,71 @@ class PlotTests(unittest.TestCase):
                 ]
 
             self.assertEqual(labels, ["Ridge"])
+
+    def test_fixed_split_training_time_accuracy_plot_uses_expected_axis_labels(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [8],
+                    "rmse_mean": [0.3],
+                    "rmse_std": [0.04],
+                    "fit_time_mean_s": [0.18],
+                    "fit_time_std_s": [0.02],
+                }
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "fixed_split_training_time_accuracy.png"
+            with patch("oasis.plot.plt.close"):
+                fixed_split_training_time_accuracy_plot(
+                    results,
+                    self._generation_summaries(),
+                    dataset_size=10,
+                    output_path=output_path,
+                    mlip_feature_names=("mace", "orb"),
+                )
+                fig = fixed_split_training_time_accuracy_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(ax.get_xlabel(), "Training time (s)")
+            self.assertEqual(ax.get_ylabel(), "RMSE (eV)")
+            self.assertEqual(ax.xaxis.get_offset_text().get_text(), "")
+
+    def test_fixed_split_total_time_accuracy_plot_renders_one_point_per_method(self) -> None:
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [8],
+                    "rmse_mean": [0.3],
+                    "rmse_std": [0.04],
+                    "fit_time_mean_s": [0.18],
+                    "fit_time_std_s": [0.02],
+                }
+            ),
+            resid_df=pd.DataFrame(
+                {
+                    "n_train": [8],
+                    "rmse_mean": [0.25],
+                    "rmse_std": [0.03],
+                    "fit_time_mean_s": [0.08],
+                    "fit_time_std_s": [0.01],
+                }
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "fixed_split_total_time_accuracy.png"
+            saved_path = fixed_split_total_time_accuracy_plot(
+                results,
+                self._generation_summaries(),
+                dataset_size=10,
+                output_path=output_path,
+                mlip_feature_names=("mace", "orb"),
+            )
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
 
     def test_screening_budget_plot_renders_from_results_only(self) -> None:
         result_df = pd.DataFrame(
