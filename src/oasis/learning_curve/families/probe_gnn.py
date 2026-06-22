@@ -12,6 +12,12 @@ from torch import Tensor
 
 from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gnn_gate import collate_graphs
+from oasis.learning_curve.families.torch_device import (
+    resolve_torch_device,
+    state_dict_to_cpu,
+    tensor_to_numpy,
+    tensors_to_device,
+)
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
@@ -151,8 +157,10 @@ class ProbeGnnModel:
     hidden_dim: int
     n_layers: int
     bias: float = 0.0
+    device: str = "cpu"
 
     def _build_encoder(self) -> ProbeGnnEncoder:
+        device = resolve_torch_device(self.device)
         encoder = ProbeGnnEncoder(
             in_features=self.in_features,
             hidden_dim=self.hidden_dim,
@@ -160,15 +168,22 @@ class ProbeGnnModel:
         )
         encoder.load_state_dict(self.state_dict)
         encoder.eval()
-        return encoder
+        return encoder.to(device)
 
     def predict(self, graphs: Sequence[GraphRecord]) -> np.ndarray:
         """Return predicted adsorption energies, shape (n_samples,)."""
         encoder = self._build_encoder()
         node_features, edge_index, batch_vector = collate_graphs(graphs)
+        device = resolve_torch_device(self.device)
+        node_features, edge_index, batch_vector = tensors_to_device(
+            device,
+            node_features,
+            edge_index,
+            batch_vector,
+        )
         with torch.no_grad():
             raw = encoder(node_features, edge_index, batch_vector)  # (n_samples, 1)
-        return raw.squeeze(1).numpy() + self.bias
+        return tensor_to_numpy(raw.squeeze(1)) + self.bias
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +227,14 @@ class ProbeGnnTuningSpec:
         y_val_np = val_ds.targets
 
         seed = self.training_cfg.seed
+        device = resolve_torch_device(self.training_cfg.device)
+        train_nf, train_ei, train_bv, y_train = tensors_to_device(
+            device,
+            train_nf,
+            train_ei,
+            train_bv,
+            y_train,
+        )
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
@@ -221,14 +244,22 @@ class ProbeGnnTuningSpec:
 
             if seed is not None:
                 torch.manual_seed(seed)
-            encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
+            encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers).to(device)
             _train_probe_encoder(
                 encoder, train_nf, train_ei, train_bv, y_train,
                 epochs=epochs, lr=lr, weight_decay=weight_decay,
             )
+            val_nf_device, val_ei_device, val_bv_device = tensors_to_device(
+                device,
+                val_nf,
+                val_ei,
+                val_bv,
+            )
             encoder.eval()
             with torch.no_grad():
-                preds_val = encoder(val_nf, val_ei, val_bv).squeeze(1).numpy()
+                preds_val = tensor_to_numpy(
+                    encoder(val_nf_device, val_ei_device, val_bv_device).squeeze(1)
+                )
             return float(np.sqrt(np.mean((y_val_np - preds_val) ** 2)))
 
         return objective
@@ -259,10 +290,12 @@ class ProbeGnnTuningSpec:
 
         nf, ei, bv = collate_graphs(fit_graphs)
         y = torch.tensor(y_np, dtype=torch.float32)
+        device = resolve_torch_device(self.training_cfg.device)
+        nf, ei, bv, y = tensors_to_device(device, nf, ei, bv, y)
 
         if self.training_cfg.seed is not None:
             torch.manual_seed(self.training_cfg.seed)
-        encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
+        encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers).to(device)
         _train_probe_encoder(
             encoder, nf, ei, bv, y,
             epochs=epochs, lr=lr, weight_decay=weight_decay,
@@ -270,15 +303,16 @@ class ProbeGnnTuningSpec:
 
         encoder.eval()
         with torch.no_grad():
-            preds_np = encoder(nf, ei, bv).squeeze(1).numpy()
+            preds_np = tensor_to_numpy(encoder(nf, ei, bv).squeeze(1))
         bias = float(np.mean(y_np - preds_np))
 
         return ProbeGnnModel(
-            state_dict=encoder.state_dict(),
+            state_dict=state_dict_to_cpu(encoder.state_dict()),
             in_features=in_features,
             hidden_dim=hidden_dim,
             n_layers=n_layers,
             bias=bias,
+            device=str(device),
         )
 
     def predict(self, model: ProbeGnnModel, dataset: SweepDataset) -> np.ndarray:
@@ -307,8 +341,10 @@ class GnnDirectModel:
     hidden_dim: int
     n_layers: int
     bias: float = 0.0
+    device: str = "cpu"
 
     def _build_encoder(self) -> ProbeGnnEncoder:
+        device = resolve_torch_device(self.device)
         encoder = ProbeGnnEncoder(
             in_features=self.in_features,
             hidden_dim=self.hidden_dim,
@@ -316,15 +352,22 @@ class GnnDirectModel:
         )
         encoder.load_state_dict(self.state_dict)
         encoder.eval()
-        return encoder
+        return encoder.to(device)
 
     def predict(self, graphs: Sequence[GraphRecord]) -> np.ndarray:
         """Return predicted adsorption energies, shape (n_samples,)."""
         encoder = self._build_encoder()
         node_features, edge_index, batch_vector = collate_graphs(graphs)
+        device = resolve_torch_device(self.device)
+        node_features, edge_index, batch_vector = tensors_to_device(
+            device,
+            node_features,
+            edge_index,
+            batch_vector,
+        )
         with torch.no_grad():
             raw = encoder(node_features, edge_index, batch_vector)
-        return raw.squeeze(1).numpy() + self.bias
+        return tensor_to_numpy(raw.squeeze(1)) + self.bias
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +406,14 @@ class GnnDirectTuningSpec:
         y_val_np = val_ds.targets
 
         seed = self.training_cfg.seed
+        device = resolve_torch_device(self.training_cfg.device)
+        train_nf, train_ei, train_bv, y_train = tensors_to_device(
+            device,
+            train_nf,
+            train_ei,
+            train_bv,
+            y_train,
+        )
 
         def objective(trial: Any) -> float:
             hidden_dim, n_layers = self._arch_from_trial(trial)
@@ -372,14 +423,22 @@ class GnnDirectTuningSpec:
 
             if seed is not None:
                 torch.manual_seed(seed)
-            encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
+            encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers).to(device)
             _train_probe_encoder(
                 encoder, train_nf, train_ei, train_bv, y_train,
                 epochs=epochs, lr=lr, weight_decay=weight_decay,
             )
+            val_nf_device, val_ei_device, val_bv_device = tensors_to_device(
+                device,
+                val_nf,
+                val_ei,
+                val_bv,
+            )
             encoder.eval()
             with torch.no_grad():
-                preds_val = encoder(val_nf, val_ei, val_bv).squeeze(1).numpy()
+                preds_val = tensor_to_numpy(
+                    encoder(val_nf_device, val_ei_device, val_bv_device).squeeze(1)
+                )
             return float(np.sqrt(np.mean((y_val_np - preds_val) ** 2)))
 
         return objective
@@ -411,10 +470,12 @@ class GnnDirectTuningSpec:
 
         nf, ei, bv = collate_graphs(fit_graphs)
         y = torch.tensor(y_np, dtype=torch.float32)
+        device = resolve_torch_device(self.training_cfg.device)
+        nf, ei, bv, y = tensors_to_device(device, nf, ei, bv, y)
 
         if self.training_cfg.seed is not None:
             torch.manual_seed(self.training_cfg.seed)
-        encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers)
+        encoder = ProbeGnnEncoder(in_features, hidden_dim, n_layers).to(device)
         _train_probe_encoder(
             encoder, nf, ei, bv, y,
             epochs=epochs, lr=lr, weight_decay=weight_decay,
@@ -422,15 +483,16 @@ class GnnDirectTuningSpec:
 
         encoder.eval()
         with torch.no_grad():
-            preds_np = encoder(nf, ei, bv).squeeze(1).numpy()
+            preds_np = tensor_to_numpy(encoder(nf, ei, bv).squeeze(1))
         bias = float(np.mean(y_np - preds_np))
 
         return GnnDirectModel(
-            state_dict=encoder.state_dict(),
+            state_dict=state_dict_to_cpu(encoder.state_dict()),
             in_features=in_features,
             hidden_dim=hidden_dim,
             n_layers=n_layers,
             bias=bias,
+            device=str(device),
         )
 
     def predict(self, model: GnnDirectModel, dataset: SweepDataset) -> np.ndarray:

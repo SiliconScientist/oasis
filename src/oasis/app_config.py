@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 class Config(BaseModel):
     seed: Optional[int] = None
+    device: Optional[str] = None
     dev_run: Optional[bool] = None
     train: Optional[bool] = None
     evaluate: Optional[bool] = None
@@ -45,6 +46,7 @@ class Config(BaseModel):
         self._apply_dataset_profile()
         self._validate_derived_paths()
         self._inherit_global_seed()
+        self._inherit_global_device()
 
     def _apply_dataset_profile(self) -> None:
         profile = self.dataset_profile
@@ -249,3 +251,20 @@ class Config(BaseModel):
             optuna_cfg = getattr(tuning_cfg, "optuna", None)
             if optuna_cfg is not None and optuna_cfg.seed is None:
                 optuna_cfg.seed = self.seed
+
+    def _inherit_global_device(self) -> None:
+        if self.device is None or self.experiment is None:
+            return
+        learning_curve = self.experiment.learning_curve
+        if learning_curve is None or learning_curve.models is None:
+            return
+
+        models_cfg = learning_curve.models
+        for family_cfg_name in ("moe", "probe_gnn", "gnn_direct"):
+            family_cfg = getattr(models_cfg, family_cfg_name, None)
+            if family_cfg is None:
+                continue
+
+            training_cfg = getattr(family_cfg, "training", None)
+            if training_cfg is not None and training_cfg.device is None:
+                training_cfg.device = self.device

@@ -536,6 +536,18 @@ class SchNetGateTuningSpecTests(unittest.TestCase):
         model = spec.fit_selected_model(split, _SchNetMockTrial(), refit_policy="train_plus_val")
         self.assertEqual(spec.trial_metadata(_SchNetMockTrial(), model)["n_experts"], 3)
 
+    def test_fit_selected_model_resolves_requested_device(self) -> None:
+        split = _make_split_with_schnet_graphs()
+        spec = SchNetGateTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0, device="cuda"),
+            hidden_dims=(8,),
+            n_rbf=8,
+        )
+        model = spec.fit_selected_model(split, _SchNetMockTrial(), refit_policy="train_only")
+        expected_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.assertEqual(model.device, expected_device)
+        self.assertTrue(all(t.device.type == "cpu" for t in model.state_dict.values()))
+
 
 if __name__ == "__main__":
     unittest.main()

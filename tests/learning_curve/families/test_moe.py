@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import torch
 
 from oasis.config import MoETrainingConfig
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, TopKGatingPolicy
@@ -350,6 +351,22 @@ class MoEGatingModeDispatchTests(unittest.TestCase):
             _model_cfg_with_gating("mlip_baseline", "top_k", top_k=1)
         )
         self.assertEqual(spec.policy.k, 1)
+
+
+class GnnGateDeviceTests(unittest.TestCase):
+    def test_fit_selected_model_resolves_requested_device(self) -> None:
+        spec = GnnGateTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0, device="cuda"),
+            hidden_dims=(8,),
+        )
+        model = spec.fit_selected_model(
+            _make_schnet_split(),
+            _SchNetMockTrial(),
+            refit_policy="train_only",
+        )
+        expected_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.assertEqual(model.device, expected_device)
+        self.assertTrue(all(t.device.type == "cpu" for t in model.state_dict.values()))
 
 
 # ---------------------------------------------------------------------------

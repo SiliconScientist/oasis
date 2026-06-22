@@ -368,6 +368,17 @@ class ProbeGnnTuningSpecTests(unittest.TestCase):
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         self.assertEqual(spec.trial_metadata(trial, model)["epochs"], 25)
 
+    def test_fit_selected_model_resolves_requested_device(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = ProbeGnnTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0, device="cuda"),
+            hidden_dims=(8,),
+        )
+        model = spec.fit_selected_model(split, _ProbeGnnMockTrial(), refit_policy="train_only")
+        expected_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.assertEqual(model.device, expected_device)
+        self.assertTrue(all(t.device.type == "cpu" for t in model.state_dict.values()))
+
 
 # ---------------------------------------------------------------------------
 # GnnDirectModel tests
@@ -458,6 +469,17 @@ class GnnDirectTuningSpecTests(unittest.TestCase):
         self.assertTrue(np.isfinite(rmse))
         model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
         self.assertEqual(spec.trial_metadata(trial, model)["epochs"], 25)
+
+    def test_fit_selected_model_resolves_requested_device(self) -> None:
+        split = _make_split_with_probe_graphs()
+        spec = GnnDirectTuningSpec(
+            training_cfg=MoETrainingConfig(epochs=2, seed=0, device="cuda"),
+            hidden_dims=(8,),
+        )
+        model = spec.fit_selected_model(split, _ProbeGnnMockTrial(), refit_policy="train_only")
+        expected_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.assertEqual(model.device, expected_device)
+        self.assertTrue(all(t.device.type == "cpu" for t in model.state_dict.values()))
 
     def test_ignores_probe_records_in_auxiliary_views(self) -> None:
         """GnnDirectTuningSpec must use graph_view, not probe_gnn_records."""

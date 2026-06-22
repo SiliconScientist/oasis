@@ -14,6 +14,12 @@ from oasis.config import MoETrainingConfig
 from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
 from oasis.learning_curve.families.gnn_gate import collate_graphs_with_distances
+from oasis.learning_curve.families.torch_device import (
+    resolve_torch_device,
+    state_dict_to_cpu,
+    tensor_to_numpy,
+    tensors_to_device,
+)
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
@@ -205,9 +211,11 @@ class SchNetGateModel:
     r_max: float = 6.0
     max_atomic_num: int = 100
     bias: float = 0.0
+    device: str = "cpu"
     policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
 
     def _build_encoder(self) -> SchNetEncoder:
+        device = resolve_torch_device(self.device)
         encoder = SchNetEncoder(
             hidden_dim=self.hidden_dim,
             out_features=self.n_experts,
@@ -218,14 +226,22 @@ class SchNetGateModel:
         )
         encoder.load_state_dict(self.state_dict)
         encoder.eval()
-        return encoder
+        return encoder.to(device)
 
     def predict(self, X: np.ndarray, graphs: Sequence[GraphRecord]) -> np.ndarray:
         encoder = self._build_encoder()
         atomic_numbers, edge_index, edge_distances, batch_vector = _collate_schnet(graphs)
+        device = resolve_torch_device(self.device)
+        atomic_numbers, edge_index, edge_distances, batch_vector = tensors_to_device(
+            device,
+            atomic_numbers,
+            edge_index,
+            edge_distances,
+            batch_vector,
+        )
         with torch.no_grad():
             logits = encoder(atomic_numbers, edge_index, edge_distances, batch_vector)
-        weights = self.policy.apply(logits.numpy())
+        weights = self.policy.apply(tensor_to_numpy(logits))
         return (X * weights).sum(axis=1) + self.bias
 
 
@@ -271,6 +287,16 @@ class SchNetGateTuningSpec:
         y_val_np = val_ds.targets
 
         seed = self.training_cfg.seed
+        device = resolve_torch_device(self.training_cfg.device)
+        train_z, train_ei, train_ed, train_bv, X_train, y_train = tensors_to_device(
+            device,
+            train_z,
+            train_ei,
+            train_ed,
+            train_bv,
+            X_train,
+            y_train,
+        )
         n_rbf = self.n_rbf
         r_max = self.r_max
         policy = self.policy
@@ -283,15 +309,28 @@ class SchNetGateTuningSpec:
 
             if seed is not None:
                 torch.manual_seed(seed)
-            encoder = SchNetEncoder(hidden_dim, n_experts, n_layers, n_rbf=n_rbf, r_max=r_max)
+            encoder = SchNetEncoder(
+                hidden_dim,
+                n_experts,
+                n_layers,
+                n_rbf=n_rbf,
+                r_max=r_max,
+            ).to(device)
             _train_schnet_encoder(
                 encoder, train_z, train_ei, train_ed, train_bv, X_train, y_train,
                 epochs=epochs, lr=lr, weight_decay=weight_decay,
             )
+            val_z_device, val_ei_device, val_ed_device, val_bv_device = tensors_to_device(
+                device,
+                val_z,
+                val_ei,
+                val_ed,
+                val_bv,
+            )
             encoder.eval()
             with torch.no_grad():
-                logits = encoder(val_z, val_ei, val_ed, val_bv)
-            weights = policy.apply(logits.numpy())
+                logits = encoder(val_z_device, val_ei_device, val_ed_device, val_bv_device)
+            weights = policy.apply(tensor_to_numpy(logits))
             preds = (X_val_np * weights).sum(axis=1)
             return float(np.sqrt(np.mean((y_val_np - preds) ** 2)))
 
@@ -330,10 +369,18 @@ class SchNetGateTuningSpec:
         z, ei, ed, bv = _collate_schnet(fit_graphs)
         X = torch.tensor(X_np, dtype=torch.float32)
         y = torch.tensor(y_np, dtype=torch.float32)
+        device = resolve_torch_device(self.training_cfg.device)
+        z, ei, ed, bv, X, y = tensors_to_device(device, z, ei, ed, bv, X, y)
 
         if self.training_cfg.seed is not None:
             torch.manual_seed(self.training_cfg.seed)
-        encoder = SchNetEncoder(hidden_dim, n_experts, n_layers, n_rbf=self.n_rbf, r_max=self.r_max)
+        encoder = SchNetEncoder(
+            hidden_dim,
+            n_experts,
+            n_layers,
+            n_rbf=self.n_rbf,
+            r_max=self.r_max,
+        ).to(device)
         _train_schnet_encoder(
             encoder, z, ei, ed, bv, X, y,
             epochs=epochs, lr=lr, weight_decay=weight_decay,
@@ -342,18 +389,19 @@ class SchNetGateTuningSpec:
         encoder.eval()
         with torch.no_grad():
             logits = encoder(z, ei, ed, bv)
-        weights = self.policy.apply(logits.numpy())
+        weights = self.policy.apply(tensor_to_numpy(logits))
         preds = (X_np * weights).sum(axis=1)
         bias = float(np.mean(y_np - preds))
 
         return SchNetGateModel(
-            state_dict=encoder.state_dict(),
+            state_dict=state_dict_to_cpu(encoder.state_dict()),
             n_experts=n_experts,
             hidden_dim=hidden_dim,
             n_layers=n_layers,
             n_rbf=self.n_rbf,
             r_max=self.r_max,
             bias=bias,
+            device=str(device),
             policy=self.policy,
         )
 

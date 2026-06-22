@@ -2175,6 +2175,54 @@ class ConfigParsingTests(unittest.TestCase):
         assert probe.tuning.optuna is not None
         self.assertEqual(probe.tuning.optuna.seed, 11)
 
+    def test_global_device_is_inherited_by_torch_learned_families(self) -> None:
+        cfg = Config(
+            **{
+                "seed": 7,
+                "device": "cuda",
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": True,
+                            "moe": {"enabled": True, "gate_type": "gnn"},
+                            "probe_gnn": {"enabled": True},
+                            "gnn_direct": {"enabled": True},
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        models = cfg.experiment.learning_curve.models
+        self.assertEqual(models.moe.training.device, "cuda")
+        self.assertEqual(models.probe_gnn.training.device, "cuda")
+        self.assertEqual(models.gnn_direct.training.device, "cuda")
+
     def test_plot_can_parse_without_model_toggles(self) -> None:
         cfg = Config(
             **{

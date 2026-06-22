@@ -13,6 +13,12 @@ from torch import Tensor
 from oasis.config import MoETrainingConfig
 from oasis.learning_curve.execution import require_min_mlip_feature_count
 from oasis.learning_curve.families.gating_policy import DenseGatingPolicy, GatingPolicy
+from oasis.learning_curve.families.torch_device import (
+    resolve_torch_device,
+    state_dict_to_cpu,
+    tensor_to_numpy,
+    tensors_to_device,
+)
 from oasis.sweep import GraphRecord, SweepDataset, TrainValTestSweepRunnerInput
 from oasis.tune import SelectionRefitPolicy, resolved_training_epochs
 
@@ -160,9 +166,11 @@ class GnnGateModel:
     hidden_dim: int
     n_layers: int
     bias: float = 0.0
+    device: str = "cpu"
     policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
 
     def _build_encoder(self, in_features: int) -> GnnEncoder:
+        device = resolve_torch_device(self.device)
         encoder = GnnEncoder(
             in_features=in_features,
             hidden_dim=self.hidden_dim,
@@ -171,15 +179,22 @@ class GnnGateModel:
         )
         encoder.load_state_dict(self.state_dict)
         encoder.eval()
-        return encoder
+        return encoder.to(device)
 
     def predict(self, X: np.ndarray, graphs: Sequence[GraphRecord]) -> np.ndarray:
         in_features = graphs[0].node_features.shape[1]
         encoder = self._build_encoder(in_features)
         node_features, edge_index, batch_vector = collate_graphs(graphs)
+        device = resolve_torch_device(self.device)
+        node_features, edge_index, batch_vector = tensors_to_device(
+            device,
+            node_features,
+            edge_index,
+            batch_vector,
+        )
         with torch.no_grad():
             logits = encoder(node_features, edge_index, batch_vector)  # (n_samples, n_experts)
-        weights = self.policy.apply(logits.numpy())  # (n_samples, n_experts)
+        weights = self.policy.apply(tensor_to_numpy(logits))  # (n_samples, n_experts)
         return (X * weights).sum(axis=1) + self.bias
 
 
@@ -250,6 +265,15 @@ class GnnGateTuningSpec:
         y_val_np = val_ds.targets
 
         seed = self.training_cfg.seed
+        device = resolve_torch_device(self.training_cfg.device)
+        train_nf, train_ei, train_bv, X_train, y_train = tensors_to_device(
+            device,
+            train_nf,
+            train_ei,
+            train_bv,
+            X_train,
+            y_train,
+        )
         policy = self.policy
 
         def objective(trial: Any) -> float:
@@ -260,16 +284,22 @@ class GnnGateTuningSpec:
 
             if seed is not None:
                 torch.manual_seed(seed)
-            encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers)
+            encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers).to(device)
             _train_encoder(
                 encoder, train_nf, train_ei, train_bv, X_train, y_train,
                 epochs=epochs, lr=lr, weight_decay=weight_decay,
             )
 
+            val_nf_device, val_ei_device, val_bv_device = tensors_to_device(
+                device,
+                val_nf,
+                val_ei,
+                val_bv,
+            )
             encoder.eval()
             with torch.no_grad():
-                logits = encoder(val_nf, val_ei, val_bv)
-            weights = policy.apply(logits.numpy())
+                logits = encoder(val_nf_device, val_ei_device, val_bv_device)
+            weights = policy.apply(tensor_to_numpy(logits))
             preds = (X_val_np * weights).sum(axis=1)
             return float(np.sqrt(np.mean((y_val_np - preds) ** 2)))
 
@@ -309,10 +339,12 @@ class GnnGateTuningSpec:
         nf, ei, bv = collate_graphs(fit_graphs)
         X = torch.tensor(X_np, dtype=torch.float32)
         y = torch.tensor(y_np, dtype=torch.float32)
+        device = resolve_torch_device(self.training_cfg.device)
+        nf, ei, bv, X, y = tensors_to_device(device, nf, ei, bv, X, y)
 
         if self.training_cfg.seed is not None:
             torch.manual_seed(self.training_cfg.seed)
-        encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers)
+        encoder = GnnEncoder(in_features, hidden_dim, n_experts, n_layers).to(device)
         _train_encoder(
             encoder, nf, ei, bv, X, y,
             epochs=epochs, lr=lr, weight_decay=weight_decay,
@@ -321,16 +353,17 @@ class GnnGateTuningSpec:
         encoder.eval()
         with torch.no_grad():
             logits = encoder(nf, ei, bv)
-        weights = self.policy.apply(logits.numpy())
+        weights = self.policy.apply(tensor_to_numpy(logits))
         preds = (X_np * weights).sum(axis=1)
         bias = float(np.mean(y_np - preds))
 
         return GnnGateModel(
-            state_dict=encoder.state_dict(),
+            state_dict=state_dict_to_cpu(encoder.state_dict()),
             n_experts=n_experts,
             hidden_dim=hidden_dim,
             n_layers=n_layers,
             bias=bias,
+            device=str(device),
             policy=self.policy,
         )
 
