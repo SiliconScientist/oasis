@@ -588,6 +588,162 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(mock_plot.call_args.kwargs["train_fraction"], 0.5)
             self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
 
+    def test_run_experiment_wires_probe_generation_timing_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=SimpleNamespace(
+                    dataset_path=tmp_path / "probe_dataset.json",
+                    mlip_results_dir=tmp_path / "probe_results",
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            use_probe_gnn=True,
+                            probe_gnn=SimpleNamespace(enabled=True),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    fixed_split=SimpleNamespace(train_fraction=0.5),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
+            learning_curve_results = self._fixed_split_timed_learning_curve_results()
+            generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=2,
+                    generation_time_total_s=10.0,
+                    generation_time_slab_s=4.0,
+                    generation_time_adslab_s=6.0,
+                    generation_steps_total=20,
+                    generation_steps_slab=8,
+                    generation_steps_adslab=12,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=2,
+                    generation_time_total_s=12.0,
+                    generation_time_slab_s=5.0,
+                    generation_time_adslab_s=7.0,
+                    generation_steps_total=24,
+                    generation_steps_slab=10,
+                    generation_steps_adslab=14,
+                    time_per_step_s=0.5,
+                ),
+            }
+            probe_generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=3,
+                    generation_time_total_s=3.0,
+                    generation_time_slab_s=1.0,
+                    generation_time_adslab_s=2.0,
+                    generation_steps_total=6,
+                    generation_steps_slab=2,
+                    generation_steps_adslab=4,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=3,
+                    generation_time_total_s=4.5,
+                    generation_time_slab_s=1.5,
+                    generation_time_adslab_s=3.0,
+                    generation_steps_total=9,
+                    generation_steps_slab=3,
+                    generation_steps_adslab=6,
+                    time_per_step_s=0.5,
+                ),
+            }
+            result_files = [
+                tmp_path / "model_a_result.json",
+                tmp_path / "model_b_result.json",
+            ]
+            probe_result_files = [
+                tmp_path / "probe_results" / "model_a_result.json",
+                tmp_path / "probe_results" / "model_b_result.json",
+            ]
+
+            def fake_find_result_files(base_dir, **kwargs):
+                if base_dir == cfg.analysis.base_dir:
+                    return result_files
+                if base_dir == cfg.probe_features.mlip_results_dir:
+                    self.assertEqual(kwargs.get("pattern"), "*_result.json")
+                    return probe_result_files
+                raise AssertionError(f"Unexpected base_dir: {base_dir!r}")
+
+            with patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=True,
+            ), patch(
+                "oasis.experiment_runner.find_result_files",
+                side_effect=fake_find_result_files,
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=learning_curve_results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.load_generation_timing_summaries",
+                return_value=generation_timing,
+            ), patch(
+                "oasis.experiment_runner.load_probe_generation_timing_summaries",
+                return_value=probe_generation_timing,
+            ) as mock_probe_generation_timing, patch(
+                "oasis.experiment_runner.generation_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ) as mock_generation_plot, patch(
+                "oasis.experiment_runner.training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
+            ) as mock_training_plot, patch(
+                "oasis.experiment_runner.total_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.fixed_split_training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "fixed_split_training_time_accuracy_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.fixed_split_total_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "fixed_split_total_time_accuracy_anomalyaware_off.png",
+            ):
+                run_experiment(cfg)
+
+        mock_probe_generation_timing.assert_called_once_with(probe_result_files)
+        expected_override = mock_generation_plot.call_args.kwargs[
+            "generation_timing_by_method"
+        ]["probe_gnn"]
+        self.assertEqual(expected_override.generation_time_s, 7.5)
+        self.assertEqual(expected_override.generation_time_slab_s, 2.5)
+        self.assertEqual(expected_override.generation_time_adslab_s, 5.0)
+        self.assertEqual(expected_override.generation_steps_total, 15)
+        self.assertEqual(expected_override.mlip_feature_names, ("model_a", "model_b"))
+        self.assertEqual(
+            mock_training_plot.call_args.kwargs["generation_timing_by_method"][
+                "probe_gnn"
+            ],
+            expected_override,
+        )
+
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
         self,
     ) -> None:

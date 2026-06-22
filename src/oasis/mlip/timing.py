@@ -52,6 +52,31 @@ def generation_timing_summary_from_result_dict(
     *,
     model_name: str,
 ) -> MlipGenerationTimingSummary:
+    return _generation_timing_summary_from_result_dict(
+        mlip_result,
+        model_name=model_name,
+        entry_prefix=None,
+    )
+
+
+def probe_generation_timing_summary_from_result_dict(
+    mlip_result: dict[str, Any],
+    *,
+    model_name: str,
+) -> MlipGenerationTimingSummary:
+    return _generation_timing_summary_from_result_dict(
+        mlip_result,
+        model_name=model_name,
+        entry_prefix="unique_probe_",
+    )
+
+
+def _generation_timing_summary_from_result_dict(
+    mlip_result: dict[str, Any],
+    *,
+    model_name: str,
+    entry_prefix: str | None,
+) -> MlipGenerationTimingSummary:
     reaction_count = 0
     total_slab_time = 0.0
     total_adslab_time = 0.0
@@ -60,6 +85,10 @@ def generation_timing_summary_from_result_dict(
 
     for reaction, reaction_data in mlip_result.items():
         if reaction == "calculation_settings" or not isinstance(reaction_data, dict):
+            continue
+        if entry_prefix is not None and not reaction.startswith(entry_prefix):
+            continue
+        if entry_prefix is None and reaction.startswith("unique_probe_"):
             continue
         final_data = reaction_data.get("final", {})
         if not isinstance(final_data, dict):
@@ -108,5 +137,27 @@ def load_generation_timing_summaries(
         summary.model_name: summary
         for summary in (
             load_generation_timing_summary(result_path) for result_path in result_files
+        )
+    }
+
+
+def load_probe_generation_timing_summary(
+    result_path: str | Path,
+) -> MlipGenerationTimingSummary:
+    path = Path(result_path)
+    return probe_generation_timing_summary_from_result_dict(
+        load_result_json(path),
+        model_name=model_name_from_result_path(path),
+    )
+
+
+def load_probe_generation_timing_summaries(
+    result_files: list[Path],
+) -> dict[str, MlipGenerationTimingSummary]:
+    return {
+        summary.model_name: summary
+        for summary in (
+            load_probe_generation_timing_summary(result_path)
+            for result_path in result_files
         )
     }

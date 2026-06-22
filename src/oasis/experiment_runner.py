@@ -42,6 +42,7 @@ from oasis.mlip.artifacts import (
     load_wide_predictions,
 )
 from oasis.mlip.timing import load_generation_timing_summaries
+from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
@@ -285,9 +286,44 @@ def build_auxiliary_views(cfg: object, wide_df: object, probe_gnn_enabled: bool)
 
 def _method_generation_timing_overrides(
     cfg: object,
+    wide_df: object,
 ) -> dict[str, GenerationTimingAggregate] | None:
-    del cfg
-    return None
+    overrides: dict[str, GenerationTimingAggregate] = {}
+    probe_cfg = getattr(cfg, "probe_features", None)
+    learning_curve_cfg = (
+        cfg.experiment.learning_curve
+        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        else None
+    )
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
+    probe_gnn_enabled = bool(getattr(probe_gnn_cfg, "enabled", False)) or bool(
+        getattr(models_cfg, "use_probe_gnn", False)
+    )
+    feature_names = mlip_feature_names(wide_df)
+
+    if (
+        probe_gnn_enabled
+        and probe_cfg is not None
+        and getattr(probe_cfg, "mlip_results_dir", None) is not None
+        and feature_names
+    ):
+        try:
+            probe_result_files = find_result_files(
+                probe_cfg.mlip_results_dir,
+                pattern="*_result.json",
+            )
+            probe_generation_timing_by_mlip = load_probe_generation_timing_summaries(
+                probe_result_files
+            )
+            overrides["probe_gnn"] = aggregate_generation_timing(
+                probe_generation_timing_by_mlip,
+                mlip_feature_names=feature_names,
+            )
+        except (FileNotFoundError, KeyError):
+            pass
+
+    return overrides or None
 
 
 def write_parity_plot(
@@ -495,7 +531,7 @@ def run_experiment(cfg: object):
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files = load_filtered_wide_predictions(cfg)
     auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
-    generation_timing_by_method = _method_generation_timing_overrides(cfg)
+    generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
     write_parity_plot(
         cfg,
         wide_df,
