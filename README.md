@@ -15,6 +15,15 @@ If you use `uv`, the equivalent is:
 uv pip install -e ".[dev]"
 ```
 
+For a reproducible environment, prefer:
+
+```bash
+uv sync --extra dev
+```
+
+GPU setup notes, including the tested PyTorch CUDA build, are in
+[docs/gpu_setup.md](docs/gpu_setup.md).
+
 Run the test suite with:
 
 ```bash

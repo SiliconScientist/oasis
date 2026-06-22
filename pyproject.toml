@@ -23,7 +23,7 @@ dependencies = [
     "rootstock",
     "scikit-learn",
     "sympy",
-    "torch",
+    "torch==2.11.0",
     "tomli; python_version < '3.11'",
 ]
 classifiers = [
