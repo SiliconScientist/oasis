@@ -14,7 +14,3 @@ srun \
   --mem=16G \
   --time=01:00:00 \
   --pty bash -l -c '
-    source .venv/bin/activate
-    python -c "import torch; print(\"cuda_available=\", torch.cuda.is_available()); print(\"device_count=\", torch.cuda.device_count())"
-    python -m oasis
-  '
