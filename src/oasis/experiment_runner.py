@@ -19,7 +19,10 @@ from oasis.exp import (
 from oasis.experiment.dataset import mlip_feature_names
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
-from oasis.learning_curve.time_accuracy import aggregate_generation_timing
+from oasis.learning_curve.time_accuracy import (
+    GenerationTimingAggregate,
+    aggregate_generation_timing,
+)
 from oasis.learning_curve.execution import (
     dispersion_from_spread,
     miscalibration_area,
@@ -280,6 +283,13 @@ def build_auxiliary_views(cfg: object, wide_df: object, probe_gnn_enabled: bool)
     return auxiliary_views
 
 
+def _method_generation_timing_overrides(
+    cfg: object,
+) -> dict[str, GenerationTimingAggregate] | None:
+    del cfg
+    return None
+
+
 def write_parity_plot(
     cfg: object,
     wide_df: object,
@@ -384,6 +394,7 @@ def write_time_accuracy_plots(
     wide_df: object,
     output_dir: Path,
     run_suffix: str,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
 ) -> tuple[Path, Path, Path] | None:
     if not result_files:
         print("Skipping time-accuracy plots: no MLIP result JSON files were found")
@@ -408,18 +419,21 @@ def write_time_accuracy_plots(
         results=learning_curve_results,
         generation_timing_by_mlip=generation_timing_by_mlip,
         mlip_feature_names=feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"generation_time_accuracy_{run_suffix}.png",
     )
     training_path = training_time_accuracy_plot(
         results=learning_curve_results,
         generation_timing_by_mlip=generation_timing_by_mlip,
         mlip_feature_names=feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"training_time_accuracy_{run_suffix}.png",
     )
     total_path = total_time_accuracy_plot(
         results=learning_curve_results,
         generation_timing_by_mlip=generation_timing_by_mlip,
         mlip_feature_names=feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"total_time_accuracy_{run_suffix}.png",
     )
     return generation_path, training_path, total_path
@@ -433,6 +447,7 @@ def write_fixed_split_time_accuracy_plots(
     output_dir: Path,
     run_suffix: str,
     train_fraction: float = 0.8,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
 ) -> tuple[Path, Path] | None:
     if not result_files:
         print("Skipping fixed-split time-accuracy plots: no MLIP result JSON files were found")
@@ -460,6 +475,7 @@ def write_fixed_split_time_accuracy_plots(
         dataset_size=dataset_size,
         train_fraction=train_fraction,
         mlip_feature_names=feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"fixed_split_training_time_accuracy_{run_suffix}.png",
     )
     total_path = fixed_split_total_time_accuracy_plot(
@@ -468,6 +484,7 @@ def write_fixed_split_time_accuracy_plots(
         dataset_size=dataset_size,
         train_fraction=train_fraction,
         mlip_feature_names=feature_names,
+        generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"fixed_split_total_time_accuracy_{run_suffix}.png",
     )
     return training_path, total_path
@@ -478,6 +495,7 @@ def run_experiment(cfg: object):
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files = load_filtered_wide_predictions(cfg)
     auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
+    generation_timing_by_method = _method_generation_timing_overrides(cfg)
     write_parity_plot(
         cfg,
         wide_df,
@@ -565,6 +583,7 @@ def run_experiment(cfg: object):
             wide_df=wide_df,
             output_dir=output_dir,
             run_suffix=run_suffix,
+            generation_timing_by_method=generation_timing_by_method,
         )
         write_fixed_split_time_accuracy_plots(
             learning_curve_results=learning_curve_results,
@@ -573,6 +592,7 @@ def run_experiment(cfg: object):
             output_dir=output_dir,
             run_suffix=run_suffix,
             train_fraction=fixed_split_train_fraction,
+            generation_timing_by_method=generation_timing_by_method,
         )
         if _has_uq_summary(learning_curve_results):
             with tempfile.TemporaryDirectory() as tmpdir:

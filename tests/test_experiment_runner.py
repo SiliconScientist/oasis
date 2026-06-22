@@ -553,6 +553,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 mock_plot.call_args.kwargs["mlip_feature_names"],
                 ("model_a", "model_b"),
             )
+            self.assertIsNone(
+                mock_plot.call_args.kwargs["generation_timing_by_method"]
+            )
             self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
         for mock_plot, expected_path in (
             (
@@ -578,6 +581,9 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(
                 mock_plot.call_args.kwargs["mlip_feature_names"],
                 ("model_a", "model_b"),
+            )
+            self.assertIsNone(
+                mock_plot.call_args.kwargs["generation_timing_by_method"]
             )
             self.assertEqual(mock_plot.call_args.kwargs["train_fraction"], 0.5)
             self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
