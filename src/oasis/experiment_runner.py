@@ -59,9 +59,22 @@ from oasis.plot import (
 )
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
+_DEV_RUN_MAX_ROWS = 24
+_DEV_RUN_SWEEP_SIZE = 8
+
 
 def _frame_height(frame: object) -> int:
     return int(getattr(frame, "height", len(frame)))
+
+
+def _frame_head(frame: object, n_rows: int):
+    if hasattr(frame, "head"):
+        return frame.head(n_rows)
+    if hasattr(frame, "slice"):
+        return frame.slice(0, n_rows)
+    if hasattr(frame, "iloc"):
+        return frame.iloc[:n_rows]
+    raise TypeError(f"Unsupported frame type for head(): {type(frame)!r}")
 
 
 def _mlip_selection_cfg(cfg: object):
@@ -86,7 +99,10 @@ def _append_output_suffix(path: Path, suffix: str) -> Path:
 
 
 def _apply_run_output_suffixes(cfg: object) -> str:
-    suffix = _anomaly_aware_run_suffix(cfg)
+    suffix_parts = [_anomaly_aware_run_suffix(cfg)]
+    if bool(getattr(cfg, "dev_run", False)):
+        suffix_parts.append("devrun_on")
+    suffix = "_".join(suffix_parts)
 
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = (
@@ -126,6 +142,56 @@ def _apply_run_output_suffixes(cfg: object) -> str:
         )
 
     return suffix
+
+
+def _apply_dev_run_frame_cap(cfg: object, wide_df: object):
+    if not bool(getattr(cfg, "dev_run", False)):
+        return wide_df
+    pre_rows = _frame_height(wide_df)
+    capped_df = _frame_head(wide_df, min(_DEV_RUN_MAX_ROWS, pre_rows))
+    print(
+        "Applied dev_run row cap:"
+        f" {pre_rows} -> {_frame_height(capped_df)} rows"
+    )
+    return capped_df
+
+
+def _apply_dev_run_curve_overrides(cfg: object, *, n_samples: int) -> None:
+    if not bool(getattr(cfg, "dev_run", False)):
+        return
+
+    experiment_cfg = getattr(cfg, "experiment", None)
+    if experiment_cfg is None:
+        return
+
+    curve_cfgs = [
+        curve_cfg
+        for curve_cfg in (
+            getattr(experiment_cfg, "learning_curve", None),
+            getattr(experiment_cfg, "screening", None),
+        )
+        if curve_cfg is not None
+    ]
+    if not curve_cfgs:
+        return
+
+    max_sweep_size = max(1, n_samples - 1)
+    sweep_size = min(_DEV_RUN_SWEEP_SIZE, max_sweep_size)
+    for curve_cfg in curve_cfgs:
+        curve_cfg.n_repeats = 1
+        curve_cfg.sweep_sizes = [sweep_size]
+        if hasattr(curve_cfg, "sweep_fractions"):
+            curve_cfg.sweep_fractions = []
+        if hasattr(curve_cfg, "min_train"):
+            curve_cfg.min_train = sweep_size
+        if hasattr(curve_cfg, "max_train"):
+            curve_cfg.max_train = sweep_size
+        if hasattr(curve_cfg, "step"):
+            curve_cfg.step = 1
+    print(
+        "Applied dev_run learning-curve overrides:"
+        f" n_repeats=1, sweep_sizes=[{sweep_size}]"
+    )
 
 
 def _derived_screening_learning_curve_cfg(cfg: object):
@@ -557,7 +623,9 @@ def run_experiment(cfg: object):
     run_suffix = _apply_run_output_suffixes(cfg)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files = load_filtered_wide_predictions(cfg)
+    wide_df = _apply_dev_run_frame_cap(cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
+    _apply_dev_run_curve_overrides(cfg, n_samples=_frame_height(wide_df))
     generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
     write_parity_plot(
         cfg,

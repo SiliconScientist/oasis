@@ -1,4 +1,5 @@
 seed = 42
+dev_run = false
 device = "cuda"
 
 # Example experiment-side configuration.

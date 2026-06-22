@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 
 from oasis.experiment_runner import (
+    _apply_dev_run_curve_overrides,
+    _apply_dev_run_frame_cap,
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
@@ -238,6 +240,58 @@ class ExperimentRunnerTests(unittest.TestCase):
             label_allowlist=["normal", "energy_anomaly"],
             strict_inference_anomaly=True,
         )
+
+    def test_apply_dev_run_frame_cap_truncates_rows_when_enabled(self) -> None:
+        cfg = SimpleNamespace(dev_run=True)
+        wide_df = pd.DataFrame(
+            {
+                "reaction": [f"r{i}" for i in range(40)],
+                "reference_ads_eng": np.arange(40, dtype=float),
+                "model_a_mlip_ads_eng_median": np.arange(40, dtype=float),
+            }
+        )
+
+        capped = _apply_dev_run_frame_cap(cfg, wide_df)
+
+        self.assertEqual(len(capped), 24)
+        self.assertEqual(capped["reaction"].tolist()[0], "r0")
+        self.assertEqual(capped["reaction"].tolist()[-1], "r23")
+
+    def test_apply_dev_run_curve_overrides_sets_single_smoke_sweep(self) -> None:
+        learning_curve_cfg = SimpleNamespace(
+            n_repeats=30,
+            sweep_sizes=[],
+            sweep_fractions=[0.1, 0.2],
+            min_train=5,
+            max_train=50,
+            step=1,
+        )
+        screening_cfg = SimpleNamespace(
+            n_repeats=30,
+            sweep_sizes=[],
+            min_train=5,
+            max_train=50,
+            step=1,
+        )
+        cfg = SimpleNamespace(
+            dev_run=True,
+            experiment=SimpleNamespace(
+                learning_curve=learning_curve_cfg,
+                screening=screening_cfg,
+            ),
+        )
+
+        _apply_dev_run_curve_overrides(cfg, n_samples=24)
+
+        self.assertEqual(learning_curve_cfg.n_repeats, 1)
+        self.assertEqual(learning_curve_cfg.sweep_sizes, [8])
+        self.assertEqual(learning_curve_cfg.sweep_fractions, [])
+        self.assertEqual(learning_curve_cfg.min_train, 8)
+        self.assertEqual(learning_curve_cfg.max_train, 8)
+        self.assertEqual(screening_cfg.n_repeats, 1)
+        self.assertEqual(screening_cfg.sweep_sizes, [8])
+        self.assertEqual(screening_cfg.min_train, 8)
+        self.assertEqual(screening_cfg.max_train, 8)
 
     def test_run_experiment_uses_filtered_wide_df_from_auxiliary_view_builder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
