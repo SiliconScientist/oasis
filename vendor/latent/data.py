@@ -15,6 +15,7 @@ from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
 from ase.db import connect
 import sys
+from time import perf_counter
 import pandas as pd
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -24,6 +25,7 @@ from latent.feature_generation import (
     get_host_feature_list,
     findSurfaceAtoms,
 )
+from latent.timing import write_generation_timing_sidecar
 from pymatgen.core.periodic_table import Element
 
 
@@ -778,8 +780,13 @@ def output_data(
     if resolved_csv_path.is_file():
         return pd.read_csv(resolved_csv_path)
 
+    t0 = perf_counter()
     df = make_data(cfg, exp_cfg)
     df.to_csv(resolved_csv_path, index=False)
+    write_generation_timing_sidecar(
+        resolved_csv_path,
+        generation_time_s=perf_counter() - t0,
+    )
     return df
 
 

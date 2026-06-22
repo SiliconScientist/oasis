@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -60,6 +64,93 @@ class TestAlignDfToSampleIds(unittest.TestCase):
 class TestLoadLatentDfImport(unittest.TestCase):
     def test_importable(self) -> None:
         self.assertTrue(callable(load_latent_df))
+
+
+class TestLatentVendorTiming(unittest.TestCase):
+    def _load_vendor_timing_module(self):
+        module_path = (
+            Path(__file__).resolve().parents[3] / "vendor" / "latent" / "timing.py"
+        )
+        spec = importlib.util.spec_from_file_location("latent.timing", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+
+    def _load_vendor_data_module(self):
+        module_path = (
+            Path(__file__).resolve().parents[3] / "vendor" / "latent" / "data.py"
+        )
+        timing_module = self._load_vendor_timing_module()
+
+        latent_pkg = ModuleType("latent")
+        latent_pkg.__path__ = [str(module_path.parent)]
+
+        fake_modules = {
+            "latent": latent_pkg,
+            "latent.timing": timing_module,
+            "latent.config": ModuleType("latent.config"),
+            "latent.feature_generation": ModuleType("latent.feature_generation"),
+            "ase": ModuleType("ase"),
+            "ase.calculators": ModuleType("ase.calculators"),
+            "ase.calculators.singlepoint": ModuleType("ase.calculators.singlepoint"),
+            "ase.db": ModuleType("ase.db"),
+            "tqdm": ModuleType("tqdm"),
+            "montegroup": ModuleType("montegroup"),
+            "montegroup.ghit": ModuleType("montegroup.ghit"),
+            "pymatgen": ModuleType("pymatgen"),
+            "pymatgen.core": ModuleType("pymatgen.core"),
+            "pymatgen.core.periodic_table": ModuleType(
+                "pymatgen.core.periodic_table"
+            ),
+        }
+        fake_modules["latent.config"].Config = object
+        fake_modules["latent.config"].ExperimentConfig = object
+        fake_modules["latent.feature_generation"].get_host_feature_list = MagicMock()
+        fake_modules["latent.feature_generation"].findSurfaceAtoms = MagicMock()
+        fake_modules["ase"].Atoms = object
+        fake_modules["ase.calculators.singlepoint"].SinglePointCalculator = object
+        fake_modules["ase.db"].connect = MagicMock()
+        fake_modules["tqdm"].tqdm = lambda iterable=None, **kwargs: iterable
+        fake_modules["montegroup.ghit"].GHIT = MagicMock()
+        fake_modules["pymatgen.core.periodic_table"].Element = MagicMock()
+
+        with patch.dict(sys.modules, fake_modules):
+            spec = importlib.util.spec_from_file_location("latent.data", module_path)
+            module = importlib.util.module_from_spec(spec)
+            assert spec.loader is not None
+            spec.loader.exec_module(module)
+        return module
+
+    def test_output_data_writes_generation_timing_sidecar(self) -> None:
+        vendor_data = self._load_vendor_data_module()
+        vendor_timing = self._load_vendor_timing_module()
+
+        with TemporaryDirectory() as tmp_dir:
+            csv_path = Path(tmp_dir) / "latent.csv"
+            cfg = SimpleNamespace(
+                data_generation=SimpleNamespace(data_filepath=str(csv_path))
+            )
+            expected = pd.DataFrame({"x": [1.0], "y": [2.0]})
+
+            with patch.object(
+                vendor_data,
+                "make_data",
+                return_value=expected,
+            ), patch.object(
+                vendor_data,
+                "perf_counter",
+                side_effect=[10.0, 12.5],
+            ):
+                result = vendor_data.output_data(cfg=cfg, exp_cfg=object())
+
+            pd.testing.assert_frame_equal(result, expected)
+            sidecar_path = vendor_timing.generation_timing_sidecar_path(csv_path)
+            self.assertTrue(csv_path.is_file())
+            self.assertTrue(sidecar_path.is_file())
+            payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["generation_time_s"], 2.5)
+            self.assertEqual(payload["output_csv_path"], str(csv_path))
 
 
 def _make_latent_df() -> pd.DataFrame:
