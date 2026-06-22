@@ -218,6 +218,9 @@ experiment.toml
 
 # Data folder
 data/
+
+# Local cluster submission script
+submit.sh
 raw_data/
 models/*
 result*/
