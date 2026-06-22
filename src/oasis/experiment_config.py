@@ -96,6 +96,7 @@ class MoEConfig(BaseModel):
 class LatentModelConfig(BaseModel):
     experiment_config_path: Path
     csv_path: Path
+    timing_path: Path | None = None
 
 
 class ProbeGnnConfig(BaseModel):

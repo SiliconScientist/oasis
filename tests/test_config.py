@@ -2354,3 +2354,54 @@ class ConfigParsingTests(unittest.TestCase):
         probe = cfg.experiment.learning_curve.models.probe_gnn
         self.assertFalse(probe.enabled)
         self.assertEqual(probe.hidden_dims, [])
+
+    def test_latent_config_parses_timing_path(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": False,
+                            "use_latent": True,
+                            "latent": {
+                                "experiment_config_path": "vendor/latent/config.toml",
+                                "csv_path": "vendor/latent/data/processed/example_latent.csv",
+                                "timing_path": "vendor/latent/data/processed/example_latent.csv.timing.json",
+                            },
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        latent = cfg.experiment.learning_curve.models.latent
+        assert latent is not None
+        self.assertEqual(
+            latent.timing_path,
+            Path("vendor/latent/data/processed/example_latent.csv.timing.json"),
+        )

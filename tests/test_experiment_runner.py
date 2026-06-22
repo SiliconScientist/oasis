@@ -744,6 +744,215 @@ class ExperimentRunnerTests(unittest.TestCase):
             expected_override,
         )
 
+    def test_run_experiment_wires_latent_generation_timing_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            latent_csv_path = tmp_path / "latent.csv"
+            latent_timing_path = tmp_path / "latent.csv.timing.json"
+            latent_timing_path.write_text(
+                '{"generation_time_s": 12.5}\n',
+                encoding="utf-8",
+            )
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=True,
+                            latent=SimpleNamespace(
+                                csv_path=latent_csv_path,
+                                timing_path=latent_timing_path,
+                            ),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    fixed_split=SimpleNamespace(train_fraction=0.5),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
+            learning_curve_results = self._fixed_split_timed_learning_curve_results()
+            generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=2,
+                    generation_time_total_s=10.0,
+                    generation_time_slab_s=4.0,
+                    generation_time_adslab_s=6.0,
+                    generation_steps_total=20,
+                    generation_steps_slab=8,
+                    generation_steps_adslab=12,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=2,
+                    generation_time_total_s=12.0,
+                    generation_time_slab_s=5.0,
+                    generation_time_adslab_s=7.0,
+                    generation_steps_total=24,
+                    generation_steps_slab=10,
+                    generation_steps_adslab=14,
+                    time_per_step_s=0.5,
+                ),
+            }
+            result_files = [
+                tmp_path / "model_a_result.json",
+                tmp_path / "model_b_result.json",
+            ]
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=result_files,
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value={},
+            ), patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=learning_curve_results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.load_generation_timing_summaries",
+                return_value=generation_timing,
+            ), patch(
+                "oasis.experiment_runner.generation_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ) as mock_generation_plot, patch(
+                "oasis.experiment_runner.training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
+            ):
+                run_experiment(cfg)
+
+        latent_override = mock_generation_plot.call_args.kwargs[
+            "generation_timing_by_method"
+        ]["latent"]
+        self.assertEqual(latent_override.generation_time_s, 12.5)
+        self.assertEqual(latent_override.mlip_feature_names, ("latent_csv",))
+
+    def test_run_experiment_skips_latent_generation_timing_override_when_sidecar_missing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            latent_csv_path = tmp_path / "latent.csv"
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=True,
+                            latent=SimpleNamespace(
+                                csv_path=latent_csv_path,
+                                timing_path=None,
+                            ),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    fixed_split=SimpleNamespace(train_fraction=0.5),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
+            learning_curve_results = self._fixed_split_timed_learning_curve_results()
+            generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=2,
+                    generation_time_total_s=10.0,
+                    generation_time_slab_s=4.0,
+                    generation_time_adslab_s=6.0,
+                    generation_steps_total=20,
+                    generation_steps_slab=8,
+                    generation_steps_adslab=12,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=2,
+                    generation_time_total_s=12.0,
+                    generation_time_slab_s=5.0,
+                    generation_time_adslab_s=7.0,
+                    generation_steps_total=24,
+                    generation_steps_slab=10,
+                    generation_steps_adslab=14,
+                    time_per_step_s=0.5,
+                ),
+            }
+            result_files = [
+                tmp_path / "model_a_result.json",
+                tmp_path / "model_b_result.json",
+            ]
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=result_files,
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value={},
+            ), patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=learning_curve_results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.load_generation_timing_summaries",
+                return_value=generation_timing,
+            ), patch(
+                "oasis.experiment_runner.generation_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ) as mock_generation_plot, patch(
+                "oasis.experiment_runner.training_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
+            ):
+                run_experiment(cfg)
+
+        self.assertIsNone(
+            mock_generation_plot.call_args.kwargs["generation_timing_by_method"]
+        )
+
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
         self,
     ) -> None:

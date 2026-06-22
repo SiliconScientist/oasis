@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import tempfile
 from pathlib import Path
 
@@ -301,6 +302,28 @@ def _method_generation_timing_overrides(
         getattr(models_cfg, "use_probe_gnn", False)
     )
     feature_names = mlip_feature_names(wide_df)
+    latent_cfg = getattr(models_cfg, "latent", None)
+    latent_enabled = bool(getattr(models_cfg, "use_latent", False))
+
+    if latent_enabled and latent_cfg is not None:
+        latent_timing_path = Path(
+            getattr(latent_cfg, "timing_path", None)
+            or str(latent_cfg.csv_path) + ".timing.json"
+        )
+        if latent_timing_path.is_file():
+            with latent_timing_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            generation_time_s = float(payload.get("generation_time_s", 0.0) or 0.0)
+            overrides["latent"] = GenerationTimingAggregate(
+                generation_time_s=generation_time_s,
+                generation_time_slab_s=0.0,
+                generation_time_adslab_s=0.0,
+                generation_steps_total=0,
+                generation_steps_slab=0,
+                generation_steps_adslab=0,
+                time_per_step_s=None,
+                mlip_feature_names=("latent_csv",),
+            )
 
     if (
         probe_gnn_enabled
