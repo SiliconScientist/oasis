@@ -672,15 +672,24 @@ def _fit_learned_trial_selected_model(
     trials: Iterable[Any],
     *,
     refit_policy: SelectionRefitPolicy,
-) -> tuple[object, Mapping[str, Any]]:
+) -> tuple[object, Mapping[str, Any], float]:
     _validate_selection_refit_policy(refit_policy)
-    best_trial = _select_best_trial_by_validation(split, tuning_spec, trials)
-    model = tuning_spec.fit_selected_model(
-        split,
-        best_trial,
-        refit_policy=refit_policy,
-    )
-    return model, tuning_spec.trial_metadata(best_trial, model)
+    best_trial = None
+    model = None
+
+    def select_and_fit() -> None:
+        nonlocal best_trial, model
+        best_trial = _select_best_trial_by_validation(split, tuning_spec, trials)
+        model = tuning_spec.fit_selected_model(
+            split,
+            best_trial,
+            refit_policy=refit_policy,
+        )
+
+    fit_time_s = _measure_duration_s(select_and_fit)
+    assert best_trial is not None
+    assert model is not None
+    return model, tuning_spec.trial_metadata(best_trial, model), fit_time_s
 
 
 def _optimize_study_best_trial(
@@ -738,26 +747,37 @@ def _fit_learned_optuna_selected_model(
     timeout_s: int | None,
     study_factory: Callable[[TrainValTestSweepRunnerInput], Any],
     refit_policy: SelectionRefitPolicy,
-) -> tuple[object, Mapping[str, Any]]:
+) -> tuple[object, Mapping[str, Any], float]:
     _validate_selection_refit_policy(refit_policy)
-    study, best_trial = _optimize_study_best_trial(
-        split,
-        tuning_spec,
-        n_trials=n_trials,
-        timeout_s=timeout_s,
-        study_factory=study_factory,
-    )
-    model = tuning_spec.fit_selected_model(
-        split,
-        best_trial,
-        refit_policy=refit_policy,
-    )
+    study = None
+    best_trial = None
+    model = None
+
+    def select_and_fit() -> None:
+        nonlocal study, best_trial, model
+        study, best_trial = _optimize_study_best_trial(
+            split,
+            tuning_spec,
+            n_trials=n_trials,
+            timeout_s=timeout_s,
+            study_factory=study_factory,
+        )
+        model = tuning_spec.fit_selected_model(
+            split,
+            best_trial,
+            refit_policy=refit_policy,
+        )
+
+    fit_time_s = _measure_duration_s(select_and_fit)
+    assert study is not None
+    assert best_trial is not None
+    assert model is not None
     return model, _optuna_selection_metadata(
         study,
         best_trial,
         model,
         tuning_spec,
-    )
+    ), fit_time_s
 
 
 def _optuna_selection_metadata(
@@ -893,6 +913,7 @@ def sweep_learned_trial_model_selection(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
     uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
@@ -900,7 +921,7 @@ def sweep_learned_trial_model_selection(
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
-        model, metadata = _fit_learned_trial_selected_model(
+        model, metadata, fit_time_s = _fit_learned_trial_selected_model(
             split,
             tuning_spec,
             trial_factory(split),
@@ -909,6 +930,7 @@ def sweep_learned_trial_model_selection(
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _learned_tuning_spec_predictive_spread(
             tuning_spec,
@@ -932,7 +954,7 @@ def sweep_learned_trial_model_selection(
             uncertainty_note=uncertainty_note,
         )
     return SweepRunnerArtifacts(
-        metrics=_sweep_results_frame(rmses_by_size),
+        metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
     )
@@ -991,6 +1013,7 @@ def sweep_learned_optuna_model_selection(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
     uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
@@ -998,7 +1021,7 @@ def sweep_learned_optuna_model_selection(
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
-        model, metadata = _fit_learned_optuna_selected_model(
+        model, metadata, fit_time_s = _fit_learned_optuna_selected_model(
             split,
             tuning_spec,
             n_trials=n_trials,
@@ -1009,6 +1032,7 @@ def sweep_learned_optuna_model_selection(
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _learned_tuning_spec_predictive_spread(
             tuning_spec,
@@ -1032,7 +1056,7 @@ def sweep_learned_optuna_model_selection(
             uncertainty_note=uncertainty_note,
         )
     return SweepRunnerArtifacts(
-        metrics=_sweep_results_frame(rmses_by_size),
+        metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
     )

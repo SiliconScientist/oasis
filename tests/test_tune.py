@@ -791,12 +791,20 @@ class TuneTests(unittest.TestCase):
             artifacts.selection_metadata.columns.tolist(),
             ["n_train", "constant", "selected_constant"],
         )
-        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            runner_artifacts.metrics.drop(
+                columns=["fit_time_mean_s", "fit_time_std_s"]
+            ),
+        )
         pd.testing.assert_frame_equal(
             artifacts.selection_metadata,
             runner_artifacts.selection_metadata,
         )
-        pd.testing.assert_frame_equal(artifacts.metrics, result)
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            result.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_learned_trial_tuning_refit_policy_uses_split_subsets(self) -> None:
         dataset = SweepDataset(
@@ -968,6 +976,7 @@ class TuneTests(unittest.TestCase):
             [np.sqrt(2.5)],
             atol=1e-12,
         )
+        self.assertGreaterEqual(artifacts.metrics["fit_time_mean_s"].iloc[0], 0.0)
         self.assertEqual(
             artifacts.selection_metadata["selected_constant"].tolist(),
             [3.0],
@@ -1122,6 +1131,7 @@ class TuneTests(unittest.TestCase):
             [1.0],
             atol=1e-12,
         )
+        self.assertGreaterEqual(artifacts.metrics["fit_time_mean_s"].iloc[0], 0.0)
         self.assertEqual(
             artifacts.selection_metadata["selected_constant"].tolist(),
             [4.0],
@@ -1238,8 +1248,16 @@ class TuneTests(unittest.TestCase):
             seen_train_orders[0],
             (("s0", "s1"), ("s2", "s3")),
         )
-        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
-        pd.testing.assert_frame_equal(artifacts.metrics, result)
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            runner_artifacts.metrics.drop(
+                columns=["fit_time_mean_s", "fit_time_std_s"]
+            ),
+        )
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            result.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_learned_trial_tuning_end_to_end_batched_loaders_touch_outer_test_once(
         self,
@@ -1353,8 +1371,16 @@ class TuneTests(unittest.TestCase):
             test_predict_signatures,
             [("s6", "s7"), ("s6", "s7"), ("s6", "s7")],
         )
-        pd.testing.assert_frame_equal(artifacts.metrics, runner_artifacts.metrics)
-        pd.testing.assert_frame_equal(artifacts.metrics, result)
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            runner_artifacts.metrics.drop(
+                columns=["fit_time_mean_s", "fit_time_std_s"]
+            ),
+        )
+        pd.testing.assert_frame_equal(
+            artifacts.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            result.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_optuna_runner_objective_sees_only_train_and_val(self) -> None:
         dataset = SweepDataset(
@@ -1591,6 +1617,17 @@ class TuneTests(unittest.TestCase):
                 "value",
             ],
         )
+        self.assertEqual(
+            artifacts.metrics.columns.tolist(),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
+        )
+        self.assertGreaterEqual(artifacts.metrics["fit_time_mean_s"].iloc[0], 0.0)
         self.assertEqual(artifacts.selection_metadata["constant"].tolist(), [3.0])
 
     def test_learned_optuna_runner_uses_outer_test_once_after_selection(self) -> None:
@@ -1690,7 +1727,17 @@ class TuneTests(unittest.TestCase):
             ],
         )
         np.testing.assert_allclose(result["rmse_mean"].to_numpy(), [np.sqrt(2.5)], atol=1e-12)
-        self.assertEqual(result.columns.tolist(), ["n_train", "rmse_mean", "rmse_std"])
+        self.assertEqual(
+            result.columns.tolist(),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
+        )
+        self.assertGreaterEqual(result["fit_time_mean_s"].iloc[0], 0.0)
         self.assertEqual(runner_result.metrics["n_train"].tolist(), [4])
 
     def test_optuna_runner_uses_outer_test_once_after_selection(self) -> None:
