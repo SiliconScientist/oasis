@@ -364,6 +364,81 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve.models is not None
         self.assertTrue(cfg.experiment.learning_curve.models.use_ridge)
         self.assertTrue(cfg.experiment.learning_curve.models.moe.enabled)
+        self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_linear)
+        self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_simplex)
+
+    def test_load_config_data_preserves_top_level_models_after_shared_defaults_merge(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        'dataset = "data/raw_data/example.json"',
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                        "",
+                        "[experiment.defaults]",
+                        "validation_fraction = 0.2",
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[models]",
+                        "use_ridge = true",
+                        "use_kernel_ridge = false",
+                        "use_lasso = false",
+                        "use_elastic_net = false",
+                        "use_residual = true",
+                        "use_weighted_linear = false",
+                        "use_weighted_simplex = false",
+                        "",
+                        "[models.moe]",
+                        "enabled = false",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            data = load_config_data(experiment_path)
+            cfg = get_config(experiment_path)
+
+        self.assertIn("models", data["experiment"]["learning_curve"])
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        self.assertTrue(cfg.experiment.learning_curve.models.use_ridge)
+        self.assertTrue(cfg.experiment.learning_curve.models.use_residual)
+        self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_linear)
+        self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_simplex)
+        self.assertFalse(cfg.experiment.learning_curve.models.moe.enabled)
 
     def test_load_config_data_applies_shared_top_level_tuning_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

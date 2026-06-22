@@ -40,6 +40,7 @@ DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
 
 
 def _normalize_experiment_layout(raw_cfg: dict) -> dict:
+    raw_cfg = dict(raw_cfg)
     top_level_models_cfg = raw_cfg.get("models")
     top_level_tuning_cfg = raw_cfg.get("tuning")
     experiment_cfg = raw_cfg.get("experiment")
@@ -68,6 +69,10 @@ def _normalize_experiment_layout(raw_cfg: dict) -> dict:
                 shared_experiment_cfg,
                 section_cfg,
             )
+        learning_curve_cfg = experiment_cfg.get("learning_curve")
+        if not isinstance(learning_curve_cfg, dict):
+            learning_curve_cfg = {}
+            experiment_cfg["learning_curve"] = learning_curve_cfg
 
     top_level_models_cfg = raw_cfg.pop("models", None)
     if isinstance(top_level_models_cfg, dict):
