@@ -448,7 +448,10 @@ class ExperimentRunnerTests(unittest.TestCase):
                     )
                 ),
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
-                plot=SimpleNamespace(output_dir=tmp_path / "plots"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    fixed_split=SimpleNamespace(train_fraction=0.5),
+                ),
             )
             fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(10)])
             learning_curve_results = self._fixed_split_timed_learning_curve_results()
@@ -576,6 +579,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 mock_plot.call_args.kwargs["mlip_feature_names"],
                 ("model_a", "model_b"),
             )
+            self.assertEqual(mock_plot.call_args.kwargs["train_fraction"], 0.5)
             self.assertEqual(mock_plot.call_args.kwargs["output_path"], expected_path)
 
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(

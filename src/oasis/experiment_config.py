@@ -139,6 +139,10 @@ class PlotCurveWindowConfig(BaseModel):
     include_fractions: Optional[List[float]] = None
 
 
+class PlotFixedSplitConfig(BaseModel):
+    train_fraction: float = Field(default=0.8, gt=0.0, lt=1.0)
+
+
 class GraphDatasetInputConfig(BaseModel):
     path: Optional[Path] = None
     join_key: str = "reaction"
@@ -262,6 +266,7 @@ class ExperimentConfig(BaseModel):
 class PlotConfig(BaseModel):
     output_dir: Path
     curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
+    fixed_split: PlotFixedSplitConfig = Field(default_factory=PlotFixedSplitConfig)
 
 
 class ProbeFeatureConfig(BaseModel):

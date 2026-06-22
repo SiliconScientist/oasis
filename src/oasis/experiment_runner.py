@@ -487,6 +487,10 @@ def run_experiment(cfg: object):
     graph_view = prepare_graph_view(cfg, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
+    fixed_split_cfg = getattr(cfg.plot, "fixed_split", None) if cfg.plot else None
+    fixed_split_train_fraction = float(
+        getattr(fixed_split_cfg, "train_fraction", 0.8)
+    )
     use_full_curve_window = bool(
         getattr(curve_window_cfg, "full_dataset_window", False)
     ) or bool(getattr(curve_window_cfg, "all", False))
@@ -568,6 +572,7 @@ def run_experiment(cfg: object):
             wide_df=wide_df,
             output_dir=output_dir,
             run_suffix=run_suffix,
+            train_fraction=fixed_split_train_fraction,
         )
         if _has_uq_summary(learning_curve_results):
             with tempfile.TemporaryDirectory() as tmpdir:
