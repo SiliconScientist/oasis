@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -123,9 +124,43 @@ class TestLatentSweepRunner(unittest.TestCase):
         result = runner.run(_make_payload(_make_latent_df()))
 
         self.assertIsInstance(result, pd.DataFrame)
-        self.assertListEqual(list(result.columns), ["n_train", "rmse_mean", "rmse_std"])
+        self.assertListEqual(
+            list(result.columns),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
+        )
         self.assertEqual(len(result), 1)
         self.assertEqual(result["n_train"].iloc[0], 2)
+
+    def test_run_records_fit_time_columns(self) -> None:
+        self._setup_trained_mock(
+            np.array([[0.0], [0.0]]),
+            np.array([0.0, 0.0]),
+            np.array([0.0, 0.0]),
+        )
+        runner = LatentSweepRunner(exp_cfg=MagicMock(), vendor_dir=Path("."))
+
+        with patch(
+            "oasis.learning_curve.execution.perf_counter",
+            side_effect=[0.0, 0.25],
+        ):
+            result = runner.run(_make_payload(_make_latent_df()))
+
+        np.testing.assert_allclose(
+            result["fit_time_mean_s"].to_numpy(),
+            [0.25],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            result["fit_time_std_s"].to_numpy(),
+            [0.0],
+            atol=1e-12,
+        )
 
     def test_run_passes_cobyla_params(self) -> None:
         self._setup_trained_mock(

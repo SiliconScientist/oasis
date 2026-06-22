@@ -11,7 +11,11 @@ import numpy as np
 import pandas as pd
 
 from oasis.config import LatentModelConfig
-from oasis.learning_curve.execution import _assert_train_test_payload, sweep_results_frame
+from oasis.learning_curve.execution import (
+    _assert_train_test_payload,
+    _measure_duration_s,
+    timed_sweep_results_frame,
+)
 from oasis.sweep import SweepRunnerPayload
 
 
@@ -105,21 +109,30 @@ class LatentSweepRunner:
         LatentVariableModel, train_model = _load_latent_vendor_modules(self.vendor_dir)
 
         rmses_by_size: dict[int, list[float]] = {}
+        fit_times_by_size: dict[int, list[float]] = {}
         for split in _assert_train_test_payload(payload):
             latent_df: pd.DataFrame = split.dataset.auxiliary_views["latent"]
             train_df = latent_df.iloc[split.train_idx]
             test_df = latent_df.iloc[split.test_idx]
             untrained = LatentVariableModel.from_config(self.exp_cfg, train_df)
-            trained = train_model(
-                train_df,
-                untrained,
-                cobyla_initial_guess=self.cobyla_initial_guess,
-                cobyla_max_iter=self.cobyla_max_iter,
-            )
+            trained = None
+
+            def fit_latent_model() -> None:
+                nonlocal trained
+                trained = train_model(
+                    train_df,
+                    untrained,
+                    cobyla_initial_guess=self.cobyla_initial_guess,
+                    cobyla_max_iter=self.cobyla_max_iter,
+                )
+
+            fit_time_s = _measure_duration_s(fit_latent_model)
+            assert trained is not None
             x_test, y_test = trained.architecture.linearize_data(
                 test_df, trained.train_params
             )
             preds = trained.estimator.predict(x_test)
             rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
             rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-        return sweep_results_frame(rmses_by_size)
+            fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
+        return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
