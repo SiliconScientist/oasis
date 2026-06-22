@@ -1,14 +1,13 @@
-# Time-vs-Accuracy Protocol for Simple Methods
+# Time-vs-Accuracy Protocol for Learning-Curve Methods
 
-This note defines the first-pass timing protocol for the
-`feat/time-accuracy-plot` branch.
+This note defines the timing protocol for the
+`feat/time-accuracy-plot` branch and follow-on method-specific timing work.
 
 ## Scope
 
-This protocol applies to the learning-curve methods that use the standard
-MLIP-feature workflow.
+This protocol applies to Oasis learning-curve methods.
 
-Included methods:
+Methods using standard MLIP feature tables:
 
 - `ridge`
 - `kernel_ridge`
@@ -21,13 +20,10 @@ Included methods:
 - `moe`
 - `gnn_direct`
 
-Excluded for now:
+Methods with method-specific generation inputs:
 
-- `latent`
 - `probe_gnn`
-
-These excluded methods will be added later because their data flow and timing
-boundaries are less straightforward.
+- `latent`
 
 ## Timing Definitions
 
@@ -35,11 +31,21 @@ For each plotted point, record:
 
 - `generation_time_s`: time spent producing the MLIP-derived inputs used by the
   method.
-- `training_time_s`: time spent fitting the Oasis method on the train split for
+- `training_time_s`: time spent on Oasis-side model selection and fitting for
   that point.
 - `total_time_s`: `generation_time_s + training_time_s`.
 
-This branch treats MLIP extraction as part of generation, not training.
+This branch treats upstream feature extraction as part of generation, not
+training.
+
+For tuned methods, `training_time_s` includes the full Oasis-side selection
+workflow used for that plotted point:
+
+- validation-time candidate or trial evaluation
+- chosen-model refit work
+- any method-specific training work inside that selection/refit path
+
+It does not include outer-test prediction or plotting.
 
 ## MLIP Time Semantics
 
@@ -71,12 +77,12 @@ plot.
 
 ## How Generation Time Is Charged
 
-For the first implementation, charge generation time over the full evaluation
-dataset associated with the plotted point, not per outer split replicate.
+Charge generation time over the full evaluation dataset associated with the
+plotted point, not per outer split replicate.
 
 Operationally, this means:
 
-- generation time is attached to the dataset/MLIP artifacts used for the point
+- generation time is attached to the dataset artifacts used for the point
 - generation time is constant across methods that consume the same MLIP inputs
 - training time varies by method and train size
 
@@ -84,6 +90,32 @@ This keeps the comparison simple:
 
 - generation captures the cost of obtaining the MLIP-based features
 - training captures the extra cost of fitting the downstream Oasis method
+
+## Method-Specific Generation Sources
+
+Different methods may charge generation time to different upstream artifacts.
+
+For standard MLIP-table methods (`ridge`, `kernel_ridge`, `lasso`, `elastic`,
+`residual`, `weighted_linear`, `weighted_simplex`, `graph_mean`, `moe`, and
+`gnn_direct`):
+
+- `generation_time_s` is charged to the selected MLIP result JSON artifacts.
+
+For `probe_gnn`:
+
+- `generation_time_s` is charged to probe-feature generation.
+- This includes the upstream work required to build the probe-augmented inputs
+  consumed by the model.
+- It does not include Probe GNN model fitting; that belongs in
+  `training_time_s`.
+
+For `latent`:
+
+- `generation_time_s` is charged to latent feature-table creation.
+- This includes the upstream work required to build the latent CSV or equivalent
+  latent input artifact consumed by Oasis.
+- It does not include downstream latent model fitting inside the Oasis sweep;
+  that belongs in `training_time_s`.
 
 ## Interpretation
 
