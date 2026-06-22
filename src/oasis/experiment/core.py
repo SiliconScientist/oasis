@@ -279,7 +279,7 @@ def _run_learning_curve_experiments_with_budget_mode(
             family,
             learning_curve_method_name_for_result_field,
         )
-        requested_sweep_sizes = (
+        method_requested_sweep_sizes = (
             None
             if requested_sweep_sizes_by_method is None or method_name is None
             else {
@@ -287,12 +287,12 @@ def _run_learning_curve_experiments_with_budget_mode(
                 for value in requested_sweep_sizes_by_method.get(method_name, ())
             }
         )
-        if requested_sweep_sizes is not None:
+        if method_requested_sweep_sizes is not None:
             split_collection = SweepSplitCollection(
                 splits=tuple(
                     split
                     for split in split_collection.splits
-                    if split.sweep_size in requested_sweep_sizes
+                    if split.sweep_size in method_requested_sweep_sizes
                 ),
                 planning_requirements=split_collection.planning_requirements,
             )

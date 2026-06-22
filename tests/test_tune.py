@@ -151,7 +151,10 @@ class TuneTests(unittest.TestCase):
             [np.sqrt(10.0)],
             atol=1e-12,
         )
-        pd.testing.assert_frame_equal(result, runner_result.metrics)
+        pd.testing.assert_frame_equal(
+            result.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            runner_result.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_supervised_model_selection_suppresses_convergence_warnings(self) -> None:
         dataset = SweepDataset(
@@ -192,6 +195,51 @@ class TuneTests(unittest.TestCase):
 
         self.assertEqual(len(caught), 0)
         self.assertEqual(result.metrics["n_train"].tolist(), [3])
+
+    def test_supervised_model_selection_records_fit_time_columns(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]]),
+            targets=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=4,
+                    train_idx=np.array([0, 1]),
+                    val_idx=np.array([2, 3]),
+                    test_idx=np.array([4, 5]),
+                ),
+            )
+        )
+
+        class MeanPredictor:
+            def fit(self, X, y):
+                del X
+                self.mean_ = float(np.mean(y))
+                self.coef_ = np.array([self.mean_], dtype=float)
+                return self
+
+            def predict(self, X):
+                return np.full(len(X), self.mean_, dtype=float)
+
+        spec = FactoryListHyperparameterSpec(factories=(MeanPredictor,))
+
+        result = sweep_supervised_model_selection(payload, spec)
+
+        self.assertEqual(
+            result.metrics.columns.tolist(),
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
+        )
+        self.assertEqual(result.metrics["n_train"].tolist(), [4])
+        self.assertGreaterEqual(result.metrics["fit_time_mean_s"].iloc[0], 0.0)
+        self.assertGreaterEqual(result.metrics["fit_time_std_s"].iloc[0], 0.0)
 
     def test_supervised_model_selection_uses_val_idx_not_test_idx(self) -> None:
         dataset = SweepDataset(
@@ -355,7 +403,10 @@ class TuneTests(unittest.TestCase):
         )
 
         np.testing.assert_allclose(first.metrics["rmse_mean"].to_numpy(), [0.0], atol=1e-12)
-        pd.testing.assert_frame_equal(first.metrics, second.metrics)
+        pd.testing.assert_frame_equal(
+            first.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            second.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_supervised_model_selection_runner_supports_refit_policy(self) -> None:
         dataset = SweepDataset(
@@ -411,7 +462,12 @@ class TuneTests(unittest.TestCase):
             [np.sqrt(1.8125)],
             atol=1e-12,
         )
-        pd.testing.assert_frame_equal(refit_train_plus_val.metrics, runner_result.metrics)
+        pd.testing.assert_frame_equal(
+            refit_train_plus_val.metrics.drop(
+                columns=["fit_time_mean_s", "fit_time_std_s"]
+            ),
+            runner_result.metrics.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     def test_supervised_model_selection_runner_rejects_unknown_refit_policy(self) -> None:
         dataset = SweepDataset(

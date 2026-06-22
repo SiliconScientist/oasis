@@ -1046,7 +1046,13 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertIsNotNone(results.weighted_linear_uq_df)
         self.assertEqual(
             results.ridge_df.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
         self.assertEqual(
@@ -1130,7 +1136,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
             enabled_model_names=["ridge"],
         )
 
-        pd.testing.assert_frame_equal(first.ridge_df, second.ridge_df)
+        pd.testing.assert_frame_equal(
+            first.ridge_df.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+            second.ridge_df.drop(columns=["fit_time_mean_s", "fit_time_std_s"]),
+        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_selection_metadata_surfaces_without_changing_rmse_frames(self) -> None:
@@ -1147,7 +1156,13 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         self.assertEqual(
             results.ridge_df.columns.tolist(),
-            ["n_train", "rmse_mean", "rmse_std"],
+            [
+                "n_train",
+                "rmse_mean",
+                "rmse_std",
+                "fit_time_mean_s",
+                "fit_time_std_s",
+            ],
         )
         self.assertIsNotNone(results.ridge_selection_df)
         self.assertEqual(

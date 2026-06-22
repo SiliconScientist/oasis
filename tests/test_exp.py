@@ -4777,13 +4777,14 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(len(set(provenance["run_id"].iloc[2:])), 1)
         self.assertEqual(len(set(provenance["run_timestamp_utc"].iloc[2:])), 1)
 
-    def test_run_learning_curve_experiments_from_config_rejects_duplicate_points_without_force_refresh(
+    def test_run_learning_curve_experiments_from_config_overwrites_enabled_overlap_when_reuse_disabled(
         self,
     ) -> None:
         df = pd.DataFrame(
             {
                 "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
                 "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "linear_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
             }
         )
         cached_ridge_df = pd.DataFrame(
@@ -4800,6 +4801,13 @@ class ExpIntegrationTests(unittest.TestCase):
                 "rmse_std": [0.045, 0.04],
             }
         )
+        cached_weighted_linear_df = pd.DataFrame(
+            {
+                "n_train": [10, 20],
+                "rmse_mean": [0.45, 0.42],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
 
         class StubFamily:
             def run(self, payload):
@@ -4809,15 +4817,18 @@ class ExpIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             bundle_path = Path(tmp_dir) / "learning_curve_results.json"
             save_learning_curve_results_artifact(
-                LearningCurveResults.from_mapping({"ridge_df": cached_ridge_df}),
+                LearningCurveResults(
+                    ridge_df=cached_ridge_df,
+                    weighted_linear_df=cached_weighted_linear_df,
+                ),
                 LearningCurveSweepMetadata(
                     seed=23,
                     min_train=10,
                     max_train=20,
                     step=10,
                     n_repeats=30,
-                    enabled_models=("ridge",),
-                    mlip_feature_names=("ridge",),
+                    enabled_models=("ridge", "weighted_linear"),
+                    mlip_feature_names=("ridge", "linear"),
                 ),
                 bundle_path,
             )
@@ -4856,15 +4867,38 @@ class ExpIntegrationTests(unittest.TestCase):
                 ),
             )
 
-            with self.assertRaisesRegex(
-                ValueError,
-                r"ridge_df contains duplicate n_train rows: \[20\]",
-            ):
-                run_learning_curve_experiments_from_config(
-                    df,
-                    cfg=cfg,
-                    model_families=[StubFamily()],
-                )
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[StubFamily()],
+            )
+            artifact = load_learning_curve_results_artifact(bundle_path)
+
+        pd.testing.assert_frame_equal(
+            results.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [10, 20, 30],
+                    "rmse_mean": [0.5, 0.39, 0.35],
+                    "rmse_std": [0.07, 0.045, 0.04],
+                }
+            ),
+        )
+        self.assertIsNone(results.weighted_linear_df)
+        pd.testing.assert_frame_equal(
+            artifact.results.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [10, 20, 30],
+                    "rmse_mean": [0.5, 0.39, 0.35],
+                    "rmse_std": [0.07, 0.045, 0.04],
+                }
+            ),
+        )
+        pd.testing.assert_frame_equal(
+            artifact.results.weighted_linear_df,
+            cached_weighted_linear_df,
+        )
 
     def test_run_learning_curve_experiments_from_config_applies_split_policy_knobs(
         self,
@@ -4944,6 +4978,73 @@ class ExpIntegrationTests(unittest.TestCase):
                 for split in family.last_payload.split_collection.splits
             ],
             [2],
+        )
+
+    def test_run_learning_curve_experiments_from_config_keeps_fraction_sweep_sizes_for_multiple_families(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 8.1],
+            }
+        )
+
+        class StubFamily:
+            def __init__(self, result_field: str) -> None:
+                self.result_field = result_field
+                self.last_payload = None
+
+            def run(self, payload):
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping(
+                    {
+                        self.result_field: pd.DataFrame(
+                            {
+                                "n_train": [split.sweep_size for split in payload.split_collection.splits],
+                                "rmse_mean": [0.3] * len(payload.split_collection.splits),
+                                "rmse_std": [0.04] * len(payload.split_collection.splits),
+                            }
+                        )
+                    }
+                )
+
+        ridge_family = StubFamily("ridge_df")
+        residual_family = StubFamily("resid_df")
+        cfg = SimpleNamespace(
+            seed=23,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=None,
+                    max_train=None,
+                    sweep_fractions=[0.25, 0.5],
+                    n_repeats=1,
+                    validation_fraction=0.2,
+                    min_val_size=1,
+                    min_tuning_val_size=1,
+                    min_inner_train_size=1,
+                    min_test_size=1,
+                    models=None,
+                )
+            ),
+        )
+
+        results = run_learning_curve_experiments_from_config(
+            df,
+            cfg=cfg,
+            model_families=[ridge_family, residual_family],
+        )
+
+        self.assertIsNotNone(results.ridge_df)
+        self.assertIsNotNone(results.resid_df)
+        self.assertEqual(
+            [split.sweep_size for split in ridge_family.last_payload.split_collection.splits],
+            [2, 4],
+        )
+        self.assertEqual(
+            [split.sweep_size for split in residual_family.last_payload.split_collection.splits],
+            [2, 4],
         )
 
     def test_run_learning_curve_experiments_from_config_routes_screening_mode(

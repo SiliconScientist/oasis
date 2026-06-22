@@ -452,9 +452,12 @@ def run_learning_curve_experiments_from_config(
                     existing_bundle_metadata = existing_bundle.metadata
                 except ValueError:
                     pass
+            effective_force_refresh_methods = set(force_refresh_methods)
+            if not reuse_results:
+                effective_force_refresh_methods.update(enabled_model_names)
             overwrite_fields = {
                 field_name
-                for method_name in force_refresh_methods
+                for method_name in effective_force_refresh_methods
                 for field_name in (
                     learning_curve_result_field_for_method_name(method_name),
                     learning_curve_selection_field_for_method_name(method_name),

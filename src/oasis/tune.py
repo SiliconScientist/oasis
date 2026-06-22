@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from itertools import product
+from time import perf_counter
 from typing import Any, Literal, Protocol, runtime_checkable
 import warnings
 
@@ -77,6 +78,12 @@ def _fit_model_safely(model: object, X: np.ndarray, y: np.ndarray) -> None:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=ConvergenceWarning)
         model.fit(X, y)
+
+
+def _measure_duration_s(work: Callable[[], object]) -> float:
+    t0 = perf_counter()
+    work()
+    return float(perf_counter() - t0)
 
 
 @runtime_checkable
@@ -497,23 +504,31 @@ def _fit_selected_supervised_model(
     hyperparameter_spec: HyperparameterSpec,
     *,
     refit_policy: SelectionRefitPolicy,
-) -> tuple[object, Mapping[str, Any]]:
+) -> tuple[object, Mapping[str, Any], float]:
     """Return the selected model after applying the configured refit policy."""
 
     _validate_selection_refit_policy(refit_policy)
-    candidate_factory = _select_candidate_factory_by_validation(
-        split,
-        hyperparameter_spec,
-    )
-    model = candidate_factory()
     X = split.dataset.mlip_features
     y = split.dataset.targets
-    if refit_policy == "train_only":
-        fit_idx = split.train_idx
-    else:
-        fit_idx = np.concatenate([split.train_idx, split.val_idx])
-    _fit_model_safely(model, X[fit_idx], y[fit_idx])
-    return model, hyperparameter_spec.selection_metadata(model)
+    candidate_factory = None
+    model = None
+
+    def select_and_fit() -> None:
+        nonlocal candidate_factory, model
+        candidate_factory = _select_candidate_factory_by_validation(
+            split,
+            hyperparameter_spec,
+        )
+        model = candidate_factory()
+        if refit_policy == "train_only":
+            fit_idx = split.train_idx
+        else:
+            fit_idx = np.concatenate([split.train_idx, split.val_idx])
+        _fit_model_safely(model, X[fit_idx], y[fit_idx])
+
+    fit_time_s = _measure_duration_s(select_and_fit)
+    assert model is not None
+    return model, hyperparameter_spec.selection_metadata(model), fit_time_s
 
 
 def _selection_metadata_frame(
@@ -532,6 +547,38 @@ def _selection_metadata_frame(
             row[key] = unique_values[0] if len(unique_values) == 1 else tuple(unique_values)
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _timed_sweep_results_frame(
+    rmses_by_size: dict[int, list[float]],
+    fit_times_by_size: dict[int, list[float]],
+) -> pd.DataFrame:
+    rows = []
+    for n_train, rmses in sorted(rmses_by_size.items()):
+        fit_times = np.asarray(fit_times_by_size.get(n_train, ()), dtype=float)
+        rows.append(
+            {
+                "n_train": n_train,
+                "rmse_mean": float(np.mean(rmses)),
+                "rmse_std": float(np.std(rmses)),
+                "fit_time_mean_s": (
+                    0.0 if fit_times.size == 0 else float(np.mean(fit_times))
+                ),
+                "fit_time_std_s": (
+                    0.0 if fit_times.size == 0 else float(np.std(fit_times))
+                ),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "n_train",
+            "rmse_mean",
+            "rmse_std",
+            "fit_time_mean_s",
+            "fit_time_std_s",
+        ],
+    )
 
 
 def _uq_summary_frame(
@@ -756,13 +803,14 @@ def sweep_supervised_model_selection(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
     uncertainty_kind = getattr(hyperparameter_spec, "uncertainty_kind", None)
     uncertainty_note = getattr(hyperparameter_spec, "uncertainty_note", None)
     for split in splits:
         y = split.dataset.targets
-        model, metadata = _fit_selected_supervised_model(
+        model, metadata, fit_time_s = _fit_selected_supervised_model(
             split,
             hyperparameter_spec,
             refit_policy=refit_policy,
@@ -772,6 +820,7 @@ def sweep_supervised_model_selection(
         preds = model.predict(X_test)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _hyperparameter_spec_predictive_spread(
             hyperparameter_spec,
@@ -795,7 +844,7 @@ def sweep_supervised_model_selection(
             uncertainty_note=uncertainty_note,
         )
     return SweepRunnerArtifacts(
-        metrics=_sweep_results_frame(rmses_by_size),
+        metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
     )
