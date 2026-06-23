@@ -637,12 +637,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.generation_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
             ) as mock_generation_plot, patch(
-                "oasis.experiment_runner.training_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
-            ) as mock_training_plot, patch(
-                "oasis.experiment_runner.total_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
-            ) as mock_total_plot, patch(
                 "oasis.experiment_runner.fixed_split_training_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "fixed_split_training_time_accuracy_anomalyaware_off.png",
             ) as mock_fixed_training_plot, patch(
@@ -658,14 +652,6 @@ class ExperimentRunnerTests(unittest.TestCase):
             (
                 mock_generation_plot,
                 tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
-            ),
-            (
-                mock_training_plot,
-                tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
-            ),
-            (
-                mock_total_plot,
-                tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
             ),
         ):
             mock_plot.assert_called_once()
@@ -839,12 +825,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.generation_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
             ) as mock_generation_plot, patch(
-                "oasis.experiment_runner.training_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
-            ) as mock_training_plot, patch(
-                "oasis.experiment_runner.total_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "total_time_accuracy_anomalyaware_off.png",
-            ), patch(
                 "oasis.experiment_runner.fixed_split_training_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "fixed_split_training_time_accuracy_anomalyaware_off.png",
             ), patch(
@@ -862,12 +842,6 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(expected_override.generation_time_adslab_s, 5.0)
         self.assertEqual(expected_override.generation_steps_total, 15)
         self.assertEqual(expected_override.mlip_feature_names, ("model_a", "model_b"))
-        self.assertEqual(
-            mock_training_plot.call_args.kwargs["generation_timing_by_method"][
-                "probe_gnn"
-            ],
-            expected_override,
-        )
 
     def test_run_experiment_wires_latent_generation_timing_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -964,10 +938,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.generation_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
-            ) as mock_generation_plot, patch(
-                "oasis.experiment_runner.training_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
-            ):
+            ) as mock_generation_plot:
                 run_experiment(cfg)
 
         latent_override = mock_generation_plot.call_args.kwargs[
@@ -1068,10 +1039,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.generation_time_accuracy_plot",
                 return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
-            ) as mock_generation_plot, patch(
-                "oasis.experiment_runner.training_time_accuracy_plot",
-                return_value=tmp_path / "plots" / "training_time_accuracy_anomalyaware_off.png",
-            ):
+            ) as mock_generation_plot:
                 run_experiment(cfg)
 
         self.assertIsNone(

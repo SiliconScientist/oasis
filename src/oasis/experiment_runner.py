@@ -54,8 +54,6 @@ from oasis.plot import (
     parity_plot,
     screening_budget_plot,
     sharpness_plot,
-    total_time_accuracy_plot,
-    training_time_accuracy_plot,
 )
 from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
@@ -562,7 +560,7 @@ def write_time_accuracy_plots(
     output_dir: Path,
     run_suffix: str,
     generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
-) -> tuple[Path, Path, Path] | None:
+) -> Path | None:
     if not result_files:
         print("Skipping time-accuracy plots: no MLIP result JSON files were found")
         return None
@@ -589,21 +587,7 @@ def write_time_accuracy_plots(
         generation_timing_by_method=generation_timing_by_method,
         output_path=output_dir / f"generation_time_accuracy_{run_suffix}.png",
     )
-    training_path = training_time_accuracy_plot(
-        results=learning_curve_results,
-        generation_timing_by_mlip=generation_timing_by_mlip,
-        mlip_feature_names=feature_names,
-        generation_timing_by_method=generation_timing_by_method,
-        output_path=output_dir / f"training_time_accuracy_{run_suffix}.png",
-    )
-    total_path = total_time_accuracy_plot(
-        results=learning_curve_results,
-        generation_timing_by_mlip=generation_timing_by_mlip,
-        mlip_feature_names=feature_names,
-        generation_timing_by_method=generation_timing_by_method,
-        output_path=output_dir / f"total_time_accuracy_{run_suffix}.png",
-    )
-    return generation_path, training_path, total_path
+    return generation_path
 
 
 def write_fixed_split_time_accuracy_plots(
