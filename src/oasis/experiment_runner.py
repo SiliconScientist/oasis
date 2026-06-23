@@ -297,7 +297,9 @@ def ensure_probe_artifacts(cfg: object) -> bool:
 
 
 def load_filtered_wide_predictions(cfg: object):
-    base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
+    base_dir = getattr(cfg, "resolved_mlip_results_dir", None)
+    if base_dir is None:
+        base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     wide_df = load_wide_predictions(result_files)
     print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows")

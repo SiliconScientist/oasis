@@ -197,6 +197,7 @@ class ExperimentRunnerTests(unittest.TestCase):
     ) -> None:
         cfg = SimpleNamespace(
             analysis=SimpleNamespace(base_dir=Path("data/mlips/OH-BMA")),
+            resolved_mlip_results_dir=Path("data/mlips/Tol-KHLOHC"),
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
                     mlip_selection=SimpleNamespace(
@@ -230,7 +231,7 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertIs(wide_df, fake_wide_df)
         mock_find_result_files.assert_called_once_with(
-            Path("data/mlips/OH-BMA"),
+            Path("data/mlips/Tol-KHLOHC"),
             enabled_models=["mace", "uma"],
         )
         mock_filter_structures.assert_called_once_with(

@@ -22,6 +22,24 @@ INFERENCE_DETAIL_COLUMNS = (
     "adsorbate_migration",
 )
 
+_REQUESTED_MODEL_ALIASES = {
+    "sevennet": ("7net",),
+}
+
+
+def _normalize_model_token(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _matches_requested_model(requested_model: str, actual_model: str) -> bool:
+    requested_variants = [requested_model, *_REQUESTED_MODEL_ALIASES.get(requested_model, ())]
+    actual_normalized = _normalize_model_token(actual_model)
+    for variant in requested_variants:
+        normalized = _normalize_model_token(variant)
+        if actual_normalized == normalized or actual_normalized.startswith(normalized):
+            return True
+    return False
+
 
 def find_result_files(
     base_dir: Path,
@@ -38,14 +56,22 @@ def find_result_files(
             if not path.name.endswith("_processed_result.json")
         ]
     if enabled_models:
-        enabled_set = set(enabled_models)
-        candidates = [
-            path
-            for path in candidates
-            if model_name_from_result_path(path) in enabled_set
-        ]
-        found_models = {model_name_from_result_path(path) for path in candidates}
-        missing_models = [model for model in enabled_models if model not in found_models]
+        matched_candidates: list[Path] = []
+        missing_models: list[str] = []
+        for requested_model in enabled_models:
+            matched_paths = [
+                path
+                for path in candidates
+                if _matches_requested_model(
+                    requested_model,
+                    model_name_from_result_path(path),
+                )
+            ]
+            if not matched_paths:
+                missing_models.append(requested_model)
+                continue
+            matched_candidates.extend(matched_paths)
+        candidates = sorted(dict.fromkeys(matched_candidates))
         if missing_models:
             missing = ", ".join(missing_models)
             raise FileNotFoundError(

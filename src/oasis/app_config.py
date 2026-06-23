@@ -63,6 +63,20 @@ class Config(BaseModel):
         )
         return merged_paths.dataset
 
+    @property
+    def resolved_mlip_results_dir(self) -> Path | None:
+        if self.analysis is not None and self.analysis.base_dir is not None:
+            return Path(self.analysis.base_dir)
+        profile = self.dataset_profile
+        if profile is None:
+            return None
+        named_profile = self.datasets.get(profile.tag)
+        derived_paths = self._derived_dataset_profile_paths(profile.tag, named_profile)
+        merged_paths = derived_paths.model_copy(
+            update=profile.paths.model_dump(exclude_none=True)
+        )
+        return merged_paths.analysis_base_dir
+
     def _apply_dataset_profile(self) -> None:
         profile = self.dataset_profile
         if profile is None:

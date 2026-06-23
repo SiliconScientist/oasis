@@ -196,6 +196,7 @@ class ConfigParsingTests(unittest.TestCase):
             cfg = get_config(experiment_path)
 
         self.assertEqual(cfg.resolved_dataset_path, Path("data/raw_data/example.json"))
+        self.assertEqual(cfg.resolved_mlip_results_dir, Path("data/mlips/example"))
         self.assertIsNone(cfg.experiment)
         self.assertIsNone(cfg.analysis)
         self.assertIsNone(cfg.plot)

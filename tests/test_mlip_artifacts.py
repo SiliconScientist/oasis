@@ -140,6 +140,39 @@ class MlipArtifactTests(unittest.TestCase):
             ):
                 find_result_files(base_dir, enabled_models=["mace", "uma"])
 
+    def test_find_result_files_resolves_common_aliases(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            for model_name in (
+                "mace-mh-1-omat-pbe",
+                "mattersim-v1-5m",
+                "orb-v3",
+                "7net-mf-ompa",
+                "uma-s-1p1",
+            ):
+                model_dir = base_dir / model_name
+                model_dir.mkdir()
+                (model_dir / f"{model_name}_result.json").write_text(
+                    json.dumps({"rxn-1": {"final": {}}}),
+                    encoding="utf-8",
+                )
+
+            files = find_result_files(
+                base_dir,
+                enabled_models=["mace", "mattersim", "orb_v3", "sevennet", "uma"],
+            )
+
+        self.assertEqual(
+            [path.name for path in files],
+            [
+                "7net-mf-ompa_result.json",
+                "mace-mh-1-omat-pbe_result.json",
+                "mattersim-v1-5m_result.json",
+                "orb-v3_result.json",
+                "uma-s-1p1_result.json",
+            ],
+        )
+
     def test_load_wide_predictions_builds_expected_columns(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir)
