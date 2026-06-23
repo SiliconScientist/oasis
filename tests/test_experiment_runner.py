@@ -16,6 +16,7 @@ from oasis.experiment_runner import (
     run_experiment,
     run_experiment_from_config,
 )
+from oasis.tune import OptunaTuningConfig
 from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
@@ -271,13 +272,21 @@ class ExperimentRunnerTests(unittest.TestCase):
             min_train=5,
             max_train=50,
             step=1,
+            models=SimpleNamespace(
+                moe=SimpleNamespace(
+                    tuning=SimpleNamespace(optuna=OptunaTuningConfig(n_trials=50))
+                ),
+                probe_gnn=SimpleNamespace(
+                    tuning=SimpleNamespace(optuna=OptunaTuningConfig(n_trials=5))
+                ),
+                gnn_direct=SimpleNamespace(
+                    tuning=SimpleNamespace(optuna=OptunaTuningConfig(n_trials=2))
+                ),
+            ),
         )
         screening_cfg = SimpleNamespace(
-            n_repeats=30,
-            sweep_sizes=[],
-            min_train=5,
-            max_train=50,
-            step=1,
+            screen_fraction=0.2,
+            min_screen_size=1,
         )
         cfg = SimpleNamespace(
             dev_run=True,
@@ -294,10 +303,11 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(learning_curve_cfg.sweep_fractions, [])
         self.assertEqual(learning_curve_cfg.min_train, 8)
         self.assertEqual(learning_curve_cfg.max_train, 8)
-        self.assertEqual(screening_cfg.n_repeats, 1)
-        self.assertEqual(screening_cfg.sweep_sizes, [8])
-        self.assertEqual(screening_cfg.min_train, 8)
-        self.assertEqual(screening_cfg.max_train, 8)
+        self.assertEqual(learning_curve_cfg.models.moe.tuning.optuna.n_trials, 3)
+        self.assertEqual(learning_curve_cfg.models.probe_gnn.tuning.optuna.n_trials, 3)
+        self.assertEqual(learning_curve_cfg.models.gnn_direct.tuning.optuna.n_trials, 2)
+        self.assertEqual(screening_cfg.screen_fraction, 0.2)
+        self.assertEqual(screening_cfg.min_screen_size, 1)
 
     def test_run_experiment_uses_filtered_wide_df_from_auxiliary_view_builder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

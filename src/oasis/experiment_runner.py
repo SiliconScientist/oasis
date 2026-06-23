@@ -61,6 +61,7 @@ from oasis.probe_features import add_mlip_feature_matrices_to_dataset
 
 _DEV_RUN_MAX_ROWS = 24
 _DEV_RUN_SWEEP_SIZE = 8
+_DEV_RUN_OPTUNA_TRIALS = 3
 
 
 def _frame_height(frame: object) -> int:
@@ -183,34 +184,48 @@ def _apply_dev_run_curve_overrides(cfg: object, *, n_samples: int) -> None:
     if experiment_cfg is None:
         return
 
-    curve_cfgs = [
-        curve_cfg
-        for curve_cfg in (
-            getattr(experiment_cfg, "learning_curve", None),
-            getattr(experiment_cfg, "screening", None),
-        )
-        if curve_cfg is not None
-    ]
-    if not curve_cfgs:
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    if learning_curve_cfg is None:
         return
 
     max_sweep_size = max(1, n_samples - 1)
     sweep_size = min(_DEV_RUN_SWEEP_SIZE, max_sweep_size)
-    for curve_cfg in curve_cfgs:
-        curve_cfg.n_repeats = 1
-        curve_cfg.sweep_sizes = [sweep_size]
-        if hasattr(curve_cfg, "sweep_fractions"):
-            curve_cfg.sweep_fractions = []
-        if hasattr(curve_cfg, "min_train"):
-            curve_cfg.min_train = sweep_size
-        if hasattr(curve_cfg, "max_train"):
-            curve_cfg.max_train = sweep_size
-        if hasattr(curve_cfg, "step"):
-            curve_cfg.step = 1
+    learning_curve_cfg.n_repeats = 1
+    learning_curve_cfg.sweep_sizes = [sweep_size]
+    if hasattr(learning_curve_cfg, "sweep_fractions"):
+        learning_curve_cfg.sweep_fractions = []
+    if hasattr(learning_curve_cfg, "min_train"):
+        learning_curve_cfg.min_train = sweep_size
+    if hasattr(learning_curve_cfg, "max_train"):
+        learning_curve_cfg.max_train = sweep_size
+    if hasattr(learning_curve_cfg, "step"):
+        learning_curve_cfg.step = 1
+
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    optuna_overrides: list[str] = []
+    if models_cfg is not None:
+        for family_name in ("moe", "probe_gnn", "gnn_direct"):
+            family_cfg = getattr(models_cfg, family_name, None)
+            tuning_cfg = getattr(family_cfg, "tuning", None)
+            optuna_cfg = getattr(tuning_cfg, "optuna", None)
+            if optuna_cfg is None:
+                continue
+            pre_trials = int(optuna_cfg.n_trials)
+            if pre_trials <= _DEV_RUN_OPTUNA_TRIALS:
+                continue
+            optuna_cfg.n_trials = _DEV_RUN_OPTUNA_TRIALS
+            optuna_overrides.append(
+                f"{family_name}.tuning.optuna.n_trials={pre_trials}->{_DEV_RUN_OPTUNA_TRIALS}"
+            )
     print(
         "Applied dev_run learning-curve overrides:"
         f" n_repeats=1, sweep_sizes=[{sweep_size}]"
     )
+    if optuna_overrides:
+        print(
+            "Applied dev_run Optuna overrides:"
+            f" {', '.join(optuna_overrides)}"
+        )
 
 
 def _derived_screening_learning_curve_cfg(cfg: object):
