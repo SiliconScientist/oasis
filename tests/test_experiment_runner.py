@@ -1732,3 +1732,116 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_uq_summary_figure.call_args.kwargs["dispersion_path"],
             tmp_path / "tmp" / "dispersion.png",
         )
+
+    def test_run_experiment_emits_screening_uq_summary_figure_when_screening_results_have_uq(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        results_bundle_path=None,
+                        reuse_results=False,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                    ),
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+            learning_results = LearningCurveResults.empty()
+            screening_results = self._uq_results()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                side_effect=[learning_results, screening_results],
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ), patch(
+                "oasis.experiment_runner.screening_budget_plot",
+                return_value=tmp_path / "plots" / "screening_budget.png",
+            ), patch(
+                "oasis.experiment_runner.learning_screening_figure",
+                return_value=tmp_path / "plots" / "learning_screening_figure.png",
+            ), patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                return_value=tmp_path / "tmp" / "screening_miscalibration.png",
+            ) as mock_miscalibration_plot, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                return_value=tmp_path / "tmp" / "screening_sharpness.png",
+            ) as mock_sharpness_plot, patch(
+                "oasis.experiment_runner.dispersion_plot",
+                return_value=tmp_path / "tmp" / "screening_dispersion.png",
+            ) as mock_dispersion_plot, patch(
+                "oasis.experiment_runner.uq_summary_figure",
+                return_value=tmp_path / "plots" / "screening_uq_summary_figure.png",
+            ) as mock_uq_summary_figure:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_miscalibration_plot.call_count, 1)
+        self.assertEqual(
+            Path(mock_miscalibration_plot.call_args.kwargs["output_path"]).name,
+            "screening_miscalibration_area_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            Path(mock_sharpness_plot.call_args.kwargs["output_path"]).name,
+            "screening_sharpness_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            Path(mock_dispersion_plot.call_args.kwargs["output_path"]).name,
+            "screening_dispersion_panel_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["output_path"],
+            tmp_path / "plots" / "screening_uq_summary_figure_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["miscalibration_area_path"],
+            tmp_path / "tmp" / "screening_miscalibration.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["sharpness_path"],
+            tmp_path / "tmp" / "screening_sharpness.png",
+        )
+        self.assertEqual(
+            mock_uq_summary_figure.call_args.kwargs["dispersion_path"],
+            tmp_path / "tmp" / "screening_dispersion.png",
+        )

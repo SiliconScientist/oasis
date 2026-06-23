@@ -103,6 +103,26 @@ def _set_integer_x_ticks(ax: Any) -> None:
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
+def _uq_x_axis_config(results: LearningCurveResults) -> tuple[str, str, str]:
+    for _, _, uq_field, *_ in _METHOD_PLOT_STYLES:
+        frame = getattr(results, uq_field)
+        if frame is None or frame.empty:
+            continue
+        if "n_budget" in frame.columns:
+            return (
+                "n_budget",
+                "budget",
+                "Sample budget",
+            )
+        if "n_train" in frame.columns:
+            return (
+                "n_train",
+                "train size",
+                "Train size",
+            )
+    return ("n_train", "train size", "Train size")
+
+
 def _plot_uq_metric_curve(
     results: LearningCurveResults,
     *,
@@ -115,14 +135,18 @@ def _plot_uq_metric_curve(
     show_legend: bool = True,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
-    title: str,
+    title_prefix: str,
     ylabel: str,
 ) -> Path:
+    x_column, title_axis_label, xlabel = _uq_x_axis_config(results)
+    order_frame = (
+        _ordered_screening_frame if x_column == "n_budget" else _ordered_learning_curve_frame
+    )
     results = LearningCurveResults.from_mapping(
         {
             field_name: _filter_curve_frame(
-                _ordered_learning_curve_frame(frame),
-                x_column="n_train",
+                order_frame(frame),
+                x_column=x_column,
                 min_x=min_x,
                 max_x=max_x,
                 include_x=include_x,
@@ -137,7 +161,7 @@ def _plot_uq_metric_curve(
             continue
         metric_std_column = f"{metric_column}_std"
         ax.plot(
-            frame["n_train"],
+            frame[x_column],
             frame[metric_column],
             marker=marker,
             color=color,
@@ -145,7 +169,7 @@ def _plot_uq_metric_curve(
         )
         if metric_std_column in frame.columns:
             ax.fill_between(
-                frame["n_train"],
+                frame[x_column],
                 frame[metric_column] - frame[metric_std_column],
                 frame[metric_column] + frame[metric_std_column],
                 color=color,
@@ -164,11 +188,11 @@ def _plot_uq_metric_curve(
         )
         ax.set_xlim(x_min, x_max)
     if show_xlabel:
-        ax.set_xlabel("Train size", fontsize=fontsize)
+        ax.set_xlabel(xlabel, fontsize=fontsize)
     else:
         ax.set_xlabel("")
     ax.set_ylabel(ylabel, fontsize=fontsize)
-    ax.set_title(title, fontsize=fontsize)
+    ax.set_title(f"{title_prefix} vs {title_axis_label}", fontsize=fontsize)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
@@ -559,7 +583,7 @@ def miscalibration_area_plot(
         show_legend=show_legend,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
-        title="Miscalibration area vs train size",
+        title_prefix="Miscalibration area",
         ylabel="Miscalibration area",
     )
 
@@ -586,7 +610,7 @@ def sharpness_plot(
         show_legend=show_legend,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
-        title="Sharpness vs train size",
+        title_prefix="Sharpness",
         ylabel="Sharpness",
     )
 
@@ -613,7 +637,7 @@ def dispersion_plot(
         show_legend=show_legend,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
-        title="Dispersion vs train size",
+        title_prefix="Dispersion",
         ylabel="Dispersion",
     )
 

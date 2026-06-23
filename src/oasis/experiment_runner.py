@@ -552,6 +552,53 @@ def _zero_shot_uq_baselines(parity_plot_data: object) -> dict[str, float]:
     }
 
 
+def write_uq_summary_figure(
+    *,
+    results: object,
+    output_path: Path,
+    run_suffix: str,
+    zero_shot_uq: dict[str, float],
+    panel_prefix: str = "",
+    **plot_kwargs,
+) -> Path | None:
+    if not _has_uq_summary(results):
+        return None
+
+    panel_stem_prefix = f"{panel_prefix}_" if panel_prefix else ""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        miscalibration_path = miscalibration_area_plot(
+            results,
+            output_path=Path(tmpdir)
+            / f"{panel_stem_prefix}miscalibration_area_panel_{run_suffix}.png",
+            show_xlabel=False,
+            zero_shot_value=zero_shot_uq["miscalibration_area"],
+            **plot_kwargs,
+        )
+        sharpness_path = sharpness_plot(
+            results,
+            output_path=Path(tmpdir)
+            / f"{panel_stem_prefix}sharpness_panel_{run_suffix}.png",
+            show_legend=False,
+            show_xlabel=False,
+            zero_shot_value=zero_shot_uq["sharpness"],
+            **plot_kwargs,
+        )
+        dispersion_path = dispersion_plot(
+            results,
+            output_path=Path(tmpdir)
+            / f"{panel_stem_prefix}dispersion_panel_{run_suffix}.png",
+            show_legend=False,
+            zero_shot_value=zero_shot_uq["dispersion"],
+            **plot_kwargs,
+        )
+        return uq_summary_figure(
+            miscalibration_area_path=miscalibration_path,
+            sharpness_path=sharpness_path,
+            dispersion_path=dispersion_path,
+            output_path=output_path,
+        )
+
+
 def write_time_accuracy_plots(
     *,
     learning_curve_results: object,
@@ -747,37 +794,13 @@ def run_experiment(cfg: object):
             train_fraction=fixed_split_train_fraction,
             generation_timing_by_method=generation_timing_by_method,
         )
-        if _has_uq_summary(learning_curve_results):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                miscalibration_path = miscalibration_area_plot(
-                    learning_curve_results,
-                    output_path=Path(tmpdir)
-                    / f"miscalibration_area_panel_{run_suffix}.png",
-                    show_xlabel=False,
-                    zero_shot_value=zero_shot_uq["miscalibration_area"],
-                    **plot_kwargs,
-                )
-                sharpness_path = sharpness_plot(
-                    learning_curve_results,
-                    output_path=Path(tmpdir) / f"sharpness_panel_{run_suffix}.png",
-                    show_legend=False,
-                    show_xlabel=False,
-                    zero_shot_value=zero_shot_uq["sharpness"],
-                    **plot_kwargs,
-                )
-                dispersion_path = dispersion_plot(
-                    learning_curve_results,
-                    output_path=Path(tmpdir) / f"dispersion_panel_{run_suffix}.png",
-                    show_legend=False,
-                    zero_shot_value=zero_shot_uq["dispersion"],
-                    **plot_kwargs,
-                )
-                uq_summary_figure(
-                    miscalibration_area_path=miscalibration_path,
-                    sharpness_path=sharpness_path,
-                    dispersion_path=dispersion_path,
-                    output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
-                )
+        write_uq_summary_figure(
+            results=learning_curve_results,
+            output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
+            run_suffix=run_suffix,
+            zero_shot_uq=zero_shot_uq,
+            **plot_kwargs,
+        )
 
     screening_run_cfg = _screening_run_cfg(cfg)
     screening_results = None
@@ -792,6 +815,14 @@ def run_experiment(cfg: object):
         screening_plot_path = screening_budget_plot(
             results=screening_results,
             output_path=output_dir / f"screening_budget_{run_suffix}.png",
+            **plot_kwargs,
+        )
+        write_uq_summary_figure(
+            results=screening_results,
+            output_path=output_dir / f"screening_uq_summary_figure_{run_suffix}.png",
+            run_suffix=run_suffix,
+            zero_shot_uq=zero_shot_uq,
+            panel_prefix="screening",
             **plot_kwargs,
         )
     if learning_curve_plot_path is not None and screening_plot_path is not None:

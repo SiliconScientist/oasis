@@ -4,7 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
+from unittest.mock import patch
 
 from oasis.figure import learning_screening_figure, uq_summary_figure, vertical_panel_figure
 from oasis.plot import (
@@ -155,3 +157,36 @@ class FigureTests(unittest.TestCase):
 
             self.assertEqual(output_path, tmp_path / "uq_summary_figure.png")
             self.assertTrue(output_path.exists())
+
+    def test_miscalibration_area_plot_uses_budget_axis_for_screening_uq_results(self) -> None:
+        screening_uq_results = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_budget": [4, 8],
+                    "n_train": [3, 6],
+                    "n_screen": [1, 2],
+                    "screen_fraction": [0.25, 0.25],
+                    "n_cv_folds": [4, 4],
+                    "miscalibration_area": [0.2, 0.1],
+                    "miscalibration_area_std": [0.01, 0.02],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with patch("matplotlib.pyplot.close") as mock_close:
+                output_path = miscalibration_area_plot(
+                    screening_uq_results,
+                    output_path=tmp_path / "screening_miscalibration.png",
+                    include_x=[4, 8],
+                )
+
+            self.assertTrue(mock_close.called)
+            self.assertEqual(output_path, tmp_path / "screening_miscalibration.png")
+            ax = plt.gcf().axes[0]
+            self.assertEqual(ax.get_xlabel(), "Sample budget")
+            self.assertEqual(ax.get_title(), "Miscalibration area vs budget")
+            self.assertEqual(list(ax.lines[0].get_xdata()), [4, 8])
+            plt.close("all")
