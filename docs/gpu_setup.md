@@ -67,7 +67,7 @@ Then start an interactive GPU shell from
 the environment, and run:
 
 ```bash
-python -m oasis mlip.toml experiment.toml
+python -m oasis experiment.toml
 ```
 
 ## Locking

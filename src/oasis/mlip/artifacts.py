@@ -28,6 +28,7 @@ def find_result_files(
     *,
     pattern: str = "*/*_result.json",
     exclude_processed: bool = True,
+    enabled_models: list[str] | None = None,
 ) -> list[Path]:
     candidates = sorted(base_dir.glob(pattern))
     if exclude_processed:
@@ -36,8 +37,29 @@ def find_result_files(
             for path in candidates
             if not path.name.endswith("_processed_result.json")
         ]
+    if enabled_models:
+        enabled_set = set(enabled_models)
+        candidates = [
+            path
+            for path in candidates
+            if model_name_from_result_path(path) in enabled_set
+        ]
+        found_models = {model_name_from_result_path(path) for path in candidates}
+        missing_models = [model for model in enabled_models if model not in found_models]
+        if missing_models:
+            missing = ", ".join(missing_models)
+            raise FileNotFoundError(
+                f"Requested MLIP result files were not found under {base_dir}: {missing}"
+            )
     if candidates:
         return candidates
+
+    if enabled_models:
+        enabled_str = ", ".join(enabled_models)
+        raise FileNotFoundError(
+            "No enabled MLIP result files found under "
+            f"{base_dir} (requested: {enabled_str}; expected pattern: {pattern})"
+        )
 
     raise FileNotFoundError(
         f"No result files found under {base_dir} (expected pattern: {pattern})"

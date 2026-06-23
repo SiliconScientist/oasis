@@ -86,6 +86,25 @@ def _mlip_selection_cfg(cfg: object):
     return getattr(learning_curve_cfg, "mlip_selection", None)
 
 
+def _enabled_mlips(cfg: object) -> list[str] | None:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    enabled_mlips = getattr(mlip_selection_cfg, "enabled", None)
+    if not enabled_mlips:
+        return None
+    return list(enabled_mlips)
+
+
+def _resolved_dataset_path(cfg: object) -> Path | None:
+    dataset_path = getattr(cfg, "resolved_dataset_path", None)
+    if dataset_path is not None:
+        return Path(dataset_path)
+    mlip_cfg = getattr(cfg, "mlip", None)
+    legacy_dataset_path = getattr(mlip_cfg, "dataset", None)
+    if legacy_dataset_path is not None:
+        return Path(legacy_dataset_path)
+    return None
+
+
 def _anomaly_aware_run_suffix(cfg: object) -> str:
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
     enabled = bool(getattr(mlip_selection_cfg, "exclude_anomalous", False))
@@ -250,7 +269,9 @@ def _can_reuse_graph_artifact(
 
 
 def ensure_probe_artifacts(cfg: object) -> bool:
-    dataset_path = Path(cfg.mlip.dataset)
+    dataset_path = _resolved_dataset_path(cfg)
+    if dataset_path is None:
+        raise ValueError("No dataset path is configured.")
     probe_cfg = cfg.probe_features
     models_cfg = (
         cfg.experiment.learning_curve.models
@@ -277,7 +298,7 @@ def ensure_probe_artifacts(cfg: object) -> bool:
 
 def load_filtered_wide_predictions(cfg: object):
     base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
-    result_files = find_result_files(base_dir)
+    result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     wide_df = load_wide_predictions(result_files)
     print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows")
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
@@ -466,7 +487,7 @@ def prepare_graph_view(cfg: object, wide_df: object):
         )
     sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
     graph_view = atoms_to_graph_dataset_view(reaction_ids, sample_atoms)
-    print(f"Loaded {len(sample_atoms)} adsorbed structures from {cfg.mlip.dataset}")
+    print(f"Loaded {len(sample_atoms)} adsorbed structures from {_resolved_dataset_path(cfg)}")
     print(f"Built {len(graph_view)} graph artifacts from sampled structures")
     if graph_dataset_cfg is not None:
         saved_graph_dataset_path = save_aligned_graph_dataset_parquet(

@@ -65,7 +65,7 @@ def main() -> None:
         help="Dataset name (passed from task runner)",
     )
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--config", default="mlip.toml")
+    parser.add_argument("--config", required=True)
     parser.add_argument("--n-calcs", type=int, default=3)
     args = parser.parse_args()
 

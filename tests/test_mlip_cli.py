@@ -13,10 +13,10 @@ from oasis.mlip.cli import main as mlip_main
 class MainDispatchTests(unittest.TestCase):
     def test_main_forwards_mlip_args_to_dedicated_cli(self) -> None:
         with patch("oasis.mlip.cli.main") as mock_mlip_main:
-            main(["mlip", "run-one", "--line", "task", "--config", "mlip.toml"])
+            main(["mlip", "run-one", "--line", "task", "--config", "config.toml"])
 
         mock_mlip_main.assert_called_once_with(
-            ["run-one", "--line", "task", "--config", "mlip.toml"]
+            ["run-one", "--line", "task", "--config", "config.toml"]
         )
 
     def test_main_forwards_non_mlip_args_to_experiment_runner(self) -> None:
@@ -67,22 +67,22 @@ class MlipCliTests(unittest.TestCase):
     def test_submit_delegates_to_submit_jobs(self) -> None:
         with patch("oasis.mlip.submit.submit_jobs") as mock_submit_jobs:
             mlip_main(
-                ["submit", "--config", "mlip.toml", "--run-tag", "tag", "dataset.json"]
+                ["submit", "--config", "config.toml", "--run-tag", "tag", "dataset.json"]
             )
 
         mock_submit_jobs.assert_called_once_with(
-            config_path="mlip.toml",
+            config_path="config.toml",
             run_tag="tag",
             datasets=["dataset.json"],
         )
 
     def test_run_one_delegates_to_runner(self) -> None:
         with patch("oasis.mlip.runner.run_one_task") as mock_run_one_task:
-            mlip_main(["run-one", "--line", "task-line", "--config", "mlip.toml"])
+            mlip_main(["run-one", "--line", "task-line", "--config", "config.toml"])
 
         mock_run_one_task.assert_called_once_with(
             line="task-line",
-            config_path="mlip.toml",
+            config_path="config.toml",
         )
 
     def test_make_tasks_delegates_to_task_writer(self) -> None:
@@ -91,7 +91,7 @@ class MlipCliTests(unittest.TestCase):
                 [
                     "make-tasks",
                     "--config",
-                    "mlip.toml",
+                    "config.toml",
                     "--run-tag",
                     "tag",
                     "--out",
@@ -101,7 +101,7 @@ class MlipCliTests(unittest.TestCase):
             )
 
         mock_make_tasks.assert_called_once_with(
-            config_path="mlip.toml",
+            config_path="config.toml",
             run_tag="tag",
             out_path="tasks.txt",
             datasets=["dataset.json"],
@@ -109,7 +109,7 @@ class MlipCliTests(unittest.TestCase):
 
     def test_python_dash_m_oasis_mlip_delegates_to_cli_main(self) -> None:
         with patch("oasis.mlip.cli.main") as mock_mlip_main:
-            with patch.object(sys, "argv", ["python", "submit", "--config", "mlip.toml"]):
+            with patch.object(sys, "argv", ["python", "submit", "--config", "config.toml"]):
                 runpy.run_module("oasis.mlip", run_name="__main__")
 
         mock_mlip_main.assert_called_once_with()

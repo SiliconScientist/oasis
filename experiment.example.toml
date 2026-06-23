@@ -5,7 +5,7 @@ device = "cuda"
 # Example experiment-side configuration.
 # Copy to `experiment.toml` and tune per study.
 # This file owns dataset-profile, analysis, plot, probe-feature, and
-# learning-curve settings. MLIP model registry details live in `mlip.toml`.
+# learning-curve settings.
 
 [dataset_profile]
 tag = "example_oh"
@@ -62,6 +62,8 @@ n_repeats = 10
 
 # Anomaly-aware MLIP selection. Leave this off for the baseline comparison.
 [experiment.learning_curve.mlip_selection]
+# Optional explicit allowlist. Leave empty to use every discovered MLIP result.
+# enabled = ["mace", "mattersim", "orb_v3", "sevennet", "uma"]
 exclude_anomalous = false
 label_allowlist = ["normal"]
 strict_inference_anomaly = false

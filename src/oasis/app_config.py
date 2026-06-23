@@ -28,10 +28,10 @@ class Config(BaseModel):
     dev_run: Optional[bool] = None
     train: Optional[bool] = None
     evaluate: Optional[bool] = None
-    ingest: IngestConfig
+    ingest: Optional[IngestConfig] = None
     dataset_profile: Optional[DatasetProfileConfig] = None
     datasets: dict[str, NamedDatasetConfig] = Field(default_factory=dict)
-    mlip: MLIPConfig
+    mlip: Optional[MLIPConfig] = None
     analysis: Optional[AnalysisConfig] = None
     probe_features: Optional[ProbeFeatureConfig] = None
     experiment: Optional[ExperimentConfig] = None
@@ -42,11 +42,26 @@ class Config(BaseModel):
         self.init_paths()
 
     def init_paths(self) -> None:
-        self.ingest.catbench_folder = default_catbench_folder(self.ingest.source)
+        if self.ingest is not None:
+            self.ingest.catbench_folder = default_catbench_folder(self.ingest.source)
         self._apply_dataset_profile()
         self._validate_derived_paths()
         self._inherit_global_seed()
         self._inherit_global_device()
+
+    @property
+    def resolved_dataset_path(self) -> Path | None:
+        if self.mlip is not None and self.mlip.dataset is not None:
+            return Path(self.mlip.dataset)
+        profile = self.dataset_profile
+        if profile is None:
+            return None
+        named_profile = self.datasets.get(profile.tag)
+        derived_paths = self._derived_dataset_profile_paths(profile.tag, named_profile)
+        merged_paths = derived_paths.model_copy(
+            update=profile.paths.model_dump(exclude_none=True)
+        )
+        return merged_paths.dataset
 
     def _apply_dataset_profile(self) -> None:
         profile = self.dataset_profile
@@ -65,7 +80,8 @@ class Config(BaseModel):
             update=profile.paths.model_dump(exclude_none=True)
         )
 
-        fill_mlip_dataset_path(self.mlip, dataset_path=profile_paths.dataset)
+        if self.mlip is not None:
+            fill_mlip_dataset_path(self.mlip, dataset_path=profile_paths.dataset)
 
         learning_curve = (
             self.experiment.learning_curve

@@ -36,7 +36,7 @@ from oasis.mlip_config import (
     fill_mlip_dataset_path,
 )
 
-DEFAULT_CONFIG_PATHS = (Path("mlip.toml"), Path("experiment.toml"))
+DEFAULT_CONFIG_PATHS = (Path("experiment.toml"),)
 
 
 def _normalize_experiment_layout(raw_cfg: dict) -> dict:

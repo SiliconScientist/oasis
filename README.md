@@ -40,7 +40,7 @@ Experiment execution is config-driven:
 ```python
 from oasis.experiment_runner import run_experiment_from_config
 
-run_experiment_from_config(["mlip.toml", "experiment.toml"])
+run_experiment_from_config(["experiment.toml"])
 ```
 
 If you already have a parsed config object, call `run_experiment(cfg)` instead.
@@ -49,9 +49,9 @@ For MLIP ingestion/prediction, use Moirai. The old in-repo MLIP module path
 remains documented here only as a temporary compatibility surface:
 
 ```bash
-python -m oasis.mlip submit --config mlip.toml
-python -m oasis.mlip make-tasks --config mlip.toml --run-tag dev --out slurm_output/tasks.txt
-python -m oasis.mlip run-one --config mlip.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
+python -m oasis.mlip submit --config path/to/mlip-config.toml
+python -m oasis.mlip make-tasks --config path/to/mlip-config.toml --run-tag dev --out slurm_output/tasks.txt
+python -m oasis.mlip run-one --config path/to/mlip-config.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
 ```
 
 `python -m oasis` is not an experiment runner. It only forwards `mlip ...` and

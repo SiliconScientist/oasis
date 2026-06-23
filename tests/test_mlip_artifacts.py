@@ -109,6 +109,37 @@ class MlipArtifactTests(unittest.TestCase):
         self.assertEqual(files, [result_path])
         self.assertEqual(payload, {"rxn-1": {"final": {}}})
 
+    def test_find_result_files_filters_to_enabled_models(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            for model_name in ("mace", "orb_v3"):
+                model_dir = base_dir / model_name
+                model_dir.mkdir()
+                (model_dir / f"{model_name}_result.json").write_text(
+                    json.dumps({"rxn-1": {"final": {}}}),
+                    encoding="utf-8",
+                )
+
+            files = find_result_files(base_dir, enabled_models=["orb_v3"])
+
+        self.assertEqual([path.name for path in files], ["orb_v3_result.json"])
+
+    def test_find_result_files_raises_when_enabled_model_is_missing(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            model_dir = base_dir / "mace"
+            model_dir.mkdir()
+            (model_dir / "mace_result.json").write_text(
+                json.dumps({"rxn-1": {"final": {}}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "Requested MLIP result files were not found",
+            ):
+                find_result_files(base_dir, enabled_models=["mace", "uma"])
+
     def test_load_wide_predictions_builds_expected_columns(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir)

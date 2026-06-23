@@ -19,9 +19,9 @@ def load_sample_atoms_for_wide_df(
     """
     Load adsorbed ASE Atoms objects aligned to the rows of ``wide_df``.
     """
-    dataset_path = cfg.mlip.dataset
+    dataset_path = cfg.resolved_dataset_path
     if not dataset_path:
-        raise ValueError("cfg.mlip.dataset is not set in mlip.toml")
+        raise ValueError("No dataset path is configured.")
 
     path = Path(dataset_path)
     if not path.is_file():
@@ -32,7 +32,7 @@ def load_sample_atoms_for_wide_df(
 
     if not isinstance(dataset, dict):
         raise TypeError(
-            f"Expected cfg.mlip.dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
+            f"Expected dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
         )
 
     reactions = wide_df.get_column("reaction").to_list()

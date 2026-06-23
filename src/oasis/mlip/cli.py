@@ -11,7 +11,7 @@ def main(argv=None):
     submit_p = subparsers.add_parser(
         "submit", help="Create tasks and submit Slurm job array"
     )
-    submit_p.add_argument("--config", default="mlip.toml")
+    submit_p.add_argument("--config", required=True)
     submit_p.add_argument("--run-tag", default=None)
     submit_p.add_argument("datasets", nargs="*", help="Optional dataset paths")
     # ---- run-one ----
@@ -19,10 +19,10 @@ def main(argv=None):
         "run-one", help="Run a single MLIP task (used inside Slurm)"
     )
     run_one_p.add_argument("--line", required=True)
-    run_one_p.add_argument("--config", default="mlip.toml")
+    run_one_p.add_argument("--config", required=True)
     # ---- make-tasks ----
     make_tasks_p = subparsers.add_parser("make-tasks", help="Generate MLIP task file")
-    make_tasks_p.add_argument("--config", default="mlip.toml")
+    make_tasks_p.add_argument("--config", required=True)
     make_tasks_p.add_argument("--run-tag", required=True)
     make_tasks_p.add_argument("--out", required=True)
     make_tasks_p.add_argument("datasets", nargs="*")

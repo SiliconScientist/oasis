@@ -150,6 +150,7 @@ class GraphDatasetInputConfig(BaseModel):
 
 
 class MlipSelectionConfig(BaseModel):
+    enabled: List[str] = Field(default_factory=list)
     exclude_anomalous: bool = False
     label_allowlist: List[str] = Field(default_factory=lambda: ["normal"])
     strict_inference_anomaly: bool = False

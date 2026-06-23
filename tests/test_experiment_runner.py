@@ -120,9 +120,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.run_experiment",
                 return_value="results",
             ) as mock_run:
-                result = run_experiment_from_config(["mlip.toml", "experiment.toml"])
+                result = run_experiment_from_config(["experiment.toml"])
 
-        mock_get.assert_called_once_with(["mlip.toml", "experiment.toml"])
+        mock_get.assert_called_once_with(["experiment.toml"])
         mock_run.assert_called_once_with(cfg)
         self.assertEqual(result, "results")
 
@@ -200,6 +200,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
                     mlip_selection=SimpleNamespace(
+                        enabled=["mace", "uma"],
                         exclude_anomalous=True,
                         label_allowlist=["normal", "energy_anomaly"],
                         strict_inference_anomaly=True,
@@ -212,7 +213,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         with patch(
             "oasis.experiment_runner.find_result_files",
             return_value=[],
-        ):
+        ) as mock_find_result_files:
             with patch(
                 "oasis.experiment_runner.load_wide_predictions",
                 return_value=fake_wide_df,
@@ -228,6 +229,10 @@ class ExperimentRunnerTests(unittest.TestCase):
                         wide_df, *_ = load_filtered_wide_predictions(cfg)
 
         self.assertIs(wide_df, fake_wide_df)
+        mock_find_result_files.assert_called_once_with(
+            Path("data/mlips/OH-BMA"),
+            enabled_models=["mace", "uma"],
+        )
         mock_filter_structures.assert_called_once_with(
             fake_wide_df,
             enabled=True,

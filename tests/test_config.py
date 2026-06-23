@@ -14,12 +14,12 @@ except ModuleNotFoundError:
 
 @unittest.skipUnless(HAS_CONFIG, "requires config dependencies")
 class ConfigParsingTests(unittest.TestCase):
-    def test_load_config_data_merges_two_files_with_later_precedence(self) -> None:
+    def test_load_config_data_merges_two_explicit_files_with_later_precedence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
+            base_path = tmp / "base.toml"
             experiment_path = tmp / "experiment.toml"
-            mlip_path.write_text(
+            base_path.write_text(
                 "\n".join(
                     [
                         "seed = 7",
@@ -27,10 +27,8 @@ class ConfigParsingTests(unittest.TestCase):
                         "[plot]",
                         'output_dir = "data/results/mlip-plots"',
                         "",
-                        "[mlip]",
-                        "dev_n = 1",
-                        "dev_run = false",
-                        'dataset = "data/raw_data/from_mlip.json"',
+                        "[dataset_profile]",
+                        'tag = "example"',
                     ]
                 )
                 + "\n",
@@ -49,27 +47,23 @@ class ConfigParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            data = load_config_data([mlip_path, experiment_path])
+            data = load_config_data([base_path, experiment_path])
 
         self.assertEqual(data["seed"], 11)
         self.assertEqual(data["plot"]["output_dir"], "data/results/experiment-plots")
-        self.assertEqual(data["mlip"]["dataset"], "data/raw_data/from_mlip.json")
+        self.assertEqual(data["dataset_profile"]["tag"], "example")
 
-    def test_load_config_data_allows_default_discovery_during_one_file_migration(
-        self,
-    ) -> None:
+    def test_load_config_data_uses_experiment_only_default_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
-            mlip_path.write_text(
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
                 "\n".join(
                     [
                         "seed = 7",
                         "",
-                        "[mlip]",
-                        "dev_n = 1",
-                        "dev_run = false",
-                        'dataset = "data/raw_data/example.json"',
+                        "[dataset_profile]",
+                        'tag = "example"',
                     ]
                 )
                 + "\n",
@@ -86,7 +80,7 @@ class ConfigParsingTests(unittest.TestCase):
                 os.chdir(old_cwd)
 
         self.assertEqual(data["seed"], 7)
-        self.assertEqual(data["mlip"]["dataset"], "data/raw_data/example.json")
+        self.assertEqual(data["dataset_profile"]["tag"], "example")
 
     def test_load_config_data_allows_experiment_only_default_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -126,62 +120,29 @@ class ConfigParsingTests(unittest.TestCase):
     def test_load_config_data_rejects_missing_explicit_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
             experiment_path = tmp / "experiment.toml"
-            mlip_path.write_text(
-                "\n".join(
-                    [
-                        "[mlip]",
-                        "dev_n = 1",
-                        "dev_run = false",
-                        'dataset = "data/raw_data/example.json"',
-                    ]
-                )
-                + "\n",
-                encoding="utf-8",
-            )
 
             with self.assertRaisesRegex(
                 FileNotFoundError,
-                rf"Explicit config file\(s\) not found: .*{experiment_path.name}",
+                r"No config files found\. Looked for:",
             ):
-                load_config_data([mlip_path, experiment_path])
+                load_config_data([tmp / "base.toml", experiment_path])
 
-    def test_get_config_merges_mlip_and_experiment_files(self) -> None:
+    def test_get_config_merges_explicit_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
+            base_path = tmp / "base.toml"
             experiment_path = tmp / "experiment.toml"
-            mlip_path.write_text(
+            base_path.write_text(
                 "\n".join(
                     [
                         'seed = 7',
                         "",
-                        "[ingest]",
-                        'source = "data/raw_vasp/systems"',
-                        'dataset_name = "test"',
+                        "[dataset_profile]",
+                        'tag = "example"',
                         "",
-                        "[ingest.stoich]",
-                        'elements = ["H"]',
-                        'basis_species = ["H2"]',
-                        "",
-                        "[ingest.stoich.basis_composition]",
-                        'H2 = { H = 2 }',
-                        "",
-                        "[mlip]",
-                        "dev_n = 1",
-                        "dev_run = false",
-                        'dataset = "data/raw_data/example.json"',
-                        "",
-                        "[mlip.models]",
-                        'enabled = ["mace"]',
-                        "",
-                        "[mlip.rootstock]",
-                        'root = "."',
-                        "",
-                        "[mlip.rootstock.models.mace]",
-                        'model = "mace"',
-                        'mlip_name = "mace-test"',
+                        "[datasets.example]",
+                        'raw_dataset_filename = "example.json"',
                     ]
                 )
                 + "\n",
@@ -204,57 +165,37 @@ class ConfigParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cfg = get_config([mlip_path, experiment_path])
+            cfg = get_config([base_path, experiment_path])
 
         self.assertEqual(cfg.seed, 7)
-        self.assertEqual(cfg.mlip.dataset, "data/raw_data/example.json")
+        self.assertEqual(cfg.resolved_dataset_path, Path("data/raw_data/example.json"))
         assert cfg.plot is not None
         self.assertEqual(cfg.plot.output_dir, Path("data/results/plots"))
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
 
-    def test_get_config_loads_mlip_only_file(self) -> None:
+    def test_get_config_loads_experiment_only_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
-            mlip_path.write_text(
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
                 "\n".join(
                     [
-                        "[ingest]",
-                        'source = "data/raw_vasp/systems"',
-                        'dataset_name = "test"',
+                        "[dataset_profile]",
+                        'tag = "example"',
                         "",
-                        "[ingest.stoich]",
-                        'elements = ["H"]',
-                        'basis_species = ["H2"]',
-                        "",
-                        "[ingest.stoich.basis_composition]",
-                        'H2 = { H = 2 }',
-                        "",
-                        "[mlip]",
-                        "dev_n = 1",
-                        "dev_run = false",
-                        'dataset = "data/raw_data/example.json"',
-                        "",
-                        "[mlip.models]",
-                        'enabled = ["mace"]',
-                        "",
-                        "[mlip.rootstock]",
-                        'root = "."',
-                        "",
-                        "[mlip.rootstock.models.mace]",
-                        'model = "mace"',
-                        'mlip_name = "mace-test"',
+                        "[datasets.example]",
+                        'raw_dataset_filename = "example.json"',
                     ]
                 )
                 + "\n",
                 encoding="utf-8",
             )
 
-            cfg = get_config(mlip_path)
+            cfg = get_config(experiment_path)
 
-        self.assertEqual(cfg.mlip.dataset, "data/raw_data/example.json")
+        self.assertEqual(cfg.resolved_dataset_path, Path("data/raw_data/example.json"))
         self.assertIsNone(cfg.experiment)
         self.assertIsNone(cfg.analysis)
         self.assertIsNone(cfg.plot)
@@ -1143,9 +1084,9 @@ class ConfigParsingTests(unittest.TestCase):
     def test_get_config_loads_named_dataset_profile_from_toml(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
+            config_path = tmp / "config.toml"
             experiment_path = tmp / "experiment.toml"
-            mlip_path.write_text(
+            config_path.write_text(
                 "\n".join(
                     [
                         "[dataset_profile]",
@@ -1206,7 +1147,7 @@ class ConfigParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cfg = get_config([mlip_path, experiment_path])
+            cfg = get_config([config_path, experiment_path])
 
         self.assertEqual(
             cfg.mlip.dataset,
@@ -1224,9 +1165,9 @@ class ConfigParsingTests(unittest.TestCase):
     def test_get_config_derives_graph_dataset_path_from_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            mlip_path = tmp / "mlip.toml"
+            config_path = tmp / "config.toml"
             experiment_path = tmp / "experiment.toml"
-            mlip_path.write_text(
+            config_path.write_text(
                 "\n".join(
                     [
                         "[dataset_profile]",
@@ -1282,7 +1223,7 @@ class ConfigParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cfg = get_config([mlip_path, experiment_path])
+            cfg = get_config([config_path, experiment_path])
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
@@ -1628,6 +1569,7 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.enabled, [])
         self.assertFalse(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous)
         self.assertEqual(
             cfg.experiment.learning_curve.mlip_selection.label_allowlist,
@@ -1661,6 +1603,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "max_train": 4,
                         "n_repeats": 3,
                         "mlip_selection": {
+                            "enabled": ["mace", "uma"],
                             "exclude_anomalous": True,
                             "label_allowlist": ["normal", "energy_anomaly"],
                             "strict_inference_anomaly": True,
@@ -1672,6 +1615,7 @@ class ConfigParsingTests(unittest.TestCase):
 
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.enabled, ["mace", "uma"])
         self.assertTrue(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous)
         self.assertEqual(
             cfg.experiment.learning_curve.mlip_selection.label_allowlist,

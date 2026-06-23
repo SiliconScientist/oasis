@@ -15,11 +15,11 @@ from oasis.config import Config, get_config
 
 def load_mlip_dataset_subset(cfg: Config, limit: int = 10) -> dict[str, Any]:
     """
-    Load cfg.mlip.dataset JSON as a dictionary and return a small subset.
+    Load the configured dataset JSON as a dictionary and return a small subset.
     """
-    dataset_path = cfg.mlip.dataset
+    dataset_path = cfg.resolved_dataset_path
     if not dataset_path:
-        raise ValueError("cfg.mlip.dataset is not set in mlip.toml")
+        raise ValueError("No dataset path is configured.")
 
     path = Path(dataset_path)
     if not path.is_file():
@@ -30,7 +30,7 @@ def load_mlip_dataset_subset(cfg: Config, limit: int = 10) -> dict[str, Any]:
 
     if not isinstance(dataset, dict):
         raise TypeError(
-            f"Expected cfg.mlip.dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
+            f"Expected dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
         )
 
     return dict(list(dataset.items())[:limit])
@@ -38,11 +38,11 @@ def load_mlip_dataset_subset(cfg: Config, limit: int = 10) -> dict[str, Any]:
 
 def load_mlip_dataset(cfg: Config) -> dict[str, Any]:
     """
-    Load cfg.mlip.dataset JSON as a dictionary.
+    Load the configured dataset JSON as a dictionary.
     """
-    dataset_path = cfg.mlip.dataset
+    dataset_path = cfg.resolved_dataset_path
     if not dataset_path:
-        raise ValueError("cfg.mlip.dataset is not set in mlip.toml")
+        raise ValueError("No dataset path is configured.")
 
     path = Path(dataset_path)
     if not path.is_file():
@@ -53,7 +53,7 @@ def load_mlip_dataset(cfg: Config) -> dict[str, Any]:
 
     if not isinstance(dataset, dict):
         raise TypeError(
-            f"Expected cfg.mlip.dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
+            f"Expected dataset JSON top-level to be an object/dict, got {type(dataset).__name__}"
         )
 
     return dataset
@@ -764,7 +764,9 @@ def main() -> None:
             entry, constrained_adslab, reaction
         )
         updated_dataset[reaction] = updated_entry
-    input_dataset_path = Path(cfg.mlip.dataset)
+    if cfg.resolved_dataset_path is None:
+        raise ValueError("No dataset path is configured.")
+    input_dataset_path = Path(cfg.resolved_dataset_path)
     output_path = shifted_adsorption_output_path(input_dataset_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:

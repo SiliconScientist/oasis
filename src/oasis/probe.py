@@ -494,17 +494,20 @@ def build_probe_dataset(cfg: Config) -> None:
     """
     Build unique probe structures and augment the mlip dataset with unique_probe_ids.
 
-    Produces two output files derived from cfg.mlip.dataset:
+    Produces two output files derived from the configured dataset path:
     - unique_probe_output_path(dataset_path): unique probe dataset entries
     - updated_dataset_output_path(dataset_path): original dataset with unique_probe_ids
     """
-    dataset_path = Path(cfg.mlip.dataset)
+    resolved_dataset_path = cfg.resolved_dataset_path
+    if resolved_dataset_path is None:
+        raise ValueError("No dataset path is configured.")
+    dataset_path = Path(resolved_dataset_path)
     index_fn = partial(index_by_layers, layers=-1)
     adaptor = AseAtomsAdaptor()
     jmol_nn = JmolNN()
     structure_matcher = StructureMatcher()
     dataset = load_mlip_dataset(cfg)
-    dataset_items = islice(dataset.items(), 50) if cfg.mlip.dev_run else dataset.items()
+    dataset_items = islice(dataset.items(), 50) if cfg.dev_run else dataset.items()
     updated_dataset: dict[str, dict[str, object]] = {}
     unique_probe_structures: dict[str, Atoms] = {}
     unique_probe_match_structures = {}
