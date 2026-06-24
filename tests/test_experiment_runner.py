@@ -1221,6 +1221,109 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_generation_plot.call_args.kwargs["generation_timing_by_method"]
         )
 
+    def test_run_experiment_wires_gnn_direct_generation_timing_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            use_gnn_direct=True,
+                            gnn_direct=SimpleNamespace(enabled=True),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    fixed_split=SimpleNamespace(train_fraction=0.5),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame([f"r{i}" for i in range(3)])
+            learning_curve_results = self._fixed_split_timed_learning_curve_results()
+            generation_timing = {
+                "model_a": MlipGenerationTimingSummary(
+                    model_name="model_a",
+                    reaction_count=2,
+                    generation_time_total_s=10.0,
+                    generation_time_slab_s=4.0,
+                    generation_time_adslab_s=6.0,
+                    generation_steps_total=20,
+                    generation_steps_slab=8,
+                    generation_steps_adslab=12,
+                    time_per_step_s=0.5,
+                ),
+                "model_b": MlipGenerationTimingSummary(
+                    model_name="model_b",
+                    reaction_count=2,
+                    generation_time_total_s=12.0,
+                    generation_time_slab_s=5.0,
+                    generation_time_adslab_s=7.0,
+                    generation_steps_total=24,
+                    generation_steps_slab=10,
+                    generation_steps_adslab=14,
+                    time_per_step_s=0.5,
+                ),
+            }
+            result_files = [
+                tmp_path / "model_a_result.json",
+                tmp_path / "model_b_result.json",
+            ]
+            sample_atoms = [object(), object(), object()]
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=result_files,
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value=(fake_wide_df, {}),
+            ), patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=sample_atoms,
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ) as mock_graph_build, patch(
+                "oasis.experiment_runner.perf_counter",
+                side_effect=[10.0, 10.6],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=learning_curve_results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            ), patch(
+                "oasis.experiment_runner.load_generation_timing_summaries",
+                return_value=generation_timing,
+            ), patch(
+                "oasis.experiment_runner.generation_time_accuracy_plot",
+                return_value=tmp_path / "plots" / "generation_time_accuracy_anomalyaware_off.png",
+            ) as mock_generation_plot:
+                run_experiment(cfg)
+
+        gnn_direct_override = mock_generation_plot.call_args.kwargs[
+            "generation_timing_by_method"
+        ]["gnn_direct"]
+        self.assertAlmostEqual(gnn_direct_override.generation_time_s, 0.6)
+        self.assertEqual(gnn_direct_override.generation_steps_total, 3)
+        self.assertAlmostEqual(gnn_direct_override.time_per_step_s, 0.2)
+        self.assertEqual(gnn_direct_override.mlip_feature_names, ("atoms_to_graph",))
+        self.assertGreaterEqual(mock_graph_build.call_count, 2)
+
     def test_run_experiment_rebuilds_stale_graph_artifact_when_reactions_do_not_match(
         self,
     ) -> None:

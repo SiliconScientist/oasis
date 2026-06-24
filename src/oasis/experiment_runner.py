@@ -4,6 +4,7 @@ import copy
 import json
 import tempfile
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -445,6 +446,10 @@ def _method_generation_timing_overrides(
     probe_gnn_enabled = bool(getattr(probe_gnn_cfg, "enabled", False)) or bool(
         getattr(models_cfg, "use_probe_gnn", False)
     )
+    gnn_direct_cfg = getattr(models_cfg, "gnn_direct", None)
+    gnn_direct_enabled = bool(getattr(gnn_direct_cfg, "enabled", False)) or bool(
+        getattr(models_cfg, "use_gnn_direct", False)
+    )
     feature_names = mlip_feature_names(wide_df)
     latent_cfg = getattr(models_cfg, "latent", None)
     latent_enabled = bool(getattr(models_cfg, "use_latent", False))
@@ -489,6 +494,28 @@ def _method_generation_timing_overrides(
             )
         except (FileNotFoundError, KeyError):
             pass
+
+    if gnn_direct_enabled:
+        sample_ids = wide_df.get_column("reaction").to_list()
+        sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
+        start_time = perf_counter()
+        atoms_to_graph_dataset_view(sample_ids, sample_atoms)
+        generation_time_s = perf_counter() - start_time
+        generation_steps_total = len(sample_ids)
+        overrides["gnn_direct"] = GenerationTimingAggregate(
+            generation_time_s=generation_time_s,
+            generation_time_slab_s=0.0,
+            generation_time_adslab_s=0.0,
+            generation_steps_total=generation_steps_total,
+            generation_steps_slab=0,
+            generation_steps_adslab=0,
+            time_per_step_s=(
+                None
+                if generation_steps_total <= 0
+                else generation_time_s / generation_steps_total
+            ),
+            mlip_feature_names=("atoms_to_graph",),
+        )
 
     return overrides or None
 

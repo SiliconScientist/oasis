@@ -14,7 +14,9 @@ from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.sweep import LearningCurveResults
 
 
-_METHODS_REQUIRING_EXPLICIT_GENERATION_TIMING = frozenset({"latent", "probe_gnn"})
+_METHODS_REQUIRING_EXPLICIT_GENERATION_TIMING = frozenset(
+    {"latent", "probe_gnn", "gnn_direct"}
+)
 _TIME_ACCURACY_COLUMNS = [
     "method",
     "n_train",

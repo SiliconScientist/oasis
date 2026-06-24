@@ -240,6 +240,63 @@ class LearningCurveTimeAccuracyTests(unittest.TestCase):
         self.assertEqual(table["training_time_s"].tolist(), [9.9, 8.8])
         self.assertEqual(table["total_time_s"].tolist(), [16.9, 19.8])
 
+    def test_build_time_accuracy_table_skips_gnn_direct_without_override(self) -> None:
+        results = LearningCurveResults(
+            gnn_direct_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.2],
+                    "rmse_std": [0.02],
+                    "fit_time_mean_s": [1.5],
+                    "fit_time_std_s": [0.1],
+                }
+            )
+        )
+
+        table = build_time_accuracy_table(
+            results,
+            {},
+            method_names=("gnn_direct",),
+        )
+
+        self.assertTrue(table.empty)
+
+    def test_build_time_accuracy_table_uses_gnn_direct_override(self) -> None:
+        results = LearningCurveResults(
+            gnn_direct_df=pd.DataFrame(
+                {
+                    "n_train": [4],
+                    "rmse_mean": [0.2],
+                    "rmse_std": [0.02],
+                    "fit_time_mean_s": [1.5],
+                    "fit_time_std_s": [0.1],
+                }
+            )
+        )
+
+        table = build_time_accuracy_table(
+            results,
+            {},
+            generation_timing_by_method={
+                "gnn_direct": GenerationTimingAggregate(
+                    generation_time_s=0.75,
+                    generation_time_slab_s=0.0,
+                    generation_time_adslab_s=0.0,
+                    generation_steps_total=4,
+                    generation_steps_slab=0,
+                    generation_steps_adslab=0,
+                    time_per_step_s=0.1875,
+                    mlip_feature_names=("atoms_to_graph",),
+                )
+            },
+            method_names=("gnn_direct",),
+        )
+
+        self.assertEqual(table["method"].tolist(), ["gnn_direct"])
+        self.assertEqual(table["generation_time_s"].tolist(), [0.75])
+        self.assertEqual(table["training_time_s"].tolist(), [1.5])
+        self.assertEqual(table["total_time_s"].tolist(), [2.25])
+
     def test_build_fixed_split_time_accuracy_table_selects_one_benchmark_point_per_method(
         self,
     ) -> None:
