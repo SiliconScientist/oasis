@@ -106,18 +106,58 @@ def _anomaly_aware_run_suffix(cfg: object) -> str:
     return "anomalyaware_on" if enabled else "anomalyaware_off"
 
 
+def _latent_run_suffix(cfg: object) -> str:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = (
+        experiment_cfg.learning_curve
+        if experiment_cfg is not None and experiment_cfg.learning_curve
+        else None
+    )
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    enabled = bool(getattr(models_cfg, "use_latent", False))
+    return "latent_on" if enabled else "latent_off"
+
+
 def _append_output_suffix(path: Path, suffix: str) -> Path:
     if path.stem.endswith(f"_{suffix}"):
         return path
     return path.with_name(f"{path.stem}_{suffix}{path.suffix}")
 
 
-def _apply_run_output_suffixes(cfg: object) -> str:
+def _plot_output_suffix(cfg: object) -> str:
     suffix_parts = [_anomaly_aware_run_suffix(cfg)]
     if bool(getattr(cfg, "dev_run", False)):
         suffix_parts.append("devrun_on")
-    suffix = "_".join(suffix_parts)
+    return "_".join(suffix_parts)
 
+
+def _persistent_output_suffix(cfg: object, *, dataset_size: int) -> str:
+    suffix_parts = [
+        _anomaly_aware_run_suffix(cfg),
+        _latent_run_suffix(cfg),
+        f"n{dataset_size}",
+    ]
+    if bool(getattr(cfg, "dev_run", False)):
+        suffix_parts.append("devrun_on")
+    return "_".join(suffix_parts)
+
+
+def _apply_run_output_suffixes(cfg: object, *, plot_suffix: str) -> None:
+    analysis_cfg = getattr(cfg, "analysis", None)
+    comparison_plot_path = getattr(analysis_cfg, "comparison_plot_path", None)
+    if comparison_plot_path is not None:
+        analysis_cfg.comparison_plot_path = _append_output_suffix(
+            Path(comparison_plot_path),
+            plot_suffix,
+        )
+
+
+def _apply_persistent_output_suffixes(
+    cfg: object,
+    *,
+    dataset_size: int,
+) -> str:
+    suffix = _persistent_output_suffix(cfg, dataset_size=dataset_size)
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = (
         experiment_cfg.learning_curve
@@ -146,15 +186,6 @@ def _apply_run_output_suffixes(cfg: object) -> str:
             Path(graph_dataset_path),
             suffix,
         )
-
-    analysis_cfg = getattr(cfg, "analysis", None)
-    comparison_plot_path = getattr(analysis_cfg, "comparison_plot_path", None)
-    if comparison_plot_path is not None:
-        analysis_cfg.comparison_plot_path = _append_output_suffix(
-            Path(comparison_plot_path),
-            suffix,
-        )
-
     return suffix
 
 
@@ -696,11 +727,13 @@ def write_fixed_split_time_accuracy_plots(
 
 
 def run_experiment(cfg: object):
-    run_suffix = _apply_run_output_suffixes(cfg)
+    run_suffix = _plot_output_suffix(cfg)
+    _apply_run_output_suffixes(cfg, plot_suffix=run_suffix)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files = load_filtered_wide_predictions(cfg)
     wide_df = _apply_dev_run_frame_cap(cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
+    _apply_persistent_output_suffixes(cfg, dataset_size=_frame_height(wide_df))
     _apply_dev_run_curve_overrides(cfg, n_samples=_frame_height(wide_df))
     generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
     write_parity_plot(

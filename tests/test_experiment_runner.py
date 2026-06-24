@@ -31,13 +31,27 @@ class _FakeColumn:
     def to_numpy(self):
         return np.asarray(self._values)
 
+    def is_in(self, candidates):
+        candidate_set = set(candidates)
+        return _FakeMask([value in candidate_set for value in self._values])
+
+
+class _FakeMask:
+    def __init__(self, values):
+        self._values = list(values)
+
 
 class _FakeWideFrame:
-    def __init__(self, reactions=None) -> None:
+    def __init__(self, reactions=None, reference_ads_eng=None) -> None:
         reactions = ["r0", "r1"] if reactions is None else list(reactions)
+        reference_ads_eng = (
+            [float(i + 1) for i in range(len(reactions))]
+            if reference_ads_eng is None
+            else list(reference_ads_eng)
+        )
         self._columns = {
             "reaction": _FakeColumn(reactions),
-            "reference_ads_eng": _FakeColumn([float(i + 1) for i in range(len(reactions))]),
+            "reference_ads_eng": _FakeColumn(reference_ads_eng),
             "model_a_mlip_ads_eng_median": _FakeColumn(
                 [float(i + 1) + 0.1 for i in range(len(reactions))]
             ),
@@ -54,6 +68,18 @@ class _FakeWideFrame:
         return list(self._columns)
     def __getitem__(self, name: str):
         return self._columns[name]
+
+    def filter(self, mask):
+        if not isinstance(mask, _FakeMask):
+            raise TypeError(f"Unsupported mask type: {type(mask)!r}")
+        filtered_columns = {
+            name: [value for value, keep in zip(column.to_list(), mask._values) if keep]
+            for name, column in self._columns.items()
+        }
+        return _FakeWideFrame(
+            reactions=filtered_columns["reaction"],
+            reference_ads_eng=filtered_columns["reference_ads_eng"],
+        )
 
     def __len__(self) -> int:
         return len(self._columns["reaction"].to_list())
@@ -506,15 +532,105 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
-            tmp_path / "results_anomalyaware_on.json",
+            tmp_path / "results_anomalyaware_on_latent_off_n2.json",
         )
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.graph_dataset.path,
-            tmp_path / "aligned_graphs_anomalyaware_on.parquet",
+            tmp_path / "aligned_graphs_anomalyaware_on_latent_off_n2.parquet",
         )
         self.assertEqual(
             cfg.analysis.comparison_plot_path,
             tmp_path / "comparison_anomalyaware_on.png",
+        )
+
+    def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            latent_csv = tmp_path / "latent.csv"
+            pd.DataFrame(
+                {"adsorption_energy": [1.0, 3.0], "latent_feature": [0.1, 0.2]}
+            ).to_csv(latent_csv, index=False)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        results_bundle_path=tmp_path / "results.json",
+                        graph_dataset=SimpleNamespace(
+                            path=tmp_path / "aligned_graphs.parquet",
+                            join_key="reaction",
+                        ),
+                        mlip_selection=SimpleNamespace(
+                            exclude_anomalous=False,
+                            label_allowlist=["normal"],
+                            strict_inference_anomaly=False,
+                        ),
+                        models=SimpleNamespace(
+                            use_latent=True,
+                            latent=SimpleNamespace(csv_path=latent_csv),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(
+                    base_dir=tmp_path / "mlips",
+                    comparison_plot_path=tmp_path / "comparison.png",
+                ),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+            fake_wide_df = _FakeWideFrame(
+                reactions=["r0", "r1", "r2"],
+                reference_ads_eng=[1.0, 2.0, 3.0],
+            )
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_anomalous_mlip_columns",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.graph_artifact_matches_frame",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.save_aligned_graph_dataset_parquet",
+                return_value=tmp_path / "aligned_graphs.parquet",
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ) as mock_results, patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ):
+                run_experiment(cfg)
+
+        self.assertEqual(
+            mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
+            tmp_path / "results_anomalyaware_off_latent_on_n2.json",
+        )
+        self.assertEqual(
+            mock_results.call_args.args[1].experiment.learning_curve.graph_dataset.path,
+            tmp_path / "aligned_graphs_anomalyaware_off_latent_on_n2.parquet",
         )
 
     def test_run_experiment_emits_learning_and_screening_plots_when_both_are_configured(
@@ -1317,11 +1433,11 @@ class ExperimentRunnerTests(unittest.TestCase):
         second_cfg = mock_results.call_args_list[1].args[1]
         self.assertEqual(
             first_cfg.experiment.learning_curve.results_bundle_path,
-            tmp_path / "learning_anomalyaware_off.json",
+            tmp_path / "learning_anomalyaware_off_latent_off_n2.json",
         )
         self.assertEqual(
             second_cfg.experiment.learning_curve.results_bundle_path,
-            tmp_path / "screening_anomalyaware_off.json",
+            tmp_path / "screening_anomalyaware_off_latent_off_n2.json",
         )
         self.assertEqual(
             second_cfg.experiment.learning_curve.budget_mode,

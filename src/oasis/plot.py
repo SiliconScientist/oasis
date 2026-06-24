@@ -103,6 +103,11 @@ def _set_integer_x_ticks(ax: Any) -> None:
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
+def _format_train_fraction_label(train_fraction: float) -> str:
+    percentage = 100.0 * float(train_fraction)
+    return f"{percentage:g}%"
+
+
 def _uq_x_axis_config(results: LearningCurveResults) -> tuple[str, str, str]:
     for _, _, uq_field, *_ in _METHOD_PLOT_STYLES:
         frame = getattr(results, uq_field)
@@ -1116,7 +1121,10 @@ def fixed_split_training_time_accuracy_plot(
         xerr_column="training_time_std_s",
         output_path=output_path,
         fontsize=fontsize,
-        title="Fixed-split training time vs RMSE",
+        title=(
+            "Fixed-split training time vs RMSE "
+            f"(train={_format_train_fraction_label(train_fraction)})"
+        ),
         xlabel="Training time (s)",
         show_legend=show_legend,
     )
@@ -1150,7 +1158,10 @@ def fixed_split_total_time_accuracy_plot(
         xerr_column="total_time_std_s",
         output_path=output_path,
         fontsize=fontsize,
-        title="Fixed-split total time vs RMSE",
+        title=(
+            "Fixed-split total time vs RMSE "
+            f"(train={_format_train_fraction_label(train_fraction)})"
+        ),
         xlabel="Total time (s)",
         show_legend=show_legend,
     )

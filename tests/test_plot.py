@@ -469,6 +469,7 @@ class PlotTests(unittest.TestCase):
                     self._generation_summaries(),
                     dataset_size=10,
                     output_path=output_path,
+                    train_fraction=0.5,
                     mlip_feature_names=("mace", "orb"),
                 )
                 fig = fixed_split_training_time_accuracy_plot.__globals__["plt"].gcf()
@@ -476,6 +477,10 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(ax.get_xlabel(), "Training time (s)")
             self.assertEqual(ax.get_ylabel(), "RMSE (eV)")
+            self.assertEqual(
+                ax.get_title(),
+                "Fixed-split training time vs RMSE (train=50%)",
+            )
             self.assertEqual(ax.xaxis.get_offset_text().get_text(), "")
 
     def test_fixed_split_total_time_accuracy_plot_renders_one_point_per_method(self) -> None:
@@ -502,16 +507,24 @@ class PlotTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "fixed_split_total_time_accuracy.png"
-            saved_path = fixed_split_total_time_accuracy_plot(
-                results,
-                self._generation_summaries(),
-                dataset_size=10,
-                output_path=output_path,
-                mlip_feature_names=("mace", "orb"),
-            )
+            with patch("oasis.plot.plt.close"):
+                saved_path = fixed_split_total_time_accuracy_plot(
+                    results,
+                    self._generation_summaries(),
+                    dataset_size=10,
+                    output_path=output_path,
+                    train_fraction=0.8,
+                    mlip_feature_names=("mace", "orb"),
+                )
+                fig = fixed_split_total_time_accuracy_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+            self.assertEqual(
+                ax.get_title(),
+                "Fixed-split total time vs RMSE (train=80%)",
+            )
 
     def test_screening_budget_plot_renders_from_results_only(self) -> None:
         result_df = pd.DataFrame(
