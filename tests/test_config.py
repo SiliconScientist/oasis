@@ -578,6 +578,8 @@ class ConfigParsingTests(unittest.TestCase):
             cfg.probe_features.mlip_results_dir,
             Path("data/mlips/mamun_oh_unique_probes"),
         )
+        self.assertTrue(cfg.probe_features.dataset_path.name.endswith("_with_probe_ids.json"))
+        self.assertTrue(cfg.probe_features.mlip_results_dir.name.endswith("_unique_probes"))
         assert cfg.analysis is not None
         self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/mamun_oh"))
         self.assertEqual(
@@ -792,6 +794,12 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(
             custom_cfg.probe_features.mlip_results_dir,
             Path("data/mlips/khlohc_toluene_unique_probes"),
+        )
+        self.assertTrue(
+            custom_cfg.probe_features.dataset_path.name.endswith("_with_probe_ids.json")
+        )
+        self.assertTrue(
+            custom_cfg.probe_features.mlip_results_dir.name.endswith("_unique_probes")
         )
         assert custom_cfg.experiment is not None
         assert custom_cfg.experiment.learning_curve is not None

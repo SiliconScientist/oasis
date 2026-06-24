@@ -49,6 +49,13 @@ def load_mlip_probe_energies(
     mlip_results_dir: Path | None = None,
 ) -> dict[str, dict[str, float]]:
     """
+    Load probe-only MLIP adsorption energies from external probe result files.
+
+    Contract expected by Oasis:
+    - `mlip_results_dir` contains one or more `*_result.json` files
+    - each probe entry is keyed as `unique_probe_<id>`
+    - each such entry may expose `final.ads_eng_median`
+
     Return:
         {
             "<mlip_name>": {
@@ -92,6 +99,13 @@ def build_sample_mlip_feature_matrices(
     mlip_results_dir: Path | None = None,
 ) -> dict[str, SampleMLIPFeatureMatrix]:
     """
+    Build per-reaction probe feature matrices from external probe artifacts.
+
+    Contract expected by Oasis:
+    - `dataset_path` points to a probe-annotated adsorption dataset
+    - each dataset entry includes `unique_probe_ids` in the intended column order
+    - `mlip_results_dir` provides probe energies keyed by `unique_probe_<id>`
+
     Build one matrix per sample where:
     - rows are MLIPs from `mlip_results_dir`
     - columns are the sample's probe sites in `unique_probe_ids` order

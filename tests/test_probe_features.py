@@ -19,9 +19,11 @@ from oasis.probe_features import (
 def _write_probe_dataset(path: Path) -> None:
     dataset = {
         "rxn-1": {
+            "bound_surface_indices": [0, 2],
             "unique_probe_ids": ["1", "2"],
         },
         "rxn-2": {
+            "bound_surface_indices": [1],
             "unique_probe_ids": ["2"],
         },
     }
@@ -61,6 +63,24 @@ class ProbeFeatureTests(unittest.TestCase):
         self.assertEqual(result["mace"]["1"], 1.5)
         self.assertNotIn("1", result["orb"])
 
+    def test_load_mlip_probe_energies_only_reads_unique_probe_entries(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            results_dir = Path(tmp_dir) / "probe_results"
+            _write_probe_results(results_dir)
+            (results_dir / "eqv2_result.json").write_text(
+                json.dumps(
+                    {
+                        "rxn-1": {"final": {"ads_eng_median": 9.9}},
+                        "unique_probe_7": {"final": {"ads_eng_median": 4.5}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = load_mlip_probe_energies(results_dir)
+
+        self.assertEqual(result["eqv2"], {"7": 4.5})
+
     def test_add_mlip_feature_matrices_uses_config_paths_when_args_omitted(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -83,6 +103,8 @@ class ProbeFeatureTests(unittest.TestCase):
             saved["rxn-1"]["mlip_feature_matrix"]["mlip_names"],
             ["mace", "orb"],
         )
+        self.assertEqual(saved["rxn-1"]["bound_surface_indices"], [0, 2])
+        self.assertEqual(saved["rxn-1"]["unique_probe_ids"], ["1", "2"])
         matrix = saved["rxn-1"]["mlip_feature_matrix"]["matrix"]
         self.assertEqual(matrix[0][0], 1.5)
         self.assertTrue(np.isnan(matrix[0][1]))
