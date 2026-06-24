@@ -33,6 +33,7 @@ class Config(BaseModel):
     datasets: dict[str, NamedDatasetConfig] = Field(default_factory=dict)
     mlip: Optional[MLIPConfig] = None
     analysis: Optional[AnalysisConfig] = None
+    # Optional external probe artifacts used only by probe-aware methods.
     probe_features: Optional[ProbeFeatureConfig] = None
     experiment: Optional[ExperimentConfig] = None
     candidate_ranking: Optional[CandidateRankingConfig] = None

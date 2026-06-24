@@ -12,6 +12,7 @@ LearningCurveBudgetMode = Literal["full_remainder_test", "screening_fraction"]
 
 class DatasetProfilePathsConfig(BaseModel):
     dataset: Optional[Path] = None
+    # External probe artifacts consumed by Oasis when probe-aware methods run.
     probe_dataset_path: Optional[Path] = None
     probe_mlip_results_dir: Optional[Path] = None
     results_bundle_path: Optional[Path] = None
@@ -26,6 +27,7 @@ class DatasetProfilePathsConfig(BaseModel):
 class NamedDatasetConfig(BaseModel):
     raw_dataset_filename: Optional[str] = None
     processed_basename: Optional[str] = None
+    # Directory name for external probe MLIP results, typically produced by Moira.
     probe_results_dirname: Optional[str] = None
     mlip_run_dirname: Optional[str] = None
     analysis_run_dirname: Optional[str] = None
@@ -272,6 +274,8 @@ class PlotConfig(BaseModel):
 
 
 class ProbeFeatureConfig(BaseModel):
+    """External probe artifacts required by probe-aware Oasis methods."""
+
     dataset_path: Path
     mlip_results_dir: Path
 
@@ -340,6 +344,7 @@ class CandidateRankingConfig(BaseModel):
 
 
 def probe_dataset_path(raw_dataset_filename: str) -> Path:
+    """Default location for an external probe-annotated dataset artifact."""
     source_path = Path(raw_dataset_filename)
     suffix = source_path.suffix or ".json"
     return Path("data/raw_data") / f"{source_path.stem}_with_probe_ids{suffix}"
@@ -358,6 +363,7 @@ def screening_bundle_path(processed_basename: str) -> Path:
 
 
 def probe_results_dir(probe_results_dirname: str) -> Path:
+    """Default location for an external probe MLIP results directory."""
     return Path("data/mlips") / probe_results_dirname
 
 
@@ -373,6 +379,7 @@ def derive_dataset_profile_paths(
     tag: str,
     named_profile: NamedDatasetConfig | None = None,
 ) -> DatasetProfilePathsConfig:
+    """Derive Oasis defaults, including expected external probe artifact paths."""
     named_profile = named_profile or NamedDatasetConfig()
     raw_dataset_filename = named_profile.raw_dataset_filename_or_default(tag)
     processed_basename = named_profile.processed_basename_or_default(tag)
