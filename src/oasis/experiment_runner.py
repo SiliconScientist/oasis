@@ -73,6 +73,13 @@ def _frame_head(frame: object, n_rows: int):
     raise TypeError(f"Unsupported frame type for head(): {type(frame)!r}")
 
 
+def _preview_values(values: list[object], *, limit: int = 5) -> str:
+    preview = ", ".join(repr(value) for value in values[:limit])
+    if len(values) > limit:
+        preview = f"{preview}, ..."
+    return preview
+
+
 def _mlip_selection_cfg(cfg: object):
     learning_curve_cfg = (
         cfg.experiment.learning_curve
@@ -422,6 +429,27 @@ def build_auxiliary_views(
             mlip_results_dir=probe_cfg.mlip_results_dir,
         )
         reactions = wide_df.get_column("reaction").to_list()
+        reaction_set = set(reactions)
+        probe_sample_ids = set(probe_graph_view.sample_ids)
+        missing_reactions = [r for r in reactions if r not in probe_sample_ids]
+        if missing_reactions:
+            extra_probe_reactions = [
+                sample_id
+                for sample_id in probe_graph_view.sample_ids
+                if sample_id not in reaction_set
+            ]
+            message = (
+                "Probe GNN dataset does not align with wide_df reactions: "
+                f"{len(missing_reactions)} missing from "
+                f"{probe_cfg.dataset_path}"
+            )
+            message += f" ({_preview_values(missing_reactions)})."
+            if extra_probe_reactions:
+                message += (
+                    " Probe dataset also contains extra reactions with no "
+                    f"wide_df match ({_preview_values(extra_probe_reactions)})."
+                )
+            raise KeyError(message)
         auxiliary_views["probe_gnn_records"] = [probe_graph_view[r] for r in reactions]
         print(
             f"Loaded {len(reactions)} probe-augmented graphs from {probe_cfg.dataset_path}"
