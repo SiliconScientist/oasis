@@ -338,7 +338,7 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
 
-    def test_generation_time_accuracy_plot_renders_from_timed_results(self) -> None:
+    def test_generation_time_accuracy_plot_renders_one_point_per_method(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(
                 {
@@ -362,15 +362,22 @@ class PlotTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "generation_time_accuracy.png"
-            saved_path = generation_time_accuracy_plot(
-                results,
-                self._generation_summaries(),
-                output_path=output_path,
-                mlip_feature_names=("mace", "orb"),
-            )
+            with patch("oasis.plot.plt.close"):
+                saved_path = generation_time_accuracy_plot(
+                    results,
+                    self._generation_summaries(),
+                    output_path=output_path,
+                    mlip_feature_names=("mace", "orb"),
+                )
+                fig = generation_time_accuracy_plot.__globals__["plt"].gcf()
+                labels = [
+                    collection.get_label()
+                    for collection in fig.axes[0].collections
+                ]
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+            self.assertEqual(labels, ["Ridge", "Weighted linear"])
 
     def test_training_time_accuracy_plot_uses_expected_axis_labels(self) -> None:
         results = LearningCurveResults(

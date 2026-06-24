@@ -23,6 +23,13 @@ _TIME_ACCURACY_COLUMNS = [
     "training_time_s",
     "total_time_s",
 ]
+_MEAN_TIME_ACCURACY_COLUMNS = [
+    "method",
+    "rmse_mean",
+    "generation_time_s",
+    "training_time_s",
+    "total_time_s",
+]
 _FIXED_SPLIT_TIME_ACCURACY_COLUMNS = [
     "method",
     "n_train",
@@ -179,6 +186,33 @@ def build_time_accuracy_table(
             )
 
     return pd.DataFrame(rows, columns=_TIME_ACCURACY_COLUMNS)
+
+
+def build_mean_time_accuracy_table(
+    results: LearningCurveResults,
+    generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],
+    *,
+    mlip_feature_names: tuple[str, ...] | list[str] | None = None,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None = None,
+    method_names: tuple[str, ...] | list[str] | None = None,
+) -> pd.DataFrame:
+    table = build_time_accuracy_table(
+        results,
+        generation_timing_by_mlip,
+        mlip_feature_names=mlip_feature_names,
+        generation_timing_by_method=generation_timing_by_method,
+        method_names=method_names,
+    )
+    if table.empty:
+        return pd.DataFrame(columns=_MEAN_TIME_ACCURACY_COLUMNS)
+    mean_table = (
+        table.groupby("method", as_index=False)[
+            ["rmse_mean", "generation_time_s", "training_time_s", "total_time_s"]
+        ]
+        .mean()
+        .reset_index(drop=True)
+    )
+    return mean_table.loc[:, _MEAN_TIME_ACCURACY_COLUMNS]
 
 
 def fixed_split_train_size(

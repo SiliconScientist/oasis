@@ -21,6 +21,7 @@ from oasis.exp import prepare_parity_plot_data
 from oasis.learning_curve.time_accuracy import (
     GenerationTimingAggregate,
     build_fixed_split_time_accuracy_table,
+    build_mean_time_accuracy_table,
     build_time_accuracy_table,
 )
 from oasis.mlip.timing import MlipGenerationTimingSummary
@@ -912,7 +913,10 @@ def _time_accuracy_scatter_plot(
             method_table = table.loc[table["method"] == method_name]
             if method_table.empty or x_column not in method_table.columns:
                 continue
-            ordered = method_table.sort_values("n_train").reset_index(drop=True)
+            if "n_train" in method_table.columns:
+                ordered = method_table.sort_values("n_train").reset_index(drop=True)
+            else:
+                ordered = method_table.reset_index(drop=True)
             ax.scatter(
                 ordered[x_column],
                 ordered["rmse_mean"],
@@ -960,7 +964,7 @@ def generation_time_accuracy_plot(
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
 ) -> Path:
-    table = build_time_accuracy_table(
+    table = build_mean_time_accuracy_table(
         results,
         generation_timing_by_mlip,
         mlip_feature_names=mlip_feature_names,
