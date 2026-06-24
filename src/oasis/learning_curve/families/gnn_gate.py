@@ -231,6 +231,8 @@ class GnnGateTuningSpec:
     training_cfg: MoETrainingConfig
     hidden_dims: tuple[int, ...] = ()
     policy: GatingPolicy = field(default_factory=DenseGatingPolicy)
+    uncertainty_kind: str = "spread_only"
+    uncertainty_note: str | None = "spread-only; not probabilistically interpretable"
 
     def _arch_from_trial(self, trial: Any) -> tuple[int, int]:
         """Return (hidden_dim, n_layers) from fixed config or Optuna suggestions."""
@@ -369,6 +371,30 @@ class GnnGateTuningSpec:
 
     def predict(self, model: GnnGateModel, dataset: SweepDataset) -> np.ndarray:
         return model.predict(dataset.mlip_features, _graphs_from_dataset(dataset))
+
+    def predictive_spread(
+        self,
+        model: GnnGateModel,
+        dataset: SweepDataset,
+    ) -> np.ndarray:
+        graphs = _graphs_from_dataset(dataset)
+        X = np.asarray(dataset.mlip_features, dtype=float)
+        in_features = graphs[0].node_features.shape[1]
+        encoder = model._build_encoder(in_features)
+        node_features, edge_index, batch_vector = collate_graphs(graphs)
+        device = resolve_torch_device(model.device)
+        node_features, edge_index, batch_vector = tensors_to_device(
+            device,
+            node_features,
+            edge_index,
+            batch_vector,
+        )
+        with torch.no_grad():
+            logits = encoder(node_features, edge_index, batch_vector)
+        weights = model.policy.apply(tensor_to_numpy(logits))
+        preds = model.predict(X, graphs)
+        centered = X - preds[:, None]
+        return np.sqrt(np.sum(weights * centered**2, axis=1))
 
     def trial_metadata(self, best_trial: Any, model: GnnGateModel) -> dict[str, Any]:
         return {

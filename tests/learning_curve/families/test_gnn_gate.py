@@ -297,6 +297,14 @@ class GnnGateTuningSpecTests(unittest.TestCase):
     def test_is_learned_trial_tuning_spec(self) -> None:
         self.assertIsInstance(_fast_spec(), LearnedTrialTuningSpec)
 
+    def test_exposes_spread_only_uncertainty_metadata(self) -> None:
+        spec = _fast_spec()
+        self.assertEqual(spec.uncertainty_kind, "spread_only")
+        self.assertEqual(
+            spec.uncertainty_note,
+            "spread-only; not probabilistically interpretable",
+        )
+
     def test_build_trial_objective_returns_finite_rmse(self) -> None:
         split = _make_split_with_graphs()
         objective = _fast_spec().build_trial_objective(split)
@@ -320,6 +328,18 @@ class GnnGateTuningSpecTests(unittest.TestCase):
         preds = spec.predict(model, split.dataset_subsets().test)
         self.assertEqual(preds.shape, (2,))
         self.assertTrue(np.all(np.isfinite(preds)))
+
+    def test_predictive_spread_shape_and_nonnegativity(self) -> None:
+        split = _make_split_with_graphs()
+        spec = _fast_spec()
+        trial = _GnnMockTrial()
+        model = spec.fit_selected_model(split, trial, refit_policy="train_plus_val")
+
+        spread = spec.predictive_spread(model, split.dataset_subsets().test)
+
+        self.assertEqual(spread.shape, (2,))
+        self.assertTrue(np.all(np.isfinite(spread)))
+        self.assertTrue(np.all(spread >= 0.0))
 
     def test_refit_policy_train_only_returns_gnn_gate_model(self) -> None:
         split = _make_split_with_graphs()
