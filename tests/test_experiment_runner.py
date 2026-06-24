@@ -153,45 +153,109 @@ class ExperimentRunnerTests(unittest.TestCase):
             fake_wide_df = _FakeWideFrame()
 
             with patch(
-                "oasis.experiment_runner.build_probe_dataset"
-            ) as mock_build_probe:
+                "oasis.experiment_runner.add_mlip_feature_matrices_to_dataset"
+            ) as mock_add_probe_features:
                 with patch(
-                    "oasis.experiment_runner.add_mlip_feature_matrices_to_dataset"
-                ) as mock_add_probe_features:
+                    "oasis.experiment_runner.find_result_files",
+                    return_value=[],
+                ):
                     with patch(
-                        "oasis.experiment_runner.find_result_files",
-                        return_value=[],
+                        "oasis.experiment_runner.load_wide_predictions",
+                        return_value=fake_wide_df,
                     ):
                         with patch(
-                            "oasis.experiment_runner.load_wide_predictions",
-                            return_value=fake_wide_df,
+                            "oasis.experiment_runner.parity_plot",
+                            return_value=tmp_path / "plots" / "parity.png",
                         ):
                             with patch(
-                                "oasis.experiment_runner.parity_plot",
-                                return_value=tmp_path / "plots" / "parity.png",
+                                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                                return_value=[],
                             ):
                                 with patch(
-                                    "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                                    "oasis.experiment_runner.atoms_to_graph_dataset_view",
                                     return_value=[],
                                 ):
                                     with patch(
-                                        "oasis.experiment_runner.atoms_to_graph_dataset_view",
-                                        return_value=[],
+                                        "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                                        return_value=LearningCurveResults.empty(),
                                     ):
                                         with patch(
-                                            "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
-                                            return_value=LearningCurveResults.empty(),
+                                            "oasis.experiment_runner.learning_curve_plot",
+                                            return_value=tmp_path
+                                            / "plots"
+                                            / "learning_curve.png",
                                         ):
-                                            with patch(
-                                                "oasis.experiment_runner.learning_curve_plot",
-                                                return_value=tmp_path
-                                                / "plots"
-                                                / "learning_curve.png",
-                                            ):
-                                                run_experiment(cfg)
+                                            run_experiment(cfg)
 
-            self.assertFalse(mock_build_probe.called)
             self.assertFalse(mock_add_probe_features.called)
+
+    def test_run_experiment_requires_external_probe_dataset_when_probe_gnn_enabled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=SimpleNamespace(
+                    dataset_path=tmp_path / "missing_probe_dataset.json",
+                    mlip_results_dir=tmp_path / "probe_results",
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            use_probe_gnn=True,
+                            probe_gnn=SimpleNamespace(enabled=True),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "external probe dataset",
+            ):
+                run_experiment(cfg)
+
+    def test_run_experiment_requires_external_probe_results_dir_when_probe_gnn_enabled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            probe_dataset_path = tmp_path / "probe_dataset.json"
+            probe_dataset_path.write_text("{}", encoding="utf-8")
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=SimpleNamespace(
+                    dataset_path=probe_dataset_path,
+                    mlip_results_dir=tmp_path / "missing_probe_results",
+                ),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            use_probe_gnn=True,
+                            probe_gnn=SimpleNamespace(enabled=True),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "external probe MLIP results directory",
+            ):
+                run_experiment(cfg)
 
     def test_load_filtered_wide_predictions_applies_anomaly_aware_mlip_selection(
         self,

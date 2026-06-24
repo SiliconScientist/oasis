@@ -31,11 +31,9 @@ from oasis.learning_curve.execution import (
 )
 from oasis.experiment_data import (
     atoms_to_graph_dataset_view,
-    build_probe_dataset,
     graph_artifact_matches_frame,
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
-    updated_dataset_output_path,
 )
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
@@ -282,9 +280,6 @@ def _can_reuse_graph_artifact(
 
 
 def ensure_probe_artifacts(cfg: object) -> bool:
-    dataset_path = _resolved_dataset_path(cfg)
-    if dataset_path is None:
-        raise ValueError("No dataset path is configured.")
     probe_cfg = cfg.probe_features
     models_cfg = (
         cfg.experiment.learning_curve.models
@@ -292,21 +287,38 @@ def ensure_probe_artifacts(cfg: object) -> bool:
         else None
     )
     probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
-    probe_gnn_enabled = bool(getattr(probe_gnn_cfg, "enabled", False))
+    probe_gnn_enabled = bool(getattr(probe_gnn_cfg, "enabled", False)) or bool(
+        getattr(models_cfg, "use_probe_gnn", False)
+    )
 
-    if probe_gnn_enabled and probe_cfg is not None:
-        if not updated_dataset_output_path(dataset_path).exists():
-            build_probe_dataset(cfg)
-            print(f"Built probe dataset from {dataset_path}")
+    if not probe_gnn_enabled:
+        return False
 
-    if probe_gnn_enabled and probe_cfg is not None and probe_cfg.mlip_results_dir.exists():
-        add_mlip_feature_matrices_to_dataset(
-            dataset_path=probe_cfg.dataset_path,
-            mlip_results_dir=probe_cfg.mlip_results_dir,
+    if probe_cfg is None:
+        raise ValueError(
+            "probe_gnn requires external probe artifacts; configure "
+            "probe_features.dataset_path and probe_features.mlip_results_dir."
         )
-        print(f"Embedded probe feature matrices from {probe_cfg.mlip_results_dir}")
 
-    return probe_gnn_enabled
+    if not Path(probe_cfg.dataset_path).is_file():
+        raise FileNotFoundError(
+            "probe_gnn requires an existing external probe dataset at "
+            f"{probe_cfg.dataset_path}"
+        )
+
+    if not Path(probe_cfg.mlip_results_dir).is_dir():
+        raise FileNotFoundError(
+            "probe_gnn requires an existing external probe MLIP results "
+            f"directory at {probe_cfg.mlip_results_dir}"
+        )
+
+    add_mlip_feature_matrices_to_dataset(
+        dataset_path=probe_cfg.dataset_path,
+        mlip_results_dir=probe_cfg.mlip_results_dir,
+    )
+    print(f"Embedded probe feature matrices from {probe_cfg.mlip_results_dir}")
+
+    return True
 
 
 def load_filtered_wide_predictions(cfg: object):
