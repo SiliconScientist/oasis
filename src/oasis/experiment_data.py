@@ -24,7 +24,6 @@ from oasis.sweep import SweepDataset
 
 if TYPE_CHECKING:
     from oasis.config import GraphDatasetInputConfig
-    from oasis.config import Config
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,20 +74,6 @@ def atoms_from_ase_db_json(atoms_json: str) -> Atoms:
         if values is not None and len(values) != atom_count:
             row.pop(key)
     return AtomsRow(row).toatoms()
-
-
-def updated_dataset_output_path(input_dataset_path: Path) -> Path:
-    """Build the output path for the original dataset with probe ids added."""
-    stem = input_dataset_path.stem
-    return input_dataset_path.with_name(
-        f"{stem}_with_probe_ids{input_dataset_path.suffix}"
-    )
-
-
-def build_probe_dataset(cfg: Config) -> None:
-    from oasis.probe import build_probe_dataset as _build_probe_dataset
-
-    _build_probe_dataset(cfg)
 
 
 def load_graph_dataset_view(path: str | Path) -> GraphDatasetView:
