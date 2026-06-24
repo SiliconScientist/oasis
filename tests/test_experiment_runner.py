@@ -153,41 +153,36 @@ class ExperimentRunnerTests(unittest.TestCase):
             fake_wide_df = _FakeWideFrame()
 
             with patch(
-                "oasis.experiment_runner.add_mlip_feature_matrices_to_dataset"
-            ) as mock_add_probe_features:
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ):
                 with patch(
-                    "oasis.experiment_runner.find_result_files",
-                    return_value=[],
+                    "oasis.experiment_runner.load_wide_predictions",
+                    return_value=fake_wide_df,
                 ):
                     with patch(
-                        "oasis.experiment_runner.load_wide_predictions",
-                        return_value=fake_wide_df,
+                        "oasis.experiment_runner.parity_plot",
+                        return_value=tmp_path / "plots" / "parity.png",
                     ):
                         with patch(
-                            "oasis.experiment_runner.parity_plot",
-                            return_value=tmp_path / "plots" / "parity.png",
+                            "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                            return_value=[],
                         ):
                             with patch(
-                                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                                "oasis.experiment_runner.atoms_to_graph_dataset_view",
                                 return_value=[],
                             ):
                                 with patch(
-                                    "oasis.experiment_runner.atoms_to_graph_dataset_view",
-                                    return_value=[],
+                                    "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                                    return_value=LearningCurveResults.empty(),
                                 ):
                                     with patch(
-                                        "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
-                                        return_value=LearningCurveResults.empty(),
+                                        "oasis.experiment_runner.learning_curve_plot",
+                                        return_value=tmp_path
+                                        / "plots"
+                                        / "learning_curve.png",
                                     ):
-                                        with patch(
-                                            "oasis.experiment_runner.learning_curve_plot",
-                                            return_value=tmp_path
-                                            / "plots"
-                                            / "learning_curve.png",
-                                        ):
-                                            run_experiment(cfg)
-
-            self.assertFalse(mock_add_probe_features.called)
+                                        run_experiment(cfg)
 
     def test_run_experiment_requires_external_probe_dataset_when_probe_gnn_enabled(
         self,

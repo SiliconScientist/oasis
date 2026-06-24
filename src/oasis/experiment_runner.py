@@ -53,8 +53,6 @@ from oasis.plot import (
     screening_budget_plot,
     sharpness_plot,
 )
-from oasis.probe_features import add_mlip_feature_matrices_to_dataset
-
 _DEV_RUN_MAX_ROWS = 24
 _DEV_RUN_SWEEP_SIZE = 8
 _DEV_RUN_OPTUNA_TRIALS = 3
@@ -312,12 +310,6 @@ def ensure_probe_artifacts(cfg: object) -> bool:
             f"directory at {probe_cfg.mlip_results_dir}"
         )
 
-    add_mlip_feature_matrices_to_dataset(
-        dataset_path=probe_cfg.dataset_path,
-        mlip_results_dir=probe_cfg.mlip_results_dir,
-    )
-    print(f"Embedded probe feature matrices from {probe_cfg.mlip_results_dir}")
-
     return True
 
 
@@ -393,7 +385,10 @@ def build_auxiliary_views(
 
     probe_cfg = cfg.probe_features
     if probe_gnn_enabled and probe_cfg is not None and probe_cfg.dataset_path.exists():
-        probe_graph_view = load_probe_graph_dataset_view(probe_cfg.dataset_path)
+        probe_graph_view = load_probe_graph_dataset_view(
+            probe_cfg.dataset_path,
+            mlip_results_dir=probe_cfg.mlip_results_dir,
+        )
         reactions = wide_df.get_column("reaction").to_list()
         auxiliary_views["probe_gnn_records"] = [probe_graph_view[r] for r in reactions]
         print(

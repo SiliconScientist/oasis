@@ -13,6 +13,7 @@ from ase.io import jsonio
 from ase.neighborlist import natural_cutoffs, neighbor_list
 
 from oasis.exp import column_to_numpy, mlip_columns, mlip_feature_names
+from oasis.probe_features import build_sample_mlip_feature_matrices
 from oasis.sweep import (
     GraphDatasetView,
     GraphRecord,
@@ -388,18 +389,22 @@ def load_probe_graph_dataset_view(
     path: str | Path,
     *,
     policy: AtomsToGraphPolicy = DEFAULT_ATOMS_TO_GRAPH_POLICY,
+    mlip_results_dir: str | Path | None = None,
 ) -> GraphDatasetView:
     """Load a GraphDatasetView from a probe-annotated adsorption dataset JSON.
 
     Each entry must have been produced by ``build_probe_dataset`` and include
-    ``bound_surface_indices`` and ``mlip_feature_matrix``.  The graph for each
+    ``bound_surface_indices`` and ``unique_probe_ids``. The graph for each
     sample is built from ``raw.Tolstar``; bound-atom node features are augmented
-    with the corresponding rows of ``mlip_feature_matrix.matrix``.
+    with probe MLIP energies resolved either from an embedded legacy
+    ``mlip_feature_matrix`` payload or from ``mlip_results_dir``.
 
     Args:
         path: Path to the JSON dataset file
             (e.g. ``KHLOHC_origin_tolstar_adsorption_with_probe_ids.json``).
         policy: Graph construction policy applied to each Tolstar Atoms object.
+        mlip_results_dir: Optional external probe MLIP results directory used to
+            build probe feature matrices in memory.
 
     Returns:
         A GraphDatasetView where every record has node_features of shape
@@ -414,6 +419,13 @@ def load_probe_graph_dataset_view(
     if not isinstance(dataset, dict):
         raise TypeError("probe dataset JSON must be a top-level object.")
 
+    feature_matrices = None
+    if mlip_results_dir is not None:
+        feature_matrices = build_sample_mlip_feature_matrices(
+            dataset_path=resolved_path,
+            mlip_results_dir=Path(mlip_results_dir),
+        )
+
     records: list[GraphRecord] = []
     for reaction, entry in dataset.items():
         tolstar = entry.get("raw", {}).get("Tolstar")
@@ -426,15 +438,21 @@ def load_probe_graph_dataset_view(
         bound_surface_indices: list[int] = list(entry.get("bound_surface_indices", []))
 
         mlip_payload = entry.get("mlip_feature_matrix")
-        if mlip_payload is None:
-            raise ValueError(f"Entry {reaction!r} is missing 'mlip_feature_matrix'.")
-
-        n_mlips = len(mlip_payload.get("mlip_names", []))
-        matrix_raw = mlip_payload.get("matrix", [])
-        if matrix_raw:
-            probe_matrix = np.asarray(matrix_raw, dtype=float)
+        if mlip_payload is not None:
+            n_mlips = len(mlip_payload.get("mlip_names", []))
+            matrix_raw = mlip_payload.get("matrix", [])
+            if matrix_raw:
+                probe_matrix = np.asarray(matrix_raw, dtype=float)
+            else:
+                probe_matrix = np.empty((0, n_mlips), dtype=float)
+        elif feature_matrices is not None:
+            feature_matrix = feature_matrices[reaction]
+            probe_matrix = feature_matrix.matrix.T
         else:
-            probe_matrix = np.empty((0, n_mlips), dtype=float)
+            raise ValueError(
+                f"Entry {reaction!r} is missing 'mlip_feature_matrix'; pass "
+                "mlip_results_dir to build probe features in memory."
+            )
 
         augmented = augment_graph_with_probe_features(
             base_record, bound_surface_indices, probe_matrix
