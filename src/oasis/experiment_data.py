@@ -434,7 +434,10 @@ def load_probe_graph_dataset_view(
             raise TypeError(f"Entry {reaction!r} has non-dict raw payload.")
         adsorbed_keys = [key for key in raw if key.endswith("star") and key != "star"]
         if not adsorbed_keys:
-            raise ValueError(f"Entry {reaction!r} is missing an adsorbed 'raw.*star' structure.")
+            raise ValueError(
+                f"Entry {reaction!r} is missing 'raw.Tolstar' or another adsorbed "
+                "'raw.*star' structure."
+            )
         adsorbed = raw[adsorbed_keys[0]]
         if not isinstance(adsorbed, dict) or "atoms_json" not in adsorbed:
             raise ValueError(
@@ -501,13 +504,9 @@ def augment_graph_with_probe_features(
     n_bound, n_mlips = probe_matrix.shape
     expected_bound = len(bound_surface_indices)
     if expected_bound != n_bound:
-        # Some probe datasets provide a variable number of probe-site rows per
-        # adsorption structure rather than one row per bound surface atom.
-        # Collapse those rows to a single site-level probe signal and apply it
-        # to each bound atom so probe-aware models can still consume the graph.
-        mean_probe = np.nanmean(probe_matrix, axis=0, keepdims=True)
-        probe_matrix = np.repeat(mean_probe, expected_bound, axis=0)
-        n_bound = expected_bound
+        raise ValueError(
+            "probe_matrix row count does not match bound_surface_indices length."
+        )
 
     n_nodes = record.n_nodes
     for idx in bound_surface_indices:

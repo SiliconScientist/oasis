@@ -965,7 +965,6 @@ class SweepOutputRegressionTests(unittest.TestCase):
     def test_registry_pipeline_matches_direct_method_outputs(self) -> None:
         X, y = self._regression_dataset()
         dataset = SweepDataset(mlip_features=X, targets=y)
-        payload = self._train_test_payload(seed=13)
         sklearn_specs = {
             name: spec for name, _, spec in sklearn_sweep_model_specs()
         }
@@ -982,10 +981,45 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 ),
             ),
         )
+        validation_calibration_payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=build_sweep_split_collection(
+                dataset.n_samples,
+                min_train=2,
+                max_train=4,
+                n_repeats=2,
+                seed=13,
+                requirements=SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
+                calibration_fraction=0.2,
+                min_cal_size=1,
+                min_inner_train_size=1,
+                min_test_size=1,
+            ),
+        )
+        calibration_payload = SweepRunPayload(
+            dataset=dataset,
+            split_collection=build_sweep_split_collection(
+                dataset.n_samples,
+                min_train=2,
+                max_train=4,
+                n_repeats=2,
+                seed=13,
+                requirements=SweepFamilyRequirements(
+                    requires_calibration=True,
+                ),
+                calibration_fraction=0.2,
+                min_cal_size=1,
+                min_inner_train_size=1,
+                min_test_size=1,
+            ),
+        )
 
         expected = {
             "ridge_df": sweep_model_with_hyperparameter_selection(
-                validation_payload,
+                validation_calibration_payload,
                 sklearn_specs["ridge"].hyperparameter_spec,
             ),
             "kernel_ridge_df": sweep_model_with_hyperparameter_selection(
@@ -1000,9 +1034,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 validation_payload,
                 sklearn_specs["elastic"].hyperparameter_spec,
             ),
-            "resid_df": residual_sweep(payload).metrics,
-            "weighted_linear_df": weighted_linear_sweep(payload).metrics,
-            "weighted_simplex_df": weighted_simplex_sweep(payload).metrics,
+            "resid_df": residual_sweep(calibration_payload).metrics,
+            "weighted_linear_df": weighted_linear_sweep(calibration_payload).metrics,
+            "weighted_simplex_df": weighted_simplex_sweep(calibration_payload).metrics,
         }
 
         actual = run_learning_curve_experiments(
@@ -1025,7 +1059,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         for field_name, expected_df in expected.items():
             actual_df = getattr(actual, field_name)
             self.assertIsNotNone(actual_df, field_name)
-        _assert_metric_frames_equal_ignoring_fit_time(actual_df, expected_df)
+            _assert_metric_frames_equal_ignoring_fit_time(actual_df, expected_df)
         self.assertIsNotNone(actual.resid_uq_df)
         self.assertIsNotNone(actual.weighted_linear_uq_df)
         self.assertIsNotNone(actual.weighted_simplex_uq_df)
