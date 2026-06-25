@@ -27,6 +27,8 @@ class DatasetProfilePathsConfig(BaseModel):
 class NamedDatasetConfig(BaseModel):
     raw_dataset_filename: Optional[str] = None
     processed_basename: Optional[str] = None
+    probe_dataset_filename: Optional[str] = None
+    probe_mlip_results_dir: Optional[str] = None
     # Directory name for external probe MLIP results, typically produced by Moira.
     probe_results_dirname: Optional[str] = None
     mlip_run_dirname: Optional[str] = None
@@ -38,6 +40,18 @@ class NamedDatasetConfig(BaseModel):
 
     def processed_basename_or_default(self, tag: str) -> str:
         return self.processed_basename or tag
+
+    def probe_dataset_path_or_default(self, tag: str) -> Path:
+        if self.probe_dataset_filename is not None:
+            return Path(self.probe_dataset_filename)
+        raw_dataset_filename = self.raw_dataset_filename_or_default(tag)
+        return probe_dataset_path(raw_dataset_filename)
+
+    def probe_mlip_results_dir_or_default(self, tag: str) -> Path:
+        if self.probe_mlip_results_dir is not None:
+            return Path(self.probe_mlip_results_dir)
+        probe_results_dirname = self.probe_results_dirname_or_default(tag)
+        return probe_results_dir(probe_results_dirname)
 
     def probe_results_dirname_or_default(self, tag: str) -> str:
         return self.probe_results_dirname or f"{tag}_unique_probes"
@@ -379,19 +393,18 @@ def derive_dataset_profile_paths(
     tag: str,
     named_profile: NamedDatasetConfig | None = None,
 ) -> DatasetProfilePathsConfig:
-    """Derive Oasis defaults, including expected external probe artifact paths."""
+    """Derive Oasis defaults, including dataset-specific probe artifact paths."""
     named_profile = named_profile or NamedDatasetConfig()
     raw_dataset_filename = named_profile.raw_dataset_filename_or_default(tag)
     processed_basename = named_profile.processed_basename_or_default(tag)
-    probe_results_dirname = named_profile.probe_results_dirname_or_default(tag)
     mlip_run_dirname = named_profile.mlip_run_dirname_or_default(tag)
     analysis_run_dirname = named_profile.analysis_run_dirname_or_default(tag)
     summary_run_dirname = named_profile.summary_run_dirname_or_default(tag)
 
     return DatasetProfilePathsConfig(
         dataset=raw_dataset_path(raw_dataset_filename),
-        probe_dataset_path=probe_dataset_path(raw_dataset_filename),
-        probe_mlip_results_dir=probe_results_dir(probe_results_dirname),
+        probe_dataset_path=named_profile.probe_dataset_path_or_default(tag),
+        probe_mlip_results_dir=named_profile.probe_mlip_results_dir_or_default(tag),
         results_bundle_path=learning_curve_bundle_path(processed_basename),
         graph_dataset_path=processed_graph_dataset_path(processed_basename),
         calculating_path=mlip_results_dir(analysis_run_dirname),

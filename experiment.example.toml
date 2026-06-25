@@ -4,8 +4,7 @@ device = "cuda"
 
 # Example experiment-side configuration.
 # Copy to `experiment.toml` and tune per study.
-# This file owns dataset-profile, analysis, plot, probe-feature, and
-# learning-curve settings.
+# This file owns dataset-profile, analysis, plot, and learning-curve settings.
 
 [dataset_profile]
 tag = "example_oh"
@@ -16,6 +15,8 @@ processed_basename = "example_oh"
 mlip_run_dirname = "oh_example"
 analysis_run_dirname = "ch3_oh_example"
 summary_run_dirname = "ch3_oh_shifted_example"
+probe_dataset_filename = "data/raw_data/ExampleOH_adsorption_with_probe_ids.json"
+probe_mlip_results_dir = "data/mlips/example_oh_unique_probes"
 
 [analysis]
 run_adsorption_analysis = false
@@ -180,7 +181,7 @@ r_max = 6.0
 n_trials = 10
 sampler = "tpe"
 
-# Optional explicit overrides. When omitted, both paths are derived from
+# Optional explicit override. When omitted, probe paths are derived from
 # `dataset_profile.tag` and `[datasets.<tag>]`.
 #
 # [probe_features]
