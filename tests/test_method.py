@@ -225,7 +225,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             built_in_requirements,
             [
-                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
@@ -243,7 +246,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             built_in_capabilities,
             [
-                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(requires_validation=True, requires_calibration=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
@@ -1008,11 +1011,17 @@ class SweepOutputRegressionTests(unittest.TestCase):
 
         self.assertEqual(
             ridge_family.capabilities(),
-            SweepModelCapabilities(requires_validation=True),
+            SweepModelCapabilities(
+                requires_validation=True,
+                requires_calibration=True,
+            ),
         )
         self.assertEqual(
             ridge_family.requirements(),
-            SweepFamilyRequirements(requires_inner_validation=True),
+            SweepFamilyRequirements(
+                requires_inner_validation=True,
+                requires_calibration=True,
+            ),
         )
         self.assertIsInstance(
             ridge_family.spec.runner,
@@ -1060,7 +1069,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "fit_time_std_s",
             ],
         )
-        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [3, 4])
         self.assertEqual(
             results.weighted_linear_df.columns.tolist(),
             [
@@ -1086,7 +1095,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(results.ridge_df)
-        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3])
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [3])
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_respects_combined_family_and_validation_guards(self) -> None:
@@ -1118,7 +1127,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(results.ridge_df)
-        self.assertEqual(results.ridge_df["n_train"].tolist(), [5, 6])
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [6])
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_selection_is_deterministic_for_fixed_seed(self) -> None:
@@ -1192,11 +1201,11 @@ class SweepOutputRegressionTests(unittest.TestCase):
         )
         self.assertEqual(
             results.ridge_uq_df["uncertainty_kind"].tolist(),
-            ["spread_only"] * len(results.ridge_uq_df),
+            ["calibrated"] * len(results.ridge_uq_df),
         )
         self.assertEqual(
             results.ridge_uq_df["uncertainty_note"].tolist(),
-            ["spread-only; not probabilistically interpretable"]
+            ["post-hoc scalar calibrated spread"]
             * len(results.ridge_uq_df),
         )
 

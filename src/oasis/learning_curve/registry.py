@@ -310,7 +310,10 @@ def _sklearn_capabilities_for_spec(
 ) -> SweepModelCapabilities:
     if spec.hyperparameter_spec is None and spec.trial_tuning_spec is None:
         return SweepModelCapabilities()
-    return SweepModelCapabilities(requires_validation=True)
+    return SweepModelCapabilities(
+        requires_validation=True,
+        requires_calibration=bool(getattr(spec, "requires_calibration", False)),
+    )
 
 
 def _sklearn_selection_metadata_field_for_spec(

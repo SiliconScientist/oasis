@@ -12,10 +12,12 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from oasis.calibration import ScalarSpreadCalibrator
 from oasis.sweep import (
     SweepDataset,
     SweepRunnerPayload,
     SweepRunPayload,
+    TrainValCalTestSweepRunnerInput,
     TrainValTestSweepRunnerInput,
 )
 
@@ -466,6 +468,15 @@ def _assert_train_val_test_payload(
     return splits
 
 
+def _assert_train_val_cal_test_payload(
+    payload: SweepRunnerPayload,
+) -> tuple[TrainValCalTestSweepRunnerInput, ...]:
+    splits = payload.splits
+    if not all(isinstance(split, TrainValCalTestSweepRunnerInput) for split in splits):
+        raise TypeError("expected train/val/cal/test sweep payload")
+    return splits
+
+
 def _estimator_factory_with_params(
     estimator_factory: Callable[..., object],
     params: Mapping[str, Any],
@@ -821,7 +832,10 @@ def sweep_supervised_model_selection(
     """
 
     payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
+    if payload.planning_requirements.requires_calibration:
+        splits = _assert_train_val_cal_test_payload(payload)
+    else:
+        splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
@@ -847,6 +861,27 @@ def sweep_supervised_model_selection(
             model,
             X_test,
         )
+        if (
+            spread is not None
+            and uncertainty_kind is not None
+            and isinstance(split, TrainValCalTestSweepRunnerInput)
+        ):
+            X_cal = split.dataset.mlip_features[split.cal_idx]
+            y_cal = y[split.cal_idx]
+            cal_preds = np.asarray(model.predict(X_cal), dtype=float)
+            cal_spread = _hyperparameter_spec_predictive_spread(
+                hyperparameter_spec,
+                model,
+                X_cal,
+            )
+            if cal_spread is None:
+                raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
+            calibrator = ScalarSpreadCalibrator.fit(
+                y_true=y_cal,
+                y_pred=cal_preds,
+                spread=cal_spread,
+            )
+            spread = calibrator.apply(spread)
         if spread is not None and uncertainty_kind is not None:
             uq_artifacts.append(
                 {

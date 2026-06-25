@@ -34,6 +34,7 @@ class SklearnSweepModelSpec:
     selection_metadata_field: str | None = None
     uq_summary_field: str | None = None
     selection_refit_policy: SelectionRefitPolicy = "train_plus_val"
+    requires_calibration: bool = False
 
 
 def _linear_model_spread(model: object, X: np.ndarray) -> np.ndarray:
@@ -65,11 +66,12 @@ def sklearn_sweep_model_specs() -> tuple[tuple[str, str, SklearnSweepModelSpec],
                     estimator_factory=Ridge,
                     grid={"alpha": (0.01, 0.1, 1.0, 10.0)},
                     predictive_spread_extractor=_linear_model_spread,
-                    uncertainty_kind="spread_only",
-                    uncertainty_note="spread-only; not probabilistically interpretable",
+                    uncertainty_kind="calibrated",
+                    uncertainty_note="post-hoc scalar calibrated spread",
                 ),
                 selection_metadata_field="ridge_selection_df",
                 uq_summary_field="ridge_uq_df",
+                requires_calibration=True,
             ),
         ),
         (

@@ -3264,7 +3264,7 @@ class ExpIntegrationTests(unittest.TestCase):
 
         self.assertIsNotNone(results.ridge_df)
         self.assertIsNotNone(results.lasso_df)
-        self.assertEqual(results.ridge_df["n_train"].tolist(), [2, 3, 4])
+        self.assertEqual(results.ridge_df["n_train"].tolist(), [3, 4])
 
     def test_run_learning_curve_experiments_from_config_selects_models_without_plot(
         self,
@@ -3406,7 +3406,7 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertTrue(
             (
                 results.ridge_uq_df["uncertainty_note"]
-                == "spread-only; not probabilistically interpretable"
+                == "post-hoc scalar calibrated spread"
             ).all()
         )
 
