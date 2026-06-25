@@ -435,7 +435,10 @@ def weighted_linear_sweep(
     rmses_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     split_artifacts: list[SplitPredictionArtifact] = []
-    for split in _assert_train_test_payload(payload):
+    uncertainty_kind = "spread_only"
+    for split in payload.splits:
+        if not isinstance(split, (TrainTestSweepRunnerInput, TrainCalTestSweepRunnerInput)):
+            raise TypeError("expected train/test or train/cal/test sweep payload")
         X = split.dataset.mlip_features
         y = split.dataset.targets
         model = LinearRegression(fit_intercept=fit_intercept)
@@ -452,6 +455,20 @@ def weighted_linear_sweep(
         else:
             normalized_weights = coef_weights / weight_sum
         spread = np.sqrt(np.sum(normalized_weights[None, :] * centered**2, axis=1))
+        if isinstance(split, TrainCalTestSweepRunnerInput):
+            X_cal = X[split.cal_idx]
+            cal_preds = model.predict(X_cal)
+            cal_centered = X_cal - cal_preds[:, None]
+            cal_spread = np.sqrt(
+                np.sum(normalized_weights[None, :] * cal_centered**2, axis=1)
+            )
+            calibrator = ScalarSpreadCalibrator.fit(
+                y_true=y[split.cal_idx],
+                y_pred=cal_preds,
+                spread=cal_spread,
+            )
+            spread = calibrator.apply(spread)
+            uncertainty_kind = "calibrated"
         y_true = y[split.test_idx]
         rmse = np.sqrt(mean_squared_error(y_true, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
@@ -468,7 +485,7 @@ def weighted_linear_sweep(
         metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         uq_summary=aggregate_uq_summary(
             split_artifacts,
-            uncertainty_kind="spread_only",
+            uncertainty_kind=uncertainty_kind,
         ),
     )
 
