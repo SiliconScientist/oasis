@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import asdict
 from dataclasses import replace
 
 from oasis.candidate_ranking import (
@@ -15,6 +16,7 @@ from oasis.candidate_ranking import (
     RankingContext,
     RankingResult,
     SupportingSignal,
+    UncertaintyCalibration,
     UncertaintyEstimate,
     ValidatedReference,
     clear_registered_predictors,
@@ -212,6 +214,13 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
             metric="posterior_std",
             provenance=provenance,
             is_calibrated=True,
+            calibration=UncertaintyCalibration(
+                method="scalar_scale",
+                raw_value=0.12,
+                raw_metric="spread_only",
+                raw_provenance=provenance,
+                metadata={"reference_coverage": 0.68},
+            ),
             metadata={"calibration_split": "val"},
         )
         signal = SupportingSignal(
@@ -245,9 +254,45 @@ class CandidateRankingInterfaceTests(unittest.TestCase):
 
         self.assertEqual(candidate.method_provenance.shot_count, 2)
         self.assertTrue(candidate.uncertainty.is_calibrated)
+        self.assertEqual(candidate.uncertainty.calibration.raw_value, 0.12)
         self.assertEqual(candidate.supporting_signals[0].objective, "maximize")
         self.assertEqual(parent.selected_adslab_ids, ("adslab-1", "adslab-4"))
         self.assertEqual(parent.adslab_metadata["site_label"], "bridge")
+
+    def test_uncertainty_calibration_serializes_raw_and_calibrated_payloads(self) -> None:
+        raw_provenance = MethodProvenance(
+            method_name="residual",
+            stage="candidate_prediction",
+            metadata={"fit_id": "split-3"},
+        )
+        uncertainty = UncertaintyEstimate(
+            value=0.22,
+            metric="calibrated_spread",
+            provenance=MethodProvenance(
+                method_name="residual",
+                stage="uncertainty_calibration",
+                source_methods=("residual",),
+            ),
+            is_calibrated=True,
+            calibration=UncertaintyCalibration(
+                method="scalar_scale",
+                raw_value=0.11,
+                raw_metric="spread_only",
+                raw_provenance=raw_provenance,
+                metadata={"scale": 2.0},
+            ),
+        )
+
+        payload = asdict(uncertainty)
+
+        self.assertTrue(payload["is_calibrated"])
+        self.assertEqual(payload["value"], 0.22)
+        self.assertEqual(payload["calibration"]["raw_value"], 0.11)
+        self.assertEqual(payload["calibration"]["raw_metric"], "spread_only")
+        self.assertEqual(
+            payload["calibration"]["raw_provenance"]["stage"],
+            "candidate_prediction",
+        )
 
     def test_ranking_context_prefers_validated_reference_count_for_shot_inference(self) -> None:
         context = RankingContext(

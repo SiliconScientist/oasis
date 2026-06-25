@@ -81,6 +81,17 @@ class MethodProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class UncertaintyCalibration:
+    """Explicit metadata for post-hoc spread recalibration."""
+
+    method: str
+    raw_value: float
+    raw_metric: str
+    raw_provenance: MethodProvenance
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class UncertaintyEstimate:
     """Canonical uncertainty payload with explicit provenance."""
 
@@ -88,6 +99,7 @@ class UncertaintyEstimate:
     metric: str
     provenance: MethodProvenance
     is_calibrated: bool = False
+    calibration: UncertaintyCalibration | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

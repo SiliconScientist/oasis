@@ -38,6 +38,7 @@ from oasis.candidate_ranking.types import (
     RankingResult,
     ScreeningInputRecord,
     SupportingSignal,
+    UncertaintyCalibration,
     UncertaintyEstimate,
     ValidatedReference,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "SupportingSignal",
     "TargetAwareCandidateScorer",
     "TargetAwareScoringConfig",
+    "UncertaintyCalibration",
     "UncertaintyEstimate",
     "ValidatedReference",
     "UnfittedEnsembleBaselineConfig",
