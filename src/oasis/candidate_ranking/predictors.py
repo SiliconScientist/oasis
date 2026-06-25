@@ -5,6 +5,13 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
+from oasis.calibration import ScalarSpreadCalibrator
+from oasis.experiment import calibration_size_if_sweep_feasible
+from oasis.calibration_metrics import (
+    dispersion_from_spread,
+    miscalibration_area,
+    sharpness_from_spread,
+)
 
 from oasis.candidate_ranking.methods import (
     LowestEnergyParentReducer,
@@ -20,18 +27,13 @@ from oasis.candidate_ranking.types import (
     RankingResult,
     ScreeningInputRecord,
     SupportingSignal,
+    UncertaintyCalibration,
     UncertaintyEstimate,
     ValidatedReference,
 )
 from oasis.experiment import build_sweep_split_collection
 from oasis.sweep import SweepFamilyRequirements
-from oasis.learning_curve.execution import (
-    dispersion_from_spread,
-    miscalibration_area,
-    _simplex_weights,
-    sharpness_from_spread,
-    require_min_mlip_feature_count,
-)
+from oasis.learning_curve.execution import _simplex_weights, require_min_mlip_feature_count
 
 try:
     from sklearn.linear_model import Ridge
@@ -61,6 +63,13 @@ class PredictorFitResult:
 @dataclass(frozen=True, slots=True)
 class PredictorDiagnosticsResult:
     metrics_by_predictor: dict[str, dict[str, object]]
+
+
+@dataclass(frozen=True, slots=True)
+class CalibratedPredictorFitResult:
+    fit: PredictorFitResult
+    raw_spread: np.ndarray
+    calibrator: ScalarSpreadCalibrator | None = None
 
 
 def _record_identity_keys(record: ScreeningInputRecord) -> tuple[str, ...]:
@@ -129,6 +138,77 @@ def _fit_predictor_arrays(
             },
         )
     raise KeyError(f"Unknown candidate predictor {predictor_name!r}.")
+
+
+def _maybe_partition_calibration_indices(
+    base_idx: np.ndarray,
+    *,
+    method_config: dict[str, object],
+    seed: int,
+    min_inner_train_size: int = 1,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    n_cal = calibration_size_if_sweep_feasible(
+        len(base_idx),
+        calibration_fraction=float(method_config.get("calibration_fraction", 0.2)),
+        min_cal_size=int(method_config.get("min_cal_size", 1)),
+        min_post_calibration_size=min_inner_train_size,
+    )
+    if n_cal is None:
+        return np.asarray(base_idx, dtype=int), None
+    rng = np.random.default_rng(seed)
+    shuffled = rng.permutation(np.asarray(base_idx, dtype=int))
+    return shuffled[n_cal:], shuffled[:n_cal]
+
+
+def _fit_predictor_with_optional_calibration(
+    predictor_name: str,
+    *,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    method_config: dict[str, object],
+    X_cal: np.ndarray | None = None,
+    y_cal: np.ndarray | None = None,
+) -> CalibratedPredictorFitResult:
+    fit = _fit_predictor_arrays(
+        predictor_name,
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        method_config=method_config,
+    )
+    raw_spread = np.asarray(fit.spread, dtype=float)
+    if predictor_name != "residual" or X_cal is None or y_cal is None:
+        return CalibratedPredictorFitResult(
+            fit=fit,
+            raw_spread=raw_spread,
+        )
+
+    calibration_fit = _fit_predictor_arrays(
+        predictor_name,
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_cal,
+        method_config=method_config,
+    )
+    calibrator = ScalarSpreadCalibrator.fit(
+        y_true=y_cal,
+        y_pred=calibration_fit.predicted_binding_energies,
+        spread=calibration_fit.spread,
+    )
+    return CalibratedPredictorFitResult(
+        fit=PredictorFitResult(
+            predicted_binding_energies=fit.predicted_binding_energies,
+            spread=calibrator.apply(raw_spread),
+            metadata={
+                **fit.metadata,
+                "calibration_method": calibrator.method,
+                "calibration_scale": float(calibrator.scale),
+            },
+        ),
+        raw_spread=raw_spread,
+        calibrator=calibrator,
+    )
 
 
 def _prepare_predictor_inputs(
@@ -237,21 +317,43 @@ def evaluate_predictors(
         miscalibration_values: list[float] = []
         sharpness_values: list[float] = []
         dispersion_values: list[float] = []
+        all_splits_calibrated = True
         evaluation_mode = "screening_cv"
         if splits:
-            for split in splits:
-                fit = _fit_predictor_arrays(
+            for split_idx, split in enumerate(splits):
+                train_idx, cal_idx = _maybe_partition_calibration_indices(
+                    split.train_idx,
+                    method_config=context.method_config,
+                    seed=int(context.dataset_metadata.get("seed", 0) or 0) + split_idx,
+                    min_inner_train_size=int(
+                        context.method_config.get("min_inner_train_size", 1)
+                    ),
+                )
+                calibrated_fit = _fit_predictor_with_optional_calibration(
                     predictor_name,
-                    X_train=prepared.training_matrix[split.train_idx],
-                    y_train=prepared.training_targets[split.train_idx],
+                    X_train=prepared.training_matrix[train_idx],
+                    y_train=prepared.training_targets[train_idx],
                     X_test=prepared.training_matrix[split.test_idx],
                     method_config=context.method_config,
+                    X_cal=(
+                        None
+                        if cal_idx is None
+                        else prepared.training_matrix[cal_idx]
+                    ),
+                    y_cal=(
+                        None
+                        if cal_idx is None
+                        else prepared.training_targets[cal_idx]
+                    ),
                 )
+                fit = calibrated_fit.fit
                 residual = (
                     prepared.training_targets[split.test_idx]
                     - fit.predicted_binding_energies
                 )
                 spread = np.asarray(fit.spread, dtype=float)
+                if predictor_name == "residual" and calibrated_fit.calibrator is None:
+                    all_splits_calibrated = False
                 rmse_values.append(float(np.sqrt(np.mean(residual**2))))
                 miscalibration_values.append(
                     float(
@@ -266,15 +368,36 @@ def evaluate_predictors(
                 dispersion_values.append(float(dispersion_from_spread(spread)))
         else:
             evaluation_mode = "full_fit_train_rmse"
-            fit = _fit_predictor_arrays(
+            train_idx, cal_idx = _maybe_partition_calibration_indices(
+                np.arange(len(prepared.training_targets), dtype=int),
+                method_config=context.method_config,
+                seed=int(context.dataset_metadata.get("seed", 0) or 0),
+                min_inner_train_size=int(
+                    context.method_config.get("min_inner_train_size", 1)
+                ),
+            )
+            calibrated_fit = _fit_predictor_with_optional_calibration(
                 predictor_name,
-                X_train=prepared.training_matrix,
-                y_train=prepared.training_targets,
+                X_train=prepared.training_matrix[train_idx],
+                y_train=prepared.training_targets[train_idx],
                 X_test=prepared.training_matrix,
                 method_config=context.method_config,
+                X_cal=(
+                    None
+                    if cal_idx is None
+                    else prepared.training_matrix[cal_idx]
+                ),
+                y_cal=(
+                    None
+                    if cal_idx is None
+                    else prepared.training_targets[cal_idx]
+                ),
             )
+            fit = calibrated_fit.fit
             residual = prepared.training_targets - fit.predicted_binding_energies
             spread = np.asarray(fit.spread, dtype=float)
+            if predictor_name == "residual" and calibrated_fit.calibrator is None:
+                all_splits_calibrated = False
             rmse_values.append(float(np.sqrt(np.mean(residual**2))))
             miscalibration_values.append(
                 float(
@@ -298,7 +421,11 @@ def evaluate_predictors(
             "sharpness_std": float(np.std(sharpness_values)),
             "dispersion": float(np.mean(dispersion_values)),
             "dispersion_std": float(np.std(dispersion_values)),
-            "uncertainty_kind": "spread_only",
+            "uncertainty_kind": (
+                "calibrated"
+                if predictor_name == "residual" and all_splits_calibrated
+                else "spread_only"
+            ),
             "evaluation_mode": evaluation_mode,
             "split_count": len(splits) if splits else 1,
         }
@@ -325,15 +452,19 @@ def _build_candidate_outputs(
     prepared: PreparedPredictorInputs,
     predicted_binding_energies: np.ndarray,
     spread: np.ndarray,
+    raw_spread: np.ndarray | None = None,
+    calibrator: ScalarSpreadCalibrator | None = None,
     extra_metadata: dict[str, object] | None = None,
 ) -> list[AdslabCandidate]:
     candidates: list[AdslabCandidate] = []
-    for record, predicted_energy, uncertainty_value, features in zip(
+    for idx, (record, predicted_energy, uncertainty_value, features) in enumerate(
+        zip(
         prepared.candidate_records,
         predicted_binding_energies,
         spread,
         prepared.candidate_matrix,
         strict=True,
+        )
     ):
         provenance = MethodProvenance(
             method_name=predictor_name,
@@ -349,11 +480,44 @@ def _build_candidate_outputs(
                 **dict(extra_metadata or {}),
             },
         )
+        raw_provenance = MethodProvenance(
+            method_name=predictor_name,
+            stage="raw_uncertainty",
+            shot_count=context.inferred_shot_count,
+            source_methods=prepared.model_names,
+        )
         uncertainty = UncertaintyEstimate(
             value=float(uncertainty_value),
-            metric="spread_only",
-            provenance=provenance,
-            is_calibrated=False,
+            metric="calibrated_spread" if calibrator is not None else "spread_only",
+            provenance=(
+                MethodProvenance(
+                    method_name=predictor_name,
+                    stage="uncertainty_calibration",
+                    shot_count=context.inferred_shot_count,
+                    source_methods=(predictor_name,),
+                    metadata={
+                        "calibration_method": calibrator.method,
+                        "calibration_scale": float(calibrator.scale),
+                    },
+                )
+                if calibrator is not None
+                else provenance
+            ),
+            is_calibrated=calibrator is not None,
+            calibration=(
+                UncertaintyCalibration(
+                    method=calibrator.method,
+                    raw_value=float(raw_spread[idx]),
+                    raw_metric="spread_only",
+                    raw_provenance=raw_provenance,
+                    metadata={
+                        "scale": float(calibrator.scale),
+                        "reference_coverage": float(calibrator.reference_coverage),
+                    },
+                )
+                if calibrator is not None and raw_spread is not None
+                else None
+            ),
             metadata={"feature_count": len(prepared.model_names)},
         )
         candidates.append(
@@ -403,20 +567,34 @@ def generate_residual_candidates(context: RankingContext) -> list[AdslabCandidat
     if len(prepared.training_targets) < 1:
         raise ValueError("Predictor 'residual' requires at least 1 usable validated reference.")
 
-    fit = _fit_predictor_arrays(
+    train_idx, cal_idx = _maybe_partition_calibration_indices(
+        np.arange(len(prepared.training_targets), dtype=int),
+        method_config=context.method_config,
+        seed=int(context.dataset_metadata.get("seed", 0) or 0),
+        min_inner_train_size=1,
+    )
+    calibrated_fit = _fit_predictor_with_optional_calibration(
         "residual",
-        X_train=prepared.training_matrix,
-        y_train=prepared.training_targets,
+        X_train=prepared.training_matrix[train_idx],
+        y_train=prepared.training_targets[train_idx],
         X_test=prepared.candidate_matrix,
         method_config=context.method_config,
+        X_cal=(
+            None if cal_idx is None else prepared.training_matrix[cal_idx]
+        ),
+        y_cal=(
+            None if cal_idx is None else prepared.training_targets[cal_idx]
+        ),
     )
     return _build_candidate_outputs(
         context=context,
         predictor_name="residual",
         prepared=prepared,
-        predicted_binding_energies=fit.predicted_binding_energies,
-        spread=fit.spread,
-        extra_metadata=fit.metadata,
+        predicted_binding_energies=calibrated_fit.fit.predicted_binding_energies,
+        spread=calibrated_fit.fit.spread,
+        raw_spread=calibrated_fit.raw_spread,
+        calibrator=calibrated_fit.calibrator,
+        extra_metadata=calibrated_fit.fit.metadata,
     )
 
 
