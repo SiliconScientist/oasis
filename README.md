@@ -194,6 +194,29 @@ Shared split/cache defaults can now live in `[experiment.defaults]`. Values set
 there apply to both `[experiment.learning_curve]` and `[experiment.screening]`,
 while section-local values still win when they differ.
 
+Spread-based uncertainty can now be post-hoc recalibrated for supported
+families. Oasis currently uses scalar scaling:
+
+```toml
+[experiment.defaults]
+calibration_enabled = true
+calibration_method = "scalar_scale"
+calibration_fraction = 0.2
+min_cal_size = 1
+```
+
+Protocol:
+
+- Hyperparameter-free spread methods use `train/cal/test`.
+- Validation-tuned spread methods use `train/val/cal/test`.
+- The calibration fit uses only the held-out calibration subset.
+- Final RMSE and coverage are still reported only on the outer test subset.
+
+When calibration is enabled, UQ summary frames report
+`uncertainty_kind = "calibrated"`. Historical `spread_only` runs are not
+directly comparable to calibrated runs unless they are rerun under the same
+protocol.
+
 For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
 SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a
 built-in candidate set. Keep `training.epochs` only when you want to pin it.
