@@ -72,6 +72,9 @@ class CalibratedPredictorFitResult:
     calibrator: ScalarSpreadCalibrator | None = None
 
 
+_CALIBRATABLE_PREDICTORS = frozenset({"residual", "weighted_simplex"})
+
+
 def _record_identity_keys(record: ScreeningInputRecord) -> tuple[str, ...]:
     return (
         f"adslab:{record.adslab_id}",
@@ -178,7 +181,7 @@ def _fit_predictor_with_optional_calibration(
         method_config=method_config,
     )
     raw_spread = np.asarray(fit.spread, dtype=float)
-    if predictor_name != "residual" or X_cal is None or y_cal is None:
+    if predictor_name not in _CALIBRATABLE_PREDICTORS or X_cal is None or y_cal is None:
         return CalibratedPredictorFitResult(
             fit=fit,
             raw_spread=raw_spread,
@@ -352,7 +355,10 @@ def evaluate_predictors(
                     - fit.predicted_binding_energies
                 )
                 spread = np.asarray(fit.spread, dtype=float)
-                if predictor_name == "residual" and calibrated_fit.calibrator is None:
+                if (
+                    predictor_name in _CALIBRATABLE_PREDICTORS
+                    and calibrated_fit.calibrator is None
+                ):
                     all_splits_calibrated = False
                 rmse_values.append(float(np.sqrt(np.mean(residual**2))))
                 miscalibration_values.append(
@@ -396,7 +402,10 @@ def evaluate_predictors(
             fit = calibrated_fit.fit
             residual = prepared.training_targets - fit.predicted_binding_energies
             spread = np.asarray(fit.spread, dtype=float)
-            if predictor_name == "residual" and calibrated_fit.calibrator is None:
+            if (
+                predictor_name in _CALIBRATABLE_PREDICTORS
+                and calibrated_fit.calibrator is None
+            ):
                 all_splits_calibrated = False
             rmse_values.append(float(np.sqrt(np.mean(residual**2))))
             miscalibration_values.append(
@@ -423,7 +432,7 @@ def evaluate_predictors(
             "dispersion_std": float(np.std(dispersion_values)),
             "uncertainty_kind": (
                 "calibrated"
-                if predictor_name == "residual" and all_splits_calibrated
+                if predictor_name in _CALIBRATABLE_PREDICTORS and all_splits_calibrated
                 else "spread_only"
             ),
             "evaluation_mode": evaluation_mode,
@@ -604,20 +613,34 @@ def generate_weighted_simplex_candidates(context: RankingContext) -> list[Adslab
         raise ValueError(
             "Predictor 'weighted_simplex' requires at least 1 usable validated reference."
         )
-    fit = _fit_predictor_arrays(
+    train_idx, cal_idx = _maybe_partition_calibration_indices(
+        np.arange(len(prepared.training_targets), dtype=int),
+        method_config=context.method_config,
+        seed=int(context.dataset_metadata.get("seed", 0) or 0),
+        min_inner_train_size=1,
+    )
+    calibrated_fit = _fit_predictor_with_optional_calibration(
         "weighted_simplex",
-        X_train=prepared.training_matrix,
-        y_train=prepared.training_targets,
+        X_train=prepared.training_matrix[train_idx],
+        y_train=prepared.training_targets[train_idx],
         X_test=prepared.candidate_matrix,
         method_config=context.method_config,
+        X_cal=(
+            None if cal_idx is None else prepared.training_matrix[cal_idx]
+        ),
+        y_cal=(
+            None if cal_idx is None else prepared.training_targets[cal_idx]
+        ),
     )
     return _build_candidate_outputs(
         context=context,
         predictor_name="weighted_simplex",
         prepared=prepared,
-        predicted_binding_energies=fit.predicted_binding_energies,
-        spread=fit.spread,
-        extra_metadata=fit.metadata,
+        predicted_binding_energies=calibrated_fit.fit.predicted_binding_energies,
+        spread=calibrated_fit.fit.spread,
+        raw_spread=calibrated_fit.raw_spread,
+        calibrator=calibrated_fit.calibrator,
+        extra_metadata=calibrated_fit.fit.metadata,
     )
 
 
