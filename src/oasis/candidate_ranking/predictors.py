@@ -5,7 +5,7 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
-from oasis.calibration import ScalarSpreadCalibrator
+from oasis.calibration import fit_scalar_spread_calibrator_with_identity_fallback
 from oasis.experiment import calibration_size_if_sweep_feasible
 from oasis.calibration_metrics import (
     dispersion_from_spread,
@@ -194,7 +194,7 @@ def _fit_predictor_with_optional_calibration(
         X_test=X_cal,
         method_config=method_config,
     )
-    calibrator = ScalarSpreadCalibrator.fit(
+    calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
         y_true=y_cal,
         y_pred=calibration_fit.predicted_binding_energies,
         spread=calibration_fit.spread,

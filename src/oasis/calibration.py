@@ -9,6 +9,10 @@ import numpy as np
 
 _STANDARD_NORMAL = NormalDist()
 _ONE_SIGMA_COVERAGE = 0.6826894921370859
+_IDENTICALLY_ZERO_SPREAD_ERROR = "cannot fit calibration scale when spread is identically zero."
+_ZERO_SPREAD_RESIDUAL_ERROR = (
+    "cannot fit calibration scale when positive residuals coincide with zero spread."
+)
 
 
 class SpreadCalibrator(Protocol):
@@ -78,12 +82,10 @@ class ScalarSpreadCalibrator:
         if not np.any(positive_mask):
             if np.all(abs_errors == 0.0):
                 return cls(scale=1.0, reference_coverage=reference_coverage)
-            raise ValueError("cannot fit calibration scale when spread is identically zero.")
+            raise ValueError(_IDENTICALLY_ZERO_SPREAD_ERROR)
 
         if np.any(abs_errors[~positive_mask] > 0.0):
-            raise ValueError(
-                "cannot fit calibration scale when positive residuals coincide with zero spread."
-            )
+            raise ValueError(_ZERO_SPREAD_RESIDUAL_ERROR)
 
         z_score = _STANDARD_NORMAL.inv_cdf((1.0 + float(reference_coverage)) / 2.0)
         ratios = abs_errors[positive_mask] / (z_score * resolved_spread[positive_mask])
@@ -94,5 +96,41 @@ class ScalarSpreadCalibrator:
             metadata={
                 "fit_sample_count": int(len(resolved_true)),
                 "positive_spread_count": int(np.count_nonzero(positive_mask)),
+            },
+        )
+
+
+def fit_scalar_spread_calibrator_with_identity_fallback(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    spread: np.ndarray,
+    *,
+    reference_coverage: float = _ONE_SIGMA_COVERAGE,
+) -> ScalarSpreadCalibrator:
+    """Fit a scalar spread calibrator, falling back to identity on degenerate zero spread."""
+
+    try:
+        return ScalarSpreadCalibrator.fit(
+            y_true=y_true,
+            y_pred=y_pred,
+            spread=spread,
+            reference_coverage=reference_coverage,
+        )
+    except ValueError as exc:
+        if str(exc) not in {
+            _IDENTICALLY_ZERO_SPREAD_ERROR,
+            _ZERO_SPREAD_RESIDUAL_ERROR,
+        }:
+            raise
+        resolved_true = _as_flat_float_array(y_true, name="y_true")
+        resolved_spread = _validate_spread(spread)
+        return ScalarSpreadCalibrator(
+            scale=1.0,
+            reference_coverage=reference_coverage,
+            metadata={
+                "fit_sample_count": int(len(resolved_true)),
+                "positive_spread_count": int(np.count_nonzero(resolved_spread > 0.0)),
+                "fallback_strategy": "identity",
+                "fallback_reason": str(exc),
             },
         )

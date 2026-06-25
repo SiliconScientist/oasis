@@ -8,7 +8,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from oasis.calibration import ScalarSpreadCalibrator
+from oasis.calibration import fit_scalar_spread_calibrator_with_identity_fallback
 from oasis.calibration_metrics import (
     calibration_curve_frame,
     dispersion_from_spread,
@@ -396,7 +396,7 @@ def residual_sweep(
         spread = np.std(X_corrected, axis=1)
         if isinstance(split, TrainCalTestSweepRunnerInput):
             cal_corrected = X[split.cal_idx] + mean_residuals
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=y[split.cal_idx],
                 y_pred=cal_corrected.mean(axis=1),
                 spread=np.std(cal_corrected, axis=1),
@@ -462,7 +462,7 @@ def weighted_linear_sweep(
             cal_spread = np.sqrt(
                 np.sum(normalized_weights[None, :] * cal_centered**2, axis=1)
             )
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=y[split.cal_idx],
                 y_pred=cal_preds,
                 spread=cal_spread,
@@ -543,7 +543,7 @@ def weighted_simplex_sweep(
             cal_preds = X_cal @ weights
             cal_centered = X_cal - cal_preds[:, None]
             cal_spread = np.sqrt(np.sum(weights[None, :] * cal_centered**2, axis=1))
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=y[split.cal_idx],
                 y_pred=cal_preds,
                 spread=cal_spread,

@@ -12,7 +12,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from oasis.calibration import ScalarSpreadCalibrator
+from oasis.calibration import fit_scalar_spread_calibrator_with_identity_fallback
 from oasis.sweep import (
     SweepDataset,
     SweepRunnerPayload,
@@ -890,7 +890,7 @@ def sweep_supervised_model_selection(
             )
             if cal_spread is None:
                 raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=y_cal,
                 y_pred=cal_preds,
                 spread=cal_spread,
@@ -1006,7 +1006,7 @@ def sweep_learned_trial_model_selection(
             )
             if cal_spread is None:
                 raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=cal_dataset.targets,
                 y_pred=cal_preds,
                 spread=cal_spread,
@@ -1134,7 +1134,7 @@ def sweep_learned_optuna_model_selection(
             )
             if cal_spread is None:
                 raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
-            calibrator = ScalarSpreadCalibrator.fit(
+            calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
                 y_true=cal_dataset.targets,
                 y_pred=cal_preds,
                 spread=cal_spread,

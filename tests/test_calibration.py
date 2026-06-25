@@ -4,7 +4,10 @@ import unittest
 
 import numpy as np
 
-from oasis.calibration import ScalarSpreadCalibrator
+from oasis.calibration import (
+    ScalarSpreadCalibrator,
+    fit_scalar_spread_calibrator_with_identity_fallback,
+)
 from oasis.learning_curve.execution import calibration_curve_frame
 
 
@@ -54,6 +57,17 @@ class ScalarSpreadCalibratorTests(unittest.TestCase):
                 y_pred=np.zeros(2),
                 spread=np.zeros(2),
             )
+
+    def test_identity_fallback_handles_zero_spread_with_positive_residual(self) -> None:
+        calibrator = fit_scalar_spread_calibrator_with_identity_fallback(
+            y_true=np.array([1.0, 0.0]),
+            y_pred=np.zeros(2),
+            spread=np.zeros(2),
+        )
+
+        self.assertEqual(calibrator.scale, 1.0)
+        self.assertEqual(calibrator.metadata["fallback_strategy"], "identity")
+        self.assertIn("identically zero", calibrator.metadata["fallback_reason"])
 
     def test_fit_improves_empirical_one_sigma_coverage_on_synthetic_data(self) -> None:
         rng = np.random.default_rng(7)

@@ -127,6 +127,41 @@ class WeightedSimplexCalibrationTests(unittest.TestCase):
             "calibrated",
         )
 
+    def test_weighted_simplex_sweep_handles_zero_calibration_spread_with_identity_fallback(
+        self,
+    ) -> None:
+        X = np.array(
+            [
+                [0.0, 0.0],
+                [1.0, 1.0],
+                [2.0, 2.0],
+                [3.0, 3.0],
+                [4.0, 4.0],
+                [5.0, 5.0],
+            ],
+            dtype=float,
+        )
+        y = np.array([0.0, 1.0, 2.0, 4.0, 5.0, 6.0], dtype=float)
+        payload = SweepRunPayload(
+            dataset=SweepDataset(mlip_features=X, targets=y),
+            split_collection=build_sweep_split_collection(
+                n_samples=len(y),
+                min_train=4,
+                max_train=4,
+                n_repeats=2,
+                seed=6,
+                requirements=SweepFamilyRequirements(requires_calibration=True),
+                calibration_fraction=0.25,
+                min_cal_size=1,
+                min_inner_train_size=2,
+                min_test_size=1,
+            ),
+        )
+
+        result = weighted_simplex_sweep(payload)
+
+        self.assertEqual(result.uq_summary["uncertainty_kind"].tolist(), ["calibrated"])
+
 
 if __name__ == "__main__":
     unittest.main()
