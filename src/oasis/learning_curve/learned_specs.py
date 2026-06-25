@@ -219,36 +219,39 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
         LearnedFamilyRegistrationSpec(
             name="residual",
             config_key="use_residual",
-            capabilities=SweepModelCapabilities(),
+            capabilities=SweepModelCapabilities(requires_calibration=True),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="resid_df",
                     runner=FunctionalSweepRunner(base_runner=residual_sweep),
                     uq_summary_field="resid_uq_df",
+                    capabilities=SweepModelCapabilities(requires_calibration=True),
                 )
             ),
         ),
         LearnedFamilyRegistrationSpec(
             name="weighted_linear",
             config_key="use_weighted_linear",
-            capabilities=SweepModelCapabilities(),
+            capabilities=SweepModelCapabilities(requires_calibration=True),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_linear_df",
                     runner=WeightedLinearSweepRunner(fit_intercept=True),
                     uq_summary_field="weighted_linear_uq_df",
+                    capabilities=SweepModelCapabilities(requires_calibration=True),
                 )
             ),
         ),
         LearnedFamilyRegistrationSpec(
             name="weighted_simplex",
             config_key="use_weighted_simplex",
-            capabilities=SweepModelCapabilities(),
+            capabilities=SweepModelCapabilities(requires_calibration=True),
             family_factory=lambda: ConfiguredSweepModelFamily(
                 SweepFamilySpec(
                     result_field="weighted_simplex_df",
                     runner=WeightedSimplexSweepRunner(),
                     uq_summary_field="weighted_simplex_uq_df",
+                    capabilities=SweepModelCapabilities(requires_calibration=True),
                 )
             ),
         ),

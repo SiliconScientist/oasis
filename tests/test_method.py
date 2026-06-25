@@ -232,9 +232,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
-                SweepFamilyRequirements(),
-                SweepFamilyRequirements(),
-                SweepFamilyRequirements(),
+                SweepFamilyRequirements(requires_calibration=True),
+                SweepFamilyRequirements(requires_calibration=True),
+                SweepFamilyRequirements(requires_calibration=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(
                     requires_inner_validation=True,
@@ -253,9 +253,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
-                SweepModelCapabilities(),
-                SweepModelCapabilities(),
-                SweepModelCapabilities(),
+                SweepModelCapabilities(requires_calibration=True),
+                SweepModelCapabilities(requires_calibration=True),
+                SweepModelCapabilities(requires_calibration=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(
                     requires_validation=True,
@@ -342,6 +342,41 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertEqual(
             weighted_linear_family.spec.uq_summary_field,
             "weighted_linear_uq_df",
+        )
+        self.assertEqual(
+            weighted_linear_family.capabilities(),
+            SweepModelCapabilities(requires_calibration=True),
+        )
+        self.assertEqual(
+            weighted_linear_family.requirements(),
+            SweepFamilyRequirements(requires_calibration=True),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_residual_and_weighted_simplex_registrations_require_calibration(self) -> None:
+        registry = {
+            registration.name: registration
+            for registration in learning_curve_model_registry()
+        }
+
+        residual_family = registry["residual"].family_factory()
+        weighted_simplex_family = registry["weighted_simplex"].family_factory()
+
+        self.assertEqual(
+            residual_family.capabilities(),
+            SweepModelCapabilities(requires_calibration=True),
+        )
+        self.assertEqual(
+            residual_family.requirements(),
+            SweepFamilyRequirements(requires_calibration=True),
+        )
+        self.assertEqual(
+            weighted_simplex_family.capabilities(),
+            SweepModelCapabilities(requires_calibration=True),
+        )
+        self.assertEqual(
+            weighted_simplex_family.requirements(),
+            SweepFamilyRequirements(requires_calibration=True),
         )
 
     @staticmethod
