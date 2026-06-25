@@ -477,6 +477,17 @@ def _assert_train_val_cal_test_payload(
     return splits
 
 
+def _effective_uncertainty_metadata(
+    *,
+    uncertainty_kind: str | None,
+    uncertainty_note: str | None,
+    requires_calibration: bool,
+) -> tuple[str | None, str | None]:
+    if requires_calibration and uncertainty_kind is not None:
+        return "calibrated", "post-hoc scalar calibrated spread"
+    return uncertainty_kind, uncertainty_note
+
+
 def _estimator_factory_with_params(
     estimator_factory: Callable[..., object],
     params: Mapping[str, Any],
@@ -946,13 +957,19 @@ def sweep_learned_trial_model_selection(
     """Select learned-model trials on validation subsets, then evaluate on test."""
 
     payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
+    if payload.planning_requirements.requires_calibration:
+        splits = _assert_train_val_cal_test_payload(payload)
+    else:
+        splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
-    uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
-    uncertainty_note = getattr(tuning_spec, "uncertainty_note", None)
+    uncertainty_kind, uncertainty_note = _effective_uncertainty_metadata(
+        uncertainty_kind=getattr(tuning_spec, "uncertainty_kind", None),
+        uncertainty_note=getattr(tuning_spec, "uncertainty_note", None),
+        requires_calibration=payload.planning_requirements.requires_calibration,
+    )
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
@@ -972,6 +989,26 @@ def sweep_learned_trial_model_selection(
             model,
             test_dataset,
         )
+        if (
+            spread is not None
+            and uncertainty_kind is not None
+            and isinstance(split, TrainValCalTestSweepRunnerInput)
+        ):
+            cal_dataset = split.dataset_subsets().cal
+            cal_preds = np.asarray(tuning_spec.predict(model, cal_dataset), dtype=float)
+            cal_spread = _learned_tuning_spec_predictive_spread(
+                tuning_spec,
+                model,
+                cal_dataset,
+            )
+            if cal_spread is None:
+                raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
+            calibrator = ScalarSpreadCalibrator.fit(
+                y_true=cal_dataset.targets,
+                y_pred=cal_preds,
+                spread=cal_spread,
+            )
+            spread = calibrator.apply(spread)
         if spread is not None and uncertainty_kind is not None:
             uq_artifacts.append(
                 {
@@ -1046,13 +1083,19 @@ def sweep_learned_optuna_model_selection(
     """Optimize learned-model trials on train/val subsets, then test once."""
 
     payload = _as_runner_payload(payload)
-    splits = _assert_train_val_test_payload(payload)
+    if payload.planning_requirements.requires_calibration:
+        splits = _assert_train_val_cal_test_payload(payload)
+    else:
+        splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
-    uncertainty_kind = getattr(tuning_spec, "uncertainty_kind", None)
-    uncertainty_note = getattr(tuning_spec, "uncertainty_note", None)
+    uncertainty_kind, uncertainty_note = _effective_uncertainty_metadata(
+        uncertainty_kind=getattr(tuning_spec, "uncertainty_kind", None),
+        uncertainty_note=getattr(tuning_spec, "uncertainty_note", None),
+        requires_calibration=payload.planning_requirements.requires_calibration,
+    )
     for split in splits:
         test_dataset = split.dataset_subsets().test
         y_test = test_dataset.targets
@@ -1074,6 +1117,26 @@ def sweep_learned_optuna_model_selection(
             model,
             test_dataset,
         )
+        if (
+            spread is not None
+            and uncertainty_kind is not None
+            and isinstance(split, TrainValCalTestSweepRunnerInput)
+        ):
+            cal_dataset = split.dataset_subsets().cal
+            cal_preds = np.asarray(tuning_spec.predict(model, cal_dataset), dtype=float)
+            cal_spread = _learned_tuning_spec_predictive_spread(
+                tuning_spec,
+                model,
+                cal_dataset,
+            )
+            if cal_spread is None:
+                raise ValueError("calibration-aware UQ requires predictive spread on cal split.")
+            calibrator = ScalarSpreadCalibrator.fit(
+                y_true=cal_dataset.targets,
+                y_pred=cal_preds,
+                spread=cal_spread,
+            )
+            spread = calibrator.apply(spread)
         if spread is not None and uncertainty_kind is not None:
             uq_artifacts.append(
                 {

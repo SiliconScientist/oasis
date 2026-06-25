@@ -266,7 +266,10 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
         LearnedFamilyRegistrationSpec(
             name="moe",
             is_enabled=_moe_enabled,
-            capabilities=SweepModelCapabilities(requires_validation=True),
+            capabilities=SweepModelCapabilities(
+                requires_validation=True,
+                requires_calibration=True,
+            ),
             learned_trial_tuning_spec=MlipBaselineGateTuningSpec(),
             config_tuning_spec_factory=_moe_config_tuning_spec_factory,
             config_runner_kwargs_factory=_moe_config_runner_kwargs,

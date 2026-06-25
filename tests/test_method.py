@@ -236,7 +236,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(),
                 SweepFamilyRequirements(requires_inner_validation=True),
-                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(),
@@ -254,7 +257,10 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(),
                 SweepModelCapabilities(),
                 SweepModelCapabilities(requires_validation=True),
-                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(
+                    requires_validation=True,
+                    requires_calibration=True,
+                ),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(),
@@ -309,11 +315,17 @@ class SweepOutputRegressionTests(unittest.TestCase):
         self.assertIsInstance(moe_family, ConfiguredSweepModelFamily)
         self.assertEqual(
             moe_family.capabilities(),
-            SweepModelCapabilities(requires_validation=True),
+            SweepModelCapabilities(
+                requires_validation=True,
+                requires_calibration=True,
+            ),
         )
         self.assertEqual(
             moe_family.requirements(),
-            SweepFamilyRequirements(requires_inner_validation=True),
+            SweepFamilyRequirements(
+                requires_inner_validation=True,
+                requires_calibration=True,
+            ),
         )
         self.assertEqual(moe_family.spec.uq_summary_field, "moe_uq_df")
 

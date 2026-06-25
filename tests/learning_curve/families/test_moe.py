@@ -173,6 +173,9 @@ class MoERegistrationTests(unittest.TestCase):
         moe_spec = next(s for s in specs if s.name == "moe")
         moe_registration = learned_family_registration(moe_spec)
         self.assertIsInstance(moe_registration.family_factory(), ConfiguredSweepModelFamily)
+        self.assertTrue(
+            moe_registration.family_factory().capabilities().requires_calibration
+        )
 
     def test_moe_spec_has_no_placeholder_factory(self) -> None:
         specs = learned_family_registration_specs()
