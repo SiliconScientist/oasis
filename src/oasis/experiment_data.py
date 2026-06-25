@@ -395,14 +395,15 @@ def load_probe_graph_dataset_view(
 
     Each entry must have been produced by ``build_probe_dataset`` and include
     ``bound_surface_indices`` and ``unique_probe_ids``. The graph for each
-    sample is built from ``raw.Tolstar``; bound-atom node features are augmented
-    with probe MLIP energies resolved either from an embedded legacy
+    sample is built from the adsorbed ``raw.*star`` structure (excluding bare
+    ``raw.star``); bound-atom node features are augmented with probe MLIP
+    energies resolved either from an embedded legacy
     ``mlip_feature_matrix`` payload or from ``mlip_results_dir``.
 
     Args:
         path: Path to the JSON dataset file
             (e.g. ``KHLOHC_origin_tolstar_adsorption_with_probe_ids.json``).
-        policy: Graph construction policy applied to each Tolstar Atoms object.
+        policy: Graph construction policy applied to each adsorbed Atoms object.
         mlip_results_dir: Optional external probe MLIP results directory used to
             build probe feature matrices in memory.
 
@@ -428,11 +429,19 @@ def load_probe_graph_dataset_view(
 
     records: list[GraphRecord] = []
     for reaction, entry in dataset.items():
-        tolstar = entry.get("raw", {}).get("Tolstar")
-        if tolstar is None:
-            raise ValueError(f"Entry {reaction!r} is missing 'raw.Tolstar'.")
+        raw = entry.get("raw", {})
+        if not isinstance(raw, dict):
+            raise TypeError(f"Entry {reaction!r} has non-dict raw payload.")
+        adsorbed_keys = [key for key in raw if key.endswith("star") and key != "star"]
+        if not adsorbed_keys:
+            raise ValueError(f"Entry {reaction!r} is missing an adsorbed 'raw.*star' structure.")
+        adsorbed = raw[adsorbed_keys[0]]
+        if not isinstance(adsorbed, dict) or "atoms_json" not in adsorbed:
+            raise ValueError(
+                f"Entry {reaction!r} key {adsorbed_keys[0]!r} is missing 'atoms_json'."
+            )
 
-        atoms = atoms_from_ase_db_json(tolstar["atoms_json"])
+        atoms = atoms_from_ase_db_json(adsorbed["atoms_json"])
         base_record = atoms_to_graph_record(atoms, sample_id=reaction, policy=policy)
 
         bound_surface_indices: list[int] = list(entry.get("bound_surface_indices", []))
@@ -490,11 +499,15 @@ def augment_graph_with_probe_features(
             f"probe_matrix must be 2-D, got shape {probe_matrix.shape}."
         )
     n_bound, n_mlips = probe_matrix.shape
-    if len(bound_surface_indices) != n_bound:
-        raise ValueError(
-            f"len(bound_surface_indices)={len(bound_surface_indices)} does not match "
-            f"probe_matrix.shape[0]={n_bound}."
-        )
+    expected_bound = len(bound_surface_indices)
+    if expected_bound != n_bound:
+        # Some probe datasets provide a variable number of probe-site rows per
+        # adsorption structure rather than one row per bound surface atom.
+        # Collapse those rows to a single site-level probe signal and apply it
+        # to each bound atom so probe-aware models can still consume the graph.
+        mean_probe = np.nanmean(probe_matrix, axis=0, keepdims=True)
+        probe_matrix = np.repeat(mean_probe, expected_bound, axis=0)
+        n_bound = expected_bound
 
     n_nodes = record.n_nodes
     for idx in bound_surface_indices:
