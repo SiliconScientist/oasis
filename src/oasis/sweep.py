@@ -9,7 +9,7 @@ import pandas as pd
 
 
 SampleId: TypeAlias = Hashable
-SplitName: TypeAlias = Literal["train", "val", "test"]
+SplitName: TypeAlias = Literal["train", "val", "cal", "test"]
 LoaderCollateFn: TypeAlias = Callable[[Sequence[Any]], Any]
 
 
@@ -146,6 +146,7 @@ class SweepSplit:
     train_idx: np.ndarray
     test_idx: np.ndarray
     val_idx: np.ndarray | None = None
+    cal_idx: np.ndarray | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,6 +529,7 @@ class SweepFamilyRequirements:
 
     min_train_size: int = 0
     requires_inner_validation: bool = False
+    requires_calibration: bool = False
 
     @property
     def requires_validation(self) -> bool:
@@ -546,11 +548,13 @@ class SweepModelCapabilities:
 
     min_train_size: int = 0
     requires_validation: bool = False
+    requires_calibration: bool = False
 
     def to_requirements(self) -> SweepFamilyRequirements:
         return SweepFamilyRequirements(
             min_train_size=self.min_train_size,
             requires_inner_validation=self.requires_validation,
+            requires_calibration=self.requires_calibration,
         )
 
 
@@ -695,8 +699,129 @@ class TrainValTestSweepRunnerInput:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class TrainCalTestSweepRunnerInput:
+    """Runner input for methods that reserve an inner calibration subset."""
+
+    dataset: SweepDataset
+    sweep_size: int
+    train_idx: np.ndarray
+    cal_idx: np.ndarray
+    test_idx: np.ndarray
+
+    def dataset_subsets(self) -> TrainCalTestSplitDatasets:
+        return _build_train_cal_test_split_datasets(
+            self.dataset,
+            train_idx=self.train_idx,
+            cal_idx=self.cal_idx,
+            test_idx=self.test_idx,
+        )
+
+    def loader_inputs(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainCalTestSplitLoaderInputs:
+        adapter = _as_loader_adapter(loader_adapter)
+        subsets = self.dataset_subsets()
+        return TrainCalTestSplitLoaderInputs(
+            train=LoaderAdapterInput(
+                dataset=subsets.train,
+                split_name="train",
+                batching=adapter.batching_for_split(split_name="train"),
+            ),
+            cal=LoaderAdapterInput(
+                dataset=subsets.cal,
+                split_name="cal",
+                batching=adapter.batching_for_split(split_name="cal"),
+            ),
+            test=LoaderAdapterInput(
+                dataset=subsets.test,
+                split_name="test",
+                batching=adapter.batching_for_split(split_name="test"),
+            ),
+        )
+
+    def loaders(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainCalTestSplitLoaders:
+        adapter = _as_loader_adapter(loader_adapter)
+        inputs = self.loader_inputs(adapter)
+        return TrainCalTestSplitLoaders(
+            train=adapter.build_loader(inputs.train),
+            cal=adapter.build_loader(inputs.cal),
+            test=adapter.build_loader(inputs.test),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValCalTestSweepRunnerInput:
+    """Runner input for methods that need both validation and calibration."""
+
+    dataset: SweepDataset
+    sweep_size: int
+    train_idx: np.ndarray
+    val_idx: np.ndarray
+    cal_idx: np.ndarray
+    test_idx: np.ndarray
+
+    def dataset_subsets(self) -> TrainValCalTestSplitDatasets:
+        return _build_train_val_cal_test_split_datasets(
+            self.dataset,
+            train_idx=self.train_idx,
+            val_idx=self.val_idx,
+            cal_idx=self.cal_idx,
+            test_idx=self.test_idx,
+        )
+
+    def loader_inputs(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainValCalTestSplitLoaderInputs:
+        adapter = _as_loader_adapter(loader_adapter)
+        subsets = self.dataset_subsets()
+        return TrainValCalTestSplitLoaderInputs(
+            train=LoaderAdapterInput(
+                dataset=subsets.train,
+                split_name="train",
+                batching=adapter.batching_for_split(split_name="train"),
+            ),
+            val=LoaderAdapterInput(
+                dataset=subsets.val,
+                split_name="val",
+                batching=adapter.batching_for_split(split_name="val"),
+            ),
+            cal=LoaderAdapterInput(
+                dataset=subsets.cal,
+                split_name="cal",
+                batching=adapter.batching_for_split(split_name="cal"),
+            ),
+            test=LoaderAdapterInput(
+                dataset=subsets.test,
+                split_name="test",
+                batching=adapter.batching_for_split(split_name="test"),
+            ),
+        )
+
+    def loaders(
+        self,
+        loader_adapter: DatasetLoaderAdapter | DatasetLoaderFactory,
+    ) -> TrainValCalTestSplitLoaders:
+        adapter = _as_loader_adapter(loader_adapter)
+        inputs = self.loader_inputs(adapter)
+        return TrainValCalTestSplitLoaders(
+            train=adapter.build_loader(inputs.train),
+            val=adapter.build_loader(inputs.val),
+            cal=adapter.build_loader(inputs.cal),
+            test=adapter.build_loader(inputs.test),
+        )
+
+
 SweepRunnerInput: TypeAlias = (
-    TrainTestSweepRunnerInput | TrainValTestSweepRunnerInput
+    TrainTestSweepRunnerInput
+    | TrainValTestSweepRunnerInput
+    | TrainCalTestSweepRunnerInput
+    | TrainValCalTestSweepRunnerInput
 )
 
 
@@ -737,6 +862,38 @@ class TrainValTestSplitDatasets:
 
 
 @dataclass(frozen=True, slots=True)
+class TrainCalTestSplitDatasets:
+    train: SweepDataset
+    cal: SweepDataset
+    test: SweepDataset
+
+    @property
+    def inputs(self) -> TrainCalTestSplitDatasetInputs:
+        return TrainCalTestSplitDatasetInputs(
+            train=self.train.inputs,
+            cal=self.cal.inputs,
+            test=self.test.inputs,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValCalTestSplitDatasets:
+    train: SweepDataset
+    val: SweepDataset
+    cal: SweepDataset
+    test: SweepDataset
+
+    @property
+    def inputs(self) -> TrainValCalTestSplitDatasetInputs:
+        return TrainValCalTestSplitDatasetInputs(
+            train=self.train.inputs,
+            val=self.val.inputs,
+            cal=self.cal.inputs,
+            test=self.test.inputs,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TrainTestSplitDatasetInputs:
     train: SweepDatasetInputs
     test: SweepDatasetInputs
@@ -749,7 +906,27 @@ class TrainValTestSplitDatasetInputs:
     test: SweepDatasetInputs
 
 
-SplitDatasets: TypeAlias = TrainTestSplitDatasets | TrainValTestSplitDatasets
+@dataclass(frozen=True, slots=True)
+class TrainCalTestSplitDatasetInputs:
+    train: SweepDatasetInputs
+    cal: SweepDatasetInputs
+    test: SweepDatasetInputs
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValCalTestSplitDatasetInputs:
+    train: SweepDatasetInputs
+    val: SweepDatasetInputs
+    cal: SweepDatasetInputs
+    test: SweepDatasetInputs
+
+
+SplitDatasets: TypeAlias = (
+    TrainTestSplitDatasets
+    | TrainValTestSplitDatasets
+    | TrainCalTestSplitDatasets
+    | TrainValCalTestSplitDatasets
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -859,8 +1036,26 @@ class TrainValTestSplitLoaderInputs:
     test: LoaderAdapterInput
 
 
+@dataclass(frozen=True, slots=True)
+class TrainCalTestSplitLoaderInputs:
+    train: LoaderAdapterInput
+    cal: LoaderAdapterInput
+    test: LoaderAdapterInput
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValCalTestSplitLoaderInputs:
+    train: LoaderAdapterInput
+    val: LoaderAdapterInput
+    cal: LoaderAdapterInput
+    test: LoaderAdapterInput
+
+
 SplitLoaderInputs: TypeAlias = (
-    TrainTestSplitLoaderInputs | TrainValTestSplitLoaderInputs
+    TrainTestSplitLoaderInputs
+    | TrainValTestSplitLoaderInputs
+    | TrainCalTestSplitLoaderInputs
+    | TrainValCalTestSplitLoaderInputs
 )
 
 
@@ -877,7 +1072,27 @@ class TrainValTestSplitLoaders:
     test: Any
 
 
-SplitLoaders: TypeAlias = TrainTestSplitLoaders | TrainValTestSplitLoaders
+@dataclass(frozen=True, slots=True)
+class TrainCalTestSplitLoaders:
+    train: Any
+    cal: Any
+    test: Any
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValCalTestSplitLoaders:
+    train: Any
+    val: Any
+    cal: Any
+    test: Any
+
+
+SplitLoaders: TypeAlias = (
+    TrainTestSplitLoaders
+    | TrainValTestSplitLoaders
+    | TrainCalTestSplitLoaders
+    | TrainValCalTestSplitLoaders
+)
 
 
 def _as_loader_adapter(
@@ -984,17 +1199,64 @@ def _build_train_val_test_split_datasets(
     )
 
 
+def _build_train_cal_test_split_datasets(
+    dataset: SweepDataset,
+    *,
+    train_idx: np.ndarray,
+    cal_idx: np.ndarray,
+    test_idx: np.ndarray,
+) -> TrainCalTestSplitDatasets:
+    return TrainCalTestSplitDatasets(
+        train=dataset.subset(train_idx),
+        cal=dataset.subset(cal_idx),
+        test=dataset.subset(test_idx),
+    )
+
+
+def _build_train_val_cal_test_split_datasets(
+    dataset: SweepDataset,
+    *,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    cal_idx: np.ndarray,
+    test_idx: np.ndarray,
+) -> TrainValCalTestSplitDatasets:
+    return TrainValCalTestSplitDatasets(
+        train=dataset.subset(train_idx),
+        val=dataset.subset(val_idx),
+        cal=dataset.subset(cal_idx),
+        test=dataset.subset(test_idx),
+    )
+
+
 def split_to_runner_input(
     dataset: SweepDataset,
     split: SweepSplit,
 ) -> SweepRunnerInput:
     """Convert a stored split into the runner-facing train/test or train/val/test form."""
 
-    if split.val_idx is None:
+    if split.val_idx is None and split.cal_idx is None:
         return TrainTestSweepRunnerInput(
             dataset=dataset,
             sweep_size=split.sweep_size,
             train_idx=split.train_idx,
+            test_idx=split.test_idx,
+        )
+    if split.val_idx is None and split.cal_idx is not None:
+        return TrainCalTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=split.sweep_size,
+            train_idx=split.train_idx,
+            cal_idx=split.cal_idx,
+            test_idx=split.test_idx,
+        )
+    if split.val_idx is not None and split.cal_idx is not None:
+        return TrainValCalTestSweepRunnerInput(
+            dataset=dataset,
+            sweep_size=split.sweep_size,
+            train_idx=split.train_idx,
+            val_idx=split.val_idx,
+            cal_idx=split.cal_idx,
             test_idx=split.test_idx,
         )
     return TrainValTestSweepRunnerInput(

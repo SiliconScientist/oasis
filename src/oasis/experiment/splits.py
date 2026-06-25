@@ -129,6 +129,30 @@ def validation_size_if_sweep_feasible(
     return n_val
 
 
+def calibration_size_if_sweep_feasible(
+    sweep_size: int,
+    *,
+    calibration_fraction: float,
+    min_cal_size: int,
+    min_post_calibration_size: int = 1,
+) -> int | None:
+    """Return the calibration size for a feasible calibration-aware sweep point."""
+
+    if sweep_size <= 0:
+        raise ValueError("sweep_size must be positive.")
+    if calibration_fraction < 0:
+        raise ValueError("calibration_fraction must be non-negative.")
+    if min_cal_size <= 0:
+        raise ValueError("min_cal_size must be positive.")
+    if min_post_calibration_size <= 0:
+        raise ValueError("min_post_calibration_size must be positive.")
+
+    n_cal = max(min_cal_size, math.floor(calibration_fraction * sweep_size))
+    if n_cal + min_post_calibration_size > sweep_size:
+        return None
+    return n_cal
+
+
 def minimum_training_size_for_requirements(
     requirements: SweepFamilyRequirements,
     *,
@@ -322,6 +346,87 @@ def generate_sweep_splits_with_validation(
             )
 
 
+def generate_sweep_splits_with_calibration(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_cal: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    min_inner_train_size: int = 1,
+    min_test_size: int = 1,
+) -> Iterator[SweepSplit]:
+    """Yield repeated outer train/test splits with inner train/cal partitions."""
+
+    if n_cal <= 0:
+        raise ValueError("n_cal must be positive.")
+    if n_cal >= n_samples:
+        raise ValueError("n_cal must be smaller than n_samples.")
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
+    idx = np.arange(n_samples)
+    max_train = min(max_train, n_samples - min_test_size)
+    for n_train in range(max(min_train, n_cal + min_inner_train_size), max_train + 1):
+        for _ in range(n_repeats):
+            outer_train_idx = rng.choice(idx, size=n_train, replace=False)
+            test_idx = np.setdiff1d(idx, outer_train_idx, assume_unique=False)
+            cal_idx = rng.choice(outer_train_idx, size=n_cal, replace=False)
+            train_idx = np.setdiff1d(outer_train_idx, cal_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=n_train,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                cal_idx=cal_idx,
+            )
+
+
+def generate_sweep_splits_with_validation_and_calibration(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_val: int,
+    n_cal: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    min_inner_train_size: int = 1,
+    min_test_size: int = 1,
+) -> Iterator[SweepSplit]:
+    """Yield repeated outer train/test splits with inner train/val/cal partitions."""
+
+    if n_val <= 0:
+        raise ValueError("n_val must be positive.")
+    if n_cal <= 0:
+        raise ValueError("n_cal must be positive.")
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
+    idx = np.arange(n_samples)
+    max_train = min(max_train, n_samples - min_test_size)
+    minimum_outer_train = n_val + n_cal + min_inner_train_size
+    for n_train in range(max(min_train, minimum_outer_train), max_train + 1):
+        for _ in range(n_repeats):
+            outer_train_idx = rng.choice(idx, size=n_train, replace=False)
+            test_idx = np.setdiff1d(idx, outer_train_idx, assume_unique=False)
+            val_idx = rng.choice(outer_train_idx, size=n_val, replace=False)
+            remaining_idx = np.setdiff1d(outer_train_idx, val_idx, assume_unique=False)
+            cal_idx = rng.choice(remaining_idx, size=n_cal, replace=False)
+            train_idx = np.setdiff1d(remaining_idx, cal_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=n_train,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                val_idx=val_idx,
+                cal_idx=cal_idx,
+            )
+
+
 def generate_screening_sweep_splits_with_validation(
     n_samples: int,
     min_train: int,
@@ -435,6 +540,114 @@ def generate_inner_validation_sweep_splits(
         )
 
 
+def generate_inner_calibration_sweep_splits(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_test_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
+) -> Iterator[SweepSplit]:
+    """Yield sweep splits with policy-sized inner calibration holdouts."""
+
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples - min_test_size) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
+        n_cal = calibration_size_if_sweep_feasible(
+            sweep_size,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
+            min_post_calibration_size=min_inner_train_size,
+        )
+        if n_cal is None:
+            continue
+        yield from generate_sweep_splits_with_calibration(
+            n_samples=n_samples,
+            min_train=sweep_size,
+            max_train=sweep_size,
+            n_cal=n_cal,
+            n_repeats=n_repeats,
+            rng=rng,
+            min_inner_train_size=min_inner_train_size,
+            min_test_size=min_test_size,
+        )
+
+
+def generate_inner_validation_calibration_sweep_splits(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_test_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
+) -> Iterator[SweepSplit]:
+    """Yield sweep splits with policy-sized inner validation and calibration."""
+
+    if min_inner_train_size <= 0:
+        raise ValueError("min_inner_train_size must be positive.")
+    if min_test_size <= 0:
+        raise ValueError("min_test_size must be positive.")
+
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples - min_test_size) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
+        n_cal = calibration_size_if_sweep_feasible(
+            sweep_size,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
+            min_post_calibration_size=max(min_val_size + min_inner_train_size, 1),
+        )
+        if n_cal is None:
+            continue
+        remaining_fit_budget = sweep_size - n_cal
+        n_val = validation_size_if_sweep_feasible(
+            remaining_fit_budget,
+            validation_fraction=validation_fraction,
+            min_val_size=min_val_size,
+            min_tuning_val_size=min_tuning_val_size,
+            min_inner_train_size=min_inner_train_size,
+        )
+        if n_val is None:
+            continue
+        yield from generate_sweep_splits_with_validation_and_calibration(
+            n_samples=n_samples,
+            min_train=sweep_size,
+            max_train=sweep_size,
+            n_val=n_val,
+            n_cal=n_cal,
+            n_repeats=n_repeats,
+            rng=rng,
+            min_inner_train_size=min_inner_train_size,
+            min_test_size=min_test_size,
+        )
+
+
 def build_sweep_split_collection(
     n_samples: int,
     *,
@@ -451,6 +664,8 @@ def build_sweep_split_collection(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
 ) -> SweepSplitCollection:
@@ -471,6 +686,8 @@ def build_sweep_split_collection(
         raise ValueError("min_val_size must be positive.")
     if min_tuning_val_size <= 0:
         raise ValueError("min_tuning_val_size must be positive.")
+    if min_cal_size <= 0:
+        raise ValueError("min_cal_size must be positive.")
     if min_inner_train_size <= 0:
         raise ValueError("min_inner_train_size must be positive.")
 
@@ -494,6 +711,10 @@ def build_sweep_split_collection(
         if screen_fraction is None:
             raise ValueError(
                 "screen_fraction must be provided when budget_mode='screening_fraction'."
+            )
+        if requirements.requires_calibration:
+            raise NotImplementedError(
+                "screening_fraction budget mode does not yet support calibration splits."
             )
 
     rng = np.random.default_rng(seed)
@@ -560,6 +781,52 @@ def build_sweep_split_collection(
                     requested_sweep_sizes=feasible_sweep_sizes,
                 )
             )
+    elif requirements.requires_inner_validation and requirements.requires_calibration:
+        feasible_sweep_sizes = tuple(
+            sweep_size
+            for sweep_size in candidate_sweep_sizes
+            if requirements.min_train_size <= sweep_size <= n_samples - min_test_size
+            if (
+                n_cal := calibration_size_if_sweep_feasible(
+                    sweep_size,
+                    calibration_fraction=calibration_fraction,
+                    min_cal_size=min_cal_size,
+                    min_post_calibration_size=max(min_val_size + min_inner_train_size, 1),
+                )
+            )
+            is not None
+            if validation_size_if_sweep_feasible(
+                sweep_size - n_cal,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
+                min_inner_train_size=min_inner_train_size,
+            )
+            is not None
+        )
+        if not feasible_sweep_sizes:
+            return SweepSplitCollection(
+                splits=(),
+                planning_requirements=requirements,
+            )
+        splits = tuple(
+            generate_inner_validation_calibration_sweep_splits(
+                n_samples=n_samples,
+                min_train=1,
+                max_train=1,
+                n_repeats=n_repeats,
+                rng=rng,
+                step=1,
+                validation_fraction=validation_fraction,
+                min_val_size=min_val_size,
+                min_tuning_val_size=min_tuning_val_size,
+                calibration_fraction=calibration_fraction,
+                min_cal_size=min_cal_size,
+                min_inner_train_size=min_inner_train_size,
+                min_test_size=min_test_size,
+                requested_sweep_sizes=feasible_sweep_sizes,
+            )
+        )
     elif requirements.requires_inner_validation:
         feasible_sweep_sizes = tuple(
             sweep_size
@@ -590,6 +857,39 @@ def build_sweep_split_collection(
                 validation_fraction=validation_fraction,
                 min_val_size=min_val_size,
                 min_tuning_val_size=min_tuning_val_size,
+                min_inner_train_size=min_inner_train_size,
+                min_test_size=min_test_size,
+                requested_sweep_sizes=feasible_sweep_sizes,
+            )
+        )
+    elif requirements.requires_calibration:
+        feasible_sweep_sizes = tuple(
+            sweep_size
+            for sweep_size in candidate_sweep_sizes
+            if requirements.min_train_size <= sweep_size <= n_samples - min_test_size
+            if calibration_size_if_sweep_feasible(
+                sweep_size,
+                calibration_fraction=calibration_fraction,
+                min_cal_size=min_cal_size,
+                min_post_calibration_size=min_inner_train_size,
+            )
+            is not None
+        )
+        if not feasible_sweep_sizes:
+            return SweepSplitCollection(
+                splits=(),
+                planning_requirements=requirements,
+            )
+        splits = tuple(
+            generate_inner_calibration_sweep_splits(
+                n_samples=n_samples,
+                min_train=1,
+                max_train=1,
+                n_repeats=n_repeats,
+                rng=rng,
+                step=1,
+                calibration_fraction=calibration_fraction,
+                min_cal_size=min_cal_size,
                 min_inner_train_size=min_inner_train_size,
                 min_test_size=min_test_size,
                 requested_sweep_sizes=feasible_sweep_sizes,
