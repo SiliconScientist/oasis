@@ -61,6 +61,9 @@ def run_learning_curve_experiments(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
+    calibration_enabled: bool = True,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
@@ -82,6 +85,9 @@ def run_learning_curve_experiments(
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
             min_tuning_val_size=min_tuning_val_size,
+            calibration_enabled=calibration_enabled,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
             min_inner_train_size=min_inner_train_size,
             min_test_size=min_test_size,
             model_families=model_families,
@@ -107,6 +113,9 @@ def run_learning_curve_experiments(
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
             min_tuning_val_size=min_tuning_val_size,
+            calibration_enabled=calibration_enabled,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
             min_inner_train_size=min_inner_train_size,
             min_test_size=min_test_size,
             model_families=model_families,
@@ -131,6 +140,9 @@ def run_learning_curve_experiments_from_frame(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
+    calibration_enabled: bool = True,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
@@ -155,6 +167,9 @@ def run_learning_curve_experiments_from_frame(
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
         min_tuning_val_size=min_tuning_val_size,
+        calibration_enabled=calibration_enabled,
+        calibration_fraction=calibration_fraction,
+        min_cal_size=min_cal_size,
         min_inner_train_size=min_inner_train_size,
         min_test_size=min_test_size,
         model_families=model_families,
@@ -328,6 +343,13 @@ def run_learning_curve_experiments_from_config(
                     min_tuning_val_size=getattr(
                         experiment_cfg, "min_tuning_val_size", 1
                     ),
+                    calibration_enabled=getattr(
+                        experiment_cfg, "calibration_enabled", True
+                    ),
+                    calibration_fraction=getattr(
+                        experiment_cfg, "calibration_fraction", 0.2
+                    ),
+                    min_cal_size=getattr(experiment_cfg, "min_cal_size", 1),
                     min_inner_train_size=getattr(
                         experiment_cfg, "min_inner_train_size", 1
                     ),
@@ -412,6 +434,21 @@ def run_learning_curve_experiments_from_config(
             ),
             min_tuning_val_size=(
                 getattr(experiment_cfg, "min_tuning_val_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            calibration_enabled=(
+                getattr(experiment_cfg, "calibration_enabled", True)
+                if experiment_cfg
+                else True
+            ),
+            calibration_fraction=(
+                getattr(experiment_cfg, "calibration_fraction", 0.2)
+                if experiment_cfg
+                else 0.2
+            ),
+            min_cal_size=(
+                getattr(experiment_cfg, "min_cal_size", 1)
                 if experiment_cfg
                 else 1
             ),
@@ -624,6 +661,13 @@ def load_or_run_learning_curve_results_from_config(
                         min_tuning_val_size=getattr(
                             experiment_cfg, "min_tuning_val_size", 1
                         ),
+                        calibration_enabled=getattr(
+                            experiment_cfg, "calibration_enabled", True
+                        ),
+                        calibration_fraction=getattr(
+                            experiment_cfg, "calibration_fraction", 0.2
+                        ),
+                        min_cal_size=getattr(experiment_cfg, "min_cal_size", 1),
                         min_inner_train_size=getattr(
                             experiment_cfg, "min_inner_train_size", 1
                         ),

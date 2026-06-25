@@ -70,9 +70,19 @@ def _build_family_split_collection(
     validation_fraction: float,
     min_val_size: int,
     min_tuning_val_size: int,
+    calibration_enabled: bool,
+    calibration_fraction: float,
+    min_cal_size: int,
     min_inner_train_size: int,
     min_test_size: int,
 ) -> SweepSplitCollection:
+    requirements = _family_requirements(family)
+    if not calibration_enabled and requirements.requires_calibration:
+        requirements = SweepFamilyRequirements(
+            min_train_size=requirements.min_train_size,
+            requires_inner_validation=requirements.requires_inner_validation,
+            requires_calibration=False,
+        )
     return build_sweep_split_collection(
         dataset.n_samples,
         min_train=min_train,
@@ -81,13 +91,15 @@ def _build_family_split_collection(
         n_repeats=n_repeats,
         seed=seed,
         requested_sweep_sizes=requested_sweep_sizes,
-        requirements=_family_requirements(family),
+        requirements=requirements,
         budget_mode=budget_mode,
         screen_fraction=screen_fraction,
         min_screen_size=min_screen_size,
         validation_fraction=validation_fraction,
         min_val_size=min_val_size,
         min_tuning_val_size=min_tuning_val_size,
+        calibration_fraction=calibration_fraction,
+        min_cal_size=min_cal_size,
         min_inner_train_size=min_inner_train_size,
         min_test_size=min_test_size,
     )
@@ -244,6 +256,9 @@ def _run_learning_curve_experiments_with_budget_mode(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
+    calibration_enabled: bool = True,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
     min_inner_train_size: int = 1,
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
@@ -272,6 +287,9 @@ def _run_learning_curve_experiments_with_budget_mode(
             validation_fraction=validation_fraction,
             min_val_size=min_val_size,
             min_tuning_val_size=min_tuning_val_size,
+            calibration_enabled=calibration_enabled,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
             min_inner_train_size=min_inner_train_size,
             min_test_size=min_test_size,
         )

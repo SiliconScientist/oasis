@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
 LearningCurveBudgetMode = Literal["full_remainder_test", "screening_fraction"]
+CalibrationMethod = Literal["scalar_scale"]
 
 
 class DatasetProfilePathsConfig(BaseModel):
@@ -185,6 +186,10 @@ class LearningCurveExperimentConfig(BaseModel):
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_tuning_val_size: int = 1
+    calibration_enabled: bool = True
+    calibration_method: CalibrationMethod = "scalar_scale"
+    calibration_fraction: float = 0.2
+    min_cal_size: int = 1
     min_inner_train_size: int = 1
     min_test_size: int = 1
     results_bundle_path: Optional[Path] = None
@@ -203,6 +208,10 @@ class ScreeningExperimentConfig(BaseModel):
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_tuning_val_size: int = 1
+    calibration_enabled: bool = True
+    calibration_method: CalibrationMethod = "scalar_scale"
+    calibration_fraction: float = 0.2
+    min_cal_size: int = 1
     min_inner_train_size: int = 1
     results_bundle_path: Optional[Path] = None
     reuse_results: bool = False
@@ -214,6 +223,10 @@ class ExperimentDefaultsConfig(BaseModel):
     validation_fraction: float | None = None
     min_val_size: int | None = None
     min_tuning_val_size: int | None = None
+    calibration_enabled: bool | None = None
+    calibration_method: CalibrationMethod | None = None
+    calibration_fraction: float | None = None
+    min_cal_size: int | None = None
     min_inner_train_size: int | None = None
     reuse_results: bool | None = None
     force_refresh_methods: list[str] | None = None

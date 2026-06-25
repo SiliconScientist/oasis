@@ -851,8 +851,11 @@ def sweep_supervised_model_selection(
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
-    uncertainty_kind = getattr(hyperparameter_spec, "uncertainty_kind", None)
-    uncertainty_note = getattr(hyperparameter_spec, "uncertainty_note", None)
+    uncertainty_kind, uncertainty_note = _effective_uncertainty_metadata(
+        uncertainty_kind=getattr(hyperparameter_spec, "uncertainty_kind", None),
+        uncertainty_note=getattr(hyperparameter_spec, "uncertainty_note", None),
+        requires_calibration=payload.planning_requirements.requires_calibration,
+    )
     for split in splits:
         y = split.dataset.targets
         model, metadata, fit_time_s = _fit_selected_supervised_model(

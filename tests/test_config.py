@@ -1708,8 +1708,61 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 1)
+        self.assertTrue(cfg.experiment.learning_curve.calibration_enabled)
+        self.assertEqual(cfg.experiment.learning_curve.calibration_method, "scalar_scale")
+        self.assertEqual(cfg.experiment.learning_curve.calibration_fraction, 0.2)
+        self.assertEqual(cfg.experiment.learning_curve.min_cal_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_inner_train_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_test_size, 1)
+
+    def test_experiment_calibration_settings_parse_and_default_share(self) -> None:
+        cfg = Config(
+            **{
+                "seed": 13,
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "defaults": {
+                        "calibration_enabled": False,
+                        "calibration_method": "scalar_scale",
+                        "calibration_fraction": 0.3,
+                        "min_cal_size": 2,
+                    },
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 2,
+                    },
+                    "screening": {
+                        "screen_fraction": 0.2,
+                    },
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.screening is not None
+        self.assertFalse(cfg.experiment.learning_curve.calibration_enabled)
+        self.assertEqual(cfg.experiment.learning_curve.calibration_method, "scalar_scale")
+        self.assertEqual(cfg.experiment.learning_curve.calibration_fraction, 0.3)
+        self.assertEqual(cfg.experiment.learning_curve.min_cal_size, 2)
+        self.assertFalse(cfg.experiment.screening.calibration_enabled)
+        self.assertEqual(cfg.experiment.screening.calibration_fraction, 0.3)
+        self.assertEqual(cfg.experiment.screening.min_cal_size, 2)
         self.assertIsNone(cfg.experiment.learning_curve.results_bundle_path)
         self.assertFalse(cfg.experiment.learning_curve.reuse_results)
         self.assertEqual(cfg.experiment.learning_curve.force_refresh_methods, [])
