@@ -8,6 +8,8 @@ from oasis.exp import (
     build_sweep_split_collection,
     generate_inner_calibration_sweep_splits,
     generate_inner_validation_calibration_sweep_splits,
+    generate_screening_sweep_splits_with_calibration,
+    generate_screening_sweep_splits_with_validation_and_calibration,
 )
 from oasis.sweep import (
     SweepDataset,
@@ -144,6 +146,86 @@ class CalibrationSplitTests(unittest.TestCase):
             ).splits[0],
         )
         self.assertIsInstance(val_cal, TrainValCalTestSweepRunnerInput)
+
+    def test_generate_screening_calibration_splits_yields_disjoint_budget_partitions(self) -> None:
+        rng = np.random.default_rng(7)
+        splits = list(
+            generate_screening_sweep_splits_with_calibration(
+                n_samples=10,
+                min_train=5,
+                max_train=5,
+                n_repeats=1,
+                rng=rng,
+                screen_fraction=0.4,
+                min_screen_size=2,
+                calibration_fraction=0.25,
+                min_cal_size=1,
+                min_inner_train_size=2,
+                min_outer_train_size=3,
+            )
+        )
+
+        self.assertEqual(len(splits), 2)
+        for split in splits:
+            self.assertIsNone(split.val_idx)
+            self.assertIsNotNone(split.cal_idx)
+            self.assertEqual(len(split.test_idx), 2)
+            self.assertEqual(
+                len(split.train_idx) + len(split.cal_idx) + len(split.test_idx),
+                split.sweep_size,
+            )
+
+    def test_build_sweep_split_collection_supports_screening_calibration_requirements(self) -> None:
+        split_collection = build_sweep_split_collection(
+            n_samples=12,
+            min_train=6,
+            max_train=7,
+            n_repeats=1,
+            seed=5,
+            requirements=SweepFamilyRequirements(requires_calibration=True),
+            budget_mode="screening_fraction",
+            screen_fraction=0.25,
+            min_screen_size=2,
+            calibration_fraction=0.25,
+            min_cal_size=1,
+            min_inner_train_size=2,
+        )
+
+        self.assertTrue(all(split.cal_idx is not None for split in split_collection.splits))
+
+    def test_generate_screening_validation_calibration_splits_partition_outer_train(self) -> None:
+        rng = np.random.default_rng(9)
+        splits = list(
+            generate_screening_sweep_splits_with_validation_and_calibration(
+                n_samples=12,
+                min_train=6,
+                max_train=6,
+                n_repeats=1,
+                rng=rng,
+                screen_fraction=0.25,
+                min_screen_size=2,
+                validation_fraction=0.2,
+                min_val_size=1,
+                min_tuning_val_size=1,
+                calibration_fraction=0.2,
+                min_cal_size=1,
+                min_inner_train_size=2,
+                min_outer_train_size=4,
+            )
+        )
+
+        self.assertEqual(len(splits), 3)
+        for split in splits:
+            self.assertIsNotNone(split.val_idx)
+            self.assertIsNotNone(split.cal_idx)
+            self.assertEqual(len(split.test_idx), 2)
+            self.assertEqual(
+                len(split.train_idx)
+                + len(split.val_idx)
+                + len(split.cal_idx)
+                + len(split.test_idx),
+                split.sweep_size,
+            )
 
 
 if __name__ == "__main__":

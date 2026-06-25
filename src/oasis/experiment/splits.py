@@ -491,6 +491,146 @@ def generate_screening_sweep_splits_with_validation(
             )
 
 
+def generate_screening_sweep_splits_with_calibration(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_outer_train_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
+) -> Iterator[SweepSplit]:
+    """Yield screening-mode outer CV splits with nested calibration inside outer train."""
+
+    if min_outer_train_size <= 0:
+        raise ValueError("min_outer_train_size must be positive.")
+
+    idx = np.arange(n_samples)
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
+        n_outer_train = outer_train_size_if_screening_feasible(
+            sweep_size,
+            screen_fraction=screen_fraction,
+            min_screen_size=min_screen_size,
+            min_outer_train_size=min_outer_train_size,
+        )
+        if n_outer_train is None:
+            continue
+        n_cal = calibration_size_if_sweep_feasible(
+            n_outer_train,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
+            min_post_calibration_size=min_inner_train_size,
+        )
+        if n_cal is None:
+            continue
+        n_screen = sweep_size - n_outer_train
+        budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+        shuffled_budget_idx = rng.permutation(budget_idx)
+        for test_idx in _screening_cv_test_folds(
+            shuffled_budget_idx,
+            n_screen=n_screen,
+        ):
+            outer_train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
+            cal_idx = rng.choice(outer_train_idx, size=n_cal, replace=False)
+            train_idx = np.setdiff1d(outer_train_idx, cal_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=sweep_size,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                cal_idx=cal_idx,
+            )
+
+
+def generate_screening_sweep_splits_with_validation_and_calibration(
+    n_samples: int,
+    min_train: int,
+    max_train: int,
+    n_repeats: int,
+    rng: np.random.Generator,
+    *,
+    step: int = 1,
+    screen_fraction: float,
+    min_screen_size: int = 1,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_outer_train_size: int = 1,
+    requested_sweep_sizes: Collection[int] | None = None,
+) -> Iterator[SweepSplit]:
+    """Yield screening-mode outer CV splits with nested validation and calibration."""
+
+    if min_outer_train_size <= 0:
+        raise ValueError("min_outer_train_size must be positive.")
+
+    idx = np.arange(n_samples)
+    sweep_sizes = (
+        normalize_requested_sweep_sizes(requested_sweep_sizes)
+        if requested_sweep_sizes is not None
+        else tuple(range(min_train, min(max_train, n_samples) + 1, step))
+    )
+    for sweep_size in sweep_sizes:
+        n_outer_train = outer_train_size_if_screening_feasible(
+            sweep_size,
+            screen_fraction=screen_fraction,
+            min_screen_size=min_screen_size,
+            min_outer_train_size=min_outer_train_size,
+        )
+        if n_outer_train is None:
+            continue
+        n_cal = calibration_size_if_sweep_feasible(
+            n_outer_train,
+            calibration_fraction=calibration_fraction,
+            min_cal_size=min_cal_size,
+            min_post_calibration_size=max(min_val_size + min_inner_train_size, 1),
+        )
+        if n_cal is None:
+            continue
+        remaining_fit_budget = n_outer_train - n_cal
+        n_val = validation_size_if_sweep_feasible(
+            remaining_fit_budget,
+            validation_fraction=validation_fraction,
+            min_val_size=min_val_size,
+            min_tuning_val_size=min_tuning_val_size,
+            min_inner_train_size=min_inner_train_size,
+        )
+        if n_val is None:
+            continue
+        n_screen = sweep_size - n_outer_train
+        budget_idx = rng.choice(idx, size=sweep_size, replace=False)
+        shuffled_budget_idx = rng.permutation(budget_idx)
+        for test_idx in _screening_cv_test_folds(
+            shuffled_budget_idx,
+            n_screen=n_screen,
+        ):
+            outer_train_idx = np.setdiff1d(budget_idx, test_idx, assume_unique=False)
+            cal_idx = rng.choice(outer_train_idx, size=n_cal, replace=False)
+            remaining_idx = np.setdiff1d(outer_train_idx, cal_idx, assume_unique=False)
+            val_idx = rng.choice(remaining_idx, size=n_val, replace=False)
+            train_idx = np.setdiff1d(remaining_idx, val_idx, assume_unique=False)
+            yield SweepSplit(
+                sweep_size=sweep_size,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                val_idx=val_idx,
+                cal_idx=cal_idx,
+            )
+
+
 def generate_inner_validation_sweep_splits(
     n_samples: int,
     min_train: int,
@@ -712,10 +852,6 @@ def build_sweep_split_collection(
             raise ValueError(
                 "screen_fraction must be provided when budget_mode='screening_fraction'."
             )
-        if requirements.requires_calibration:
-            raise NotImplementedError(
-                "screening_fraction budget mode does not yet support calibration splits."
-            )
 
     rng = np.random.default_rng(seed)
     if budget_mode == "screening_fraction":
@@ -732,22 +868,82 @@ def build_sweep_split_collection(
                 )
             )
             is not None
-            if not requirements.requires_inner_validation
-            or validation_size_if_sweep_feasible(
-                outer_train_size,
-                validation_fraction=validation_fraction,
-                min_val_size=min_val_size,
-                min_tuning_val_size=min_tuning_val_size,
-                min_inner_train_size=min_inner_train_size,
+            if (
+                not requirements.requires_inner_validation
+                and not requirements.requires_calibration
             )
-            is not None
+            or (
+                requirements.requires_inner_validation
+                and not requirements.requires_calibration
+                and validation_size_if_sweep_feasible(
+                    outer_train_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                )
+                is not None
+            )
+            or (
+                requirements.requires_calibration
+                and not requirements.requires_inner_validation
+                and calibration_size_if_sweep_feasible(
+                    outer_train_size,
+                    calibration_fraction=calibration_fraction,
+                    min_cal_size=min_cal_size,
+                    min_post_calibration_size=min_inner_train_size,
+                )
+                is not None
+            )
+            or (
+                requirements.requires_inner_validation
+                and requirements.requires_calibration
+                and (
+                    cal_size := calibration_size_if_sweep_feasible(
+                        outer_train_size,
+                        calibration_fraction=calibration_fraction,
+                        min_cal_size=min_cal_size,
+                        min_post_calibration_size=max(min_val_size + min_inner_train_size, 1),
+                    )
+                )
+                is not None
+                and validation_size_if_sweep_feasible(
+                    outer_train_size - cal_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                )
+                is not None
+            )
         )
         if not feasible_sweep_sizes:
             return SweepSplitCollection(
                 splits=(),
                 planning_requirements=requirements,
             )
-        if requirements.requires_inner_validation:
+        if requirements.requires_inner_validation and requirements.requires_calibration:
+            splits = tuple(
+                generate_screening_sweep_splits_with_validation_and_calibration(
+                    n_samples=n_samples,
+                    min_train=1,
+                    max_train=1,
+                    n_repeats=n_repeats,
+                    rng=rng,
+                    step=1,
+                    screen_fraction=screen_fraction,
+                    min_screen_size=min_screen_size,
+                    validation_fraction=validation_fraction,
+                    min_val_size=min_val_size,
+                    min_tuning_val_size=min_tuning_val_size,
+                    calibration_fraction=calibration_fraction,
+                    min_cal_size=min_cal_size,
+                    min_inner_train_size=min_inner_train_size,
+                    min_outer_train_size=max(requirements.min_train_size, 1),
+                    requested_sweep_sizes=feasible_sweep_sizes,
+                )
+            )
+        elif requirements.requires_inner_validation:
             splits = tuple(
                 generate_screening_sweep_splits_with_validation(
                     n_samples=n_samples,
@@ -761,6 +957,24 @@ def build_sweep_split_collection(
                     validation_fraction=validation_fraction,
                     min_val_size=min_val_size,
                     min_tuning_val_size=min_tuning_val_size,
+                    min_inner_train_size=min_inner_train_size,
+                    min_outer_train_size=max(requirements.min_train_size, 1),
+                    requested_sweep_sizes=feasible_sweep_sizes,
+                )
+            )
+        elif requirements.requires_calibration:
+            splits = tuple(
+                generate_screening_sweep_splits_with_calibration(
+                    n_samples=n_samples,
+                    min_train=1,
+                    max_train=1,
+                    n_repeats=n_repeats,
+                    rng=rng,
+                    step=1,
+                    screen_fraction=screen_fraction,
+                    min_screen_size=min_screen_size,
+                    calibration_fraction=calibration_fraction,
+                    min_cal_size=min_cal_size,
                     min_inner_train_size=min_inner_train_size,
                     min_outer_train_size=max(requirements.min_train_size, 1),
                     requested_sweep_sizes=feasible_sweep_sizes,

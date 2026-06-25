@@ -177,7 +177,11 @@ def _screening_split_metadata_frame(
             split for split in split_collection.splits if int(split.sweep_size) == n_budget
         ]
         representative = budget_splits[0]
-        n_train = int(len(representative.train_idx))
+        n_train = int(
+            len(representative.train_idx)
+            + (0 if representative.val_idx is None else len(representative.val_idx))
+            + (0 if representative.cal_idx is None else len(representative.cal_idx))
+        )
         n_screen = int(len(representative.test_idx))
         rows.append(
             {
