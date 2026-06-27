@@ -61,7 +61,7 @@ def run_learning_curve_experiments(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
-    calibration_enabled: bool = True,
+    calibration_enabled: bool = False,
     calibration_fraction: float = 0.2,
     min_cal_size: int = 1,
     min_inner_train_size: int = 1,
@@ -140,7 +140,7 @@ def run_learning_curve_experiments_from_frame(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
-    calibration_enabled: bool = True,
+    calibration_enabled: bool = False,
     calibration_fraction: float = 0.2,
     min_cal_size: int = 1,
     min_inner_train_size: int = 1,
@@ -344,7 +344,7 @@ def run_learning_curve_experiments_from_config(
                         experiment_cfg, "min_tuning_val_size", 1
                     ),
                     calibration_enabled=getattr(
-                        experiment_cfg, "calibration_enabled", True
+                        experiment_cfg, "calibration_enabled", False
                     ),
                     calibration_fraction=getattr(
                         experiment_cfg, "calibration_fraction", 0.2
@@ -438,7 +438,7 @@ def run_learning_curve_experiments_from_config(
                 else 1
             ),
             calibration_enabled=(
-                getattr(experiment_cfg, "calibration_enabled", True)
+                getattr(experiment_cfg, "calibration_enabled", False)
                 if experiment_cfg
                 else True
             ),
@@ -662,7 +662,7 @@ def load_or_run_learning_curve_results_from_config(
                             experiment_cfg, "min_tuning_val_size", 1
                         ),
                         calibration_enabled=getattr(
-                            experiment_cfg, "calibration_enabled", True
+                            experiment_cfg, "calibration_enabled", False
                         ),
                         calibration_fraction=getattr(
                             experiment_cfg, "calibration_fraction", 0.2

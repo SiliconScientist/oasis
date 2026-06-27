@@ -186,7 +186,7 @@ class LearningCurveExperimentConfig(BaseModel):
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_tuning_val_size: int = 1
-    calibration_enabled: bool = True
+    calibration_enabled: bool = False
     calibration_method: CalibrationMethod = "scalar_scale"
     calibration_fraction: float = 0.2
     min_cal_size: int = 1
@@ -208,7 +208,7 @@ class ScreeningExperimentConfig(BaseModel):
     validation_fraction: float = 0.2
     min_val_size: int = 1
     min_tuning_val_size: int = 1
-    calibration_enabled: bool = True
+    calibration_enabled: bool = False
     calibration_method: CalibrationMethod = "scalar_scale"
     calibration_fraction: float = 0.2
     min_cal_size: int = 1

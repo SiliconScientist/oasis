@@ -260,7 +260,7 @@ def _run_learning_curve_experiments_with_budget_mode(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
-    calibration_enabled: bool = True,
+    calibration_enabled: bool = False,
     calibration_fraction: float = 0.2,
     min_cal_size: int = 1,
     min_inner_train_size: int = 1,

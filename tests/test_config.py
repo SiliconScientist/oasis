@@ -1708,7 +1708,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.experiment.learning_curve.validation_fraction, 0.2)
         self.assertEqual(cfg.experiment.learning_curve.min_val_size, 1)
         self.assertEqual(cfg.experiment.learning_curve.min_tuning_val_size, 1)
-        self.assertTrue(cfg.experiment.learning_curve.calibration_enabled)
+        self.assertFalse(cfg.experiment.learning_curve.calibration_enabled)
         self.assertEqual(cfg.experiment.learning_curve.calibration_method, "scalar_scale")
         self.assertEqual(cfg.experiment.learning_curve.calibration_fraction, 0.2)
         self.assertEqual(cfg.experiment.learning_curve.min_cal_size, 1)

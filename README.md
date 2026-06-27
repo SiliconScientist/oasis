@@ -195,7 +195,8 @@ there apply to both `[experiment.learning_curve]` and `[experiment.screening]`,
 while section-local values still win when they differ.
 
 Spread-based uncertainty can now be post-hoc recalibrated for supported
-families. Oasis currently uses scalar scaling:
+families. Calibration is opt-in; enable it explicitly when you want scalar
+scaling:
 
 ```toml
 [experiment.defaults]
