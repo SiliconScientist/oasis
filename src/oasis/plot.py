@@ -349,6 +349,19 @@ def zero_shot_rmse_stage_plot(
         raise ValueError("stage_df does not contain any recognized stage labels.")
 
     dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
+    if "dataset_label" in filtered.columns:
+        label_rows = filtered.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+            subset=["dataset"],
+            keep="first",
+        )
+        dataset_labels = (
+            label_rows.set_index("dataset")
+            .reindex(dataset_order)["dataset_label"]
+            .fillna(pd.Series(dataset_order, index=dataset_order))
+            .tolist()
+        )
+    else:
+        dataset_labels = dataset_order
     x = np.arange(len(dataset_order))
     width = 0.24
     offsets = np.linspace(-width, width, num=len(stage_order))
@@ -381,7 +394,7 @@ def zero_shot_rmse_stage_plot(
                 fontsize=_DEFAULT_TICK_FONTSIZE,
             )
 
-    ax.set_xticks(x, dataset_order)
+    ax.set_xticks(x, dataset_labels)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
     ax.set_title("Zero-shot mean-MLIP RMSE by filtering stage", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)

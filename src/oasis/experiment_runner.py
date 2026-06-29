@@ -155,6 +155,7 @@ def _build_zero_shot_stage_rows(
     *,
     cfg: object,
     dataset_tag: str,
+    dataset_label: str,
     raw_wide_df: object,
     selected_wide_df: object,
 ) -> list[dict[str, object]]:
@@ -166,18 +167,21 @@ def _build_zero_shot_stage_rows(
     return [
         {
             "dataset": dataset_tag,
+            "dataset_label": dataset_label,
             "stage": "Full / all MLIPs",
             "rmse": _zero_shot_rmse_from_frame(raw_wide_df),
             "n_samples": _frame_height(raw_wide_df),
         },
         {
             "dataset": dataset_tag,
+            "dataset_label": dataset_label,
             "stage": "Matched subset / all MLIPs",
             "rmse": _zero_shot_rmse_from_frame(matched_subset_df),
             "n_samples": _frame_height(matched_subset_df),
         },
         {
             "dataset": dataset_tag,
+            "dataset_label": dataset_label,
             "stage": "Matched subset / anomaly-aware selection",
             "rmse": (
                 _strict_anomaly_aware_zero_shot_rmse_from_frame(selected_wide_df)
@@ -196,6 +200,11 @@ def _load_zero_shot_stage_rows_for_dataset(
 ) -> list[dict[str, object]]:
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
     base_dir = profile_paths.analysis_base_dir
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     raw_wide_df = load_wide_predictions(result_files)
@@ -209,6 +218,7 @@ def _load_zero_shot_stage_rows_for_dataset(
     return _build_zero_shot_stage_rows(
         cfg=cfg,
         dataset_tag=dataset_tag,
+        dataset_label=dataset_label,
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,
     )
@@ -535,9 +545,16 @@ def write_zero_shot_rmse_stage_plot(
         return None
 
     dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
+    named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
     stage_rows = _build_zero_shot_stage_rows(
         cfg=cfg,
         dataset_tag=dataset_tag,
+        dataset_label=dataset_label,
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,
     )

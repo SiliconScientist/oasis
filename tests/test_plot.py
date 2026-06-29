@@ -209,6 +209,7 @@ class PlotTests(unittest.TestCase):
         stage_df = pd.DataFrame(
             {
                 "dataset": ["mamun_oh", "mamun_oh", "mamun_oh"],
+                "dataset_label": ["OH-BMA", "OH-BMA", "OH-BMA"],
                 "stage": [
                     "Full / all MLIPs",
                     "Matched subset / all MLIPs",
@@ -233,6 +234,7 @@ class PlotTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertEqual(ax.get_ylabel(), "Zero-shot RMSE (eV)")
             self.assertEqual(len(ax.patches), 3)
+            self.assertEqual([tick.get_text() for tick in ax.get_xticklabels()], ["OH-BMA"])
 
     def test_zero_shot_rmse_stage_plot_renders_multiple_datasets(self) -> None:
         stage_df = pd.DataFrame(
@@ -244,6 +246,14 @@ class PlotTests(unittest.TestCase):
                     "khlohc",
                     "khlohc",
                     "khlohc",
+                ],
+                "dataset_label": [
+                    "OH-BMA",
+                    "OH-BMA",
+                    "OH-BMA",
+                    "KHLOHC-TOL",
+                    "KHLOHC-TOL",
+                    "KHLOHC-TOL",
                 ],
                 "stage": [
                     "Full / all MLIPs",
@@ -267,6 +277,10 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(output_path.exists())
             self.assertEqual(len(ax.patches), 6)
+            self.assertEqual(
+                [tick.get_text() for tick in ax.get_xticklabels()],
+                ["OH-BMA", "KHLOHC-TOL"],
+            )
 
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(
