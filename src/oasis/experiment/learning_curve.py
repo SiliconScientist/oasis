@@ -21,7 +21,7 @@ def run_standard_learning_curve_experiments(
     validation_fraction: float = 0.2,
     min_val_size: int = 1,
     min_tuning_val_size: int = 1,
-    calibration_enabled: bool = False,
+    calibration_enabled: bool = True,
     calibration_fraction: float = 0.2,
     min_cal_size: int = 1,
     min_inner_train_size: int = 1,

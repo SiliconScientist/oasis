@@ -36,6 +36,7 @@ from oasis.experiment_data import (
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
 )
+from oasis.experiment_config import derive_dataset_profile_paths
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
     find_result_files,
@@ -87,6 +88,84 @@ def _zero_shot_rmse_from_frame(frame: object) -> float:
     )
     return float(
         np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
+    )
+
+
+def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    return {
+        "enabled": bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)),
+        "label_allowlist": (
+            list(mlip_selection_cfg.label_allowlist)
+            if mlip_selection_cfg is not None
+            else None
+        ),
+        "strict_inference_anomaly": bool(
+            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
+        ),
+        "min_valid_mlips": int(getattr(mlip_selection_cfg, "minimum_quorum", 2)),
+    }
+
+
+def _build_zero_shot_stage_rows(
+    *,
+    dataset_tag: str,
+    raw_wide_df: object,
+    selected_wide_df: object,
+) -> list[dict[str, object]]:
+    selected_reactions = selected_wide_df.get_column("reaction").to_list()
+    if not selected_reactions:
+        return []
+    matched_subset_df = _filter_frame_to_reactions(raw_wide_df, selected_reactions)
+    return [
+        {
+            "dataset": dataset_tag,
+            "stage": "Full / all MLIPs",
+            "rmse": _zero_shot_rmse_from_frame(raw_wide_df),
+            "n_samples": _frame_height(raw_wide_df),
+        },
+        {
+            "dataset": dataset_tag,
+            "stage": "Matched subset / all MLIPs",
+            "rmse": _zero_shot_rmse_from_frame(matched_subset_df),
+            "n_samples": _frame_height(matched_subset_df),
+        },
+        {
+            "dataset": dataset_tag,
+            "stage": "Matched subset / anomaly-aware selection",
+            "rmse": _zero_shot_rmse_from_frame(selected_wide_df),
+            "n_samples": _frame_height(selected_wide_df),
+        },
+    ]
+
+
+def _load_zero_shot_stage_rows_for_dataset(
+    cfg: object,
+    *,
+    dataset_tag: str,
+) -> list[dict[str, object]]:
+    named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+    profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
+    base_dir = profile_paths.analysis_base_dir
+    result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
+    raw_wide_df = load_wide_predictions(result_files)
+    filter_kwargs = _stage_filter_kwargs(cfg)
+    selected_wide_df = filter_structures_with_insufficient_valid_mlips(
+        raw_wide_df,
+        **filter_kwargs,
+    )
+    selected_wide_df = filter_anomalous_mlip_columns(
+        selected_wide_df,
+        enabled=bool(filter_kwargs["enabled"]),
+        label_allowlist=filter_kwargs["label_allowlist"],
+        strict_inference_anomaly=bool(filter_kwargs["strict_inference_anomaly"]),
+    )
+    raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
+    selected_wide_df = _apply_dev_run_frame_cap(cfg, selected_wide_df)
+    return _build_zero_shot_stage_rows(
+        dataset_tag=dataset_tag,
+        raw_wide_df=raw_wide_df,
+        selected_wide_df=selected_wide_df,
     )
 
 
@@ -376,35 +455,16 @@ def load_filtered_wide_predictions(cfg: object):
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     raw_wide_df = load_wide_predictions(result_files)
     print(f"Loaded combined wide_df with {_frame_height(raw_wide_df)} rows")
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    filter_kwargs = _stage_filter_kwargs(cfg)
     wide_df = filter_structures_with_insufficient_valid_mlips(
         raw_wide_df,
-        enabled=bool(
-            getattr(mlip_selection_cfg, "exclude_anomalous", False)
-        ),
-        label_allowlist=(
-            list(mlip_selection_cfg.label_allowlist)
-            if mlip_selection_cfg is not None
-            else None
-        ),
-        strict_inference_anomaly=bool(
-            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
-        ),
-        min_valid_mlips=int(getattr(mlip_selection_cfg, "minimum_quorum", 2)),
+        **filter_kwargs,
     )
     wide_df = filter_anomalous_mlip_columns(
         wide_df,
-        enabled=bool(
-            getattr(mlip_selection_cfg, "exclude_anomalous", False)
-        ),
-        label_allowlist=(
-            list(mlip_selection_cfg.label_allowlist)
-            if mlip_selection_cfg is not None
-            else None
-        ),
-        strict_inference_anomaly=bool(
-            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
-        ),
+        enabled=bool(filter_kwargs["enabled"]),
+        label_allowlist=filter_kwargs["label_allowlist"],
+        strict_inference_anomaly=bool(filter_kwargs["strict_inference_anomaly"]),
     )
     return wide_df, result_files, raw_wide_df
 
@@ -421,35 +481,50 @@ def write_zero_shot_rmse_stage_plot(
     if not bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)):
         return None
 
-    selected_reactions = selected_wide_df.get_column("reaction").to_list()
-    if not selected_reactions:
+    dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
+    stage_rows = _build_zero_shot_stage_rows(
+        dataset_tag=dataset_tag,
+        raw_wide_df=raw_wide_df,
+        selected_wide_df=selected_wide_df,
+    )
+    if not stage_rows:
         print("Skipping zero-shot stage plot: selected dataset is empty")
         return None
-
-    matched_subset_df = _filter_frame_to_reactions(raw_wide_df, selected_reactions)
-    dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
-    stage_df = pd.DataFrame(
-        {
-            "dataset": [dataset_tag, dataset_tag, dataset_tag],
-            "stage": [
-                "Full / all MLIPs",
-                "Matched subset / all MLIPs",
-                "Matched subset / anomaly-aware selection",
-            ],
-            "rmse": [
-                _zero_shot_rmse_from_frame(raw_wide_df),
-                _zero_shot_rmse_from_frame(matched_subset_df),
-                _zero_shot_rmse_from_frame(selected_wide_df),
-            ],
-            "n_samples": [
-                _frame_height(raw_wide_df),
-                _frame_height(matched_subset_df),
-                _frame_height(selected_wide_df),
-            ],
-        }
-    )
+    stage_df = pd.DataFrame(stage_rows)
     output_path = output_dir / f"zero_shot_rmse_stage_{run_suffix}.png"
     return zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+
+
+def write_all_datasets_zero_shot_rmse_stage_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> Path | None:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    if not bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)):
+        return None
+
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1:
+        return None
+
+    stage_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        stage_rows.extend(
+            _load_zero_shot_stage_rows_for_dataset(cfg, dataset_tag=dataset_tag)
+        )
+    if not stage_rows:
+        return None
+
+    output_path = output_dir / f"zero_shot_rmse_stage_all_datasets_{run_suffix}.png"
+    return zero_shot_rmse_stage_plot(
+        pd.DataFrame(stage_rows),
+        output_path=output_path,
+    )
 
 
 def build_auxiliary_views(
@@ -847,9 +922,10 @@ def run_experiment(cfg: object):
     _apply_run_output_suffixes(cfg, plot_suffix=run_suffix)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
     wide_df, result_files, raw_wide_df = load_filtered_wide_predictions(cfg)
-    wide_df = _apply_dev_run_frame_cap(cfg, wide_df)
-    wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
     raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
+    wide_df = _apply_dev_run_frame_cap(cfg, wide_df)
+    zero_shot_stage_selected_wide_df = wide_df
+    wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
     _apply_persistent_output_suffixes(cfg, dataset_size=_frame_height(wide_df))
     _apply_dev_run_curve_overrides(cfg, n_samples=_frame_height(wide_df))
     generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
@@ -864,7 +940,12 @@ def run_experiment(cfg: object):
     write_zero_shot_rmse_stage_plot(
         cfg=cfg,
         raw_wide_df=raw_wide_df,
-        selected_wide_df=wide_df,
+        selected_wide_df=zero_shot_stage_selected_wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+    )
+    write_all_datasets_zero_shot_rmse_stage_plot(
+        cfg=cfg,
         output_dir=output_dir,
         run_suffix=run_suffix,
     )

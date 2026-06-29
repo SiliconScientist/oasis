@@ -457,6 +457,12 @@ class ExperimentRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
+                dataset_profile=SimpleNamespace(tag="mamun_oh"),
+                datasets={
+                    "mamun_oh": SimpleNamespace(),
+                    "khlohc": SimpleNamespace(),
+                    "rodrigo": SimpleNamespace(),
+                },
                 mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
                 probe_features=None,
                 experiment=SimpleNamespace(
@@ -524,7 +530,35 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.zero_shot_rmse_stage_plot",
                 return_value=tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
-            ) as mock_zero_shot_plot:
+            ) as mock_zero_shot_plot, patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
+                side_effect=[
+                    [
+                        {
+                            "dataset": "mamun_oh",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.5,
+                            "n_samples": 10,
+                        }
+                    ],
+                    [
+                        {
+                            "dataset": "khlohc",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.4,
+                            "n_samples": 8,
+                        }
+                    ],
+                    [
+                        {
+                            "dataset": "rodrigo",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.3,
+                            "n_samples": 6,
+                        }
+                    ],
+                ],
+            ) as mock_stage_rows:
                 run_experiment(cfg)
 
         self.assertEqual(
@@ -536,9 +570,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "plots" / "learning_curve_anomalyaware_on.png",
         )
         self.assertEqual(
-            mock_zero_shot_plot.call_args.kwargs["output_path"],
+            mock_zero_shot_plot.call_args_list[0].kwargs["output_path"],
             tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
         )
+        self.assertEqual(mock_zero_shot_plot.call_count, 2)
+        self.assertEqual(
+            mock_zero_shot_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "plots" / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png",
+        )
+        self.assertEqual(mock_stage_rows.call_count, 3)
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
             tmp_path / "results_anomalyaware_on_latent_off_n2.json",

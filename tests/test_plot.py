@@ -234,6 +234,40 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(ax.get_ylabel(), "Zero-shot RMSE (eV)")
             self.assertEqual(len(ax.patches), 3)
 
+    def test_zero_shot_rmse_stage_plot_renders_multiple_datasets(self) -> None:
+        stage_df = pd.DataFrame(
+            {
+                "dataset": [
+                    "mamun_oh",
+                    "mamun_oh",
+                    "mamun_oh",
+                    "khlohc",
+                    "khlohc",
+                    "khlohc",
+                ],
+                "stage": [
+                    "Full / all MLIPs",
+                    "Matched subset / all MLIPs",
+                    "Matched subset / anomaly-aware selection",
+                    "Full / all MLIPs",
+                    "Matched subset / all MLIPs",
+                    "Matched subset / anomaly-aware selection",
+                ],
+                "rmse": [0.55, 0.51, 0.47, 0.62, 0.58, 0.5],
+                "n_samples": [1235, 1094, 1094, 800, 740, 740],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "zero_shot_stage_multi.png"
+            with patch("oasis.plot.plt.close"):
+                zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+                fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(len(ax.patches), 6)
+
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(
             {
