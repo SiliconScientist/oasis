@@ -39,6 +39,7 @@ from oasis.experiment_data import (
 from oasis.experiment_config import derive_dataset_profile_paths
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
+    INFERENCE_DETAIL_COLUMNS,
     find_result_files,
     load_wide_predictions,
 )
@@ -91,6 +92,50 @@ def _zero_shot_rmse_from_frame(frame: object) -> float:
     )
 
 
+def _column_to_numpy(frame: object, column_name: str) -> np.ndarray:
+    column = frame.get_column(column_name)
+    if hasattr(column, "to_numpy"):
+        return np.asarray(column.to_numpy(), dtype=float)
+    return np.asarray(column, dtype=float)
+
+
+def _strict_anomaly_aware_zero_shot_rmse_from_frame(frame: object) -> float:
+    feature_names = mlip_feature_names(frame)
+    if not feature_names:
+        raise ValueError("No MLIP feature columns found for strict zero-shot RMSE.")
+
+    prediction_matrix = np.column_stack(
+        [
+            _column_to_numpy(frame, f"{feature_name}_mlip_ads_eng_median")
+            for feature_name in feature_names
+        ]
+    )
+    valid_matrix = np.column_stack(
+        [
+            np.all(
+                np.column_stack(
+                    [
+                        _column_to_numpy(frame, f"{feature_name}_{detail_name}") == 0.0
+                        for detail_name in INFERENCE_DETAIL_COLUMNS
+                        if f"{feature_name}_{detail_name}" in getattr(frame, "columns", ())
+                    ]
+                ),
+                axis=1,
+            )
+            for feature_name in feature_names
+        ]
+    )
+    if valid_matrix.shape != prediction_matrix.shape:
+        raise ValueError("Prediction and validity matrices must have matching shapes.")
+    valid_counts = valid_matrix.sum(axis=1)
+    if np.any(valid_counts <= 0):
+        raise ValueError("Strict zero-shot RMSE requires at least one valid MLIP per row.")
+    masked_sum = np.where(valid_matrix, prediction_matrix, 0.0).sum(axis=1)
+    zero_shot_preds = masked_sum / valid_counts
+    reference = _column_to_numpy(frame, "reference_ads_eng")
+    return float(np.sqrt(np.mean((reference - zero_shot_preds) ** 2)))
+
+
 def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
     return {
@@ -109,6 +154,7 @@ def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
 
 def _build_zero_shot_stage_rows(
     *,
+    cfg: object,
     dataset_tag: str,
     raw_wide_df: object,
     selected_wide_df: object,
@@ -117,6 +163,10 @@ def _build_zero_shot_stage_rows(
     if not selected_reactions:
         return []
     matched_subset_df = _filter_frame_to_reactions(raw_wide_df, selected_reactions)
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    strict_inference_anomaly = bool(
+        getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
+    )
     return [
         {
             "dataset": dataset_tag,
@@ -133,7 +183,11 @@ def _build_zero_shot_stage_rows(
         {
             "dataset": dataset_tag,
             "stage": "Matched subset / anomaly-aware selection",
-            "rmse": _zero_shot_rmse_from_frame(selected_wide_df),
+            "rmse": (
+                _strict_anomaly_aware_zero_shot_rmse_from_frame(selected_wide_df)
+                if strict_inference_anomaly
+                else _zero_shot_rmse_from_frame(selected_wide_df)
+            ),
             "n_samples": _frame_height(selected_wide_df),
         },
     ]
@@ -163,6 +217,7 @@ def _load_zero_shot_stage_rows_for_dataset(
     raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
     selected_wide_df = _apply_dev_run_frame_cap(cfg, selected_wide_df)
     return _build_zero_shot_stage_rows(
+        cfg=cfg,
         dataset_tag=dataset_tag,
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,
@@ -483,6 +538,7 @@ def write_zero_shot_rmse_stage_plot(
 
     dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
     stage_rows = _build_zero_shot_stage_rows(
+        cfg=cfg,
         dataset_tag=dataset_tag,
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,

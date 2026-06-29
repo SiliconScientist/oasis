@@ -621,6 +621,60 @@ class _BuildSweepDatasetFromFrameTests(unittest.TestCase):
         self.assertIn("latent", dataset.auxiliary_views)
         pd.testing.assert_frame_equal(dataset.auxiliary_views["latent"], latent_df)
 
+    def test_build_sweep_dataset_from_config_masks_strict_inference_anomalies(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reaction": ["rxn-a", "rxn-b"],
+                "reference_ads_eng": [1.0, 2.0],
+                "model_a_mlip_ads_eng_median": [1.0, 2.0],
+                "model_b_mlip_ads_eng_median": [3.0, 4.0],
+                "model_a_slab_conv": [0, 0],
+                "model_a_ads_conv": [0, 0],
+                "model_a_slab_move": [0, 0],
+                "model_a_ads_move": [0, 0],
+                "model_a_slab_seed": [0, 0],
+                "model_a_ads_seed": [0, 0],
+                "model_a_ads_eng_seed": [0, 0],
+                "model_a_adsorbate_migration": [0, 0],
+                "model_b_slab_conv": [1, 0],
+                "model_b_ads_conv": [0, 0],
+                "model_b_slab_move": [0, 0],
+                "model_b_ads_move": [0, 0],
+                "model_b_slab_seed": [0, 0],
+                "model_b_ads_seed": [0, 0],
+                "model_b_ads_eng_seed": [0, 0],
+                "model_b_adsorbate_migration": [0, 0],
+            }
+        )
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    graph_dataset=None,
+                    models=None,
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous=True,
+                        strict_inference_anomaly=True,
+                    ),
+                )
+            )
+        )
+
+        with patch(
+            "oasis.graphs.load_configured_graph_dataset_view", return_value=None
+        ):
+            dataset = build_sweep_dataset_from_config(df, cfg)
+
+        np.testing.assert_array_equal(
+            dataset.auxiliary_views["mlip_validity_mask"],
+            np.array([[True, False], [True, True]]),
+        )
+        np.testing.assert_allclose(
+            dataset.mlip_features,
+            np.array([[1.0, 1.0], [2.0, 4.0]]),
+        )
+
     def test_build_sweep_dataset_from_config_skips_latent_when_disabled(self) -> None:
         df = pd.DataFrame(
             {

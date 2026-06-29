@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
+    _build_zero_shot_stage_rows,
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
@@ -152,6 +154,54 @@ class ExperimentRunnerTests(unittest.TestCase):
         mock_get.assert_called_once_with(["experiment.toml"])
         mock_run.assert_called_once_with(cfg)
         self.assertEqual(result, "results")
+
+    def test_build_zero_shot_stage_rows_uses_strict_per_structure_mask_for_stage_three(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous=True,
+                        strict_inference_anomaly=True,
+                    )
+                )
+            )
+        )
+        frame = pl.DataFrame(
+            {
+                "reaction": ["r0", "r1"],
+                "reference_ads_eng": [0.0, 0.0],
+                "a_mlip_ads_eng_median": [0.0, 0.0],
+                "b_mlip_ads_eng_median": [10.0, 10.0],
+                "a_slab_conv": [0, 0],
+                "a_ads_conv": [0, 0],
+                "a_slab_move": [0, 0],
+                "a_ads_move": [0, 0],
+                "a_slab_seed": [0, 0],
+                "a_ads_seed": [0, 0],
+                "a_ads_eng_seed": [0, 0],
+                "a_adsorbate_migration": [0, 0],
+                "b_slab_conv": [1, 1],
+                "b_ads_conv": [0, 0],
+                "b_slab_move": [0, 0],
+                "b_ads_move": [0, 0],
+                "b_slab_seed": [0, 0],
+                "b_ads_seed": [0, 0],
+                "b_ads_eng_seed": [0, 0],
+                "b_adsorbate_migration": [0, 0],
+            }
+        )
+
+        stage_rows = _build_zero_shot_stage_rows(
+            cfg=cfg,
+            dataset_tag="example",
+            raw_wide_df=frame,
+            selected_wide_df=frame,
+        )
+
+        self.assertEqual(stage_rows[1]["rmse"], 5.0)
+        self.assertEqual(stage_rows[2]["rmse"], 0.0)
 
     def test_run_experiment_skips_probe_dataset_build_when_probe_gnn_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
