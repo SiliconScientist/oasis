@@ -1587,6 +1587,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertFalse(
             cfg.experiment.learning_curve.mlip_selection.strict_inference_anomaly
         )
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 2)
 
     def test_learning_curve_mlip_selection_explicit_values_parse(self) -> None:
         cfg = Config(
@@ -1616,6 +1617,7 @@ class ConfigParsingTests(unittest.TestCase):
                             "exclude_anomalous": True,
                             "label_allowlist": ["normal", "energy_anomaly"],
                             "strict_inference_anomaly": True,
+                            "minimum_quorum": 3,
                         },
                     }
                 },
@@ -1633,6 +1635,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertTrue(
             cfg.experiment.learning_curve.mlip_selection.strict_inference_anomaly
         )
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 3)
 
     def test_learning_curve_mlip_selection_rejects_empty_allowlist_when_enabled(
         self,

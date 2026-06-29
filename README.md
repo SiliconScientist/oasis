@@ -309,6 +309,7 @@ reuse_results = true
 exclude_anomalous = false
 label_allowlist = ["normal"]
 strict_inference_anomaly = false
+minimum_quorum = 2
 ```
 
 Filtered variant:
@@ -328,6 +329,7 @@ reuse_results = true
 exclude_anomalous = true
 label_allowlist = ["normal"]
 strict_inference_anomaly = false
+minimum_quorum = 2
 ```
 
 Notes:
@@ -339,6 +341,8 @@ Notes:
 - If you want a stricter comparison, set
   `strict_inference_anomaly = true` in the filtered preset to drop MLIPs based
   on per-MLIP inference-detail flags rather than labels alone.
+- `minimum_quorum` controls how many non-anomalous MLIPs a sample must retain
+  to stay in the filtered dataset. The default is `2`.
 
 Bundle identity is dataset/filter oriented, not exact-sweep oriented. Reuse
 requires the same dataset/filter identity and seed, but the bundle may contain:

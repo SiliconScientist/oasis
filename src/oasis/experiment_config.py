@@ -171,6 +171,7 @@ class MlipSelectionConfig(BaseModel):
     exclude_anomalous: bool = False
     label_allowlist: List[str] = Field(default_factory=lambda: ["normal"])
     strict_inference_anomaly: bool = False
+    minimum_quorum: int = Field(default=2, ge=1)
 
 
 class LearningCurveExperimentConfig(BaseModel):

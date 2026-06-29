@@ -373,6 +373,7 @@ def load_filtered_wide_predictions(cfg: object):
         strict_inference_anomaly=bool(
             getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
         ),
+        min_valid_mlips=int(getattr(mlip_selection_cfg, "minimum_quorum", 2)),
     )
     wide_df = filter_anomalous_mlip_columns(
         wide_df,

@@ -72,6 +72,7 @@ n_repeats = 10
 exclude_anomalous = false
 label_allowlist = ["normal"]
 strict_inference_anomaly = false
+minimum_quorum = 2
 
 # OH-BMA comparison presets:
 #
@@ -83,6 +84,7 @@ strict_inference_anomaly = false
 # exclude_anomalous = false
 # label_allowlist = ["normal"]
 # strict_inference_anomaly = false
+# minimum_quorum = 2
 #
 # Filtered:
 # [dataset_profile]
@@ -92,12 +94,14 @@ strict_inference_anomaly = false
 # exclude_anomalous = true
 # label_allowlist = ["normal"]
 # strict_inference_anomaly = false
+# minimum_quorum = 2
 #
 # Optional stricter filtered variant:
 # [experiment.learning_curve.mlip_selection]
 # exclude_anomalous = true
 # label_allowlist = ["normal"]
 # strict_inference_anomaly = true
+# minimum_quorum = 2
 
 [experiment.screening]
 # Screening mode overlays the screening-specific knobs onto

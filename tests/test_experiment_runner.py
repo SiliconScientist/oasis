@@ -291,6 +291,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                         exclude_anomalous=True,
                         label_allowlist=["normal", "energy_anomaly"],
                         strict_inference_anomaly=True,
+                        minimum_quorum=3,
                     )
                 )
             ),
@@ -325,6 +326,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             enabled=True,
             label_allowlist=["normal", "energy_anomaly"],
             strict_inference_anomaly=True,
+            min_valid_mlips=3,
         )
         mock_filter_mlips.assert_called_once_with(
             fake_wide_df,
