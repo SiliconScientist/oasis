@@ -338,9 +338,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 learning_curve=SimpleNamespace(
                     mlip_selection=SimpleNamespace(
                         enabled=["mace", "uma"],
-                        exclude_anomalous=True,
-                        label_allowlist=["normal", "energy_anomaly"],
-                        strict_inference_anomaly=True,
+                        exclude_anomalous_mlips=True,
                         minimum_quorum=3,
                     )
                 )
@@ -360,11 +358,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
                     return_value=fake_wide_df,
                 ) as mock_filter_structures:
-                    with patch(
-                        "oasis.experiment_runner.filter_anomalous_mlip_columns",
-                        return_value=fake_wide_df,
-                    ) as mock_filter_mlips:
-                        wide_df, *_ = load_filtered_wide_predictions(cfg)
+                    wide_df, *_ = load_filtered_wide_predictions(cfg)
 
         self.assertIs(wide_df, fake_wide_df)
         mock_find_result_files.assert_called_once_with(
@@ -374,15 +368,9 @@ class ExperimentRunnerTests(unittest.TestCase):
         mock_filter_structures.assert_called_once_with(
             fake_wide_df,
             enabled=True,
-            label_allowlist=["normal", "energy_anomaly"],
+            label_allowlist=None,
             strict_inference_anomaly=True,
             min_valid_mlips=3,
-        )
-        mock_filter_mlips.assert_called_once_with(
-            fake_wide_df,
-            enabled=True,
-            label_allowlist=["normal", "energy_anomaly"],
-            strict_inference_anomaly=True,
         )
 
     def test_apply_dev_run_frame_cap_truncates_rows_when_enabled(self) -> None:
@@ -554,9 +542,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
                 return_value=fake_wide_df,
             ), patch(
-                "oasis.experiment_runner.filter_anomalous_mlip_columns",
-                return_value=fake_wide_df,
-            ), patch(
                 "oasis.experiment_runner.parity_plot",
                 return_value=tmp_path / "plots" / "parity.png",
             ) as mock_parity_plot, patch(
@@ -578,37 +563,16 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.learning_curve_plot",
                 return_value=tmp_path / "plots" / "learning_curve_anomalyaware_on.png",
             ) as mock_learning_curve_plot, patch(
-                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                "oasis.experiment_runner.write_zero_shot_rmse_stage_plot",
                 return_value=tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
             ) as mock_zero_shot_plot, patch(
-                "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
-                side_effect=[
-                    [
-                        {
-                            "dataset": "mamun_oh",
-                            "stage": "Full / all MLIPs",
-                            "rmse": 0.5,
-                            "n_samples": 10,
-                        }
-                    ],
-                    [
-                        {
-                            "dataset": "khlohc",
-                            "stage": "Full / all MLIPs",
-                            "rmse": 0.4,
-                            "n_samples": 8,
-                        }
-                    ],
-                    [
-                        {
-                            "dataset": "rodrigo",
-                            "stage": "Full / all MLIPs",
-                            "rmse": 0.3,
-                            "n_samples": 6,
-                        }
-                    ],
-                ],
-            ) as mock_stage_rows:
+                "oasis.experiment_runner.write_all_datasets_zero_shot_rmse_stage_plot",
+                return_value=(
+                    tmp_path
+                    / "plots"
+                    / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png"
+                ),
+            ) as mock_all_datasets_zero_shot_plot:
                 run_experiment(cfg)
 
         self.assertEqual(
@@ -620,15 +584,21 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "plots" / "learning_curve_anomalyaware_on.png",
         )
         self.assertEqual(
-            mock_zero_shot_plot.call_args_list[0].kwargs["output_path"],
-            tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
+            mock_zero_shot_plot.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
         )
-        self.assertEqual(mock_zero_shot_plot.call_count, 2)
         self.assertEqual(
-            mock_zero_shot_plot.call_args_list[1].kwargs["output_path"],
-            tmp_path / "plots" / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png",
+            mock_zero_shot_plot.call_args.kwargs["run_suffix"],
+            "anomalyaware_on",
         )
-        self.assertEqual(mock_stage_rows.call_count, 3)
+        self.assertEqual(
+            mock_all_datasets_zero_shot_plot.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_all_datasets_zero_shot_plot.call_args.kwargs["run_suffix"],
+            "anomalyaware_on",
+        )
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
             tmp_path / "results_anomalyaware_on_latent_off_n2.json",
@@ -695,9 +665,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_anomalous_mlip_columns",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",
@@ -780,9 +747,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
-                return_value=fake_wide_df,
-            ), patch(
-                "oasis.experiment_runner.filter_anomalous_mlip_columns",
                 return_value=fake_wide_df,
             ), patch(
                 "oasis.experiment_runner.parity_plot",

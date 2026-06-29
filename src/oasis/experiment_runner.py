@@ -9,10 +9,7 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from oasis.analysis import (
-    filter_anomalous_mlip_columns,
-    filter_structures_with_insufficient_valid_mlips,
-)
+from oasis.analysis import filter_structures_with_insufficient_valid_mlips
 from oasis.config import get_config
 from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
@@ -137,18 +134,11 @@ def _strict_anomaly_aware_zero_shot_rmse_from_frame(frame: object) -> float:
 
 
 def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
     return {
-        "enabled": bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)),
-        "label_allowlist": (
-            list(mlip_selection_cfg.label_allowlist)
-            if mlip_selection_cfg is not None
-            else None
-        ),
-        "strict_inference_anomaly": bool(
-            getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
-        ),
-        "min_valid_mlips": int(getattr(mlip_selection_cfg, "minimum_quorum", 2)),
+        "enabled": _minimum_quorum(cfg) > 0,
+        "label_allowlist": None,
+        "strict_inference_anomaly": True,
+        "min_valid_mlips": _minimum_quorum(cfg),
     }
 
 
@@ -163,10 +153,7 @@ def _build_zero_shot_stage_rows(
     if not selected_reactions:
         return []
     matched_subset_df = _filter_frame_to_reactions(raw_wide_df, selected_reactions)
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
-    strict_inference_anomaly = bool(
-        getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
-    )
+    exclude_anomalous_mlips = _exclude_anomalous_mlips_enabled(cfg)
     return [
         {
             "dataset": dataset_tag,
@@ -185,7 +172,7 @@ def _build_zero_shot_stage_rows(
             "stage": "Matched subset / anomaly-aware selection",
             "rmse": (
                 _strict_anomaly_aware_zero_shot_rmse_from_frame(selected_wide_df)
-                if strict_inference_anomaly
+                if exclude_anomalous_mlips
                 else _zero_shot_rmse_from_frame(selected_wide_df)
             ),
             "n_samples": _frame_height(selected_wide_df),
@@ -207,12 +194,6 @@ def _load_zero_shot_stage_rows_for_dataset(
     selected_wide_df = filter_structures_with_insufficient_valid_mlips(
         raw_wide_df,
         **filter_kwargs,
-    )
-    selected_wide_df = filter_anomalous_mlip_columns(
-        selected_wide_df,
-        enabled=bool(filter_kwargs["enabled"]),
-        label_allowlist=filter_kwargs["label_allowlist"],
-        strict_inference_anomaly=bool(filter_kwargs["strict_inference_anomaly"]),
     )
     raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
     selected_wide_df = _apply_dev_run_frame_cap(cfg, selected_wide_df)
@@ -240,6 +221,22 @@ def _mlip_selection_cfg(cfg: object):
     return getattr(learning_curve_cfg, "mlip_selection", None)
 
 
+def _exclude_anomalous_mlips_enabled(cfg: object) -> bool:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    return bool(
+        getattr(
+            mlip_selection_cfg,
+            "exclude_anomalous_mlips",
+            getattr(mlip_selection_cfg, "exclude_anomalous", False),
+        )
+    )
+
+
+def _minimum_quorum(cfg: object) -> int:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    return int(getattr(mlip_selection_cfg, "minimum_quorum", 0))
+
+
 def _enabled_mlips(cfg: object) -> list[str] | None:
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
     enabled_mlips = getattr(mlip_selection_cfg, "enabled", None)
@@ -260,8 +257,7 @@ def _resolved_dataset_path(cfg: object) -> Path | None:
 
 
 def _anomaly_aware_run_suffix(cfg: object) -> str:
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
-    enabled = bool(getattr(mlip_selection_cfg, "exclude_anomalous", False))
+    enabled = bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0)
     return "anomalyaware_on" if enabled else "anomalyaware_off"
 
 
@@ -515,12 +511,6 @@ def load_filtered_wide_predictions(cfg: object):
         raw_wide_df,
         **filter_kwargs,
     )
-    wide_df = filter_anomalous_mlip_columns(
-        wide_df,
-        enabled=bool(filter_kwargs["enabled"]),
-        label_allowlist=filter_kwargs["label_allowlist"],
-        strict_inference_anomaly=bool(filter_kwargs["strict_inference_anomaly"]),
-    )
     return wide_df, result_files, raw_wide_df
 
 
@@ -532,8 +522,7 @@ def write_zero_shot_rmse_stage_plot(
     output_dir: Path,
     run_suffix: str,
 ) -> Path | None:
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
-    if not bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)):
+    if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
         return None
 
     dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
@@ -557,8 +546,7 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
     output_dir: Path,
     run_suffix: str,
 ) -> Path | None:
-    mlip_selection_cfg = _mlip_selection_cfg(cfg)
-    if not bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)):
+    if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
         return None
 
     configured_tags = list(getattr(cfg, "datasets", {}))

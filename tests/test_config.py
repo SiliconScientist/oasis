@@ -1579,15 +1579,10 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.mlip_selection.enabled, [])
-        self.assertFalse(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous)
-        self.assertEqual(
-            cfg.experiment.learning_curve.mlip_selection.label_allowlist,
-            ["normal"],
-        )
         self.assertFalse(
-            cfg.experiment.learning_curve.mlip_selection.strict_inference_anomaly
+            cfg.experiment.learning_curve.mlip_selection.exclude_anomalous_mlips
         )
-        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 2)
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 0)
 
     def test_learning_curve_mlip_selection_explicit_values_parse(self) -> None:
         cfg = Config(
@@ -1614,9 +1609,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "n_repeats": 3,
                         "mlip_selection": {
                             "enabled": ["mace", "uma"],
-                            "exclude_anomalous": True,
-                            "label_allowlist": ["normal", "energy_anomaly"],
-                            "strict_inference_anomaly": True,
+                            "exclude_anomalous_mlips": True,
                             "minimum_quorum": 3,
                         },
                     }
@@ -1627,53 +1620,49 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.mlip_selection.enabled, ["mace", "uma"])
-        self.assertTrue(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous)
-        self.assertEqual(
-            cfg.experiment.learning_curve.mlip_selection.label_allowlist,
-            ["normal", "energy_anomaly"],
-        )
         self.assertTrue(
-            cfg.experiment.learning_curve.mlip_selection.strict_inference_anomaly
+            cfg.experiment.learning_curve.mlip_selection.exclude_anomalous_mlips
         )
         self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 3)
 
-    def test_learning_curve_mlip_selection_rejects_empty_allowlist_when_enabled(
+    def test_learning_curve_mlip_selection_accepts_legacy_keys(
         self,
     ) -> None:
-        with self.assertRaisesRegex(
-            ValueError,
-            "experiment.learning_curve.mlip_selection.label_allowlist must not be empty",
-        ):
-            Config(
-                **{
-                    "ingest": {
-                        "source": "data/raw_vasp/systems",
-                        "dataset_name": "test",
-                        "stoich": {
-                            "elements": ["H"],
-                            "basis_species": ["H2"],
-                            "basis_composition": {"H2": {"H": 2}},
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "mlip_selection": {
+                            "exclude_anomalous": True,
+                            "label_allowlist": [],
+                            "strict_inference_anomaly": False,
+                            "minimum_quorum": 2,
                         },
-                    },
-                    "mlip": {
-                        "dev_n": 1,
-                        "dev_run": False,
-                        "models": {"enabled": []},
-                        "rootstock": {"root": ".", "models": {}},
-                    },
-                    "experiment": {
-                        "learning_curve": {
-                            "min_train": 2,
-                            "max_train": 4,
-                            "n_repeats": 3,
-                            "mlip_selection": {
-                                "exclude_anomalous": True,
-                                "label_allowlist": [],
-                            },
-                        }
-                    },
-                }
-            )
+                    }
+                },
+            }
+        )
+
+        self.assertTrue(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous_mlips)
+        self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 2)
 
     def test_learning_curve_split_sizing_defaults_parse(self) -> None:
         cfg = Config(

@@ -67,12 +67,9 @@ n_repeats = 10
 
 # Anomaly-aware MLIP selection. Leave this off for the baseline comparison.
 [experiment.learning_curve.mlip_selection]
-# Optional explicit allowlist. Leave empty to use every discovered MLIP result.
 # enabled = ["mace", "mattersim", "orb_v3", "sevennet", "uma"]
-exclude_anomalous = false
-label_allowlist = ["normal"]
-strict_inference_anomaly = false
-minimum_quorum = 2
+exclude_anomalous_mlips = false
+minimum_quorum = 0
 
 # OH-BMA comparison presets:
 #
@@ -81,26 +78,15 @@ minimum_quorum = 2
 # tag = "mamun_oh"
 #
 # [experiment.learning_curve.mlip_selection]
-# exclude_anomalous = false
-# label_allowlist = ["normal"]
-# strict_inference_anomaly = false
-# minimum_quorum = 2
+# exclude_anomalous_mlips = false
+# minimum_quorum = 0
 #
 # Filtered:
 # [dataset_profile]
 # tag = "mamun_oh"
 #
 # [experiment.learning_curve.mlip_selection]
-# exclude_anomalous = true
-# label_allowlist = ["normal"]
-# strict_inference_anomaly = false
-# minimum_quorum = 2
-#
-# Optional stricter filtered variant:
-# [experiment.learning_curve.mlip_selection]
-# exclude_anomalous = true
-# label_allowlist = ["normal"]
-# strict_inference_anomaly = true
+# exclude_anomalous_mlips = true
 # minimum_quorum = 2
 
 [experiment.screening]

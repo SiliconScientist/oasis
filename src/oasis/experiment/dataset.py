@@ -126,8 +126,11 @@ def _strict_inference_masking_enabled(cfg: Config | None) -> bool:
         else None
     )
     return bool(
-        getattr(mlip_selection_cfg, "exclude_anomalous", False)
-        and getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
+        getattr(
+            mlip_selection_cfg,
+            "exclude_anomalous_mlips",
+            getattr(mlip_selection_cfg, "exclude_anomalous", False),
+        )
     )
 
 

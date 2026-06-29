@@ -168,10 +168,23 @@ class GraphDatasetInputConfig(BaseModel):
 
 class MlipSelectionConfig(BaseModel):
     enabled: List[str] = Field(default_factory=list)
-    exclude_anomalous: bool = False
-    label_allowlist: List[str] = Field(default_factory=lambda: ["normal"])
-    strict_inference_anomaly: bool = False
-    minimum_quorum: int = Field(default=2, ge=1)
+    exclude_anomalous_mlips: bool = False
+    minimum_quorum: int = Field(default=0, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_keys(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if (
+            "exclude_anomalous_mlips" not in normalized
+            and "exclude_anomalous" in normalized
+        ):
+            normalized["exclude_anomalous_mlips"] = bool(
+                normalized.get("exclude_anomalous", False)
+            )
+        return normalized
 
 
 class LearningCurveExperimentConfig(BaseModel):
