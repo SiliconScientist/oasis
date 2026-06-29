@@ -521,7 +521,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_results, patch(
                 "oasis.experiment_runner.learning_curve_plot",
                 return_value=tmp_path / "plots" / "learning_curve_anomalyaware_on.png",
-            ) as mock_learning_curve_plot:
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
+            ) as mock_zero_shot_plot:
                 run_experiment(cfg)
 
         self.assertEqual(
@@ -531,6 +534,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_on.png",
+        )
+        self.assertEqual(
+            mock_zero_shot_plot.call_args.kwargs["output_path"],
+            tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
         )
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,

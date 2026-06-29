@@ -318,6 +318,85 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
     return output_path
 
 
+def zero_shot_rmse_stage_plot(
+    stage_df: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+) -> Path:
+    required_columns = {"dataset", "stage", "rmse", "n_samples"}
+    missing_columns = required_columns.difference(stage_df.columns)
+    if missing_columns:
+        raise ValueError(
+            "stage_df is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+    if stage_df.empty:
+        raise ValueError("stage_df must contain at least one row.")
+
+    stage_order = [
+        "Full / all MLIPs",
+        "Matched subset / all MLIPs",
+        "Matched subset / anomaly-aware selection",
+    ]
+    stage_colors = {
+        "Full / all MLIPs": "tab:blue",
+        "Matched subset / all MLIPs": "tab:orange",
+        "Matched subset / anomaly-aware selection": "tab:green",
+    }
+    filtered = stage_df.loc[stage_df["stage"].isin(stage_order)].copy()
+    if filtered.empty:
+        raise ValueError("stage_df does not contain any recognized stage labels.")
+
+    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
+    x = np.arange(len(dataset_order))
+    width = 0.24
+    offsets = np.linspace(-width, width, num=len(stage_order))
+
+    fig, ax = plt.subplots(figsize=(max(7, 2 + 2.2 * len(dataset_order)), 4.5))
+    for offset, stage_name in zip(offsets, stage_order, strict=True):
+        stage_rows = (
+            filtered.loc[filtered["stage"] == stage_name]
+            .set_index("dataset")
+            .reindex(dataset_order)
+        )
+        if stage_rows["rmse"].isna().all():
+            continue
+        bars = ax.bar(
+            x + offset,
+            stage_rows["rmse"],
+            width,
+            label=stage_name,
+            color=stage_colors[stage_name],
+        )
+        for bar, n_samples in zip(bars, stage_rows["n_samples"], strict=True):
+            if pd.isna(n_samples) or pd.isna(bar.get_height()):
+                continue
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                f"n={int(n_samples)}",
+                ha="center",
+                va="bottom",
+                fontsize=_DEFAULT_TICK_FONTSIZE,
+            )
+
+    ax.set_xticks(x, dataset_order)
+    ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
+    ax.set_title("Zero-shot mean-MLIP RMSE by filtering stage", fontsize=fontsize)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.3)
+    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
 def learning_curve_plot(
     results: LearningCurveResults,
     output_path: str | Path,

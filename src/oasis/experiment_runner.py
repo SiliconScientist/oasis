@@ -53,6 +53,7 @@ from oasis.plot import (
     parity_plot,
     screening_budget_plot,
     sharpness_plot,
+    zero_shot_rmse_stage_plot,
 )
 _DEV_RUN_MAX_ROWS = 24
 _DEV_RUN_SWEEP_SIZE = 8
@@ -71,6 +72,22 @@ def _frame_head(frame: object, n_rows: int):
     if hasattr(frame, "iloc"):
         return frame.iloc[:n_rows]
     raise TypeError(f"Unsupported frame type for head(): {type(frame)!r}")
+
+
+def _filter_frame_to_reactions(frame: object, reactions: list[object]):
+    reaction_col = frame.get_column("reaction")
+    return frame.filter(reaction_col.is_in(reactions))
+
+
+def _zero_shot_rmse_from_frame(frame: object) -> float:
+    parity_plot_data = prepare_parity_plot_data(frame)
+    zero_shot_preds = np.mean(
+        np.column_stack(list(parity_plot_data.predictions.values())),
+        axis=1,
+    )
+    return float(
+        np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
+    )
 
 
 def _preview_values(values: list[object], *, limit: int = 5) -> str:
@@ -357,11 +374,11 @@ def load_filtered_wide_predictions(cfg: object):
     if base_dir is None:
         base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
-    wide_df = load_wide_predictions(result_files)
-    print(f"Loaded combined wide_df with {_frame_height(wide_df)} rows")
+    raw_wide_df = load_wide_predictions(result_files)
+    print(f"Loaded combined wide_df with {_frame_height(raw_wide_df)} rows")
     mlip_selection_cfg = _mlip_selection_cfg(cfg)
     wide_df = filter_structures_with_insufficient_valid_mlips(
-        wide_df,
+        raw_wide_df,
         enabled=bool(
             getattr(mlip_selection_cfg, "exclude_anomalous", False)
         ),
@@ -389,7 +406,50 @@ def load_filtered_wide_predictions(cfg: object):
             getattr(mlip_selection_cfg, "strict_inference_anomaly", False)
         ),
     )
-    return wide_df, result_files
+    return wide_df, result_files, raw_wide_df
+
+
+def write_zero_shot_rmse_stage_plot(
+    *,
+    cfg: object,
+    raw_wide_df: object,
+    selected_wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> Path | None:
+    mlip_selection_cfg = _mlip_selection_cfg(cfg)
+    if not bool(getattr(mlip_selection_cfg, "exclude_anomalous", False)):
+        return None
+
+    selected_reactions = selected_wide_df.get_column("reaction").to_list()
+    if not selected_reactions:
+        print("Skipping zero-shot stage plot: selected dataset is empty")
+        return None
+
+    matched_subset_df = _filter_frame_to_reactions(raw_wide_df, selected_reactions)
+    dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
+    stage_df = pd.DataFrame(
+        {
+            "dataset": [dataset_tag, dataset_tag, dataset_tag],
+            "stage": [
+                "Full / all MLIPs",
+                "Matched subset / all MLIPs",
+                "Matched subset / anomaly-aware selection",
+            ],
+            "rmse": [
+                _zero_shot_rmse_from_frame(raw_wide_df),
+                _zero_shot_rmse_from_frame(matched_subset_df),
+                _zero_shot_rmse_from_frame(selected_wide_df),
+            ],
+            "n_samples": [
+                _frame_height(raw_wide_df),
+                _frame_height(matched_subset_df),
+                _frame_height(selected_wide_df),
+            ],
+        }
+    )
+    output_path = output_dir / f"zero_shot_rmse_stage_{run_suffix}.png"
+    return zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
 
 
 def build_auxiliary_views(
@@ -786,9 +846,10 @@ def run_experiment(cfg: object):
     run_suffix = _plot_output_suffix(cfg)
     _apply_run_output_suffixes(cfg, plot_suffix=run_suffix)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
-    wide_df, result_files = load_filtered_wide_predictions(cfg)
+    wide_df, result_files, raw_wide_df = load_filtered_wide_predictions(cfg)
     wide_df = _apply_dev_run_frame_cap(cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
+    raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
     _apply_persistent_output_suffixes(cfg, dataset_size=_frame_height(wide_df))
     _apply_dev_run_curve_overrides(cfg, n_samples=_frame_height(wide_df))
     generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
@@ -800,6 +861,13 @@ def run_experiment(cfg: object):
     )
     graph_view = prepare_graph_view(cfg, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    write_zero_shot_rmse_stage_plot(
+        cfg=cfg,
+        raw_wide_df=raw_wide_df,
+        selected_wide_df=wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+    )
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
     fixed_split_cfg = getattr(cfg.plot, "fixed_split", None) if cfg.plot else None
     fixed_split_train_fraction = float(
