@@ -133,6 +133,15 @@ def _strict_anomaly_aware_zero_shot_rmse_from_frame(frame: object) -> float:
     return float(np.sqrt(np.mean((reference - zero_shot_preds) ** 2)))
 
 
+def _learning_curve_zero_shot_rmse_from_frame(
+    cfg: object,
+    frame: object,
+) -> float:
+    if _exclude_anomalous_mlips_enabled(cfg):
+        return _strict_anomaly_aware_zero_shot_rmse_from_frame(frame)
+    return _zero_shot_rmse_from_frame(frame)
+
+
 def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
     return {
         "enabled": _minimum_quorum(cfg) > 0,
@@ -1042,13 +1051,7 @@ def run_experiment(cfg: object):
         }
     )
     parity_plot_data = prepare_parity_plot_data(wide_df)
-    zero_shot_preds = np.mean(
-        np.column_stack(list(parity_plot_data.predictions.values())),
-        axis=1,
-    )
-    zero_shot_rmse = float(
-        np.sqrt(np.mean((parity_plot_data.reference - zero_shot_preds) ** 2))
-    )
+    zero_shot_rmse = _learning_curve_zero_shot_rmse_from_frame(cfg, wide_df)
     zero_shot_uq = _zero_shot_uq_baselines(parity_plot_data)
     learning_curve_results = None
     learning_curve_plot_path = None
