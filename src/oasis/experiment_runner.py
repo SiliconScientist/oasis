@@ -133,6 +133,31 @@ def _strict_anomaly_aware_zero_shot_rmse_from_frame(frame: object) -> float:
     return float(np.sqrt(np.mean((reference - zero_shot_preds) ** 2)))
 
 
+def _strict_validity_masks_by_mlip(frame: object) -> dict[str, np.ndarray]:
+    feature_names = mlip_feature_names(frame)
+    if not feature_names:
+        raise ValueError("No MLIP feature columns found for strict validity masking.")
+
+    validity_masks: dict[str, np.ndarray] = {}
+    available_columns = set(getattr(frame, "columns", ()))
+    for feature_name in feature_names:
+        detail_column_names = [
+            f"{feature_name}_{detail_name}"
+            for detail_name in INFERENCE_DETAIL_COLUMNS
+            if f"{feature_name}_{detail_name}" in available_columns
+        ]
+        if not detail_column_names:
+            raise ValueError(
+                "Strict validity masking requires detail columns for "
+                f"{feature_name!r}."
+            )
+        detail_matrix = np.column_stack(
+            [_column_to_numpy(frame, column_name) for column_name in detail_column_names]
+        )
+        validity_masks[feature_name] = np.all(detail_matrix == 0, axis=1)
+    return validity_masks
+
+
 def _learning_curve_zero_shot_rmse_from_frame(
     cfg: object,
     frame: object,
@@ -564,6 +589,44 @@ def write_zero_shot_rmse_stage_plot(
     stage_df = pd.DataFrame(stage_rows)
     output_path = output_dir / f"zero_shot_rmse_stage_{run_suffix}.png"
     return zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+
+
+def write_zero_shot_stage_parity_plots(
+    *,
+    cfg: object,
+    selected_wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> list[Path]:
+    if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
+        return []
+
+    if _frame_height(selected_wide_df) == 0:
+        print("Skipping zero-shot stage parity plots: selected dataset is empty")
+        return []
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths = [
+        parity_plot(
+            selected_wide_df,
+            output_path=output_dir
+            / f"mlips_vs_dft_parity_matched_subset_{run_suffix}.png",
+            title="Parity plot (matched subset / all MLIPs)",
+        )
+    ]
+    if _exclude_anomalous_mlips_enabled(cfg):
+        saved_paths.append(
+            parity_plot(
+                selected_wide_df,
+                output_path=output_dir
+                / f"mlips_vs_dft_parity_anomaly_aware_{run_suffix}.png",
+                title="Parity plot (matched subset / anomaly-aware selection)",
+                validity_mask_by_prediction=_strict_validity_masks_by_mlip(
+                    selected_wide_df
+                ),
+            )
+        )
+    return saved_paths
 
 
 def write_all_datasets_zero_shot_rmse_stage_plot(
@@ -1005,8 +1068,14 @@ def run_experiment(cfg: object):
         result_files,
         run_suffix,
     )
-    graph_view = prepare_graph_view(cfg, wide_df)
     output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    write_zero_shot_stage_parity_plots(
+        cfg=cfg,
+        selected_wide_df=zero_shot_stage_selected_wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+    )
+    graph_view = prepare_graph_view(cfg, wide_df)
     write_zero_shot_rmse_stage_plot(
         cfg=cfg,
         raw_wide_df=raw_wide_df,

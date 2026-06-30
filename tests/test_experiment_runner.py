@@ -17,6 +17,7 @@ from oasis.experiment_runner import (
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
+    write_zero_shot_stage_parity_plots,
 )
 from oasis.tune import OptunaTuningConfig
 from oasis.mlip.timing import MlipGenerationTimingSummary
@@ -566,6 +567,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oasis.experiment_runner.write_zero_shot_rmse_stage_plot",
                 return_value=tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
             ) as mock_zero_shot_plot, patch(
+                "oasis.experiment_runner.write_zero_shot_stage_parity_plots",
+                return_value=[],
+            ), patch(
                 "oasis.experiment_runner.write_all_datasets_zero_shot_rmse_stage_plot",
                 return_value=(
                     tmp_path
@@ -610,6 +614,88 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             cfg.analysis.comparison_plot_path,
             tmp_path / "comparison_anomalyaware_on.png",
+        )
+
+    def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            )
+        )
+        selected_wide_df = pl.DataFrame(
+            {
+                "reaction": ["r0", "r1", "r2"],
+                "reference_ads_eng": [1.0, 2.0, 3.0],
+                "mace_mlip_ads_eng_median": [1.1, 2.1, 3.1],
+                "orb_mlip_ads_eng_median": [0.9, 1.9, 2.9],
+                "mace_slab_conv": [0, 0, 0],
+                "mace_ads_conv": [0, 0, 0],
+                "mace_slab_move": [0, 0, 0],
+                "mace_ads_move": [0, 0, 0],
+                "mace_slab_seed": [0, 0, 0],
+                "mace_ads_seed": [0, 0, 0],
+                "mace_ads_eng_seed": [0, 0, 0],
+                "mace_adsorbate_migration": [0, 0, 0],
+                "mace_energy_anomaly": [0, 0, 0],
+                "orb_slab_conv": [0, 1, 0],
+                "orb_ads_conv": [0, 0, 0],
+                "orb_slab_move": [0, 0, 0],
+                "orb_ads_move": [0, 0, 0],
+                "orb_slab_seed": [0, 0, 0],
+                "orb_ads_seed": [0, 0, 0],
+                "orb_ads_eng_seed": [0, 0, 0],
+                "orb_adsorbate_migration": [0, 0, 0],
+                "orb_energy_anomaly": [0, 0, 0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.parity_plot",
+                side_effect=lambda *args, **kwargs: kwargs["output_path"],
+            ) as mock_parity_plot:
+                saved_paths = write_zero_shot_stage_parity_plots(
+                    cfg=cfg,
+                    selected_wide_df=selected_wide_df,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(len(saved_paths), 2)
+        self.assertEqual(
+            mock_parity_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "mlips_vs_dft_parity_matched_subset_anomalyaware_on.png",
+        )
+        self.assertEqual(
+            mock_parity_plot.call_args_list[0].kwargs["title"],
+            "Parity plot (matched subset / all MLIPs)",
+        )
+        self.assertEqual(
+            mock_parity_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "mlips_vs_dft_parity_anomaly_aware_anomalyaware_on.png",
+        )
+        self.assertEqual(
+            mock_parity_plot.call_args_list[1].kwargs["title"],
+            "Parity plot (matched subset / anomaly-aware selection)",
+        )
+        self.assertTrue(
+            mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"][
+                "mace"
+            ].all()
+        )
+        np.testing.assert_array_equal(
+            mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"][
+                "orb"
+            ],
+            np.array([True, False, True]),
         )
 
     def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(

@@ -272,7 +272,13 @@ def mae_comparison_plot(
     return output_path
 
 
-def parity_plot(df: Any, output_path: str | Path) -> Path:
+def parity_plot(
+    df: Any,
+    output_path: str | Path,
+    *,
+    title: str = "Parity plot (all MLIPs)",
+    validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
+) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
 
@@ -283,11 +289,24 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
 
     fig, ax = plt.subplots(figsize=(7, 7))
     cmap = plt.cm.get_cmap("tab10", len(plot_data.predictions))
+    plotted_ref_values: list[np.ndarray] = []
+    plotted_prediction_values: list[np.ndarray] = []
 
     for idx, (label, preds) in enumerate(plot_data.predictions.items()):
+        mask = None
+        if validity_mask_by_prediction is not None:
+            mask = np.asarray(validity_mask_by_prediction.get(label), dtype=bool)
+            if mask.shape != preds.shape:
+                raise ValueError(
+                    "Prediction validity masks must match prediction array shapes."
+                )
+        ref_values = ref if mask is None else ref[mask]
+        pred_values = preds if mask is None else preds[mask]
+        if len(ref_values) == 0:
+            continue
         ax.scatter(
-            ref,
-            preds,
+            ref_values,
+            pred_values,
             s=35,
             alpha=0.85,
             label=label,
@@ -295,15 +314,20 @@ def parity_plot(df: Any, output_path: str | Path) -> Path:
             edgecolor="black",
             linewidth=0.5,
         )
+        plotted_ref_values.append(np.asarray(ref_values, dtype=float))
+        plotted_prediction_values.append(np.asarray(pred_values, dtype=float))
 
-    mlip_vals = np.concatenate(list(plot_data.predictions.values()))
-    min_val = min(ref.min(), mlip_vals.min())
-    max_val = max(ref.max(), mlip_vals.max())
+    if not plotted_prediction_values:
+        raise ValueError("No valid MLIP predictions remain to plot.")
+    plotted_ref = np.concatenate(plotted_ref_values)
+    mlip_vals = np.concatenate(plotted_prediction_values)
+    min_val = min(plotted_ref.min(), mlip_vals.min())
+    max_val = max(plotted_ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
 
     ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
-    ax.set_title("Parity plot (all MLIPs)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.set_title(title, fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)

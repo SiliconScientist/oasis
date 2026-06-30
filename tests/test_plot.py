@@ -22,6 +22,7 @@ from oasis.plot import (
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
+    parity_plot,
     screening_budget_plot,
     sharpness_plot,
     total_time_accuracy_plot,
@@ -204,6 +205,36 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+
+    def test_parity_plot_can_filter_invalid_points_per_mlip(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "parity_filtered.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = parity_plot(
+                    df,
+                    output_path=output_path,
+                    title="Parity plot (filtered)",
+                    validity_mask_by_prediction={
+                        "ridge": pd.Series([True, False, True]).to_numpy(),
+                        "lasso": pd.Series([False, True, True]).to_numpy(),
+                    },
+                )
+                fig = parity_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.get_title(), "Parity plot (filtered)")
+            point_counts = [len(collection.get_offsets()) for collection in ax.collections]
+            self.assertEqual(point_counts, [2, 2])
 
     def test_zero_shot_rmse_stage_plot_renders_three_stage_bars(self) -> None:
         stage_df = pd.DataFrame(
