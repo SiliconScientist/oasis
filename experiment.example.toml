@@ -99,6 +99,14 @@ minimum_quorum = 0
 budget_mode = "screening_fraction"
 screen_fraction = 0.2
 min_screen_size = 1
+# Policy diagnostic method-selection rules. Regret remains outer-test RMSE
+# relative to the oracle-best method on the same paired split.
+policy_names = [
+    "min_screening_rmse",
+    "min_screening_miscalibration_area",
+    "combined_screening_rmse_miscalibration",
+]
+combined_miscalibration_lambda = 1.0
 # results_bundle_path defaults to `data/results/screening/<dataset>.json`
 # results_bundle_path = "data/results/screening/example_oh.json"
 # force_refresh_train_sizes = { ridge = [10], weighted_simplex = [15] }
