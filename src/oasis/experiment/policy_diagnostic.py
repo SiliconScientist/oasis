@@ -21,6 +21,7 @@ from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
     learning_curve_method_name_for_result_field,
     learning_curve_result_field_for_method_name,
+    learning_curve_uq_field_for_method_name,
 )
 from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCollection
 
@@ -79,6 +80,12 @@ class SharedOuterSplit:
     repeat: int
     train_idx: np.ndarray
     test_idx: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningDiagnosticMetrics:
+    cv_rmse: float
+    miscalibration_area: float | None
 
 
 def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -501,7 +508,8 @@ def build_policy_selection_detail_frame(
                     "budget": split.budget,
                     "repeat": split.repeat,
                     "method": method_name,
-                    "screening_cv_rmse": screening_result,
+                    "screening_cv_rmse": screening_result.cv_rmse,
+                    "screening_miscalibration_area": screening_result.miscalibration_area,
                 }
             )
 
@@ -536,7 +544,11 @@ def build_policy_selection_detail_frame(
                     "screening_selected_outer_rmse": selected_outer_rmse,
                     "regret": selected_outer_rmse - oracle_outer_rmse,
                     "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
-                    "screening_miscalibration_area": np.nan,
+                    "screening_miscalibration_area": float(
+                        selected_row["screening_miscalibration_area"]
+                    )
+                    if pd.notna(selected_row["screening_miscalibration_area"])
+                    else np.nan,
                     "agreement": bool(oracle_row["method"] == selected_row["method"]),
                 }
             )
@@ -650,7 +662,7 @@ def _run_family_screening_diagnostic(
     calibration_fraction: float,
     min_cal_size: int,
     min_inner_train_size: int,
-) -> float | None:
+) -> ScreeningDiagnosticMetrics | None:
     from oasis.experiment.core import (
         _annotate_screening_results,
         _build_family_split_collection,
@@ -698,7 +710,19 @@ def _run_family_screening_diagnostic(
     result_frame = getattr(results, result_field)
     if result_frame is None or result_frame.empty:
         return None
-    return float(result_frame["cv_rmse_mean"].iloc[0])
+    uq_field = learning_curve_uq_field_for_method_name(method_name)
+    uq_frame = getattr(results, uq_field) if uq_field is not None else None
+    miscalibration_area = None
+    if (
+        uq_frame is not None
+        and not uq_frame.empty
+        and "miscalibration_area" in uq_frame.columns
+    ):
+        miscalibration_area = float(uq_frame["miscalibration_area"].iloc[0])
+    return ScreeningDiagnosticMetrics(
+        cv_rmse=float(result_frame["cv_rmse_mean"].iloc[0]),
+        miscalibration_area=miscalibration_area,
+    )
 
 
 def _derived_split_seed(seed: int, budget: int, repeat: int, *, salt: int) -> int:

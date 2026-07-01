@@ -23,6 +23,7 @@ from oasis.experiment.policy_diagnostic import (
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
     learning_curve_result_field_for_method_name,
+    learning_curve_uq_field_for_method_name,
 )
 from oasis.learning_curve.runners import SweepFamilyRunArtifacts
 from oasis.sweep import LearningCurveResults, SweepDataset, SweepFamilyRequirements
@@ -290,11 +291,17 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 requirements: SweepFamilyRequirements,
                 outer_scores_by_signature: dict[tuple[int, tuple[int, ...]], float],
                 screening_scores_by_signature: dict[tuple[int, ...], float],
+                screening_miscalibration_by_signature: dict[tuple[int, ...], float] | None = None,
             ) -> None:
                 self.method_name = method_name
                 self._requirements = requirements
                 self._outer_scores_by_signature = outer_scores_by_signature
                 self._screening_scores_by_signature = screening_scores_by_signature
+                self._screening_miscalibration_by_signature = (
+                    {}
+                    if screening_miscalibration_by_signature is None
+                    else screening_miscalibration_by_signature
+                )
 
             def requirements(self):
                 return self._requirements
@@ -303,19 +310,34 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 split = payload.split_collection.splits[0]
                 result_field = learning_curve_result_field_for_method_name(self.method_name)
                 assert result_field is not None
+                uq_field = learning_curve_uq_field_for_method_name(self.method_name)
                 screening_key = tuple(sorted(int(value) for value in payload.dataset.sample_ids.tolist()))
                 score = self._screening_scores_by_signature[screening_key]
-                return LearningCurveResults.from_mapping(
-                    {
-                        result_field: pd.DataFrame(
-                            {
-                                "n_train": [split.sweep_size],
-                                "rmse_mean": [score],
-                                "rmse_std": [0.0],
-                            }
-                        )
-                    }
-                )
+                frames = {
+                    result_field: pd.DataFrame(
+                        {
+                            "n_train": [split.sweep_size],
+                            "rmse_mean": [score],
+                            "rmse_std": [0.0],
+                        }
+                    )
+                }
+                if uq_field is not None and screening_key in self._screening_miscalibration_by_signature:
+                    frames[uq_field] = pd.DataFrame(
+                        {
+                            "n_train": [split.sweep_size],
+                            "miscalibration_area": [
+                                self._screening_miscalibration_by_signature[screening_key]
+                            ],
+                            "miscalibration_area_std": [0.0],
+                            "sharpness": [0.0],
+                            "sharpness_std": [0.0],
+                            "dispersion": [0.0],
+                            "dispersion_std": [0.0],
+                            "uncertainty_kind": ["spread_only"],
+                        }
+                    )
+                return LearningCurveResults.from_mapping(frames)
 
             def run_with_artifacts(self, payload):
                 result_field = learning_curve_result_field_for_method_name(self.method_name)
@@ -365,6 +387,10 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 train_signature_by_repeat[0]: 0.10,
                 train_signature_by_repeat[1]: 0.12,
             },
+            screening_miscalibration_by_signature={
+                train_signature_by_repeat[0]: 0.05,
+                train_signature_by_repeat[1]: 0.07,
+            },
         )
         weighted_linear = StubFamily(
             method_name="weighted_linear",
@@ -376,6 +402,10 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             screening_scores_by_signature={
                 train_signature_by_repeat[0]: 0.15,
                 train_signature_by_repeat[1]: 0.11,
+            },
+            screening_miscalibration_by_signature={
+                train_signature_by_repeat[0]: 0.09,
+                train_signature_by_repeat[1]: 0.04,
             },
         )
 
@@ -426,7 +456,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     "regret": pd.Series([0.0, 0.0], dtype="Float64"),
                     "screening_cv_rmse": pd.Series([0.1, 0.11], dtype="Float64"),
                     "screening_miscalibration_area": pd.Series(
-                        [np.nan, np.nan], dtype="Float64"
+                        [0.05, 0.04], dtype="Float64"
                     ),
                     "agreement": pd.Series([True, True], dtype="boolean"),
                 }
