@@ -584,6 +584,12 @@ def _write_policy_selection_diagnostic(
         screening_min_cal_size=getattr(screening_cfg, "min_cal_size", 1),
         screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
         requested_sweep_sizes=requested_sweep_sizes,
+        policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
+        combined_miscalibration_lambda=getattr(
+            screening_cfg,
+            "combined_miscalibration_lambda",
+            1.0,
+        ),
     )
     metadata = learning_curve_sweep_metadata_from_config(
         cfg,

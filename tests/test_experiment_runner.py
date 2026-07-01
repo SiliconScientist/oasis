@@ -192,6 +192,11 @@ class ExperimentRunnerTests(unittest.TestCase):
                         calibration_fraction=0.2,
                         min_cal_size=1,
                         min_inner_train_size=1,
+                        policy_names=[
+                            "min_screening_rmse",
+                            "combined_screening_rmse_miscalibration",
+                        ],
+                        combined_miscalibration_lambda=2.0,
                     ),
                 ),
                 plot=SimpleNamespace(output_dir=output_dir),
@@ -248,7 +253,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.build_policy_selection_diagnostic_results",
                 return_value=diagnostic_results,
-            ):
+            ) as mock_build_diagnostic:
                 artifact_path = _write_policy_selection_diagnostic(
                     cfg=cfg,
                     wide_df=wide_df,
@@ -286,6 +291,17 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(summary_exists)
         self.assertTrue(oracle_plot_exists)
         self.assertTrue(regret_plot_exists)
+        self.assertEqual(
+            mock_build_diagnostic.call_args.kwargs["policy_names"],
+            [
+                "min_screening_rmse",
+                "combined_screening_rmse_miscalibration",
+            ],
+        )
+        self.assertEqual(
+            mock_build_diagnostic.call_args.kwargs["combined_miscalibration_lambda"],
+            2.0,
+        )
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
