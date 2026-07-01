@@ -15,7 +15,12 @@ from oasis.exp import (
     load_or_run_learning_curve_results_from_config,
     prepare_parity_plot_data,
 )
-from oasis.experiment.dataset import mlip_feature_names
+from oasis.experiment.dataset import build_sweep_dataset_from_config, mlip_feature_names
+from oasis.experiment.policy_diagnostic import (
+    PolicySelectionDiagnosticArtifact,
+    build_policy_selection_diagnostic_results,
+    save_policy_selection_diagnostic_artifact,
+)
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
 from oasis.learning_curve.time_accuracy import (
@@ -33,6 +38,7 @@ from oasis.experiment_data import (
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
 )
+from oasis.learning_curve.results_io import learning_curve_sweep_metadata_from_config
 from oasis.experiment_config import derive_dataset_profile_paths
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
@@ -494,6 +500,100 @@ def _screening_run_cfg(cfg: object):
     screening_cfg = copy.deepcopy(cfg)
     screening_cfg.experiment.learning_curve = screening_learning_curve_cfg
     return screening_cfg
+
+
+def _write_policy_selection_diagnostic(
+    *,
+    cfg: object,
+    wide_df: object,
+    graph_view: object,
+    auxiliary_views: dict[str, object] | None,
+    output_dir: Path,
+    run_suffix: str,
+) -> Path | None:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    if learning_curve_cfg is None or screening_cfg is None:
+        return None
+    if getattr(screening_cfg, "screen_fraction", None) is None:
+        return None
+
+    from oasis.learning_curve.registry import (
+        default_sweep_model_families,
+        enabled_learning_curve_model_names_from_config,
+    )
+
+    dataset = build_sweep_dataset_from_config(
+        wide_df,
+        cfg,
+        graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
+    )
+    enabled_model_names = enabled_learning_curve_model_names_from_config(
+        getattr(learning_curve_cfg, "models", None)
+    )
+    model_families = default_sweep_model_families(
+        enabled_model_names,
+        config=getattr(learning_curve_cfg, "models", None),
+    )
+    requested_sweep_sizes = resolve_configured_sweep_sizes(
+        dataset.n_samples,
+        min_train=learning_curve_cfg.min_train,
+        max_train=learning_curve_cfg.max_train,
+        step=getattr(learning_curve_cfg, "step", 1),
+        sweep_sizes=getattr(learning_curve_cfg, "sweep_sizes", ()),
+        sweep_fractions=getattr(learning_curve_cfg, "sweep_fractions", ()),
+    )
+    diagnostic_results = build_policy_selection_diagnostic_results(
+        dataset,
+        min_train=learning_curve_cfg.min_train,
+        max_train=learning_curve_cfg.max_train,
+        step=getattr(learning_curve_cfg, "step", 1),
+        n_repeats=learning_curve_cfg.n_repeats,
+        seed=cfg.seed if getattr(cfg, "seed", None) is not None else 42,
+        model_families=model_families,
+        outer_validation_fraction=getattr(learning_curve_cfg, "validation_fraction", 0.2),
+        outer_min_val_size=getattr(learning_curve_cfg, "min_val_size", 1),
+        outer_min_tuning_val_size=getattr(learning_curve_cfg, "min_tuning_val_size", 1),
+        outer_calibration_enabled=getattr(learning_curve_cfg, "calibration_enabled", False),
+        outer_calibration_fraction=getattr(learning_curve_cfg, "calibration_fraction", 0.2),
+        outer_min_cal_size=getattr(learning_curve_cfg, "min_cal_size", 1),
+        outer_min_inner_train_size=getattr(learning_curve_cfg, "min_inner_train_size", 1),
+        min_test_size=getattr(learning_curve_cfg, "min_test_size", 1),
+        screening_fraction=screening_cfg.screen_fraction,
+        min_screen_size=getattr(screening_cfg, "min_screen_size", 1),
+        screening_validation_fraction=getattr(screening_cfg, "validation_fraction", 0.2),
+        screening_min_val_size=getattr(screening_cfg, "min_val_size", 1),
+        screening_min_tuning_val_size=getattr(screening_cfg, "min_tuning_val_size", 1),
+        screening_calibration_enabled=getattr(screening_cfg, "calibration_enabled", False),
+        screening_calibration_fraction=getattr(screening_cfg, "calibration_fraction", 0.2),
+        screening_min_cal_size=getattr(screening_cfg, "min_cal_size", 1),
+        screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
+        requested_sweep_sizes=requested_sweep_sizes,
+    )
+    metadata = learning_curve_sweep_metadata_from_config(
+        cfg,
+        dataset_size=int(len(wide_df)),
+        mlip_feature_names=mlip_feature_names(wide_df),
+    )
+    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
+    save_policy_selection_diagnostic_artifact(
+        PolicySelectionDiagnosticArtifact(
+            metadata=metadata,
+            results=diagnostic_results,
+        ),
+        artifact_path,
+    )
+    diagnostic_results.detail_df.to_csv(
+        output_dir / f"policy_selection_diagnostic_detail_{run_suffix}.csv",
+        index=False,
+    )
+    diagnostic_results.summary_df.to_csv(
+        output_dir / f"policy_selection_diagnostic_summary_{run_suffix}.csv",
+        index=False,
+    )
+    return artifact_path
 
 
 def _can_reuse_graph_artifact(
@@ -1202,6 +1302,15 @@ def run_experiment(cfg: object):
             zero_shot_uq=zero_shot_uq,
             panel_prefix="screening",
             **plot_kwargs,
+        )
+    if learning_curve_cfg is not None and screening_run_cfg is not None:
+        _write_policy_selection_diagnostic(
+            cfg=cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
         )
     if learning_curve_plot_path is not None and screening_plot_path is not None:
         with tempfile.TemporaryDirectory() as tmpdir:

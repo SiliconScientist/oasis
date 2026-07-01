@@ -10,6 +10,7 @@ import pandas as pd
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
+    build_policy_selection_diagnostic_results,
     build_policy_selection_detail_frame,
     derive_family_split_collection_from_shared_outer_splits,
     generate_shared_outer_splits,
@@ -17,6 +18,7 @@ from oasis.experiment.policy_diagnostic import (
     normalize_policy_detail_frame,
     normalize_policy_summary_frame,
     save_policy_selection_diagnostic_artifact,
+    summarize_policy_detail_frame,
 )
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
@@ -124,6 +126,27 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(restored.metadata, artifact.metadata)
         pd.testing.assert_frame_equal(restored.results.detail_df, artifact.results.detail_df)
         pd.testing.assert_frame_equal(restored.results.summary_df, artifact.results.summary_df)
+
+    def test_summarize_policy_detail_frame_aggregates_by_budget(self) -> None:
+        summary = summarize_policy_detail_frame(
+            pd.DataFrame(
+                {
+                    "budget": [4, 4, 8],
+                    "repeat": [0, 1, 0],
+                    "oracle_method": ["ridge", "weighted_linear", "ridge"],
+                    "screening_selected_method": ["ridge", "ridge", "ridge"],
+                    "oracle_outer_rmse": [0.2, 0.25, 0.3],
+                    "screening_selected_outer_rmse": [0.2, 0.35, 0.3],
+                    "regret": [0.0, 0.1, 0.0],
+                    "screening_cv_rmse": [0.1, 0.12, 0.15],
+                    "agreement": [True, False, True],
+                }
+            )
+        )
+
+        self.assertEqual(summary["budget"].tolist(), [4, 8])
+        self.assertEqual(summary["mean_regret"].tolist(), [0.05, 0.0])
+        self.assertEqual(summary["agreement_rate"].tolist(), [0.5, 1.0])
 
     def test_derived_family_splits_preserve_shared_outer_test_sets(self) -> None:
         shared_splits = generate_shared_outer_splits(
@@ -308,16 +331,23 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             n_repeats=2,
             seed=11,
             model_families=[ridge, weighted_linear],
-            validation_fraction=0.25,
-            min_val_size=1,
-            min_tuning_val_size=1,
-            calibration_enabled=False,
-            calibration_fraction=0.2,
-            min_cal_size=1,
-            min_inner_train_size=1,
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
             min_test_size=1,
             screening_fraction=0.25,
             min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
         )
 
         pd.testing.assert_frame_equal(
@@ -340,3 +370,31 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 }
             ),
         )
+        results = build_policy_selection_diagnostic_results(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=2,
+            seed=11,
+            model_families=[ridge, weighted_linear],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+        )
+        self.assertEqual(results.summary_df["budget"].tolist(), [4])
+        self.assertEqual(results.summary_df["agreement_rate"].tolist(), [1.0])

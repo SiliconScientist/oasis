@@ -111,6 +111,97 @@ def normalize_policy_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return normalized.loc[:, _SUMMARY_COLUMNS].sort_values("budget").reset_index(drop=True)
 
 
+def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
+    normalized_detail = normalize_policy_detail_frame(detail_df)
+    if normalized_detail.empty:
+        return normalize_policy_summary_frame(pd.DataFrame(columns=_SUMMARY_COLUMNS))
+
+    rows: list[dict[str, float | int]] = []
+    for budget, group in normalized_detail.groupby("budget", sort=True):
+        regret = group["regret"].astype(float).to_numpy()
+        oracle_outer = group["oracle_outer_rmse"].astype(float).to_numpy()
+        selected_outer = group["screening_selected_outer_rmse"].astype(float).to_numpy()
+        agreement = group["agreement"].astype(bool).to_numpy()
+        mean_regret = float(np.mean(regret))
+        std_regret = float(np.std(regret))
+        se_regret = float(std_regret / np.sqrt(len(regret)))
+        rows.append(
+            {
+                "budget": int(budget),
+                "mean_regret": mean_regret,
+                "std_regret": std_regret,
+                "se_regret": se_regret,
+                "ci95_low": mean_regret - 1.96 * se_regret,
+                "ci95_high": mean_regret + 1.96 * se_regret,
+                "agreement_rate": float(np.mean(agreement)),
+                "oracle_outer_rmse_mean": float(np.mean(oracle_outer)),
+                "screening_selected_outer_rmse_mean": float(np.mean(selected_outer)),
+            }
+        )
+    return normalize_policy_summary_frame(pd.DataFrame(rows, columns=_SUMMARY_COLUMNS))
+
+
+def build_policy_selection_diagnostic_results(
+    dataset: SweepDataset,
+    *,
+    min_train: int,
+    max_train: int,
+    step: int,
+    n_repeats: int,
+    seed: int,
+    model_families: Sequence[Any],
+    outer_validation_fraction: float,
+    outer_min_val_size: int,
+    outer_min_tuning_val_size: int,
+    outer_calibration_enabled: bool,
+    outer_calibration_fraction: float,
+    outer_min_cal_size: int,
+    outer_min_inner_train_size: int,
+    min_test_size: int,
+    screening_fraction: float,
+    min_screen_size: int,
+    screening_validation_fraction: float,
+    screening_min_val_size: int,
+    screening_min_tuning_val_size: int,
+    screening_calibration_enabled: bool,
+    screening_calibration_fraction: float,
+    screening_min_cal_size: int,
+    screening_min_inner_train_size: int,
+    requested_sweep_sizes: Collection[int] | None = None,
+) -> PolicySelectionDiagnosticResults:
+    detail_df = build_policy_selection_detail_frame(
+        dataset,
+        min_train=min_train,
+        max_train=max_train,
+        step=step,
+        n_repeats=n_repeats,
+        seed=seed,
+        model_families=model_families,
+        outer_validation_fraction=outer_validation_fraction,
+        outer_min_val_size=outer_min_val_size,
+        outer_min_tuning_val_size=outer_min_tuning_val_size,
+        outer_calibration_enabled=outer_calibration_enabled,
+        outer_calibration_fraction=outer_calibration_fraction,
+        outer_min_cal_size=outer_min_cal_size,
+        outer_min_inner_train_size=outer_min_inner_train_size,
+        min_test_size=min_test_size,
+        screening_fraction=screening_fraction,
+        min_screen_size=min_screen_size,
+        screening_validation_fraction=screening_validation_fraction,
+        screening_min_val_size=screening_min_val_size,
+        screening_min_tuning_val_size=screening_min_tuning_val_size,
+        screening_calibration_enabled=screening_calibration_enabled,
+        screening_calibration_fraction=screening_calibration_fraction,
+        screening_min_cal_size=screening_min_cal_size,
+        screening_min_inner_train_size=screening_min_inner_train_size,
+        requested_sweep_sizes=requested_sweep_sizes,
+    )
+    return PolicySelectionDiagnosticResults(
+        detail_df=detail_df,
+        summary_df=summarize_policy_detail_frame(detail_df),
+    )
+
+
 def dump_policy_selection_diagnostic_results(
     results: PolicySelectionDiagnosticResults,
 ) -> dict[str, str]:
@@ -279,16 +370,23 @@ def build_policy_selection_detail_frame(
     n_repeats: int,
     seed: int,
     model_families: Sequence[Any],
-    validation_fraction: float,
-    min_val_size: int,
-    min_tuning_val_size: int,
-    calibration_enabled: bool,
-    calibration_fraction: float,
-    min_cal_size: int,
-    min_inner_train_size: int,
+    outer_validation_fraction: float,
+    outer_min_val_size: int,
+    outer_min_tuning_val_size: int,
+    outer_calibration_enabled: bool,
+    outer_calibration_fraction: float,
+    outer_min_cal_size: int,
+    outer_min_inner_train_size: int,
     min_test_size: int,
     screening_fraction: float,
     min_screen_size: int,
+    screening_validation_fraction: float,
+    screening_min_val_size: int,
+    screening_min_tuning_val_size: int,
+    screening_calibration_enabled: bool,
+    screening_calibration_fraction: float,
+    screening_min_cal_size: int,
+    screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
 ) -> pd.DataFrame:
     shared_splits = generate_shared_outer_splits(
@@ -317,13 +415,13 @@ def build_policy_selection_detail_frame(
             shared_splits,
             family=family,
             seed=seed,
-            validation_fraction=validation_fraction,
-            min_val_size=min_val_size,
-            min_tuning_val_size=min_tuning_val_size,
-            calibration_enabled=calibration_enabled,
-            calibration_fraction=calibration_fraction,
-            min_cal_size=min_cal_size,
-            min_inner_train_size=min_inner_train_size,
+            validation_fraction=outer_validation_fraction,
+            min_val_size=outer_min_val_size,
+            min_tuning_val_size=outer_min_tuning_val_size,
+            calibration_enabled=outer_calibration_enabled,
+            calibration_fraction=outer_calibration_fraction,
+            min_cal_size=outer_min_cal_size,
+            min_inner_train_size=outer_min_inner_train_size,
         )
         if not split_collection.splits:
             continue
@@ -366,13 +464,13 @@ def build_policy_selection_detail_frame(
                 seed=_derived_split_seed(seed, split.budget, split.repeat, salt=7919),
                 screening_fraction=screening_fraction,
                 min_screen_size=min_screen_size,
-                validation_fraction=validation_fraction,
-                min_val_size=min_val_size,
-                min_tuning_val_size=min_tuning_val_size,
-                calibration_enabled=calibration_enabled,
-                calibration_fraction=calibration_fraction,
-                min_cal_size=min_cal_size,
-                min_inner_train_size=min_inner_train_size,
+                validation_fraction=screening_validation_fraction,
+                min_val_size=screening_min_val_size,
+                min_tuning_val_size=screening_min_tuning_val_size,
+                calibration_enabled=screening_calibration_enabled,
+                calibration_fraction=screening_calibration_fraction,
+                min_cal_size=screening_min_cal_size,
+                min_inner_train_size=screening_min_inner_train_size,
             )
             if screening_result is None:
                 continue

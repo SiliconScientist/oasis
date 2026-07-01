@@ -14,14 +14,16 @@ from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
     _build_zero_shot_stage_rows,
+    _write_policy_selection_diagnostic,
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
     write_zero_shot_stage_parity_plots,
 )
+from oasis.experiment.policy_diagnostic import PolicySelectionDiagnosticResults
 from oasis.tune import OptunaTuningConfig
 from oasis.mlip.timing import MlipGenerationTimingSummary
-from oasis.sweep import LearningCurveResults
+from oasis.sweep import LearningCurveResults, SweepDataset
 
 
 class _FakeColumn:
@@ -141,6 +143,135 @@ class ExperimentRunnerTests(unittest.TestCase):
             }
         )
         return LearningCurveResults(ridge_df=ridge_frame)
+
+    def test_write_policy_selection_diagnostic_saves_artifact_and_csvs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=4,
+                        max_train=8,
+                        step=2,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                }
+            )
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "budget": [4, 4],
+                        "repeat": [0, 1],
+                        "oracle_method": ["ridge", "ridge"],
+                        "screening_selected_method": ["ridge", "ridge"],
+                        "oracle_outer_rmse": [0.2, 0.25],
+                        "screening_selected_outer_rmse": [0.2, 0.25],
+                        "regret": [0.0, 0.0],
+                        "screening_cv_rmse": [0.1, 0.11],
+                        "agreement": [True, True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "budget": [4],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.225],
+                        "screening_selected_outer_rmse_mean": [0.225],
+                    }
+                ),
+            )
+            with patch(
+                "oasis.experiment_runner.build_sweep_dataset_from_config",
+                return_value=SweepDataset(
+                    mlip_features=np.arange(6, dtype=float).reshape(-1, 1),
+                    targets=np.linspace(0.0, 1.0, 6),
+                ),
+            ), patch(
+                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
+                return_value=("ridge",),
+            ), patch(
+                "oasis.learning_curve.registry.default_sweep_model_families",
+                return_value=(),
+            ), patch(
+                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
+                return_value=diagnostic_results,
+            ):
+                artifact_path = _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                )
+                detail_path = (
+                    output_dir / "policy_selection_diagnostic_detail_anomalyaware_off.csv"
+                )
+                summary_path = (
+                    output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
+                )
+                artifact_exists = artifact_path is not None and artifact_path.is_file()
+                detail_exists = detail_path.is_file()
+                summary_exists = summary_path.is_file()
+
+        assert artifact_path is not None
+        self.assertEqual(
+            artifact_path.name,
+            "policy_selection_diagnostic_anomalyaware_off.json",
+        )
+        self.assertTrue(artifact_exists)
+        self.assertTrue(detail_exists)
+        self.assertTrue(summary_exists)
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
