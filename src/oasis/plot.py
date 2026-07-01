@@ -1213,6 +1213,121 @@ def _fixed_split_time_accuracy_plot(
     return output_path
 
 
+def policy_selected_vs_oracle_plot(
+    summary_df: pd.DataFrame,
+    *,
+    output_path: str | Path,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+) -> Path:
+    required_columns = {
+        "budget",
+        "oracle_outer_rmse_mean",
+        "screening_selected_outer_rmse_mean",
+    }
+    if not required_columns.issubset(summary_df.columns):
+        raise ValueError(
+            "policy summary frame must contain budget, oracle_outer_rmse_mean, "
+            "and screening_selected_outer_rmse_mean."
+        )
+    frame = _filter_curve_frame(
+        summary_df.sort_values("budget").reset_index(drop=True),
+        x_column="budget",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(
+        frame["budget"],
+        frame["oracle_outer_rmse_mean"],
+        marker="o",
+        color="tab:blue",
+        label="Oracle best held-out RMSE",
+    )
+    ax.plot(
+        frame["budget"],
+        frame["screening_selected_outer_rmse_mean"],
+        marker="s",
+        color="tab:orange",
+        label="Screening-selected held-out RMSE",
+    )
+    ax.set_xlabel("Sample budget", fontsize=fontsize)
+    ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
+    ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    _set_integer_x_ticks(ax)
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def policy_regret_plot(
+    summary_df: pd.DataFrame,
+    *,
+    output_path: str | Path,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+) -> Path:
+    required_columns = {"budget", "mean_regret"}
+    if not required_columns.issubset(summary_df.columns):
+        raise ValueError("policy summary frame must contain budget and mean_regret.")
+    frame = _filter_curve_frame(
+        summary_df.sort_values("budget").reset_index(drop=True),
+        x_column="budget",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(
+        frame["budget"],
+        frame["mean_regret"],
+        marker="o",
+        color="tab:red",
+        label="Mean regret",
+    )
+    if {"ci95_low", "ci95_high"}.issubset(frame.columns):
+        ax.fill_between(
+            frame["budget"],
+            frame["ci95_low"],
+            frame["ci95_high"],
+            color="tab:red",
+            alpha=0.2,
+            label="95% CI",
+        )
+    elif "std_regret" in frame.columns:
+        ax.fill_between(
+            frame["budget"],
+            frame["mean_regret"] - frame["std_regret"],
+            frame["mean_regret"] + frame["std_regret"],
+            color="tab:red",
+            alpha=0.2,
+            label="Std. dev.",
+        )
+    ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Sample budget", fontsize=fontsize)
+    ax.set_ylabel("Regret", fontsize=fontsize)
+    ax.set_title("Screening policy regret", fontsize=fontsize)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    _set_integer_x_ticks(ax)
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def fixed_split_training_time_accuracy_plot(
     results: LearningCurveResults,
     generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],

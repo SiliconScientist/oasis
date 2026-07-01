@@ -253,6 +253,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     auxiliary_views=None,
                     output_dir=output_dir,
                     run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
                 )
                 detail_path = (
                     output_dir / "policy_selection_diagnostic_detail_anomalyaware_off.csv"
@@ -260,9 +263,15 @@ class ExperimentRunnerTests(unittest.TestCase):
                 summary_path = (
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
+                oracle_plot_path = (
+                    output_dir / "policy_selected_vs_oracle_anomalyaware_off.png"
+                )
+                regret_plot_path = output_dir / "policy_regret_anomalyaware_off.png"
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
+                oracle_plot_exists = oracle_plot_path.is_file()
+                regret_plot_exists = regret_plot_path.is_file()
 
         assert artifact_path is not None
         self.assertEqual(
@@ -272,6 +281,8 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(artifact_exists)
         self.assertTrue(detail_exists)
         self.assertTrue(summary_exists)
+        self.assertTrue(oracle_plot_exists)
+        self.assertTrue(regret_plot_exists)
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()

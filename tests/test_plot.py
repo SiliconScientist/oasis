@@ -23,6 +23,8 @@ from oasis.plot import (
     learning_curve_plot,
     miscalibration_area_plot,
     parity_plot,
+    policy_regret_plot,
+    policy_selected_vs_oracle_plot,
     screening_budget_plot,
     sharpness_plot,
     total_time_accuracy_plot,
@@ -59,6 +61,61 @@ class PlotTests(unittest.TestCase):
                 time_per_step_s=0.5,
             ),
         }
+
+    def test_policy_selected_vs_oracle_plot_renders_from_summary_frame(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "budget": [4, 8],
+                "mean_regret": [0.05, 0.01],
+                "std_regret": [0.02, 0.01],
+                "se_regret": [0.014, 0.007],
+                "ci95_low": [0.022, -0.004],
+                "ci95_high": [0.078, 0.024],
+                "agreement_rate": [0.5, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "policy_selected_vs_oracle.png"
+            saved_path = policy_selected_vs_oracle_plot(
+                summary_df,
+                output_path=output_path,
+            )
+            exists = saved_path.exists()
+
+        self.assertEqual(saved_path, output_path)
+        self.assertTrue(exists)
+
+    def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "budget": [4, 8, 12],
+                "mean_regret": [0.05, 0.01, 0.0],
+                "std_regret": [0.02, 0.01, 0.0],
+                "se_regret": [0.014, 0.007, 0.0],
+                "ci95_low": [0.022, -0.004, 0.0],
+                "ci95_high": [0.078, 0.024, 0.0],
+                "agreement_rate": [0.5, 1.0, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18, 0.16],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19, 0.16],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "policy_regret.png"
+            saved_path = policy_regret_plot(
+                summary_df,
+                output_path=output_path,
+                min_x=8,
+                max_x=12,
+                include_x=[8, 12],
+            )
+            exists = saved_path.exists()
+
+        self.assertEqual(saved_path, output_path)
+        self.assertTrue(exists)
 
     def test_uq_metric_plots_render_from_results_only(self) -> None:
         uq_df = pd.DataFrame(

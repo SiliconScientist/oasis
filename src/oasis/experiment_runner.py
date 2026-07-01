@@ -56,6 +56,8 @@ from oasis.plot import (
     learning_curve_plot,
     miscalibration_area_plot,
     parity_plot,
+    policy_regret_plot,
+    policy_selected_vs_oracle_plot,
     screening_budget_plot,
     sharpness_plot,
     zero_shot_rmse_stage_plot,
@@ -510,6 +512,9 @@ def _write_policy_selection_diagnostic(
     auxiliary_views: dict[str, object] | None,
     output_dir: Path,
     run_suffix: str,
+    min_x: int | None,
+    max_x: int | None,
+    include_x: list[int] | None,
 ) -> Path | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
@@ -592,6 +597,20 @@ def _write_policy_selection_diagnostic(
     diagnostic_results.summary_df.to_csv(
         output_dir / f"policy_selection_diagnostic_summary_{run_suffix}.csv",
         index=False,
+    )
+    policy_selected_vs_oracle_plot(
+        diagnostic_results.summary_df,
+        output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+    policy_regret_plot(
+        diagnostic_results.summary_df,
+        output_path=output_dir / f"policy_regret_{run_suffix}.png",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
     )
     return artifact_path
 
@@ -1311,6 +1330,9 @@ def run_experiment(cfg: object):
             auxiliary_views=auxiliary_views,
             output_dir=output_dir,
             run_suffix=run_suffix,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=plot_kwargs["include_x"],
         )
     if learning_curve_plot_path is not None and screening_plot_path is not None:
         with tempfile.TemporaryDirectory() as tmpdir:
