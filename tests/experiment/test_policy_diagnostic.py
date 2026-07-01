@@ -200,6 +200,45 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             np.testing.assert_array_equal(plain_split.test_idx, validation_split.test_idx)
             self.assertEqual(plain_split.sweep_size, validation_split.sweep_size)
 
+    def test_derived_family_splits_disable_calibration_requirement_when_config_disabled(
+        self,
+    ) -> None:
+        shared_splits = generate_shared_outer_splits(
+            12,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=17,
+        )
+
+        class CalibratedValidationFamily:
+            method_name = "ridge"
+
+            def requirements(self):
+                return SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                )
+
+        split_collection = derive_family_split_collection_from_shared_outer_splits(
+            shared_splits,
+            family=CalibratedValidationFamily(),
+            seed=17,
+            validation_fraction=0.25,
+            min_val_size=1,
+            min_tuning_val_size=1,
+            calibration_enabled=False,
+            calibration_fraction=0.2,
+            min_cal_size=1,
+            min_inner_train_size=1,
+        )
+
+        self.assertFalse(split_collection.planning_requirements.requires_calibration)
+        self.assertTrue(split_collection.planning_requirements.requires_inner_validation)
+        self.assertIsNone(split_collection.splits[0].cal_idx)
+        self.assertIsNotNone(split_collection.splits[0].val_idx)
+
     def test_build_policy_selection_detail_frame_uses_shared_outer_splits(self) -> None:
         dataset = SweepDataset(
             mlip_features=np.arange(12, dtype=float).reshape(-1, 1),

@@ -339,6 +339,12 @@ def derive_family_split_collection_from_shared_outer_splits(
     min_inner_train_size: int,
 ) -> SweepSplitCollection:
     requirements = _family_requirements(family)
+    if not calibration_enabled and getattr(requirements, "requires_calibration", False):
+        requirements = type(requirements)(
+            min_train_size=requirements.min_train_size,
+            requires_inner_validation=requirements.requires_inner_validation,
+            requires_calibration=False,
+        )
     splits: list[SweepSplit] = []
     for shared_split in shared_splits:
         derived = _derive_family_split_from_shared_outer_split(
