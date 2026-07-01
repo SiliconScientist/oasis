@@ -11,6 +11,7 @@ from oasis.experiment.core import (
     _family_method_name,
     _remove_method_train_sizes_from_results,
     _result_frame_train_sizes,
+    _run_learning_curve_experiments_with_budget_mode_artifacts,
     _unique_sweep_sizes,
 )
 from oasis.experiment.dataset import (
@@ -37,6 +38,13 @@ from oasis.learning_curve.results_io import (
     merge_learning_curve_point_provenance,
     save_learning_curve_results_artifact,
     select_learning_curve_results_methods,
+)
+from oasis.experiment.repeat_metrics import (
+    LearningCurveRepeatMetricsArtifact,
+    load_learning_curve_repeat_metrics_artifact,
+    merge_learning_curve_repeat_metrics,
+    repeat_metrics_artifact_path,
+    save_learning_curve_repeat_metrics_artifact,
 )
 from oasis.sweep import GraphDatasetView, LearningCurveResults, SweepDataset
 
@@ -387,8 +395,9 @@ def run_learning_curve_experiments_from_config(
             )
 
     fresh_results = LearningCurveResults.empty()
+    fresh_repeat_metrics_df = None
     if (families_to_run is None and enabled_model_names_to_run) or families_to_run:
-        fresh_results = run_learning_curve_experiments(
+        fresh_artifacts = _run_learning_curve_experiments_with_budget_mode_artifacts(
             dataset,
             min_train=experiment_cfg.min_train if experiment_cfg else 5,
             max_train=experiment_cfg.max_train if experiment_cfg else 10,
@@ -463,6 +472,8 @@ def run_learning_curve_experiments_from_config(
             model_families=families_to_run,
             requested_sweep_sizes_by_method=missing_sweep_sizes_by_method or None,
         )
+        fresh_results = fresh_artifacts.results
+        fresh_repeat_metrics_df = fresh_artifacts.repeat_metrics_df
 
     results = cached_results.merge(fresh_results)
     if cfg is not None and experiment_cfg is not None:
@@ -543,6 +554,40 @@ def run_learning_curve_experiments_from_config(
                 results_bundle_path,
                 point_provenance=bundle_point_provenance,
             )
+            if (
+                expected_metadata.budget_mode == "full_remainder_test"
+                and results_bundle_path is not None
+                and fresh_repeat_metrics_df is not None
+                and not fresh_repeat_metrics_df.empty
+            ):
+                repeat_metrics_path = repeat_metrics_artifact_path(results_bundle_path)
+                existing_repeat_metrics_df = None
+                if repeat_metrics_path.is_file():
+                    try:
+                        existing_repeat_metrics_df = (
+                            load_learning_curve_repeat_metrics_artifact(
+                                repeat_metrics_path,
+                                expected_metadata=expected_metadata,
+                            ).repeat_metrics_df
+                        )
+                    except ValueError:
+                        existing_repeat_metrics_df = None
+                merged_repeat_metrics_df = merge_learning_curve_repeat_metrics(
+                    existing_repeat_metrics_df,
+                    fresh_repeat_metrics_df,
+                )
+                if merged_repeat_metrics_df is not None:
+                    save_learning_curve_repeat_metrics_artifact(
+                        LearningCurveRepeatMetricsArtifact(
+                            metadata=_metadata_for_available_results(
+                                expected_metadata,
+                                bundle_results,
+                                existing_bundle_metadata,
+                            ),
+                            repeat_metrics_df=merged_repeat_metrics_df,
+                        ),
+                        repeat_metrics_path,
+                    )
     return results
 
 

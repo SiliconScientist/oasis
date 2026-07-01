@@ -10,9 +10,13 @@ from oasis.learning_curve.execution import (
     _normalize_runner_output,
     _select_runner_call,
     sweep_learned_model,
+    sweep_learned_model_artifacts,
     sweep_learned_model_with_validation,
+    sweep_learned_model_with_validation_artifacts,
     sweep_model,
+    sweep_model_artifacts,
     sweep_model_with_validation,
+    sweep_model_with_validation_artifacts,
     weighted_linear_sweep,
     weighted_simplex_sweep,
 )
@@ -88,8 +92,8 @@ class SupervisedModelSweepRunner:
 
     model_factory: Callable[[], object]
 
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        return sweep_model(payload, self.model_factory)
+    def run(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+        return sweep_model_artifacts(payload, self.model_factory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,8 +110,8 @@ class ValidationAwareSupervisedModelSweepRunner:
 
     model_factory: Callable[[], ValidationAwareEstimator]
 
-    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        return sweep_model_with_validation(payload, self.model_factory)
+    def run_with_validation(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+        return sweep_model_with_validation_artifacts(payload, self.model_factory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,8 +120,8 @@ class LearnedModelSweepRunner:
 
     model_factory: Callable[[], TrainTestLearnedEstimator]
 
-    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        return sweep_learned_model(payload, self.model_factory)
+    def run(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+        return sweep_learned_model_artifacts(payload, self.model_factory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +130,8 @@ class ValidationAwareLearnedModelSweepRunner:
 
     model_factory: Callable[[], TrainValTestLearnedEstimator]
 
-    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
-        return sweep_learned_model_with_validation(payload, self.model_factory)
+    def run_with_validation(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+        return sweep_learned_model_with_validation_artifacts(payload, self.model_factory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +162,9 @@ class ConfiguredSweepModelFamily:
         return self.spec.capabilities.to_requirements()
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        return self.run_with_artifacts(payload).results
+
+    def run_with_artifacts(self, payload: SweepRunPayload) -> SweepFamilyRunArtifacts:
         runner_payload = payload.to_runner_payload()
         run = _select_runner_call(self.spec.runner, runner_payload)
         base_output = _normalize_runner_output(run(runner_payload))
@@ -168,7 +175,10 @@ class ConfiguredSweepModelFamily:
             results[self.spec.selection_metadata_field] = base_output.selection_metadata
         if self.spec.uq_summary_field is not None:
             results[self.spec.uq_summary_field] = base_output.uq_summary
-        return LearningCurveResults.from_mapping(results)
+        return SweepFamilyRunArtifacts(
+            results=LearningCurveResults.from_mapping(results),
+            repeat_metrics=base_output.repeat_metrics,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +195,16 @@ class PlaceholderLearnedSweepModelFamily:
         return self.declared_capabilities.to_requirements()
 
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
+        return self.run_with_artifacts(payload).results
+
+    def run_with_artifacts(self, payload: SweepRunPayload) -> SweepFamilyRunArtifacts:
         del payload
         raise NotImplementedError(
             f"learning-curve family '{self.name}' is registered but not implemented"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SweepFamilyRunArtifacts:
+    results: LearningCurveResults
+    repeat_metrics: pd.DataFrame | None = None

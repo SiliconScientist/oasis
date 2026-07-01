@@ -238,6 +238,14 @@ class TuneTests(unittest.TestCase):
             ],
         )
         self.assertEqual(result.metrics["n_train"].tolist(), [4])
+        self.assertIsNotNone(result.repeat_metrics)
+        assert result.repeat_metrics is not None
+        self.assertEqual(
+            result.repeat_metrics.columns.tolist(),
+            ["n_train", "repeat", "outer_test_rmse"],
+        )
+        self.assertEqual(result.repeat_metrics["n_train"].tolist(), [4])
+        self.assertEqual(result.repeat_metrics["repeat"].tolist(), [0])
         self.assertGreaterEqual(result.metrics["fit_time_mean_s"].iloc[0], 0.0)
         self.assertGreaterEqual(result.metrics["fit_time_std_s"].iloc[0], 0.0)
 

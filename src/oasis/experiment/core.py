@@ -20,6 +20,17 @@ from oasis.sweep import (
 )
 
 
+class LearningCurveExecutionArtifacts:
+    def __init__(
+        self,
+        *,
+        results: LearningCurveResults,
+        repeat_metrics_df: Any = None,
+    ) -> None:
+        self.results = results
+        self.repeat_metrics_df = repeat_metrics_df
+
+
 def _result_frame_budget_column(frame: Any) -> str:
     if frame is None:
         raise ValueError("learning-curve frame is required.")
@@ -268,6 +279,57 @@ def _run_learning_curve_experiments_with_budget_mode(
     model_families: Sequence[Any] | None = None,
     requested_sweep_sizes_by_method: Mapping[str, Collection[int]] | None = None,
 ) -> LearningCurveResults:
+    return _run_learning_curve_experiments_with_budget_mode_artifacts(
+        dataset,
+        min_train=min_train,
+        max_train=max_train,
+        step=step,
+        n_repeats=n_repeats,
+        seed=seed,
+        requested_sweep_sizes=requested_sweep_sizes,
+        enabled_model_names=enabled_model_names,
+        model_cfg=model_cfg,
+        budget_mode=budget_mode,
+        screen_fraction=screen_fraction,
+        min_screen_size=min_screen_size,
+        validation_fraction=validation_fraction,
+        min_val_size=min_val_size,
+        min_tuning_val_size=min_tuning_val_size,
+        calibration_enabled=calibration_enabled,
+        calibration_fraction=calibration_fraction,
+        min_cal_size=min_cal_size,
+        min_inner_train_size=min_inner_train_size,
+        min_test_size=min_test_size,
+        model_families=model_families,
+        requested_sweep_sizes_by_method=requested_sweep_sizes_by_method,
+    ).results
+
+
+def _run_learning_curve_experiments_with_budget_mode_artifacts(
+    dataset: SweepDataset,
+    *,
+    min_train: int | None,
+    max_train: int | None,
+    step: int = 1,
+    n_repeats: int,
+    seed: int = 42,
+    requested_sweep_sizes: Collection[int] | None = None,
+    enabled_model_names: Sequence[str] | None = None,
+    model_cfg: Any | None = None,
+    budget_mode: LearningCurveBudgetMode = "full_remainder_test",
+    screen_fraction: float | None = None,
+    min_screen_size: int = 1,
+    validation_fraction: float = 0.2,
+    min_val_size: int = 1,
+    min_tuning_val_size: int = 1,
+    calibration_enabled: bool = True,
+    calibration_fraction: float = 0.2,
+    min_cal_size: int = 1,
+    min_inner_train_size: int = 1,
+    min_test_size: int = 1,
+    model_families: Sequence[Any] | None = None,
+    requested_sweep_sizes_by_method: Mapping[str, Collection[int]] | None = None,
+) -> LearningCurveExecutionArtifacts:
     families = model_families
     if families is None:
         from oasis.learning_curve.registry import default_sweep_model_families
@@ -275,6 +337,7 @@ def _run_learning_curve_experiments_with_budget_mode(
         families = default_sweep_model_families(enabled_model_names, config=model_cfg)
 
     results = LearningCurveResults.empty()
+    repeat_metric_frames: list[Any] = []
     for family in families:
         split_collection = _build_family_split_collection(
             dataset,
@@ -321,11 +384,41 @@ def _run_learning_curve_experiments_with_budget_mode(
             if not split_collection.splits:
                 continue
         payload = SweepRunPayload(dataset=dataset, split_collection=split_collection)
-        family_results = family.run(payload)
+        family_artifacts = (
+            family.run_with_artifacts(payload)
+            if hasattr(family, "run_with_artifacts")
+            else LearningCurveExecutionArtifacts(results=family.run(payload))
+        )
+        family_results = family_artifacts.results
         if budget_mode == "screening_fraction":
             family_results = _annotate_screening_results(
                 family_results,
                 split_collection,
             )
+        repeat_metrics = getattr(family_artifacts, "repeat_metrics_df", None)
+        if repeat_metrics is None:
+            repeat_metrics = getattr(family_artifacts, "repeat_metrics", None)
+        if (
+            budget_mode == "full_remainder_test"
+            and repeat_metrics is not None
+            and method_name is not None
+            and not repeat_metrics.empty
+        ):
+            repeat_metric_frames.append(
+                repeat_metrics.rename(columns={"n_train": "budget"}).assign(method=method_name)
+            )
         results = results.merge(family_results)
-    return results
+    repeat_metrics_df = None
+    if repeat_metric_frames:
+        import pandas as pd
+
+        repeat_metrics_df = (
+            pd.concat(repeat_metric_frames, ignore_index=True)
+            .loc[:, ["method", "budget", "repeat", "outer_test_rmse"]]
+            .sort_values(["method", "budget", "repeat"])
+            .reset_index(drop=True)
+        )
+    return LearningCurveExecutionArtifacts(
+        results=results,
+        repeat_metrics_df=repeat_metrics_df,
+    )

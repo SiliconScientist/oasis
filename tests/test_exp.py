@@ -37,6 +37,10 @@ from oasis.exp import (
     screening_holdout_size_for_budget,
     validation_size_if_sweep_feasible,
 )
+from oasis.experiment.repeat_metrics import (
+    load_learning_curve_repeat_metrics_artifact,
+    repeat_metrics_artifact_path,
+)
 from oasis.graphs import atoms_to_graph_dataset_view, save_aligned_graph_dataset_parquet
 from oasis.learning_curve.results_io import (
     LearningCurveSweepMetadata,
@@ -66,6 +70,7 @@ try:
         ConfiguredSweepModelFamily,
         LearnedModelSweepRunner,
         SupervisedModelSweepRunner,
+        SweepFamilyRunArtifacts,
         SweepFamilySpec,
     )
 
@@ -4830,6 +4835,117 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertNotEqual(provenance["run_id"].iloc[2], "cached-run")
         self.assertEqual(len(set(provenance["run_id"].iloc[2:])), 1)
         self.assertEqual(len(set(provenance["run_timestamp_utc"].iloc[2:])), 1)
+
+    def test_run_learning_curve_experiments_from_config_saves_repeat_metrics_sidecar(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        result_df = pd.DataFrame(
+            {
+                "n_train": [4],
+                "rmse_mean": [0.3],
+                "rmse_std": [0.04],
+            }
+        )
+        repeat_metrics_df = pd.DataFrame(
+            {
+                "n_train": [4, 4],
+                "repeat": [0, 1],
+                "outer_test_rmse": [0.32, 0.28],
+            }
+        )
+
+        class StubFamily:
+            method_name = "ridge"
+
+            def capabilities(self):
+                return SweepModelCapabilities()
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                del payload
+                return LearningCurveResults.from_mapping({"ridge_df": result_df})
+
+            def run_with_artifacts(self, payload):
+                del payload
+                return SweepFamilyRunArtifacts(
+                    results=LearningCurveResults.from_mapping({"ridge_df": result_df}),
+                    repeat_metrics=repeat_metrics_df,
+                )
+
+        family = StubFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=4,
+                        max_train=4,
+                        step=1,
+                        n_repeats=2,
+                        budget_mode="full_remainder_test",
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=False,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            sidecar_path = repeat_metrics_artifact_path(bundle_path)
+            sidecar_exists = sidecar_path.is_file()
+            repeat_metrics_artifact = load_learning_curve_repeat_metrics_artifact(sidecar_path)
+
+        self.assertTrue(sidecar_exists)
+        pd.testing.assert_frame_equal(results.ridge_df, result_df)
+        pd.testing.assert_frame_equal(
+            repeat_metrics_artifact.repeat_metrics_df,
+            pd.DataFrame(
+                {
+                    "method": pd.Series(["ridge", "ridge"], dtype="string"),
+                    "budget": pd.Series([4, 4], dtype="Int64"),
+                    "repeat": pd.Series([0, 1], dtype="Int64"),
+                    "outer_test_rmse": pd.Series([0.32, 0.28], dtype="Float64"),
+                }
+            ),
+        )
 
     def test_run_learning_curve_experiments_from_config_overwrites_enabled_overlap_when_reuse_disabled(
         self,

@@ -256,6 +256,7 @@ class SweepRunnerArtifacts:
     metrics: pd.DataFrame
     selection_metadata: pd.DataFrame | None = None
     uq_summary: pd.DataFrame | None = None
+    repeat_metrics: pd.DataFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,6 +572,22 @@ def _selection_metadata_frame(
     return pd.DataFrame(rows)
 
 
+def _repeat_metrics_frame(
+    repeat_metrics_by_size: dict[int, list[float]],
+) -> pd.DataFrame:
+    rows = []
+    for n_train, rmses in sorted(repeat_metrics_by_size.items()):
+        for repeat, rmse in enumerate(rmses):
+            rows.append(
+                {
+                    "n_train": int(n_train),
+                    "repeat": int(repeat),
+                    "outer_test_rmse": float(rmse),
+                }
+            )
+    return pd.DataFrame(rows, columns=["n_train", "repeat", "outer_test_rmse"])
+
+
 def _timed_sweep_results_frame(
     rmses_by_size: dict[int, list[float]],
     fit_times_by_size: dict[int, list[float]],
@@ -848,6 +865,7 @@ def sweep_supervised_model_selection(
     else:
         splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    repeat_metrics_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
@@ -868,6 +886,7 @@ def sweep_supervised_model_selection(
         preds = model.predict(X_test)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _hyperparameter_spec_predictive_spread(
@@ -916,6 +935,7 @@ def sweep_supervised_model_selection(
         metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
+        repeat_metrics=_repeat_metrics_frame(repeat_metrics_by_size),
     )
 
 
@@ -931,6 +951,7 @@ def sweep_trial_model_selection(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    repeat_metrics_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
         y = split.dataset.targets
@@ -943,10 +964,12 @@ def sweep_trial_model_selection(
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
         rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
+        repeat_metrics=_repeat_metrics_frame(repeat_metrics_by_size),
     )
 
 
@@ -965,6 +988,7 @@ def sweep_learned_trial_model_selection(
     else:
         splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    repeat_metrics_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
@@ -985,6 +1009,7 @@ def sweep_learned_trial_model_selection(
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _learned_tuning_spec_predictive_spread(
@@ -1032,6 +1057,7 @@ def sweep_learned_trial_model_selection(
         metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
+        repeat_metrics=_repeat_metrics_frame(repeat_metrics_by_size),
     )
 
 
@@ -1051,6 +1077,7 @@ def sweep_optuna_model_selection(
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    repeat_metrics_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     for split in splits:
         y = split.dataset.targets
@@ -1065,10 +1092,12 @@ def sweep_optuna_model_selection(
         preds = model.predict(split.dataset.mlip_features[split.test_idx])
         rmse = np.sqrt(_mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
+        repeat_metrics=_repeat_metrics_frame(repeat_metrics_by_size),
     )
 
 
@@ -1091,6 +1120,7 @@ def sweep_learned_optuna_model_selection(
     else:
         splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
+    repeat_metrics_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
     uq_artifacts: list[dict[str, Any]] = []
@@ -1113,6 +1143,7 @@ def sweep_learned_optuna_model_selection(
         preds = np.asarray(tuning_spec.predict(model, test_dataset), dtype=float)
         rmse = np.sqrt(_mean_squared_error(y_test, preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
         spread = _learned_tuning_spec_predictive_spread(
@@ -1160,6 +1191,7 @@ def sweep_learned_optuna_model_selection(
         metrics=_timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
         uq_summary=uq_summary,
+        repeat_metrics=_repeat_metrics_frame(repeat_metrics_by_size),
     )
 
 

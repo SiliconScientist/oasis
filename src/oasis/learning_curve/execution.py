@@ -207,6 +207,22 @@ def timed_sweep_results_frame(
     return pd.DataFrame(rows, columns=_TIMED_SWEEP_RESULT_COLUMNS)
 
 
+def repeat_metrics_frame(
+    rmses_by_size: dict[int, list[float]],
+) -> pd.DataFrame:
+    rows = []
+    for n_train, rmses in sorted(rmses_by_size.items()):
+        for repeat, rmse in enumerate(rmses):
+            rows.append(
+                {
+                    "n_train": int(n_train),
+                    "repeat": int(repeat),
+                    "outer_test_rmse": float(rmse),
+                }
+            )
+    return pd.DataFrame(rows, columns=["n_train", "repeat", "outer_test_rmse"])
+
+
 def aggregate_uq_summary(
     split_artifacts: list[SplitPredictionArtifact] | tuple[SplitPredictionArtifact, ...],
     *,
@@ -280,6 +296,14 @@ def sweep_model(
     """Evaluate a supervised model across precomputed sweep splits."""
 
     payload = _as_runner_payload(payload)
+    return sweep_model_artifacts(payload, model_factory).metrics
+
+
+def sweep_model_artifacts(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], object],
+) -> SweepRunnerArtifacts:
+    payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
@@ -294,7 +318,10 @@ def sweep_model(
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
-    return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
+    return SweepRunnerArtifacts(
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
+    )
 
 
 def sweep_model_with_validation(
@@ -303,6 +330,14 @@ def sweep_model_with_validation(
 ) -> pd.DataFrame:
     """Evaluate a validation-aware estimator across precomputed sweep splits."""
 
+    payload = _as_runner_payload(payload)
+    return sweep_model_with_validation_artifacts(payload, model_factory).metrics
+
+
+def sweep_model_with_validation_artifacts(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], ValidationAwareEstimator],
+) -> SweepRunnerArtifacts:
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
@@ -323,7 +358,10 @@ def sweep_model_with_validation(
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
-    return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
+    return SweepRunnerArtifacts(
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
+    )
 
 
 def sweep_learned_model(
@@ -332,6 +370,14 @@ def sweep_learned_model(
 ) -> pd.DataFrame:
     """Evaluate a learned estimator that consumes full train/test split inputs."""
 
+    payload = _as_runner_payload(payload)
+    return sweep_learned_model_artifacts(payload, model_factory).metrics
+
+
+def sweep_learned_model_artifacts(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], TrainTestLearnedEstimator],
+) -> SweepRunnerArtifacts:
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_test_payload(payload):
@@ -342,7 +388,10 @@ def sweep_learned_model(
         preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
+    )
 
 
 def sweep_learned_model_with_validation(
@@ -351,6 +400,14 @@ def sweep_learned_model_with_validation(
 ) -> pd.DataFrame:
     """Evaluate a learned estimator that consumes full train/val/test split inputs."""
 
+    payload = _as_runner_payload(payload)
+    return sweep_learned_model_with_validation_artifacts(payload, model_factory).metrics
+
+
+def sweep_learned_model_with_validation_artifacts(
+    payload: SweepRunPayload | SweepRunnerPayload,
+    model_factory: Callable[[], TrainValTestLearnedEstimator],
+) -> SweepRunnerArtifacts:
     payload = _as_runner_payload(payload)
     rmses_by_size: dict[int, list[float]] = {}
     for split in _assert_train_val_test_payload(payload):
@@ -361,7 +418,10 @@ def sweep_learned_model_with_validation(
         preds = model.predict(X[split.test_idx])
         rmse = np.sqrt(mean_squared_error(y[split.test_idx], preds))
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-    return sweep_results_frame(rmses_by_size)
+    return SweepRunnerArtifacts(
+        metrics=sweep_results_frame(rmses_by_size),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
+    )
 
 
 def residual_sweep(
@@ -421,6 +481,7 @@ def residual_sweep(
             split_artifacts,
             uncertainty_kind=uncertainty_kind,
         ),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
     )
 
 
@@ -487,6 +548,7 @@ def weighted_linear_sweep(
             split_artifacts,
             uncertainty_kind=uncertainty_kind,
         ),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
     )
 
 
@@ -568,4 +630,5 @@ def weighted_simplex_sweep(
             split_artifacts,
             uncertainty_kind=uncertainty_kind,
         ),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
     )
