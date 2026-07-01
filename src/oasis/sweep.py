@@ -1348,6 +1348,20 @@ class LearningCurveResults:
     def empty(cls) -> LearningCurveResults:
         return cls()
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LearningCurveResults):
+            return NotImplemented
+        for field_def in fields(self):
+            left = getattr(self, field_def.name)
+            right = getattr(other, field_def.name)
+            if left is None or right is None:
+                if left is not right:
+                    return False
+                continue
+            if not left.equals(right):
+                return False
+        return True
+
     def to_mapping(self) -> dict[str, pd.DataFrame | None]:
         return {
             field_def.name: getattr(self, field_def.name)

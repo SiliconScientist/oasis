@@ -265,6 +265,87 @@ def run_learning_curve_experiments_from_config(
         if method_name in enabled_model_names
     }
 
+    if experiment_cfg is None or (
+        results_bundle_path is None
+        and not reuse_results
+        and not force_refresh_methods
+        and not force_refresh_train_sizes
+    ):
+        return run_learning_curve_experiments(
+            dataset,
+            min_train=experiment_cfg.min_train if experiment_cfg else 5,
+            max_train=experiment_cfg.max_train if experiment_cfg else 10,
+            step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
+            n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
+            seed=cfg.seed if cfg and cfg.seed is not None else 42,
+            requested_sweep_sizes=(
+                resolve_configured_sweep_sizes(
+                    dataset.n_samples,
+                    min_train=experiment_cfg.min_train,
+                    max_train=experiment_cfg.max_train,
+                    step=getattr(experiment_cfg, "step", 1),
+                    sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
+                    sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
+                )
+                if experiment_cfg
+                else None
+            ),
+            enabled_model_names=enabled_model_names,
+            model_cfg=model_cfg,
+            budget_mode=(
+                getattr(experiment_cfg, "budget_mode", "full_remainder_test")
+                if experiment_cfg
+                else "full_remainder_test"
+            ),
+            screen_fraction=(
+                getattr(experiment_cfg, "screen_fraction", None)
+                if experiment_cfg
+                else None
+            ),
+            min_screen_size=(
+                getattr(experiment_cfg, "min_screen_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            validation_fraction=(
+                getattr(experiment_cfg, "validation_fraction", 0.2)
+                if experiment_cfg
+                else 0.2
+            ),
+            min_val_size=(
+                getattr(experiment_cfg, "min_val_size", 1) if experiment_cfg else 1
+            ),
+            min_tuning_val_size=(
+                getattr(experiment_cfg, "min_tuning_val_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            calibration_enabled=(
+                getattr(experiment_cfg, "calibration_enabled", True)
+                if experiment_cfg
+                else True
+            ),
+            calibration_fraction=(
+                getattr(experiment_cfg, "calibration_fraction", 0.2)
+                if experiment_cfg
+                else 0.2
+            ),
+            min_cal_size=(
+                getattr(experiment_cfg, "min_cal_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            min_inner_train_size=(
+                getattr(experiment_cfg, "min_inner_train_size", 1)
+                if experiment_cfg
+                else 1
+            ),
+            min_test_size=(
+                getattr(experiment_cfg, "min_test_size", 1) if experiment_cfg else 1
+            ),
+            model_families=available_families,
+        )
+
     cached_results = LearningCurveResults.empty()
     cached_method_names: set[str] = set()
     families_to_run: Sequence[Any] | None = available_families

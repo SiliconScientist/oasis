@@ -110,8 +110,11 @@ class ValidationAwareSupervisedModelSweepRunner:
 
     model_factory: Callable[[], ValidationAwareEstimator]
 
-    def run_with_validation(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+    def run_with_artifacts(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
         return sweep_model_with_validation_artifacts(payload, self.model_factory)
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return self.run_with_artifacts(payload).metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +123,11 @@ class LearnedModelSweepRunner:
 
     model_factory: Callable[[], TrainTestLearnedEstimator]
 
-    def run(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+    def run_with_artifacts(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
         return sweep_learned_model_artifacts(payload, self.model_factory)
+
+    def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return self.run_with_artifacts(payload).metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,8 +136,11 @@ class ValidationAwareLearnedModelSweepRunner:
 
     model_factory: Callable[[], TrainValTestLearnedEstimator]
 
-    def run_with_validation(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
+    def run_with_artifacts(self, payload: SweepRunnerPayload) -> SweepRunnerArtifacts:
         return sweep_learned_model_with_validation_artifacts(payload, self.model_factory)
+
+    def run_with_validation(self, payload: SweepRunnerPayload) -> pd.DataFrame:
+        return self.run_with_artifacts(payload).metrics
 
 
 @dataclass(frozen=True, slots=True)

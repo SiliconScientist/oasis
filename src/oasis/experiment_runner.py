@@ -62,6 +62,7 @@ from oasis.plot import (
     sharpness_plot,
     zero_shot_rmse_stage_plot,
 )
+from oasis.sweep import GraphDatasetView
 _DEV_RUN_MAX_ROWS = 24
 _DEV_RUN_SWEEP_SIZE = 8
 _DEV_RUN_OPTUNA_TRIALS = 3
@@ -115,21 +116,25 @@ def _strict_anomaly_aware_zero_shot_rmse_from_frame(frame: object) -> float:
             for feature_name in feature_names
         ]
     )
-    valid_matrix = np.column_stack(
-        [
+    available_columns = set(getattr(frame, "columns", ()))
+    per_feature_validity: list[np.ndarray] = []
+    for feature_name in feature_names:
+        detail_columns = [
+            f"{feature_name}_{detail_name}"
+            for detail_name in INFERENCE_DETAIL_COLUMNS
+            if f"{feature_name}_{detail_name}" in available_columns
+        ]
+        if not detail_columns:
+            return _zero_shot_rmse_from_frame(frame)
+        per_feature_validity.append(
             np.all(
                 np.column_stack(
-                    [
-                        _column_to_numpy(frame, f"{feature_name}_{detail_name}") == 0.0
-                        for detail_name in INFERENCE_DETAIL_COLUMNS
-                        if f"{feature_name}_{detail_name}" in getattr(frame, "columns", ())
-                    ]
+                    [_column_to_numpy(frame, column_name) == 0.0 for column_name in detail_columns]
                 ),
                 axis=1,
             )
-            for feature_name in feature_names
-        ]
-    )
+        )
+    valid_matrix = np.column_stack(per_feature_validity)
     if valid_matrix.shape != prediction_matrix.shape:
         raise ValueError("Prediction and validity matrices must have matching shapes.")
     valid_counts = valid_matrix.sum(axis=1)
@@ -188,10 +193,11 @@ def _build_zero_shot_stage_rows(
     *,
     cfg: object,
     dataset_tag: str,
-    dataset_label: str,
+    dataset_label: str | None = None,
     raw_wide_df: object,
     selected_wide_df: object,
 ) -> list[dict[str, object]]:
+    resolved_dataset_label = dataset_tag if dataset_label is None else dataset_label
     selected_reactions = selected_wide_df.get_column("reaction").to_list()
     if not selected_reactions:
         return []
@@ -200,21 +206,21 @@ def _build_zero_shot_stage_rows(
     return [
         {
             "dataset": dataset_tag,
-            "dataset_label": dataset_label,
+            "dataset_label": resolved_dataset_label,
             "stage": "Full / all MLIPs",
             "rmse": _zero_shot_rmse_from_frame(raw_wide_df),
             "n_samples": _frame_height(raw_wide_df),
         },
         {
             "dataset": dataset_tag,
-            "dataset_label": dataset_label,
+            "dataset_label": resolved_dataset_label,
             "stage": "Matched subset / all MLIPs",
             "rmse": _zero_shot_rmse_from_frame(matched_subset_df),
             "n_samples": _frame_height(matched_subset_df),
         },
         {
             "dataset": dataset_tag,
-            "dataset_label": dataset_label,
+            "dataset_label": resolved_dataset_label,
             "stage": "Matched subset / anomaly-aware selection",
             "rmse": (
                 _strict_anomaly_aware_zero_shot_rmse_from_frame(selected_wide_df)
@@ -522,6 +528,8 @@ def _write_policy_selection_diagnostic(
     if learning_curve_cfg is None or screening_cfg is None:
         return None
     if getattr(screening_cfg, "screen_fraction", None) is None:
+        return None
+    if graph_view is not None and not isinstance(graph_view, GraphDatasetView):
         return None
 
     from oasis.learning_curve.registry import (
