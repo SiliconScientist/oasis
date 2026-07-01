@@ -1240,20 +1240,39 @@ def policy_selected_vs_oracle_plot(
         include_x=include_x,
     )
     fig, ax = plt.subplots(figsize=(7, 4))
+    oracle_frame = frame.sort_values("budget").drop_duplicates(subset=["budget"], keep="first")
     ax.plot(
-        frame["budget"],
-        frame["oracle_outer_rmse_mean"],
+        oracle_frame["budget"],
+        oracle_frame["oracle_outer_rmse_mean"],
         marker="o",
         color="tab:blue",
         label="Oracle best held-out RMSE",
     )
-    ax.plot(
-        frame["budget"],
-        frame["screening_selected_outer_rmse_mean"],
-        marker="s",
-        color="tab:orange",
-        label="Screening-selected held-out RMSE",
-    )
+    if "policy_name" in frame.columns:
+        colors = [
+            "tab:orange",
+            "tab:green",
+            "tab:red",
+            "tab:purple",
+            "tab:brown",
+        ]
+        for index, (policy_name, group) in enumerate(frame.groupby("policy_name", sort=True)):
+            ordered = group.sort_values("budget")
+            ax.plot(
+                ordered["budget"],
+                ordered["screening_selected_outer_rmse_mean"],
+                marker="s",
+                color=colors[index % len(colors)],
+                label=f"{policy_name} held-out RMSE",
+            )
+    else:
+        ax.plot(
+            frame["budget"],
+            frame["screening_selected_outer_rmse_mean"],
+            marker="s",
+            color="tab:orange",
+            label="Screening-selected held-out RMSE",
+        )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
     ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
@@ -1288,31 +1307,66 @@ def policy_regret_plot(
         include_x=include_x,
     )
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(
-        frame["budget"],
-        frame["mean_regret"],
-        marker="o",
-        color="tab:red",
-        label="Mean regret",
-    )
-    if {"ci95_low", "ci95_high"}.issubset(frame.columns):
-        ax.fill_between(
+    if "policy_name" in frame.columns:
+        colors = [
+            "tab:red",
+            "tab:orange",
+            "tab:green",
+            "tab:purple",
+            "tab:brown",
+        ]
+        for index, (policy_name, group) in enumerate(frame.groupby("policy_name", sort=True)):
+            ordered = group.sort_values("budget")
+            color = colors[index % len(colors)]
+            ax.plot(
+                ordered["budget"],
+                ordered["mean_regret"],
+                marker="o",
+                color=color,
+                label=f"{policy_name} mean regret",
+            )
+            if {"ci95_low", "ci95_high"}.issubset(ordered.columns):
+                ax.fill_between(
+                    ordered["budget"],
+                    ordered["ci95_low"],
+                    ordered["ci95_high"],
+                    color=color,
+                    alpha=0.2,
+                )
+            elif "std_regret" in ordered.columns:
+                ax.fill_between(
+                    ordered["budget"],
+                    ordered["mean_regret"] - ordered["std_regret"],
+                    ordered["mean_regret"] + ordered["std_regret"],
+                    color=color,
+                    alpha=0.2,
+                )
+    else:
+        ax.plot(
             frame["budget"],
-            frame["ci95_low"],
-            frame["ci95_high"],
+            frame["mean_regret"],
+            marker="o",
             color="tab:red",
-            alpha=0.2,
-            label="95% CI",
+            label="Mean regret",
         )
-    elif "std_regret" in frame.columns:
-        ax.fill_between(
-            frame["budget"],
-            frame["mean_regret"] - frame["std_regret"],
-            frame["mean_regret"] + frame["std_regret"],
-            color="tab:red",
-            alpha=0.2,
-            label="Std. dev.",
-        )
+        if {"ci95_low", "ci95_high"}.issubset(frame.columns):
+            ax.fill_between(
+                frame["budget"],
+                frame["ci95_low"],
+                frame["ci95_high"],
+                color="tab:red",
+                alpha=0.2,
+                label="95% CI",
+            )
+        elif "std_regret" in frame.columns:
+            ax.fill_between(
+                frame["budget"],
+                frame["mean_regret"] - frame["std_regret"],
+                frame["mean_regret"] + frame["std_regret"],
+                color="tab:red",
+                alpha=0.2,
+                label="Std. dev.",
+            )
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Regret", fontsize=fontsize)

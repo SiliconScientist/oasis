@@ -65,6 +65,7 @@ class PlotTests(unittest.TestCase):
     def test_policy_selected_vs_oracle_plot_renders_from_summary_frame(self) -> None:
         summary_df = pd.DataFrame(
             {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
                 "budget": [4, 8],
                 "mean_regret": [0.05, 0.01],
                 "std_regret": [0.02, 0.01],
@@ -91,6 +92,11 @@ class PlotTests(unittest.TestCase):
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(
             {
+                "policy_name": [
+                    "min_screening_rmse",
+                    "min_screening_rmse",
+                    "min_screening_rmse",
+                ],
                 "budget": [4, 8, 12],
                 "mean_regret": [0.05, 0.01, 0.0],
                 "std_regret": [0.02, 0.01, 0.0],
@@ -116,6 +122,41 @@ class PlotTests(unittest.TestCase):
 
         self.assertEqual(saved_path, output_path)
         self.assertTrue(exists)
+
+    def test_policy_plots_render_multiple_policy_lines(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "policy_name": [
+                    "min_screening_rmse",
+                    "min_screening_rmse",
+                    "combined_screening_rmse_miscalibration",
+                    "combined_screening_rmse_miscalibration",
+                ],
+                "budget": [4, 8, 4, 8],
+                "mean_regret": [0.05, 0.01, 0.02, 0.0],
+                "std_regret": [0.02, 0.01, 0.01, 0.0],
+                "se_regret": [0.014, 0.007, 0.007, 0.0],
+                "ci95_low": [0.022, -0.004, 0.006, 0.0],
+                "ci95_high": [0.078, 0.024, 0.034, 0.0],
+                "agreement_rate": [0.5, 1.0, 0.5, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18, 0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19, 0.22, 0.18],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            selected_path = policy_selected_vs_oracle_plot(
+                summary_df,
+                output_path=tmp_path / "policy_selected_vs_oracle_multi.png",
+            )
+            regret_path = policy_regret_plot(
+                summary_df,
+                output_path=tmp_path / "policy_regret_multi.png",
+            )
+
+            self.assertTrue(selected_path.exists())
+            self.assertTrue(regret_path.exists())
 
     def test_uq_metric_plots_render_from_results_only(self) -> None:
         uq_df = pd.DataFrame(
