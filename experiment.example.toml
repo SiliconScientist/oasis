@@ -102,6 +102,10 @@ min_screen_size = 1
 # results_bundle_path defaults to `data/results/screening/<dataset>.json`
 # results_bundle_path = "data/results/screening/example_oh.json"
 # force_refresh_train_sizes = { ridge = [10], weighted_simplex = [15] }
+# When both learning-curve and screening sections are present, Oasis also
+# writes a shared-outer-split policy diagnostic to `plot.output_dir`.
+# That derived diagnostic uses screening CV only for method selection, then
+# evaluates the selected method on the paired outer held-out test split.
 
 [candidate_ranking]
 # Run with: `python -m oasis rank-candidates [config paths...]`

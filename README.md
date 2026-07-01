@@ -238,6 +238,31 @@ Workflow:
   method, or `force_refresh_train_sizes` to rerun only selected `n_train`
   points for a method.
 
+When both `[experiment.learning_curve]` and `[experiment.screening]` are
+configured, Oasis also writes a derived screening-policy diagnostic based on
+shared outer train/test splits across methods. This diagnostic is separate from
+the normal learning-curve bundle and separate from screening CV bundles.
+
+Interpretation:
+
+- Screening CV RMSE is used only to select a method within each shared outer
+  training split.
+- Final regret is computed only from held-out outer-test RMSE on that same
+  split.
+- Screening CV RMSE is not compared directly to held-out oracle RMSE.
+
+Outputs written to `plot.output_dir`:
+
+- `policy_selection_diagnostic_<suffix>.json`
+- `policy_selection_diagnostic_detail_<suffix>.csv`
+- `policy_selection_diagnostic_summary_<suffix>.csv`
+- `policy_selected_vs_oracle_<suffix>.png`
+- `policy_regret_<suffix>.png`
+
+The detail table is keyed by `budget` and `repeat` and includes
+`oracle_method`, `screening_selected_method`, both held-out RMSE values,
+`regret`, `screening_cv_rmse`, and `agreement`.
+
 Example iterative workflow:
 
 ```toml
