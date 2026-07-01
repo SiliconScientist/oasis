@@ -27,6 +27,7 @@ from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCol
 
 
 _POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 2
+_DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
     "policy_name",
     "budget",
@@ -191,6 +192,8 @@ def build_policy_selection_diagnostic_results(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
     detail_df = build_policy_selection_detail_frame(
         dataset,
@@ -218,6 +221,8 @@ def build_policy_selection_diagnostic_results(
         screening_min_cal_size=screening_min_cal_size,
         screening_min_inner_train_size=screening_min_inner_train_size,
         requested_sweep_sizes=requested_sweep_sizes,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
     return PolicySelectionDiagnosticResults(
         detail_df=detail_df,
@@ -417,6 +422,8 @@ def build_policy_selection_detail_frame(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
     shared_splits = generate_shared_outer_splits(
         dataset.n_samples,
@@ -524,34 +531,41 @@ def build_policy_selection_detail_frame(
             if outer_group.empty:
                 continue
             oracle_row = outer_group.sort_values(["outer_test_rmse", "method"]).iloc[0]
-            selected_row = screening_group.sort_values(["screening_cv_rmse", "method"]).iloc[0]
-            selected_outer = outer_group.loc[
-                outer_group["method"] == selected_row["method"],
-                "outer_test_rmse",
-            ]
-            if selected_outer.empty:
-                continue
-            selected_outer_rmse = float(selected_outer.iloc[0])
-            oracle_outer_rmse = float(oracle_row["outer_test_rmse"])
-            detail_rows.append(
-                {
-                    "policy_name": "min_screening_rmse",
-                    "budget": int(budget),
-                    "repeat": int(repeat),
-                    "oracle_method": str(oracle_row["method"]),
-                    "screening_selected_method": str(selected_row["method"]),
-                    "oracle_outer_rmse": oracle_outer_rmse,
-                    "screening_selected_outer_rmse": selected_outer_rmse,
-                    "regret": selected_outer_rmse - oracle_outer_rmse,
-                    "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
-                    "screening_miscalibration_area": float(
-                        selected_row["screening_miscalibration_area"]
-                    )
-                    if pd.notna(selected_row["screening_miscalibration_area"])
-                    else np.nan,
-                    "agreement": bool(oracle_row["method"] == selected_row["method"]),
-                }
-            )
+            for policy_name in policy_names:
+                selected_row = _select_screening_policy_row(
+                    screening_group,
+                    policy_name=policy_name,
+                    budget=int(budget),
+                    repeat=int(repeat),
+                    combined_miscalibration_lambda=combined_miscalibration_lambda,
+                )
+                selected_outer = outer_group.loc[
+                    outer_group["method"] == selected_row["method"],
+                    "outer_test_rmse",
+                ]
+                if selected_outer.empty:
+                    continue
+                selected_outer_rmse = float(selected_outer.iloc[0])
+                oracle_outer_rmse = float(oracle_row["outer_test_rmse"])
+                detail_rows.append(
+                    {
+                        "policy_name": str(policy_name),
+                        "budget": int(budget),
+                        "repeat": int(repeat),
+                        "oracle_method": str(oracle_row["method"]),
+                        "screening_selected_method": str(selected_row["method"]),
+                        "oracle_outer_rmse": oracle_outer_rmse,
+                        "screening_selected_outer_rmse": selected_outer_rmse,
+                        "regret": selected_outer_rmse - oracle_outer_rmse,
+                        "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
+                        "screening_miscalibration_area": float(
+                            selected_row["screening_miscalibration_area"]
+                        )
+                        if pd.notna(selected_row["screening_miscalibration_area"])
+                        else np.nan,
+                        "agreement": bool(oracle_row["method"] == selected_row["method"]),
+                    }
+                )
     return normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS))
 
 
@@ -564,6 +578,82 @@ def _require_columns(
     missing_columns = [column for column in required_columns if column not in frame.columns]
     if missing_columns:
         raise ValueError(f"{frame_name} frame is missing required columns: {missing_columns!r}.")
+
+
+def _select_screening_policy_row(
+    screening_group: pd.DataFrame,
+    *,
+    policy_name: str,
+    budget: int,
+    repeat: int,
+    combined_miscalibration_lambda: float,
+) -> pd.Series:
+    if policy_name == "min_screening_rmse":
+        return screening_group.sort_values(["screening_cv_rmse", "method"]).iloc[0]
+    if policy_name == "min_screening_miscalibration_area":
+        _require_miscalibration_for_policy(
+            screening_group,
+            policy_name=policy_name,
+            budget=budget,
+            repeat=repeat,
+        )
+        return screening_group.sort_values(
+            ["screening_miscalibration_area", "screening_cv_rmse", "method"]
+        ).iloc[0]
+    if policy_name == "combined_screening_rmse_miscalibration":
+        _require_miscalibration_for_policy(
+            screening_group,
+            policy_name=policy_name,
+            budget=budget,
+            repeat=repeat,
+        )
+        scored = screening_group.copy()
+        scored["rmse_norm"] = _min_max_normalize(scored["screening_cv_rmse"])
+        scored["miscalibration_norm"] = _min_max_normalize(
+            scored["screening_miscalibration_area"]
+        )
+        scored["combined_score"] = (
+            scored["rmse_norm"]
+            + float(combined_miscalibration_lambda) * scored["miscalibration_norm"]
+        )
+        return scored.sort_values(
+            [
+                "combined_score",
+                "screening_cv_rmse",
+                "screening_miscalibration_area",
+                "method",
+            ]
+        ).iloc[0]
+    raise ValueError(f"unsupported policy_name: {policy_name!r}.")
+
+
+def _require_miscalibration_for_policy(
+    screening_group: pd.DataFrame,
+    *,
+    policy_name: str,
+    budget: int,
+    repeat: int,
+) -> None:
+    missing_methods = screening_group.loc[
+        screening_group["screening_miscalibration_area"].isna(),
+        "method",
+    ].astype(str)
+    if missing_methods.empty:
+        return
+    raise ValueError(
+        "screening miscalibration area is required for "
+        f"policy {policy_name!r} at budget={budget}, repeat={repeat}; "
+        f"missing methods: {sorted(missing_methods.tolist())!r}."
+    )
+
+
+def _min_max_normalize(values: pd.Series) -> pd.Series:
+    numeric = values.astype(float)
+    min_value = float(numeric.min())
+    max_value = float(numeric.max())
+    if max_value <= min_value:
+        return pd.Series(np.zeros(len(numeric), dtype=float), index=numeric.index)
+    return (numeric - min_value) / (max_value - min_value)
 
 
 def _derive_family_split_from_shared_outer_split(

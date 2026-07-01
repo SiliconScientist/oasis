@@ -166,6 +166,37 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(summary["mean_regret"].tolist(), [0.05, 0.0])
         self.assertEqual(summary["agreement_rate"].tolist(), [0.5, 1.0])
 
+    def test_summarize_policy_detail_frame_groups_by_policy_name(self) -> None:
+        summary = summarize_policy_detail_frame(
+            pd.DataFrame(
+                {
+                    "policy_name": [
+                        "combined_screening_rmse_miscalibration",
+                        "min_screening_rmse",
+                    ],
+                    "budget": [4, 4],
+                    "repeat": [0, 0],
+                    "oracle_method": ["ridge", "ridge"],
+                    "screening_selected_method": ["weighted_linear", "ridge"],
+                    "oracle_outer_rmse": [0.2, 0.2],
+                    "screening_selected_outer_rmse": [0.3, 0.2],
+                    "regret": [0.1, 0.0],
+                    "screening_cv_rmse": [0.11, 0.1],
+                    "screening_miscalibration_area": [0.01, 0.05],
+                    "agreement": [False, True],
+                }
+            )
+        )
+
+        self.assertEqual(
+            summary["policy_name"].tolist(),
+            [
+                "combined_screening_rmse_miscalibration",
+                "min_screening_rmse",
+            ],
+        )
+        self.assertEqual(summary["mean_regret"].tolist(), [0.1, 0.0])
+
     def test_derived_family_splits_preserve_shared_outer_test_sets(self) -> None:
         shared_splits = generate_shared_outer_splits(
             12,
@@ -490,3 +521,268 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         )
         self.assertEqual(results.summary_df["budget"].tolist(), [4])
         self.assertEqual(results.summary_df["agreement_rate"].tolist(), [1.0])
+
+    def test_policy_variants_can_select_different_methods(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+        shared_splits = generate_shared_outer_splits(
+            dataset.n_samples,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+        )
+        train_signature = tuple(sorted(int(value) for value in shared_splits[0].train_idx.tolist()))
+        test_signature = (
+            shared_splits[0].budget,
+            tuple(sorted(int(value) for value in shared_splits[0].test_idx.tolist())),
+        )
+
+        class StubFamily:
+            def __init__(
+                self,
+                *,
+                method_name: str,
+                outer_rmse: float,
+                screening_rmse: float,
+                screening_miscalibration: float,
+            ) -> None:
+                self.method_name = method_name
+                self.outer_rmse = outer_rmse
+                self.screening_rmse = screening_rmse
+                self.screening_miscalibration = screening_miscalibration
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                uq_field = learning_curve_uq_field_for_method_name(self.method_name)
+                assert result_field is not None
+                frames = {
+                    result_field: pd.DataFrame(
+                        {
+                            "n_train": [payload.split_collection.splits[0].sweep_size],
+                            "rmse_mean": [self.screening_rmse],
+                            "rmse_std": [0.0],
+                        }
+                    )
+                }
+                if uq_field is not None:
+                    frames[uq_field] = pd.DataFrame(
+                        {
+                            "n_train": [payload.split_collection.splits[0].sweep_size],
+                            "miscalibration_area": [self.screening_miscalibration],
+                            "miscalibration_area_std": [0.0],
+                            "sharpness": [0.0],
+                            "sharpness_std": [0.0],
+                            "dispersion": [0.0],
+                            "dispersion_std": [0.0],
+                            "uncertainty_kind": ["spread_only"],
+                        }
+                    )
+                return LearningCurveResults.from_mapping(frames)
+
+            def run_with_artifacts(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return SweepFamilyRunArtifacts(
+                    results=LearningCurveResults.from_mapping(
+                        {
+                            result_field: pd.DataFrame(
+                                {
+                                    "n_train": [payload.split_collection.splits[0].sweep_size],
+                                    "rmse_mean": [self.outer_rmse],
+                                    "rmse_std": [0.0],
+                                }
+                            )
+                        }
+                    ),
+                    repeat_metrics=pd.DataFrame(
+                        [
+                            {
+                                "n_train": test_signature[0],
+                                "repeat": 0,
+                                "outer_test_rmse": self.outer_rmse,
+                            }
+                        ]
+                    ),
+                )
+
+        detail = build_policy_selection_detail_frame(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+            model_families=[
+                StubFamily(
+                    method_name="ridge",
+                    outer_rmse=0.2,
+                    screening_rmse=0.1,
+                    screening_miscalibration=0.3,
+                ),
+                StubFamily(
+                    method_name="weighted_linear",
+                    outer_rmse=0.25,
+                    screening_rmse=0.2,
+                    screening_miscalibration=0.05,
+                ),
+            ],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            policy_names=[
+                "min_screening_rmse",
+                "min_screening_miscalibration_area",
+                "combined_screening_rmse_miscalibration",
+            ],
+            combined_miscalibration_lambda=2.0,
+        )
+
+        selected_by_policy = dict(
+            zip(
+                detail["policy_name"].tolist(),
+                detail["screening_selected_method"].tolist(),
+                strict=True,
+            )
+        )
+        self.assertEqual(selected_by_policy["min_screening_rmse"], "ridge")
+        self.assertEqual(
+            selected_by_policy["min_screening_miscalibration_area"],
+            "weighted_linear",
+        )
+        self.assertEqual(
+            selected_by_policy["combined_screening_rmse_miscalibration"],
+            "weighted_linear",
+        )
+
+    def test_policy_regret_uses_paired_outer_test_rmse_not_screening_metrics(self) -> None:
+        detail = normalize_policy_detail_frame(
+            pd.DataFrame(
+                {
+                    "policy_name": ["min_screening_miscalibration_area"],
+                    "budget": [4],
+                    "repeat": [0],
+                    "oracle_method": ["ridge"],
+                    "screening_selected_method": ["weighted_linear"],
+                    "oracle_outer_rmse": [0.2],
+                    "screening_selected_outer_rmse": [0.35],
+                    "regret": [0.15],
+                    "screening_cv_rmse": [0.5],
+                    "screening_miscalibration_area": [0.01],
+                    "agreement": [False],
+                }
+            )
+        )
+
+        self.assertEqual(detail["regret"].tolist(), [0.15])
+
+    def test_miscalibration_policy_fails_loudly_when_metric_missing(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+
+        class MissingMiscalibrationFamily:
+            def __init__(self, method_name: str, outer_rmse: float, screening_rmse: float) -> None:
+                self.method_name = method_name
+                self.outer_rmse = outer_rmse
+                self.screening_rmse = screening_rmse
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return LearningCurveResults.from_mapping(
+                    {
+                        result_field: pd.DataFrame(
+                            {
+                                "n_train": [payload.split_collection.splits[0].sweep_size],
+                                "rmse_mean": [self.screening_rmse],
+                                "rmse_std": [0.0],
+                            }
+                        )
+                    }
+                )
+
+            def run_with_artifacts(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return SweepFamilyRunArtifacts(
+                    results=LearningCurveResults.from_mapping(
+                        {
+                            result_field: pd.DataFrame(
+                                {
+                                    "n_train": [payload.split_collection.splits[0].sweep_size],
+                                    "rmse_mean": [self.outer_rmse],
+                                    "rmse_std": [0.0],
+                                }
+                            )
+                        }
+                    ),
+                    repeat_metrics=pd.DataFrame(
+                        [{"n_train": 4, "repeat": 0, "outer_test_rmse": self.outer_rmse}]
+                    ),
+                )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "screening miscalibration area is required",
+        ):
+            build_policy_selection_detail_frame(
+                dataset,
+                min_train=4,
+                max_train=4,
+                step=1,
+                n_repeats=1,
+                seed=23,
+                model_families=[
+                    MissingMiscalibrationFamily("ridge", outer_rmse=0.2, screening_rmse=0.1),
+                    MissingMiscalibrationFamily(
+                        "weighted_linear",
+                        outer_rmse=0.25,
+                        screening_rmse=0.11,
+                    ),
+                ],
+                outer_validation_fraction=0.25,
+                outer_min_val_size=1,
+                outer_min_tuning_val_size=1,
+                outer_calibration_enabled=False,
+                outer_calibration_fraction=0.2,
+                outer_min_cal_size=1,
+                outer_min_inner_train_size=1,
+                min_test_size=1,
+                screening_fraction=0.25,
+                min_screen_size=1,
+                screening_validation_fraction=0.25,
+                screening_min_val_size=1,
+                screening_min_tuning_val_size=1,
+                screening_calibration_enabled=False,
+                screening_calibration_fraction=0.2,
+                screening_min_cal_size=1,
+                screening_min_inner_train_size=1,
+                policy_names=["min_screening_miscalibration_area"],
+            )
