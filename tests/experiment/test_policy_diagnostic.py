@@ -45,6 +45,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
     def test_normalize_policy_detail_frame_orders_and_coerces_types(self) -> None:
         frame = pd.DataFrame(
             {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
                 "budget": [8, 4],
                 "repeat": [1, 0],
                 "oracle_method": ["weighted_linear", "ridge"],
@@ -53,6 +54,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 "screening_selected_outer_rmse": [0.24, 0.31],
                 "regret": [0.03, 0.0],
                 "screening_cv_rmse": [0.19, 0.29],
+                "screening_miscalibration_area": [0.08, 0.11],
                 "agreement": [False, True],
                 "ignored": [1, 2],
             }
@@ -63,6 +65,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(
             normalized.columns.tolist(),
             [
+                "policy_name",
                 "budget",
                 "repeat",
                 "oracle_method",
@@ -71,6 +74,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 "screening_selected_outer_rmse",
                 "regret",
                 "screening_cv_rmse",
+                "screening_miscalibration_area",
                 "agreement",
             ],
         )
@@ -87,6 +91,11 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             results=PolicySelectionDiagnosticResults(
                 detail_df=pd.DataFrame(
                     {
+                        "policy_name": [
+                            "min_screening_rmse",
+                            "min_screening_rmse",
+                            "min_screening_rmse",
+                        ],
                         "budget": [4, 4, 8],
                         "repeat": [0, 1, 0],
                         "oracle_method": ["ridge", "weighted_linear", "ridge"],
@@ -95,11 +104,13 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                         "screening_selected_outer_rmse": [0.31, 0.33, 0.25],
                         "regret": [0.0, 0.05, 0.0],
                         "screening_cv_rmse": [0.29, 0.27, 0.23],
+                        "screening_miscalibration_area": [0.11, 0.12, 0.09],
                         "agreement": [True, False, True],
                     }
                 ),
                 summary_df=pd.DataFrame(
                     {
+                        "policy_name": ["min_screening_rmse", "min_screening_rmse"],
                         "budget": [8, 4],
                         "mean_regret": [0.0, 0.025],
                         "std_regret": [0.0, 0.025],
@@ -131,6 +142,11 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         summary = summarize_policy_detail_frame(
             pd.DataFrame(
                 {
+                    "policy_name": [
+                        "min_screening_rmse",
+                        "min_screening_rmse",
+                        "min_screening_rmse",
+                    ],
                     "budget": [4, 4, 8],
                     "repeat": [0, 1, 0],
                     "oracle_method": ["ridge", "weighted_linear", "ridge"],
@@ -139,6 +155,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     "screening_selected_outer_rmse": [0.2, 0.35, 0.3],
                     "regret": [0.0, 0.1, 0.0],
                     "screening_cv_rmse": [0.1, 0.12, 0.15],
+                    "screening_miscalibration_area": [0.2, 0.3, 0.1],
                     "agreement": [True, False, True],
                 }
             )
@@ -393,6 +410,9 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             detail,
             pd.DataFrame(
                 {
+                    "policy_name": pd.Series(
+                        ["min_screening_rmse", "min_screening_rmse"], dtype="string"
+                    ),
                     "budget": pd.Series([4, 4], dtype="Int64"),
                     "repeat": pd.Series([0, 1], dtype="Int64"),
                     "oracle_method": pd.Series(
@@ -405,6 +425,9 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     "screening_selected_outer_rmse": pd.Series([0.2, 0.25], dtype="Float64"),
                     "regret": pd.Series([0.0, 0.0], dtype="Float64"),
                     "screening_cv_rmse": pd.Series([0.1, 0.11], dtype="Float64"),
+                    "screening_miscalibration_area": pd.Series(
+                        [np.nan, np.nan], dtype="Float64"
+                    ),
                     "agreement": pd.Series([True, True], dtype="boolean"),
                 }
             ),

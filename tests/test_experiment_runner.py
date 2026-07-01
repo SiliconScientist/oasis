@@ -205,6 +205,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             diagnostic_results = PolicySelectionDiagnosticResults(
                 detail_df=pd.DataFrame(
                     {
+                        "policy_name": ["min_screening_rmse", "min_screening_rmse"],
                         "budget": [4, 4],
                         "repeat": [0, 1],
                         "oracle_method": ["ridge", "ridge"],
@@ -213,11 +214,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "screening_selected_outer_rmse": [0.2, 0.25],
                         "regret": [0.0, 0.0],
                         "screening_cv_rmse": [0.1, 0.11],
+                        "screening_miscalibration_area": [0.05, 0.04],
                         "agreement": [True, True],
                     }
                 ),
                 summary_df=pd.DataFrame(
                     {
+                        "policy_name": ["min_screening_rmse"],
                         "budget": [4],
                         "mean_regret": [0.0],
                         "std_regret": [0.0],

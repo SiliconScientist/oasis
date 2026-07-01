@@ -201,6 +201,47 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertIsNone(cfg.analysis)
         self.assertIsNone(cfg.plot)
 
+    def test_get_config_parses_screening_policy_diagnostic_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "example"',
+                        "",
+                        "[datasets.example]",
+                        'raw_dataset_filename = "example.json"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[experiment.screening]",
+                        "screen_fraction = 0.25",
+                        'policy_names = ["min_screening_rmse", "combined_screening_rmse_miscalibration"]',
+                        "combined_miscalibration_lambda = 2.5",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(experiment_path)
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.screening is not None
+        self.assertEqual(
+            cfg.experiment.screening.policy_names,
+            [
+                "min_screening_rmse",
+                "combined_screening_rmse_miscalibration",
+            ],
+        )
+        self.assertEqual(cfg.experiment.screening.combined_miscalibration_lambda, 2.5)
+
     def test_load_config_data_loads_experiment_only_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

@@ -9,6 +9,11 @@ GateType = Literal["mlip_baseline", "gnn", "schnet"]
 GatingMode = Literal["dense", "top_k"]
 LearningCurveBudgetMode = Literal["full_remainder_test", "screening_fraction"]
 CalibrationMethod = Literal["scalar_scale"]
+PolicySelectionDiagnosticName = Literal[
+    "min_screening_rmse",
+    "min_screening_miscalibration_area",
+    "combined_screening_rmse_miscalibration",
+]
 
 
 class DatasetProfilePathsConfig(BaseModel):
@@ -231,6 +236,10 @@ class ScreeningExperimentConfig(BaseModel):
     reuse_results: bool = False
     force_refresh_methods: list[str] = Field(default_factory=list)
     force_refresh_train_sizes: dict[str, list[int]] = Field(default_factory=dict)
+    policy_names: list[PolicySelectionDiagnosticName] = Field(
+        default_factory=lambda: ["min_screening_rmse"]
+    )
+    combined_miscalibration_lambda: float = 1.0
 
 
 class ExperimentDefaultsConfig(BaseModel):

@@ -25,8 +25,9 @@ from oasis.learning_curve.results_io import (
 from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCollection
 
 
-_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 1
+_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 2
 _DETAIL_COLUMNS = [
+    "policy_name",
     "budget",
     "repeat",
     "oracle_method",
@@ -35,9 +36,11 @@ _DETAIL_COLUMNS = [
     "screening_selected_outer_rmse",
     "regret",
     "screening_cv_rmse",
+    "screening_miscalibration_area",
     "agreement",
 ]
 _SUMMARY_COLUMNS = [
+    "policy_name",
     "budget",
     "mean_regret",
     "std_regret",
@@ -81,6 +84,7 @@ class SharedOuterSplit:
 def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
     _require_columns(frame, _DETAIL_COLUMNS, frame_name="policy detail")
     normalized = frame.copy()
+    normalized["policy_name"] = normalized["policy_name"].astype("string")
     normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
     normalized["repeat"] = pd.Series(normalized["repeat"], dtype="Int64")
     normalized["oracle_method"] = normalized["oracle_method"].astype("string")
@@ -92,23 +96,31 @@ def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
         "screening_selected_outer_rmse",
         "regret",
         "screening_cv_rmse",
+        "screening_miscalibration_area",
     ):
         normalized[column] = pd.Series(normalized[column], dtype="Float64")
     normalized["agreement"] = pd.Series(normalized["agreement"], dtype="boolean")
-    return normalized.loc[:, _DETAIL_COLUMNS].sort_values(["budget", "repeat"]).reset_index(
-        drop=True
+    return (
+        normalized.loc[:, _DETAIL_COLUMNS]
+        .sort_values(["policy_name", "budget", "repeat"])
+        .reset_index(drop=True)
     )
 
 
 def normalize_policy_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
     _require_columns(frame, _SUMMARY_COLUMNS, frame_name="policy summary")
     normalized = frame.copy()
+    normalized["policy_name"] = normalized["policy_name"].astype("string")
     normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
     for column in _SUMMARY_COLUMNS:
-        if column == "budget":
+        if column in {"policy_name", "budget"}:
             continue
         normalized[column] = pd.Series(normalized[column], dtype="Float64")
-    return normalized.loc[:, _SUMMARY_COLUMNS].sort_values("budget").reset_index(drop=True)
+    return (
+        normalized.loc[:, _SUMMARY_COLUMNS]
+        .sort_values(["policy_name", "budget"])
+        .reset_index(drop=True)
+    )
 
 
 def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
@@ -117,7 +129,10 @@ def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
         return normalize_policy_summary_frame(pd.DataFrame(columns=_SUMMARY_COLUMNS))
 
     rows: list[dict[str, float | int]] = []
-    for budget, group in normalized_detail.groupby("budget", sort=True):
+    for (policy_name, budget), group in normalized_detail.groupby(
+        ["policy_name", "budget"],
+        sort=True,
+    ):
         regret = group["regret"].astype(float).to_numpy()
         oracle_outer = group["oracle_outer_rmse"].astype(float).to_numpy()
         selected_outer = group["screening_selected_outer_rmse"].astype(float).to_numpy()
@@ -127,6 +142,7 @@ def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
         se_regret = float(std_regret / np.sqrt(len(regret)))
         rows.append(
             {
+                "policy_name": str(policy_name),
                 "budget": int(budget),
                 "mean_regret": mean_regret,
                 "std_regret": std_regret,
@@ -511,6 +527,7 @@ def build_policy_selection_detail_frame(
             oracle_outer_rmse = float(oracle_row["outer_test_rmse"])
             detail_rows.append(
                 {
+                    "policy_name": "min_screening_rmse",
                     "budget": int(budget),
                     "repeat": int(repeat),
                     "oracle_method": str(oracle_row["method"]),
@@ -519,6 +536,7 @@ def build_policy_selection_detail_frame(
                     "screening_selected_outer_rmse": selected_outer_rmse,
                     "regret": selected_outer_rmse - oracle_outer_rmse,
                     "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
+                    "screening_miscalibration_area": np.nan,
                     "agreement": bool(oracle_row["method"] == selected_row["method"]),
                 }
             )
