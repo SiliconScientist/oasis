@@ -133,6 +133,12 @@ def load_wide_predictions(result_files: list[Path]) -> pl.DataFrame:
     for path in result_files:
         model_name = model_name_from_result_path(path)
         per_reaction = detect_anomalies_from_result_json(path)
+        if not per_reaction:
+            raise ValueError(
+                "MLIP result file contains no prediction rows after parsing: "
+                f"{path}. Expected CatBench reaction entries, but found only "
+                "metadata or empty results."
+            )
         rows = [
             {
                 "reaction": reaction,

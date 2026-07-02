@@ -211,6 +211,27 @@ class MlipArtifactTests(unittest.TestCase):
         self.assertEqual(wide_df.get_column("mace_mlip_ads_eng_median").to_list(), [1.1])
         self.assertEqual(wide_df.get_column("mace_label").to_list(), ["normal"])
 
+    def test_load_wide_predictions_raises_for_empty_prediction_payload(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            result_path = Path(tmp_dir) / "mace_result.json"
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "calculation_settings": {
+                            "chemical_bond_cutoff": 1.25,
+                            "n_crit_relax": 200,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "contains no prediction rows after parsing",
+            ):
+                load_wide_predictions([result_path])
+
 
 class AnomalyAwareMlipSelectionTests(unittest.TestCase):
     @staticmethod
