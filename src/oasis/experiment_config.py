@@ -160,6 +160,7 @@ class PlotCurveWindowConfig(BaseModel):
     max_x: Optional[int] = None
     include_x: Optional[List[int]] = None
     include_fractions: Optional[List[float]] = None
+    oracle_all_datasets_log_x: bool = False
 
 
 class PlotFixedSplitConfig(BaseModel):

@@ -453,6 +453,73 @@ class PlotTests(unittest.TestCase):
             )
             self.assertTrue(getattr(locator, "_integer", False))
 
+    def test_oracle_learning_curve_plot_can_use_log_x_axis(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "KHLOHC-TOL", "KHLOHC-TOL"],
+                "n_train": [2, 8, 2, 8],
+                "oracle_rmse": [0.33, 0.22, 0.41, 0.29],
+                "oracle_method": ["probe_gnn", "probe_gnn", "ridge", "probe_gnn"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve_logx.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                    log_x=True,
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.get_xscale(), "log")
+
+    def test_oracle_learning_curve_plot_filters_to_requested_x_window(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "bio_mass", "khlohc", "khlohc", "khlohc"],
+                "dataset_label": [
+                    "Bio-Mass",
+                    "Bio-Mass",
+                    "Bio-Mass",
+                    "KHLOHC-TOL",
+                    "KHLOHC-TOL",
+                    "KHLOHC-TOL",
+                ],
+                "n_train": [2, 4, 8, 2, 4, 8],
+                "oracle_rmse": [0.33, 0.30, 0.22, 0.41, 0.36, 0.29],
+                "oracle_method": [
+                    "probe_gnn",
+                    "ridge",
+                    "probe_gnn",
+                    "ridge",
+                    "ridge",
+                    "probe_gnn",
+                ],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve_windowed.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                    include_x=[4, 8],
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            for line in ax.lines:
+                self.assertEqual(line.get_xdata().tolist(), [4, 8])
+
     def test_parity_plot_can_filter_invalid_points_per_mlip(self) -> None:
         df = pd.DataFrame(
             {

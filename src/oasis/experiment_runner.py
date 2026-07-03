@@ -50,6 +50,7 @@ from oasis.mlip.artifacts import (
 from oasis.mlip.timing import load_generation_timing_summaries
 from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
+    _filter_curve_frame,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -284,6 +285,10 @@ def _load_oracle_learning_curve_rows_for_dataset(
     *,
     dataset_tag: str,
     enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    include_fractions: list[float] | tuple[float, ...] | None = None,
 ) -> list[dict[str, object]]:
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
@@ -326,7 +331,38 @@ def _load_oracle_learning_curve_rows_for_dataset(
         dataset=dataset_tag,
         dataset_label=dataset_label,
     )
-    return oracle_df.to_dict(orient="records")
+    resolved_include_fraction_x = (
+        list(
+            resolve_configured_sweep_sizes(
+                _frame_height(wide_df),
+                min_train=None,
+                max_train=None,
+                sweep_fractions=include_fractions,
+            )
+        )
+        if include_fractions
+        else None
+    )
+    dataset_include_x = None
+    if include_x or resolved_include_fraction_x:
+        dataset_include_x = sorted(
+            {
+                int(value)
+                for value in (
+                    list(include_x or []) + list(resolved_include_fraction_x or [])
+                )
+            }
+        )
+    filtered_oracle_df = _filter_curve_frame(
+        oracle_df,
+        x_column="n_train",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=dataset_include_x,
+    )
+    if filtered_oracle_df is None or filtered_oracle_df.empty:
+        return []
+    return filtered_oracle_df.to_dict(orient="records")
 
 
 def _preview_values(values: list[object], *, limit: int = 5) -> str:
@@ -863,6 +899,10 @@ def load_all_datasets_oracle_learning_curve_rows(
     *,
     cfg: object,
     enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    include_fractions: list[float] | tuple[float, ...] | None = None,
 ) -> list[dict[str, object]]:
     configured_tags = list(getattr(cfg, "datasets", {}))
     current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
@@ -878,6 +918,10 @@ def load_all_datasets_oracle_learning_curve_rows(
                 cfg,
                 dataset_tag=dataset_tag,
                 enabled_method_names=enabled_method_names,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+                include_fractions=include_fractions,
             )
         )
     return oracle_rows
@@ -889,6 +933,10 @@ def write_all_datasets_oracle_learning_curve_plot(
     output_dir: Path,
     run_suffix: str,
     enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    include_fractions: list[float] | tuple[float, ...] | None = None,
 ) -> Path | None:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
@@ -897,14 +945,20 @@ def write_all_datasets_oracle_learning_curve_plot(
     oracle_rows = load_all_datasets_oracle_learning_curve_rows(
         cfg=cfg,
         enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        include_fractions=include_fractions,
     )
     if not oracle_rows:
         return None
 
+    curve_window_cfg = getattr(getattr(cfg, "plot", None), "curve_window", None)
     output_path = output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png"
     return oracle_learning_curve_plot(
         pd.DataFrame(oracle_rows),
         output_path=output_path,
+        log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
     )
 
 
@@ -1413,6 +1467,10 @@ def run_experiment(cfg: object):
             output_dir=output_dir,
             run_suffix=run_suffix,
             enabled_method_names=list(enabled_learning_curve_method_names),
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+            include_fractions=configured_include_fractions,
         )
         write_time_accuracy_plots(
             learning_curve_results=learning_curve_results,

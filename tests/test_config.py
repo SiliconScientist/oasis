@@ -1828,6 +1828,7 @@ class ConfigParsingTests(unittest.TestCase):
                         "max_x": 50,
                         "include_x": [10, 30, 50],
                         "include_fractions": [0.1, 0.3, 0.5],
+                        "oracle_all_datasets_log_x": True,
                     },
                 },
             }
@@ -1840,6 +1841,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.plot.curve_window.max_x, 50)
         self.assertEqual(cfg.plot.curve_window.include_x, [10, 30, 50])
         self.assertEqual(cfg.plot.curve_window.include_fractions, [0.1, 0.3, 0.5])
+        self.assertTrue(cfg.plot.curve_window.oracle_all_datasets_log_x)
 
     def test_plot_fixed_split_section_parses(self) -> None:
         cfg = Config(

@@ -495,6 +495,10 @@ def oracle_learning_curve_plot(
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
+    log_x: bool = False,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
 ) -> Path:
     required_columns = {"dataset", "dataset_label", "n_train", "oracle_rmse"}
     missing_columns = required_columns.difference(oracle_df.columns)
@@ -506,7 +510,17 @@ def oracle_learning_curve_plot(
     if oracle_df.empty:
         raise ValueError("oracle_df must contain at least one row.")
 
-    dataset_order = list(dict.fromkeys(oracle_df["dataset"].tolist()))
+    filtered = _filter_curve_frame(
+        oracle_df,
+        x_column="n_train",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+    if filtered is None or filtered.empty:
+        raise ValueError("oracle_df does not contain any rows after x-axis filtering.")
+
+    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
     label_rows = oracle_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
         subset=["dataset"],
         keep="first",
@@ -517,7 +531,7 @@ def oracle_learning_curve_plot(
         .fillna(pd.Series(dataset_order, index=dataset_order))
         .to_dict()
     )
-    filtered = oracle_df.sort_values(["dataset", "n_train"]).reset_index(drop=True)
+    filtered = filtered.sort_values(["dataset", "n_train"]).reset_index(drop=True)
 
     fig, ax = plt.subplots(figsize=(7, 4))
     cmap = plt.cm.get_cmap("tab10", len(dataset_order))
@@ -534,7 +548,10 @@ def oracle_learning_curve_plot(
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("Oracle RMSE (eV)", fontsize=fontsize)
     ax.set_title("Oracle learning curve by dataset", fontsize=fontsize)
-    _set_integer_x_ticks(ax)
+    if log_x:
+        ax.set_xscale("log")
+    else:
+        _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:

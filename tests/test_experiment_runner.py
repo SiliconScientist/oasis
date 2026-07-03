@@ -778,6 +778,9 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_all_datasets_oracle_plot.call_args.kwargs["enabled_method_names"],
             [],
         )
+        self.assertIsNone(mock_all_datasets_oracle_plot.call_args.kwargs["min_x"])
+        self.assertIsNone(mock_all_datasets_oracle_plot.call_args.kwargs["max_x"])
+        self.assertIsNone(mock_all_datasets_oracle_plot.call_args.kwargs["include_x"])
         self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
             tmp_path / "results_anomalyaware_on_latent_off_n2.json",
@@ -887,6 +890,86 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
+    def test_load_oracle_learning_curve_rows_for_dataset_resolves_include_fractions_per_dataset(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                ),
+                "khlohc": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "KHLOHC-TOL"
+                ),
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+        )
+        small_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
+        large_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3", "r4", "r5"])
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [2, 3, 4, 6],
+                    "rmse_mean": [0.40, 0.35, 0.30, 0.25],
+                    "rmse_std": [0.01, 0.01, 0.01, 0.01],
+                }
+            )
+        )
+
+        def _wide_df_for_cfg(dataset_cfg):
+            tag = dataset_cfg.dataset_profile.tag
+            wide_df = small_wide_df if tag == "bio_mass" else large_wide_df
+            return (wide_df, [], wide_df)
+
+        def _resolved_sizes(n_samples, **kwargs):
+            if n_samples == 4:
+                return [2, 4]
+            if n_samples == 6:
+                return [3, 6]
+            raise AssertionError(f"Unexpected n_samples={n_samples}")
+
+        with patch(
+            "oasis.experiment_runner.ensure_probe_artifacts",
+            return_value=False,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            side_effect=_wide_df_for_cfg,
+        ), patch(
+            "oasis.experiment_runner.build_auxiliary_views",
+            side_effect=lambda dataset_cfg, wide_df, probe_gnn_enabled: (wide_df, {}),
+        ), patch(
+            "oasis.experiment_runner.prepare_graph_view",
+            return_value=None,
+        ), patch(
+            "oasis.experiment_runner._apply_persistent_output_suffixes",
+            return_value="anomalyaware_off_latent_off_n2",
+        ), patch(
+            "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+            return_value=results,
+        ), patch(
+            "oasis.experiment_runner.resolve_configured_sweep_sizes",
+            side_effect=_resolved_sizes,
+        ):
+            small_rows = _load_oracle_learning_curve_rows_for_dataset(
+                cfg,
+                dataset_tag="bio_mass",
+                enabled_method_names=["ridge"],
+                include_fractions=[0.5, 1.0],
+            )
+            large_rows = _load_oracle_learning_curve_rows_for_dataset(
+                cfg,
+                dataset_tag="khlohc",
+                enabled_method_names=["ridge"],
+                include_fractions=[0.5, 1.0],
+            )
+
+        self.assertEqual([row["n_train"] for row in small_rows], [2, 4])
+        self.assertEqual([row["n_train"] for row in large_rows], [3, 6])
+
     def test_load_all_datasets_oracle_learning_curve_rows_preserves_dataset_order(
         self,
     ) -> None:
@@ -918,6 +1001,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             [call.kwargs["enabled_method_names"] for call in mock_load_rows.call_args_list],
             [["ridge"], ["ridge"], ["ridge"]],
+        )
+        self.assertEqual(
+            [call.kwargs["include_fractions"] for call in mock_load_rows.call_args_list],
+            [None, None, None],
         )
         self.assertEqual(
             [row["dataset"] for row in rows],
@@ -1061,6 +1148,57 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(saved_path)
         mock_plot.assert_not_called()
+
+    def test_write_all_datasets_oracle_learning_curve_plot_forwards_log_x_toggle(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+            plot=SimpleNamespace(
+                curve_window=SimpleNamespace(oracle_all_datasets_log_x=True)
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
+                return_value=[
+                    {
+                        "dataset": "bio_mass",
+                        "dataset_label": "Bio-Mass",
+                        "n_train": 2,
+                        "oracle_rmse": 0.35,
+                        "oracle_method": "ridge",
+                    },
+                    {
+                        "dataset": "khlohc",
+                        "dataset_label": "KHLOHC-TOL",
+                        "n_train": 2,
+                        "oracle_rmse": 0.30,
+                        "oracle_method": "ridge",
+                    },
+                ],
+            ), patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot",
+                return_value=tmp_path / "oracle.png",
+            ) as mock_plot:
+                saved_path = write_all_datasets_oracle_learning_curve_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                )
+
+        self.assertEqual(saved_path, tmp_path / "oracle.png")
+        self.assertTrue(mock_plot.call_args.kwargs["log_x"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
@@ -2199,12 +2337,19 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.learning_curve_plot",
                 return_value=tmp_path / "plots" / "learning_curve.png",
-            ) as mock_learning_curve_plot:
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.write_all_datasets_oracle_learning_curve_plot",
+                return_value=None,
+            ) as mock_oracle_plot:
                 run_experiment(cfg)
 
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["max_x"], 50)
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [10, 30])
+        self.assertEqual(mock_oracle_plot.call_args.kwargs["min_x"], 10)
+        self.assertEqual(mock_oracle_plot.call_args.kwargs["max_x"], 50)
+        self.assertEqual(mock_oracle_plot.call_args.kwargs["include_x"], [10, 30])
+        self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_fractions"])
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
@@ -2351,10 +2496,18 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.learning_curve_plot",
                 return_value=tmp_path / "plots" / "learning_curve.png",
-            ) as mock_learning_curve_plot:
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.write_all_datasets_oracle_learning_curve_plot",
+                return_value=None,
+            ) as mock_oracle_plot:
                 run_experiment(cfg)
 
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+        self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_x"])
+        self.assertEqual(
+            mock_oracle_plot.call_args.kwargs["include_fractions"],
+            [0.5, 1.0],
+        )
 
     def test_run_experiment_merges_curve_window_include_x_and_fractions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
