@@ -259,6 +259,24 @@ Outputs written to `plot.output_dir`:
 - `policy_selected_vs_oracle_<suffix>.png`
 - `policy_regret_<suffix>.png`
 
+When `[experiment.learning_curve]` is configured, Oasis also writes the usual
+per-dataset learning-curve figure:
+
+- `learning_curve_<suffix>.png`
+
+When multiple datasets are configured under `[datasets]`, Oasis also writes:
+
+- `learning_curve_oracle_all_datasets_<suffix>.png`
+
+Interpretation of `learning_curve_oracle_all_datasets_<suffix>.png`:
+
+- The legend is datasets, not methods.
+- Each curve is the oracle envelope for one dataset across `n_train`.
+- At each `n_train`, the plotted RMSE is the best value among the currently
+  enabled learning-curve methods only.
+- Disabled methods are excluded from the oracle selection even if cached result
+  frames for those methods are present in the bundle.
+
 The detail table is keyed by `budget` and `repeat` and includes
 `oracle_method`, `screening_selected_method`, both held-out RMSE values,
 `regret`, `screening_cv_rmse`, and `agreement`.

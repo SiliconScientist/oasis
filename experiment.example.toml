@@ -26,6 +26,12 @@ prefixes = ["ol", "sa", "ss"]
 
 [plot]
 output_dir = "data/results/plots"
+# With multiple entries under `[datasets]`, Oasis also writes an all-datasets
+# oracle learning-curve plot:
+#   learning_curve_oracle_all_datasets_<suffix>.png
+# In that figure, the legend is datasets rather than methods. Each point is the
+# best RMSE at that `n_train` among the currently enabled learning-curve methods
+# only; disabled methods are ignored even if cached result frames exist.
 
 [plot.curve_window]
 # Optional x-axis window for learning-curve and screening plots.
