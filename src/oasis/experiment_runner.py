@@ -4,6 +4,7 @@ import copy
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from time import perf_counter
 
 import numpy as np
@@ -55,6 +56,7 @@ from oasis.plot import (
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
+    oracle_learning_curve_frame,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -261,6 +263,73 @@ def _load_zero_shot_stage_rows_for_dataset(
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,
     )
+
+
+def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
+    dataset_cfg = copy.deepcopy(cfg)
+    dataset_profile = getattr(dataset_cfg, "dataset_profile", None)
+    if dataset_profile is None:
+        dataset_cfg.dataset_profile = SimpleNamespace(tag=dataset_tag)
+    else:
+        dataset_profile.tag = dataset_tag
+    init_paths = getattr(dataset_cfg, "init_paths", None)
+    if callable(init_paths):
+        init_paths()
+    return dataset_cfg
+
+
+def _load_oracle_learning_curve_rows_for_dataset(
+    cfg: object,
+    *,
+    dataset_tag: str,
+) -> list[dict[str, object]]:
+    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+
+    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
+    learning_curve_cfg = getattr(
+        getattr(dataset_cfg, "experiment", None),
+        "learning_curve",
+        None,
+    )
+    if learning_curve_cfg is None:
+        return []
+
+    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
+    probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    wide_df, auxiliary_views = build_auxiliary_views(
+        dataset_cfg,
+        wide_df,
+        probe_gnn_enabled,
+    )
+    _apply_persistent_output_suffixes(
+        dataset_cfg,
+        dataset_size=_frame_height(wide_df),
+    )
+    _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
+    graph_view = prepare_graph_view(dataset_cfg, wide_df)
+    results = load_or_run_learning_curve_results_from_config(
+        wide_df,
+        dataset_cfg,
+        graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
+    )
+    enabled_method_names = enabled_learning_curve_model_names_from_config(
+        getattr(learning_curve_cfg, "models", None)
+    )
+    oracle_df = oracle_learning_curve_frame(
+        results,
+        enabled_method_names=list(enabled_method_names),
+        dataset=dataset_tag,
+        dataset_label=dataset_label,
+    )
+    return oracle_df.to_dict(orient="records")
 
 
 def _preview_values(values: list[object], *, limit: int = 5) -> str:
@@ -791,6 +860,25 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
         pd.DataFrame(stage_rows),
         output_path=output_path,
     )
+
+
+def load_all_datasets_oracle_learning_curve_rows(
+    *,
+    cfg: object,
+) -> list[dict[str, object]]:
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1:
+        return []
+
+    oracle_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        oracle_rows.extend(
+            _load_oracle_learning_curve_rows_for_dataset(cfg, dataset_tag=dataset_tag)
+        )
+    return oracle_rows
 
 
 def build_auxiliary_views(

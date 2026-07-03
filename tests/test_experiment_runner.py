@@ -13,8 +13,10 @@ import polars as pl
 from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
+    _load_oracle_learning_curve_rows_for_dataset,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
+    load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
@@ -775,6 +777,130 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             cfg.analysis.comparison_plot_path,
             tmp_path / "comparison_anomalyaware_on.png",
+        )
+
+    def test_load_oracle_learning_curve_rows_for_dataset_filters_to_enabled_methods(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                )
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_gnn_direct=False,
+                        use_probe_gnn=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    )
+                )
+            ),
+        )
+        fake_wide_df = _FakeWideFrame()
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.35, 0.30],
+                    "rmse_std": [0.02, 0.02],
+                }
+            ),
+            latent_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.10, 0.09],
+                    "rmse_std": [0.01, 0.01],
+                }
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner.ensure_probe_artifacts",
+            return_value=False,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            return_value=(fake_wide_df, [], fake_wide_df),
+        ), patch(
+            "oasis.experiment_runner.build_auxiliary_views",
+            return_value=(fake_wide_df, {}),
+        ), patch(
+            "oasis.experiment_runner.prepare_graph_view",
+            return_value=None,
+        ), patch(
+            "oasis.experiment_runner._apply_persistent_output_suffixes",
+            return_value="anomalyaware_off_latent_off_n2",
+        ), patch(
+            "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+            return_value=results,
+        ):
+            rows = _load_oracle_learning_curve_rows_for_dataset(
+                cfg,
+                dataset_tag="bio_mass",
+            )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 2,
+                    "oracle_rmse": 0.35,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 4,
+                    "oracle_rmse": 0.30,
+                    "oracle_method": "ridge",
+                },
+            ],
+        )
+
+    def test_load_all_datasets_oracle_learning_curve_rows_preserves_dataset_order(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="rodrigo"),
+            datasets={
+                "mamun_oh": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+        )
+
+        with patch(
+            "oasis.experiment_runner._load_oracle_learning_curve_rows_for_dataset",
+            side_effect=[
+                [{"dataset": "rodrigo", "n_train": 2, "oracle_rmse": 0.3}],
+                [{"dataset": "mamun_oh", "n_train": 2, "oracle_rmse": 0.2}],
+                [{"dataset": "khlohc", "n_train": 2, "oracle_rmse": 0.1}],
+            ],
+        ) as mock_load_rows:
+            rows = load_all_datasets_oracle_learning_curve_rows(cfg=cfg)
+
+        self.assertEqual(
+            [call.kwargs["dataset_tag"] for call in mock_load_rows.call_args_list],
+            ["rodrigo", "mamun_oh", "khlohc"],
+        )
+        self.assertEqual(
+            [row["dataset"] for row in rows],
+            ["rodrigo", "mamun_oh", "khlohc"],
         )
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
