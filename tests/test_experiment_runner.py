@@ -775,6 +775,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             "anomalyaware_on",
         )
         self.assertEqual(
+            mock_all_datasets_oracle_plot.call_args.kwargs["enabled_method_names"],
+            [],
+        )
+        self.assertEqual(
             mock_results.call_args.args[1].experiment.learning_curve.results_bundle_path,
             tmp_path / "results_anomalyaware_on_latent_off_n2.json",
         )
@@ -836,6 +840,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 }
             ),
         )
+        enabled_method_names = ["ridge"]
 
         with patch(
             "oasis.experiment_runner.ensure_probe_artifacts",
@@ -859,6 +864,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             rows = _load_oracle_learning_curve_rows_for_dataset(
                 cfg,
                 dataset_tag="bio_mass",
+                enabled_method_names=enabled_method_names,
             )
 
         self.assertEqual(
@@ -900,15 +906,134 @@ class ExperimentRunnerTests(unittest.TestCase):
                 [{"dataset": "khlohc", "n_train": 2, "oracle_rmse": 0.1}],
             ],
         ) as mock_load_rows:
-            rows = load_all_datasets_oracle_learning_curve_rows(cfg=cfg)
+            rows = load_all_datasets_oracle_learning_curve_rows(
+                cfg=cfg,
+                enabled_method_names=["ridge"],
+            )
 
         self.assertEqual(
             [call.kwargs["dataset_tag"] for call in mock_load_rows.call_args_list],
             ["rodrigo", "mamun_oh", "khlohc"],
         )
         self.assertEqual(
+            [call.kwargs["enabled_method_names"] for call in mock_load_rows.call_args_list],
+            [["ridge"], ["ridge"], ["ridge"]],
+        )
+        self.assertEqual(
             [row["dataset"] for row in rows],
             ["rodrigo", "mamun_oh", "khlohc"],
+        )
+
+    def test_load_all_datasets_oracle_learning_curve_rows_uses_explicit_enabled_methods(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                ),
+                "khlohc": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "KHLOHC-TOL"
+                ),
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    models=SimpleNamespace(
+                        use_ridge=False,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_gnn_direct=False,
+                        use_probe_gnn=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    )
+                )
+            ),
+        )
+
+        fake_wide_df = _FakeWideFrame()
+        results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.35, 0.30],
+                    "rmse_std": [0.02, 0.02],
+                }
+            ),
+            latent_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.10, 0.09],
+                    "rmse_std": [0.01, 0.01],
+                }
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner.ensure_probe_artifacts",
+            return_value=False,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            return_value=(fake_wide_df, [], fake_wide_df),
+        ), patch(
+            "oasis.experiment_runner.build_auxiliary_views",
+            return_value=(fake_wide_df, {}),
+        ), patch(
+            "oasis.experiment_runner.prepare_graph_view",
+            return_value=None,
+        ), patch(
+            "oasis.experiment_runner._apply_persistent_output_suffixes",
+            return_value="anomalyaware_off_latent_off_n2",
+        ), patch(
+            "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+            return_value=results,
+        ):
+            rows = load_all_datasets_oracle_learning_curve_rows(
+                cfg=cfg,
+                enabled_method_names=["ridge"],
+            )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 2,
+                    "oracle_rmse": 0.35,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 4,
+                    "oracle_rmse": 0.30,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "khlohc",
+                    "dataset_label": "KHLOHC-TOL",
+                    "n_train": 2,
+                    "oracle_rmse": 0.35,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "khlohc",
+                    "dataset_label": "KHLOHC-TOL",
+                    "n_train": 4,
+                    "oracle_rmse": 0.30,
+                    "oracle_method": "ridge",
+                },
+            ],
         )
 
     def test_write_all_datasets_oracle_learning_curve_plot_skips_single_dataset(
@@ -931,6 +1056,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     cfg=cfg,
                     output_dir=tmp_path,
                     run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
                 )
 
         self.assertIsNone(saved_path)

@@ -283,9 +283,8 @@ def _load_oracle_learning_curve_rows_for_dataset(
     cfg: object,
     *,
     dataset_tag: str,
+    enabled_method_names: list[str] | tuple[str, ...],
 ) -> list[dict[str, object]]:
-    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
-
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
         getattr(dataset_cfg, "experiment", None),
@@ -320,9 +319,6 @@ def _load_oracle_learning_curve_rows_for_dataset(
         dataset_cfg,
         graph_view=graph_view,
         auxiliary_views=auxiliary_views,
-    )
-    enabled_method_names = enabled_learning_curve_model_names_from_config(
-        getattr(learning_curve_cfg, "models", None)
     )
     oracle_df = oracle_learning_curve_frame(
         results,
@@ -866,6 +862,7 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
 def load_all_datasets_oracle_learning_curve_rows(
     *,
     cfg: object,
+    enabled_method_names: list[str] | tuple[str, ...],
 ) -> list[dict[str, object]]:
     configured_tags = list(getattr(cfg, "datasets", {}))
     current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
@@ -877,7 +874,11 @@ def load_all_datasets_oracle_learning_curve_rows(
     oracle_rows: list[dict[str, object]] = []
     for dataset_tag in configured_tags:
         oracle_rows.extend(
-            _load_oracle_learning_curve_rows_for_dataset(cfg, dataset_tag=dataset_tag)
+            _load_oracle_learning_curve_rows_for_dataset(
+                cfg,
+                dataset_tag=dataset_tag,
+                enabled_method_names=enabled_method_names,
+            )
         )
     return oracle_rows
 
@@ -887,12 +888,16 @@ def write_all_datasets_oracle_learning_curve_plot(
     cfg: object,
     output_dir: Path,
     run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
 ) -> Path | None:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
         return None
 
-    oracle_rows = load_all_datasets_oracle_learning_curve_rows(cfg=cfg)
+    oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+    )
     if not oracle_rows:
         return None
 
@@ -1294,6 +1299,8 @@ def write_fixed_split_time_accuracy_plots(
 
 
 def run_experiment(cfg: object):
+    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+
     run_suffix = _plot_output_suffix(cfg)
     _apply_run_output_suffixes(cfg, plot_suffix=run_suffix)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
@@ -1386,6 +1393,9 @@ def run_experiment(cfg: object):
     learning_curve_plot_path = None
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is not None:
+        enabled_learning_curve_method_names = enabled_learning_curve_model_names_from_config(
+            getattr(learning_curve_cfg, "models", None)
+        )
         learning_curve_results = load_or_run_learning_curve_results_from_config(
             wide_df,
             cfg,
@@ -1402,6 +1412,7 @@ def run_experiment(cfg: object):
             cfg=cfg,
             output_dir=output_dir,
             run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
         )
         write_time_accuracy_plots(
             learning_curve_results=learning_curve_results,
