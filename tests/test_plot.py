@@ -22,6 +22,7 @@ from oasis.plot import (
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
+    oracle_learning_curve_frame,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -303,6 +304,83 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+
+    def test_oracle_learning_curve_frame_selects_best_enabled_method_per_train_size(
+        self,
+    ) -> None:
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 4, 8],
+                "rmse_mean": [0.35, 0.30, 0.26],
+                "rmse_std": [0.02, 0.02, 0.01],
+            }
+        )
+        probe_gnn_df = pd.DataFrame(
+            {
+                "n_train": [2, 4, 8],
+                "rmse_mean": [0.33, 0.31, 0.22],
+                "rmse_std": [0.03, 0.02, 0.02],
+            }
+        )
+        results = LearningCurveResults(
+            ridge_df=ridge_df,
+            probe_gnn_df=probe_gnn_df,
+        )
+
+        oracle_df = oracle_learning_curve_frame(
+            results,
+            enabled_method_names=["ridge", "probe_gnn"],
+            dataset="bio_mass",
+            dataset_label="Bio-Mass",
+        )
+
+        expected = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "bio_mass"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "Bio-Mass"],
+                "n_train": [2, 4, 8],
+                "oracle_rmse": [0.33, 0.30, 0.22],
+                "oracle_method": ["probe_gnn", "ridge", "probe_gnn"],
+            }
+        )
+        pd.testing.assert_frame_equal(oracle_df, expected)
+
+    def test_oracle_learning_curve_frame_ignores_disabled_methods(self) -> None:
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.35, 0.30],
+                "rmse_std": [0.02, 0.02],
+            }
+        )
+        latent_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.10, 0.09],
+                "rmse_std": [0.01, 0.01],
+            }
+        )
+        results = LearningCurveResults(
+            ridge_df=ridge_df,
+            latent_df=latent_df,
+        )
+
+        oracle_df = oracle_learning_curve_frame(
+            results,
+            enabled_method_names=["ridge"],
+            dataset="bio_mass",
+        )
+
+        expected = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass"],
+                "dataset_label": ["bio_mass", "bio_mass"],
+                "n_train": [2, 4],
+                "oracle_rmse": [0.35, 0.30],
+                "oracle_method": ["ridge", "ridge"],
+            }
+        )
+        pd.testing.assert_frame_equal(oracle_df, expected)
 
     def test_parity_plot_can_filter_invalid_points_per_mlip(self) -> None:
         df = pd.DataFrame(

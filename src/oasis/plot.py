@@ -51,6 +51,10 @@ _METHOD_PLOT_STYLES = (
     ("probe_gnn", "probe_gnn_df", "probe_gnn_uq_df", "Probe GNN", "D", "tab:olive"),
     ("latent", "latent_df", "latent_uq_df", "Latent", "v", "tab:brown"),
 )
+_METHOD_RESULT_FIELDS = {
+    method_name: result_field
+    for method_name, result_field, *_ in _METHOD_PLOT_STYLES
+}
 
 
 def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -59,6 +63,57 @@ def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | 
     if "n_train" not in frame.columns:
         raise ValueError("learning-curve result frames must contain an n_train column.")
     return frame.sort_values("n_train").reset_index(drop=True)
+
+
+def oracle_learning_curve_frame(
+    results: LearningCurveResults,
+    *,
+    enabled_method_names: list[str] | tuple[str, ...],
+    dataset: str,
+    dataset_label: str | None = None,
+) -> pd.DataFrame:
+    unknown_methods = sorted(
+        method_name
+        for method_name in enabled_method_names
+        if method_name not in _METHOD_RESULT_FIELDS
+    )
+    if unknown_methods:
+        raise ValueError(
+            "enabled_method_names contains unknown methods: "
+            f"{unknown_methods}"
+        )
+
+    oracle_rows: list[pd.DataFrame] = []
+    for method_name in enabled_method_names:
+        frame = getattr(results, _METHOD_RESULT_FIELDS[method_name])
+        if frame is None or frame.empty:
+            continue
+        if "n_train" not in frame.columns or "rmse_mean" not in frame.columns:
+            raise ValueError(
+                f"{method_name!r} result frame must contain n_train and rmse_mean columns."
+            )
+        oracle_rows.append(
+            frame.loc[:, ["n_train", "rmse_mean"]]
+            .assign(oracle_method=method_name)
+            .rename(columns={"rmse_mean": "oracle_rmse"})
+        )
+
+    if not oracle_rows:
+        raise ValueError("No enabled learning-curve result frames were available.")
+
+    candidates = (
+        pd.concat(oracle_rows, ignore_index=True)
+        .sort_values(["n_train", "oracle_rmse", "oracle_method"])
+        .reset_index(drop=True)
+    )
+    oracle = (
+        candidates.groupby("n_train", as_index=False, sort=True)
+        .first()
+        .loc[:, ["n_train", "oracle_rmse", "oracle_method"]]
+    )
+    oracle.insert(0, "dataset_label", dataset if dataset_label is None else dataset_label)
+    oracle.insert(0, "dataset", dataset)
+    return oracle
 
 
 def _ordered_screening_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
