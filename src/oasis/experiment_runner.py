@@ -57,6 +57,7 @@ from oasis.plot import (
     learning_curve_plot,
     miscalibration_area_plot,
     oracle_learning_curve_frame,
+    oracle_learning_curve_plot,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -881,6 +882,27 @@ def load_all_datasets_oracle_learning_curve_rows(
     return oracle_rows
 
 
+def write_all_datasets_oracle_learning_curve_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> Path | None:
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is None:
+        return None
+
+    oracle_rows = load_all_datasets_oracle_learning_curve_rows(cfg=cfg)
+    if not oracle_rows:
+        return None
+
+    output_path = output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png"
+    return oracle_learning_curve_plot(
+        pd.DataFrame(oracle_rows),
+        output_path=output_path,
+    )
+
+
 def build_auxiliary_views(
     cfg: object,
     wide_df: object,
@@ -1375,6 +1397,11 @@ def run_experiment(cfg: object):
             output_path=output_dir / f"learning_curve_{run_suffix}.png",
             zero_shot_rmse=zero_shot_rmse,
             **plot_kwargs,
+        )
+        write_all_datasets_oracle_learning_curve_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
         )
         write_time_accuracy_plots(
             learning_curve_results=learning_curve_results,

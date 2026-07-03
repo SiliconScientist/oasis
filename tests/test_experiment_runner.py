@@ -20,6 +20,7 @@ from oasis.experiment_runner import (
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
+    write_all_datasets_oracle_learning_curve_plot,
     write_zero_shot_stage_parity_plots,
 )
 from oasis.experiment.policy_diagnostic import PolicySelectionDiagnosticResults
@@ -739,7 +740,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                     / "plots"
                     / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png"
                 ),
-            ) as mock_all_datasets_zero_shot_plot:
+            ) as mock_all_datasets_zero_shot_plot, patch(
+                "oasis.experiment_runner.write_all_datasets_oracle_learning_curve_plot",
+                return_value=(
+                    tmp_path
+                    / "plots"
+                    / "learning_curve_oracle_all_datasets_anomalyaware_on.png"
+                ),
+            ) as mock_all_datasets_oracle_plot:
                 run_experiment(cfg)
 
         self.assertEqual(
@@ -759,11 +767,11 @@ class ExperimentRunnerTests(unittest.TestCase):
             "anomalyaware_on",
         )
         self.assertEqual(
-            mock_all_datasets_zero_shot_plot.call_args.kwargs["output_dir"],
+            mock_all_datasets_oracle_plot.call_args.kwargs["output_dir"],
             tmp_path / "plots",
         )
         self.assertEqual(
-            mock_all_datasets_zero_shot_plot.call_args.kwargs["run_suffix"],
+            mock_all_datasets_oracle_plot.call_args.kwargs["run_suffix"],
             "anomalyaware_on",
         )
         self.assertEqual(
@@ -902,6 +910,31 @@ class ExperimentRunnerTests(unittest.TestCase):
             [row["dataset"] for row in rows],
             ["rodrigo", "mamun_oh", "khlohc"],
         )
+
+    def test_write_all_datasets_oracle_learning_curve_plot_skips_single_dataset(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={"bio_mass": SimpleNamespace()},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot"
+            ) as mock_plot:
+                saved_path = write_all_datasets_oracle_learning_curve_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                )
+
+        self.assertIsNone(saved_path)
+        mock_plot.assert_not_called()
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
