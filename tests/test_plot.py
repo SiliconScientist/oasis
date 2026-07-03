@@ -23,6 +23,7 @@ from oasis.plot import (
     learning_curve_plot,
     miscalibration_area_plot,
     oracle_learning_curve_frame,
+    oracle_learning_curve_plot,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -381,6 +382,76 @@ class PlotTests(unittest.TestCase):
             }
         )
         pd.testing.assert_frame_equal(oracle_df, expected)
+
+    def test_oracle_learning_curve_plot_renders_single_dataset_curve(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "bio_mass"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "Bio-Mass"],
+                "n_train": [2, 4, 8],
+                "oracle_rmse": [0.33, 0.30, 0.22],
+                "oracle_method": ["probe_gnn", "ridge", "probe_gnn"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.get_ylabel(), "Oracle RMSE (eV)")
+            self.assertEqual(ax.get_xlabel(), "Train size")
+            self.assertEqual(ax.get_title(), "Oracle learning curve by dataset")
+            self.assertEqual(len(ax.lines), 1)
+            self.assertEqual(ax.get_legend().get_texts()[0].get_text(), "Bio-Mass")
+
+    def test_oracle_learning_curve_plot_renders_multiple_dataset_curves(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": [
+                    "bio_mass",
+                    "bio_mass",
+                    "khlohc",
+                    "khlohc",
+                ],
+                "dataset_label": [
+                    "Bio-Mass",
+                    "Bio-Mass",
+                    "KHLOHC-TOL",
+                    "KHLOHC-TOL",
+                ],
+                "n_train": [2, 4, 2, 4],
+                "oracle_rmse": [0.33, 0.30, 0.41, 0.29],
+                "oracle_method": ["probe_gnn", "ridge", "ridge", "probe_gnn"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve_multi.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+                locator = ax.xaxis.get_major_locator()
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(len(ax.lines), 2)
+            self.assertEqual(
+                [text.get_text() for text in ax.get_legend().get_texts()],
+                ["Bio-Mass", "KHLOHC-TOL"],
+            )
+            self.assertTrue(getattr(locator, "_integer", False))
 
     def test_parity_plot_can_filter_invalid_points_per_mlip(self) -> None:
         df = pd.DataFrame(

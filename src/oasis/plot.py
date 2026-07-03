@@ -489,6 +489,66 @@ def zero_shot_rmse_stage_plot(
     return output_path
 
 
+def oracle_learning_curve_plot(
+    oracle_df: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_legend: bool = True,
+) -> Path:
+    required_columns = {"dataset", "dataset_label", "n_train", "oracle_rmse"}
+    missing_columns = required_columns.difference(oracle_df.columns)
+    if missing_columns:
+        raise ValueError(
+            "oracle_df is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+    if oracle_df.empty:
+        raise ValueError("oracle_df must contain at least one row.")
+
+    dataset_order = list(dict.fromkeys(oracle_df["dataset"].tolist()))
+    label_rows = oracle_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+        subset=["dataset"],
+        keep="first",
+    )
+    dataset_labels = (
+        label_rows.set_index("dataset")
+        .reindex(dataset_order)["dataset_label"]
+        .fillna(pd.Series(dataset_order, index=dataset_order))
+        .to_dict()
+    )
+    filtered = oracle_df.sort_values(["dataset", "n_train"]).reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    cmap = plt.cm.get_cmap("tab10", len(dataset_order))
+    for idx, dataset in enumerate(dataset_order):
+        dataset_rows = filtered.loc[filtered["dataset"] == dataset]
+        ax.plot(
+            dataset_rows["n_train"],
+            dataset_rows["oracle_rmse"],
+            marker="o",
+            color=cmap(idx),
+            label=dataset_labels[dataset],
+        )
+
+    ax.set_xlabel("Train size", fontsize=fontsize)
+    ax.set_ylabel("Oracle RMSE (eV)", fontsize=fontsize)
+    ax.set_title("Oracle learning curve by dataset", fontsize=fontsize)
+    _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    if show_legend:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
 def learning_curve_plot(
     results: LearningCurveResults,
     output_path: str | Path,
