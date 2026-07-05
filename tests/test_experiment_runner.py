@@ -20,7 +20,9 @@ from oasis.experiment_runner import (
     load_filtered_wide_predictions,
     run_experiment,
     run_experiment_from_config,
+    write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
+    write_zero_shot_rmse_stage_plot,
     write_zero_shot_stage_parity_plots,
 )
 from oasis.experiment.policy_diagnostic import PolicySelectionDiagnosticResults
@@ -1287,6 +1289,121 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
             np.array([True, False, True]),
         )
+
+    def test_write_zero_shot_rmse_stage_plot_forwards_swarm_toggle_from_config(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(zero_shot_stage_show_lone_mlip_swarm=False),
+            dataset_profile=SimpleNamespace(tag="example"),
+            datasets={},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+        frame = pl.DataFrame(
+            {
+                "reaction": ["r0", "r1"],
+                "reference_ads_eng": [0.0, 1.0],
+                "a_mlip_ads_eng_median": [0.0, 1.0],
+                "b_mlip_ads_eng_median": [1.0, 2.0],
+                "a_slab_conv": [0, 0],
+                "a_ads_conv": [0, 0],
+                "a_slab_move": [0, 0],
+                "a_ads_move": [0, 0],
+                "a_slab_seed": [0, 0],
+                "a_ads_seed": [0, 0],
+                "a_ads_eng_seed": [0, 0],
+                "a_adsorbate_migration": [0, 0],
+                "b_slab_conv": [0, 0],
+                "b_ads_conv": [0, 0],
+                "b_slab_move": [0, 0],
+                "b_ads_move": [0, 0],
+                "b_slab_seed": [0, 0],
+                "b_ads_seed": [0, 0],
+                "b_ads_eng_seed": [0, 0],
+                "b_adsorbate_migration": [0, 0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage.png",
+            ) as mock_plot:
+                saved_path = write_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    raw_wide_df=frame,
+                    selected_wide_df=frame,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "zero_shot_stage.png")
+        self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
+
+    def test_write_all_datasets_zero_shot_rmse_stage_plot_forwards_swarm_toggle_from_config(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(zero_shot_stage_show_lone_mlip_swarm=False),
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
+                side_effect=[
+                    [
+                        {
+                            "dataset": "bio_mass",
+                            "dataset_label": "Bio-Mass",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.4,
+                            "n_samples": 10,
+                        }
+                    ],
+                    [
+                        {
+                            "dataset": "khlohc",
+                            "dataset_label": "KHLOHC-TOL",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.5,
+                            "n_samples": 12,
+                        }
+                    ],
+                ],
+            ), patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage_all.png",
+            ) as mock_plot:
+                saved_path = write_all_datasets_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "zero_shot_stage_all.png")
+        self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
 
     def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(
         self,

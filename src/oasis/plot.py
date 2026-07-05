@@ -402,6 +402,7 @@ def zero_shot_rmse_stage_plot(
     output_path: str | Path,
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_lone_mlip_swarm: bool = True,
 ) -> Path:
     required_columns = {"dataset", "stage", "rmse", "n_samples"}
     missing_columns = required_columns.difference(stage_df.columns)
@@ -485,7 +486,7 @@ def zero_shot_rmse_stage_plot(
                 fontsize=_DEFAULT_TICK_FONTSIZE,
             )
 
-    if not swarm_rows.empty:
+    if show_lone_mlip_swarm and not swarm_rows.empty:
         swarm_stage = "Full / all MLIPs"
         swarm_offset = offsets[stage_order.index(swarm_stage)]
         point_label_used = False

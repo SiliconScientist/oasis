@@ -202,6 +202,11 @@ def _stage_filter_kwargs(cfg: object) -> dict[str, object]:
     }
 
 
+def _show_lone_mlip_swarm(cfg: object) -> bool:
+    plot_cfg = getattr(cfg, "plot", None)
+    return bool(getattr(plot_cfg, "zero_shot_stage_show_lone_mlip_swarm", True))
+
+
 def _build_zero_shot_stage_rows(
     *,
     cfg: object,
@@ -845,7 +850,11 @@ def write_zero_shot_rmse_stage_plot(
         return None
     stage_df = pd.DataFrame(stage_rows)
     output_path = output_dir / f"zero_shot_rmse_stage_{run_suffix}.png"
-    return zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+    return zero_shot_rmse_stage_plot(
+        stage_df,
+        output_path=output_path,
+        show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
+    )
 
 
 def write_zero_shot_stage_parity_plots(
@@ -914,6 +923,7 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
     return zero_shot_rmse_stage_plot(
         pd.DataFrame(stage_rows),
         output_path=output_path,
+        show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
     )
 
 

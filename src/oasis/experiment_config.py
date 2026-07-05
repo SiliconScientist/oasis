@@ -322,6 +322,7 @@ class PlotConfig(BaseModel):
     output_dir: Path
     curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
     fixed_split: PlotFixedSplitConfig = Field(default_factory=PlotFixedSplitConfig)
+    zero_shot_stage_show_lone_mlip_swarm: bool = True
 
 
 class ProbeFeatureConfig(BaseModel):

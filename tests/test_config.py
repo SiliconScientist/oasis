@@ -1821,6 +1821,7 @@ class ConfigParsingTests(unittest.TestCase):
                 },
                 "plot": {
                     "output_dir": "data/results/plots",
+                    "zero_shot_stage_show_lone_mlip_swarm": False,
                     "curve_window": {
                         "full_dataset_window": True,
                         "all": True,
@@ -1835,6 +1836,7 @@ class ConfigParsingTests(unittest.TestCase):
         )
 
         assert cfg.plot is not None
+        self.assertFalse(cfg.plot.zero_shot_stage_show_lone_mlip_swarm)
         self.assertTrue(cfg.plot.curve_window.full_dataset_window)
         self.assertTrue(cfg.plot.curve_window.all)
         self.assertEqual(cfg.plot.curve_window.min_x, 10)

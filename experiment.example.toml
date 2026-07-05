@@ -26,6 +26,7 @@ prefixes = ["ol", "sa", "ss"]
 
 [plot]
 output_dir = "data/results/plots"
+zero_shot_stage_show_lone_mlip_swarm = true
 # With multiple entries under `[datasets]`, Oasis also writes an all-datasets
 # oracle learning-curve plot:
 #   learning_curve_oracle_all_datasets_<suffix>.png
