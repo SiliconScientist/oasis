@@ -426,10 +426,22 @@ def zero_shot_rmse_stage_plot(
     filtered = stage_df.loc[stage_df["stage"].isin(stage_order)].copy()
     if filtered.empty:
         raise ValueError("stage_df does not contain any recognized stage labels.")
+    bar_rows = (
+        filtered.loc[filtered["mlip"].isna()].copy()
+        if "mlip" in filtered.columns
+        else filtered.copy()
+    )
+    swarm_rows = (
+        filtered.loc[filtered["mlip"].notna()].copy()
+        if "mlip" in filtered.columns
+        else filtered.iloc[0:0].copy()
+    )
+    if bar_rows.empty:
+        raise ValueError("stage_df does not contain any bar rows to render.")
 
-    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
-    if "dataset_label" in filtered.columns:
-        label_rows = filtered.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+    dataset_order = list(dict.fromkeys(bar_rows["dataset"].tolist()))
+    if "dataset_label" in bar_rows.columns:
+        label_rows = bar_rows.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
             subset=["dataset"],
             keep="first",
         )
@@ -448,7 +460,7 @@ def zero_shot_rmse_stage_plot(
     fig, ax = plt.subplots(figsize=(max(7, 2 + 2.2 * len(dataset_order)), 4.5))
     for offset, stage_name in zip(offsets, stage_order, strict=True):
         stage_rows = (
-            filtered.loc[filtered["stage"] == stage_name]
+            bar_rows.loc[bar_rows["stage"] == stage_name]
             .set_index("dataset")
             .reindex(dataset_order)
         )
@@ -472,6 +484,33 @@ def zero_shot_rmse_stage_plot(
                 va="bottom",
                 fontsize=_DEFAULT_TICK_FONTSIZE,
             )
+
+    if not swarm_rows.empty:
+        swarm_stage = "Full / all MLIPs"
+        swarm_offset = offsets[stage_order.index(swarm_stage)]
+        point_label_used = False
+        for dataset_index, dataset_name in enumerate(dataset_order):
+            dataset_swarm = swarm_rows.loc[
+                (swarm_rows["dataset"] == dataset_name)
+                & (swarm_rows["stage"] == swarm_stage)
+            ].sort_values(["rmse", "mlip"])
+            if dataset_swarm.empty:
+                continue
+            point_count = len(dataset_swarm)
+            if point_count == 1:
+                local_offsets = np.array([0.0])
+            else:
+                local_offsets = np.linspace(-width * 0.28, width * 0.28, num=point_count)
+            ax.scatter(
+                np.full(point_count, x[dataset_index] + swarm_offset) + local_offsets,
+                dataset_swarm["rmse"].to_numpy(),
+                s=28,
+                color="black",
+                alpha=0.75,
+                zorder=4,
+                label="Lone MLIP RMSE" if not point_label_used else None,
+            )
+            point_label_used = True
 
     ax.set_xticks(x, dataset_labels)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)

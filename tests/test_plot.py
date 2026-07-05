@@ -581,6 +581,36 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(len(ax.patches), 3)
             self.assertEqual([tick.get_text() for tick in ax.get_xticklabels()], ["OH-BMA"])
 
+    def test_zero_shot_rmse_stage_plot_overlays_lone_mlip_points(self) -> None:
+        stage_df = pd.DataFrame(
+            {
+                "dataset": ["mamun_oh"] * 5,
+                "dataset_label": ["OH-BMA"] * 5,
+                "stage": [
+                    "Full / all MLIPs",
+                    "Matched subset / all MLIPs",
+                    "Matched subset / anomaly-aware selection",
+                    "Full / all MLIPs",
+                    "Full / all MLIPs",
+                ],
+                "rmse": [0.55, 0.51, 0.47, 0.61, 0.49],
+                "n_samples": [1235, 1094, 1094, 1235, 1235],
+                "mlip": [None, None, None, "mlip_a", "mlip_b"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "zero_shot_stage_swarm.png"
+            with patch("oasis.plot.plt.close"):
+                zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+                fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(len(ax.patches), 3)
+            self.assertEqual(len(ax.collections), 1)
+            self.assertEqual(len(ax.collections[0].get_offsets()), 2)
+
     def test_zero_shot_rmse_stage_plot_renders_multiple_datasets(self) -> None:
         stage_df = pd.DataFrame(
             {

@@ -102,6 +102,15 @@ def _zero_shot_rmse_from_frame(frame: object) -> float:
     )
 
 
+def _single_mlip_zero_shot_rmses_from_frame(frame: object) -> dict[str, float]:
+    parity_plot_data = prepare_parity_plot_data(frame)
+    reference = parity_plot_data.reference
+    return {
+        mlip_name: float(np.sqrt(np.mean((reference - predictions) ** 2)))
+        for mlip_name, predictions in parity_plot_data.predictions.items()
+    }
+
+
 def _column_to_numpy(frame: object, column_name: str) -> np.ndarray:
     column = frame.get_column(column_name)
     if hasattr(column, "to_numpy"):
@@ -233,6 +242,19 @@ def _build_zero_shot_stage_rows(
             ),
             "n_samples": _frame_height(selected_wide_df),
         },
+        *[
+            {
+                "dataset": dataset_tag,
+                "dataset_label": resolved_dataset_label,
+                "stage": "Full / all MLIPs",
+                "rmse": rmse,
+                "n_samples": _frame_height(raw_wide_df),
+                "mlip": mlip_name,
+            }
+            for mlip_name, rmse in _single_mlip_zero_shot_rmses_from_frame(
+                raw_wide_df
+            ).items()
+        ],
     ]
 
 

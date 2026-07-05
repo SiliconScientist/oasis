@@ -367,6 +367,12 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(stage_rows[1]["rmse"], 5.0)
         self.assertEqual(stage_rows[2]["rmse"], 0.0)
+        lone_mlip_rows = [row for row in stage_rows if row.get("mlip") is not None]
+        self.assertEqual(len(lone_mlip_rows), 2)
+        self.assertEqual(
+            {row["mlip"]: row["rmse"] for row in lone_mlip_rows},
+            {"a": 0.0, "b": 10.0},
+        )
 
     def test_run_experiment_skips_probe_dataset_build_when_probe_gnn_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
