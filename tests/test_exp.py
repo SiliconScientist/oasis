@@ -4240,6 +4240,121 @@ class ExpIntegrationTests(unittest.TestCase):
         self.assertEqual(results.ridge_df["n_train"].tolist(), list(range(1, 41)))
         self.assertEqual(artifact.results.ridge_df["n_train"].tolist(), list(range(1, 41)))
 
+    def test_run_learning_curve_experiments_from_config_gap_fills_mixed_sweep_union(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": list(range(1, 101)),
+                "ridge_mlip_ads_eng_median": [value + 0.1 for value in range(1, 101)],
+            }
+        )
+        cached_ridge_df = pd.DataFrame(
+            {
+                "n_train": [1, 2, 3, 5],
+                "rmse_mean": [0.51, 0.5, 0.49, 0.47],
+                "rmse_std": [0.05, 0.05, 0.05, 0.045],
+            }
+        )
+        fresh_ridge_df = pd.DataFrame(
+            {
+                "n_train": [10, 20],
+                "rmse_mean": [0.42, 0.36],
+                "rmse_std": [0.04, 0.035],
+            }
+        )
+
+        class RecordingFamily:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.last_payload = None
+                self.method_name = "ridge"
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                self.last_payload = payload
+                return LearningCurveResults.from_mapping({"ridge_df": fresh_ridge_df})
+
+        family = RecordingFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults.from_mapping({"ridge_df": cached_ridge_df}),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=1,
+                    max_train=5,
+                    step=0,
+                    n_repeats=1,
+                    enabled_models=("ridge",),
+                    requested_sweep_sizes=(1, 2, 3, 5),
+                    requested_sweep_fractions=(0.05,),
+                    mlip_feature_names=("ridge",),
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=None,
+                        max_train=None,
+                        step=1,
+                        sweep_sizes=[1, 2, 3, 20],
+                        sweep_fractions=[0.05, 0.1, 0.2],
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        force_refresh_methods=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(family.calls, 1)
+        self.assertEqual(
+            [split.sweep_size for split in family.last_payload.split_collection.splits],
+            [10, 20],
+        )
+        self.assertEqual(
+            results.ridge_df["n_train"].tolist(),
+            [1, 2, 3, 5, 10, 20],
+        )
+        self.assertEqual(
+            artifact.results.ridge_df["n_train"].tolist(),
+            [1, 2, 3, 5, 10, 20],
+        )
+
     def test_run_learning_curve_experiments_from_config_force_refreshes_selected_methods_in_bundle(
         self,
     ) -> None:

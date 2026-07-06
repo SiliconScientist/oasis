@@ -254,6 +254,18 @@ def run_learning_curve_experiments_from_config(
         if experiment_cfg is not None
         else {}
     )
+    resolved_sweep_sizes = (
+        resolve_configured_sweep_sizes(
+            dataset.n_samples,
+            min_train=experiment_cfg.min_train,
+            max_train=experiment_cfg.max_train,
+            step=getattr(experiment_cfg, "step", 1),
+            sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
+            sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
+        )
+        if experiment_cfg is not None
+        else None
+    )
     force_refresh_methods = {
         method_name
         for method_name in getattr(experiment_cfg, "force_refresh_methods", ())
@@ -278,18 +290,7 @@ def run_learning_curve_experiments_from_config(
             step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
             n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
             seed=cfg.seed if cfg and cfg.seed is not None else 42,
-            requested_sweep_sizes=(
-                resolve_configured_sweep_sizes(
-                    dataset.n_samples,
-                    min_train=experiment_cfg.min_train,
-                    max_train=experiment_cfg.max_train,
-                    step=getattr(experiment_cfg, "step", 1),
-                    sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
-                    sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
-                )
-                if experiment_cfg
-                else None
-            ),
+            requested_sweep_sizes=resolved_sweep_sizes,
             enabled_model_names=enabled_model_names,
             model_cfg=model_cfg,
             budget_mode=(
@@ -412,14 +413,7 @@ def run_learning_curve_experiments_from_config(
                     step=getattr(experiment_cfg, "step", 1),
                     n_repeats=experiment_cfg.n_repeats,
                     seed=cfg.seed if cfg.seed is not None else 42,
-                    requested_sweep_sizes=resolve_configured_sweep_sizes(
-                        dataset.n_samples,
-                        min_train=experiment_cfg.min_train,
-                        max_train=experiment_cfg.max_train,
-                        step=getattr(experiment_cfg, "step", 1),
-                        sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
-                        sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
-                    ),
+                    requested_sweep_sizes=resolved_sweep_sizes,
                     budget_mode=getattr(
                         experiment_cfg, "budget_mode", "full_remainder_test"
                     ),
@@ -485,18 +479,7 @@ def run_learning_curve_experiments_from_config(
             step=getattr(experiment_cfg, "step", 1) if experiment_cfg else 1,
             n_repeats=experiment_cfg.n_repeats if experiment_cfg else 50,
             seed=cfg.seed if cfg and cfg.seed is not None else 42,
-            requested_sweep_sizes=(
-                resolve_configured_sweep_sizes(
-                    dataset.n_samples,
-                    min_train=experiment_cfg.min_train,
-                    max_train=experiment_cfg.max_train,
-                    step=getattr(experiment_cfg, "step", 1),
-                    sweep_sizes=getattr(experiment_cfg, "sweep_sizes", ()),
-                    sweep_fractions=getattr(experiment_cfg, "sweep_fractions", ()),
-                )
-                if experiment_cfg
-                else None
-            ),
+            requested_sweep_sizes=resolved_sweep_sizes,
             enabled_model_names=enabled_model_names_to_run,
             model_cfg=model_cfg,
             budget_mode=(
