@@ -40,7 +40,8 @@ zero_shot_stage_show_lone_mlip_swarm = true
 # min_x = 10
 # max_x = 20
 # include_x = [1, 5, 10, 15, 20]
-# include_fractions = [0.05, 0.1, 0.2, 0.4, 0.8]
+# Budget-axis learning-curve plots are emitted twice automatically:
+# once for the absolute span and once for the fraction span.
 
 [experiment.defaults]
 validation_fraction = 0.2
@@ -60,8 +61,8 @@ reuse_results = false
 # The test split is always an outer holdout used only for final evaluation.
 # Validation-aware points are skipped when these minima cannot all fit together.
 # Sweep styles can be mixed in one run. Oasis resolves the sorted deduplicated
-# union of `sweep_sizes` and `sweep_fractions`.
-# Paper preset: dense low-budget counts plus percentage budgets from 5%-80%.
+# union of `sweep_sizes` and `sweep_fractions`, then renders separate
+# absolute-span and fraction-span plot outputs from that one cached run.
 sweep_sizes = [
     1,
     2,
