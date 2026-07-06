@@ -22,6 +22,7 @@ from oasis.experiment.policy_diagnostic import (
     normalize_screening_diagnostic_rows_frame,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
+    screening_split_fingerprint,
     summarize_policy_detail_frame,
 )
 from oasis.learning_curve.results_io import (
@@ -280,6 +281,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 "method": ["weighted_linear", "ridge"],
                 "budget": [8, 4],
                 "repeat": [1, 0],
+                "split_fingerprint": ["f1", "f0"],
                 "screening_cv_rmse": [0.19, 0.29],
                 "screening_miscalibration_area": [0.08, 0.11],
                 "ignored": [1, 2],
@@ -294,6 +296,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 "method",
                 "budget",
                 "repeat",
+                "split_fingerprint",
                 "screening_cv_rmse",
                 "screening_miscalibration_area",
             ],
@@ -309,6 +312,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     "method": ["weighted_linear", "ridge"],
                     "budget": [8, 4],
                     "repeat": [1, 0],
+                    "split_fingerprint": ["f1", "f0"],
                     "screening_cv_rmse": [0.19, 0.29],
                     "screening_miscalibration_area": [0.08, 0.11],
                 }
@@ -331,6 +335,29 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.screening_rows_df,
             normalize_screening_diagnostic_rows_frame(artifact.screening_rows_df),
+        )
+
+    def test_screening_split_fingerprint_changes_when_split_indices_change(self) -> None:
+        first = generate_shared_outer_splits(
+            12,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=17,
+        )[0]
+        second = generate_shared_outer_splits(
+            12,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=18,
+        )[0]
+
+        self.assertNotEqual(
+            screening_split_fingerprint(first),
+            screening_split_fingerprint(second),
         )
 
     def test_derived_family_splits_preserve_shared_outer_test_sets(self) -> None:

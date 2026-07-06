@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+import hashlib
 import json
 from io import StringIO
 from pathlib import Path
@@ -58,6 +59,7 @@ _SCREENING_ROWS_COLUMNS = [
     "method",
     "budget",
     "repeat",
+    "split_fingerprint",
     "screening_cv_rmse",
     "screening_miscalibration_area",
 ]
@@ -160,6 +162,7 @@ def normalize_screening_diagnostic_rows_frame(frame: pd.DataFrame) -> pd.DataFra
     normalized["method"] = normalized["method"].astype("string")
     normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
     normalized["repeat"] = pd.Series(normalized["repeat"], dtype="Int64")
+    normalized["split_fingerprint"] = normalized["split_fingerprint"].astype("string")
     normalized["screening_cv_rmse"] = pd.Series(normalized["screening_cv_rmse"], dtype="Float64")
     normalized["screening_miscalibration_area"] = pd.Series(
         normalized["screening_miscalibration_area"],
@@ -650,6 +653,7 @@ def build_policy_selection_detail_frame(
                     "budget": split.budget,
                     "repeat": split.repeat,
                     "method": method_name,
+                    "split_fingerprint": screening_split_fingerprint(split),
                     "screening_cv_rmse": screening_result.cv_rmse,
                     "screening_miscalibration_area": screening_result.miscalibration_area,
                 }
@@ -972,6 +976,18 @@ def _cached_outer_repeat_metrics_for_method(
     if not expected_pairs.issubset(observed_pairs):
         return None
     return method_rows.rename(columns={"budget": "n_train"}).reset_index(drop=True)
+
+
+def screening_split_fingerprint(shared_split: SharedOuterSplit) -> str:
+    train_values = ",".join(str(int(value)) for value in np.asarray(shared_split.train_idx, dtype=int))
+    test_values = ",".join(str(int(value)) for value in np.asarray(shared_split.test_idx, dtype=int))
+    payload = (
+        f"budget={int(shared_split.budget)};"
+        f"repeat={int(shared_split.repeat)};"
+        f"train={train_values};"
+        f"test={test_values}"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _derived_split_seed(seed: int, budget: int, repeat: int, *, salt: int) -> int:
