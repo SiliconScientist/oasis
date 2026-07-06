@@ -731,6 +731,62 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(getattr(locator, "_integer", False))
 
+    def test_learning_curve_plot_renders_multiple_windows_from_same_results(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": list(range(1, 81)),
+                "rmse_mean": [1.0 / value for value in range(1, 81)],
+                "rmse_std": [0.01] * 80,
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            absolute_output_path = Path(tmpdir) / "learning_curve_absolute_window.png"
+            fraction_output_path = Path(tmpdir) / "learning_curve_fraction_window.png"
+            with patch("oasis.plot.plt.close"):
+                learning_curve_plot(
+                    results,
+                    output_path=absolute_output_path,
+                    include_x=list(range(1, 21)),
+                )
+                absolute_fig = learning_curve_plot.__globals__["plt"].gcf()
+                absolute_x = list(absolute_fig.axes[0].lines[0].get_xdata())
+                learning_curve_plot.__globals__["plt"].close("all")
+
+                learning_curve_plot(
+                    results,
+                    output_path=fraction_output_path,
+                    include_x=[
+                        5,
+                        10,
+                        15,
+                        20,
+                        25,
+                        30,
+                        35,
+                        40,
+                        45,
+                        50,
+                        55,
+                        60,
+                        65,
+                        70,
+                        75,
+                        80,
+                    ],
+                )
+                fraction_fig = learning_curve_plot.__globals__["plt"].gcf()
+                fraction_x = list(fraction_fig.axes[0].lines[0].get_xdata())
+
+            self.assertTrue(absolute_output_path.exists())
+            self.assertTrue(fraction_output_path.exists())
+            self.assertEqual(absolute_x, list(range(1, 21)))
+            self.assertEqual(
+                fraction_x,
+                [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80],
+            )
+
     def test_learning_curve_plot_matches_reloaded_artifacts(self) -> None:
         result_df = pd.DataFrame(
             {

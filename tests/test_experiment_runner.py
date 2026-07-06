@@ -2687,6 +2687,61 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2, 3])
 
+    def test_run_experiment_deduplicates_overlapping_curve_window_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(
+                        min_x=None,
+                        max_x=None,
+                        include_x=[1, 2],
+                        include_fractions=[0.5, 1.0],
+                    ),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ) as mock_learning_curve_plot:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+
     def test_run_experiment_full_dataset_window_disables_only_min_max(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
