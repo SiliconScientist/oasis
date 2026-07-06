@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 import json
 import tempfile
 from pathlib import Path
@@ -74,6 +75,75 @@ _DEV_RUN_OPTUNA_TRIALS = 3
 
 def _frame_height(frame: object) -> int:
     return int(getattr(frame, "height", len(frame)))
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetSpanVariant:
+    key: str
+    output_suffix: str
+    sweep_sizes: tuple[int, ...] = ()
+    sweep_fractions: tuple[float, ...] = ()
+
+    def resolved_include_x(self, *, n_samples: int) -> list[int]:
+        if self.sweep_fractions:
+            return list(
+                resolve_configured_sweep_sizes(
+                    n_samples,
+                    min_train=None,
+                    max_train=None,
+                    sweep_sizes=self.sweep_sizes,
+                    sweep_fractions=self.sweep_fractions,
+                )
+            )
+        return [int(value) for value in self.sweep_sizes]
+
+
+def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is None:
+        return ()
+
+    configured_sizes = tuple(
+        int(value) for value in getattr(learning_curve_cfg, "sweep_sizes", ())
+    )
+    configured_fractions = tuple(
+        float(value) for value in getattr(learning_curve_cfg, "sweep_fractions", ())
+    )
+    variants: list[BudgetSpanVariant] = []
+    if configured_sizes:
+        variants.append(
+            BudgetSpanVariant(
+                key="absolute",
+                output_suffix="absolute",
+                sweep_sizes=configured_sizes,
+            )
+        )
+    elif (
+        getattr(learning_curve_cfg, "min_train", None) is not None
+        and getattr(learning_curve_cfg, "max_train", None) is not None
+    ):
+        variants.append(
+            BudgetSpanVariant(
+                key="absolute",
+                output_suffix="absolute",
+                sweep_sizes=tuple(
+                    range(
+                        int(learning_curve_cfg.min_train),
+                        int(learning_curve_cfg.max_train) + 1,
+                        int(getattr(learning_curve_cfg, "step", 1)),
+                    )
+                ),
+            )
+        )
+    if configured_fractions:
+        variants.append(
+            BudgetSpanVariant(
+                key="fraction",
+                output_suffix="fraction",
+                sweep_fractions=configured_fractions,
+            )
+        )
+    return tuple(variants)
 
 
 def _frame_head(frame: object, n_rows: int):

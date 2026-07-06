@@ -16,6 +16,7 @@ from oasis.experiment_runner import (
     _load_oracle_learning_curve_rows_for_dataset,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
+    configured_budget_span_variants,
     load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
     run_experiment,
@@ -148,6 +149,62 @@ class ExperimentRunnerTests(unittest.TestCase):
             }
         )
         return LearningCurveResults(ridge_df=ridge_frame)
+
+    def test_configured_budget_span_variants_uses_explicit_sizes_and_fractions(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2, 3, 20],
+                    sweep_fractions=[0.05, 0.1, 0.2],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual([variant.key for variant in variants], ["absolute", "fraction"])
+        self.assertEqual(variants[0].resolved_include_x(n_samples=100), [1, 2, 3, 20])
+        self.assertEqual(variants[1].resolved_include_x(n_samples=100), [5, 10, 20])
+
+    def test_configured_budget_span_variants_falls_back_to_integer_range(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[],
+                    sweep_fractions=[],
+                    min_train=2,
+                    max_train=6,
+                    step=2,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual(len(variants), 1)
+        self.assertEqual(variants[0].key, "absolute")
+        self.assertEqual(variants[0].resolved_include_x(n_samples=100), [2, 4, 6])
+
+    def test_configured_budget_span_variants_can_return_fraction_only(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[],
+                    sweep_fractions=[0.25, 0.5],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual([variant.key for variant in variants], ["fraction"])
+        self.assertEqual(variants[0].resolved_include_x(n_samples=20), [5, 10])
 
     def test_write_policy_selection_diagnostic_saves_artifact_and_csvs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
