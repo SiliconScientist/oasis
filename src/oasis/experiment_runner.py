@@ -116,6 +116,14 @@ class PolicyDiagnosticBuildOutputs:
     screening_rows_df: pd.DataFrame
 
 
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticPersistenceContext:
+    metadata: object | None
+    cache_signature: dict[str, object]
+    artifact_path: Path
+    screening_rows_artifact_path: Path
+
+
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
@@ -758,35 +766,27 @@ def _write_policy_selection_diagnostic(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path | None:
-    cache_signature = _policy_selection_diagnostic_cache_signature(cfg)
-    metadata = None
-    try:
-        metadata = learning_curve_sweep_metadata_from_config(
-            cfg,
-            dataset_size=int(len(wide_df)),
-            mlip_feature_names=mlip_feature_names(wide_df),
-        )
-    except (AttributeError, ValueError):
-        metadata = None
-    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
-    screening_rows_artifact_path = (
-        output_dir / f"policy_selection_screening_rows_{run_suffix}.json"
+    persistence = _policy_selection_diagnostic_persistence_context(
+        cfg,
+        wide_df=wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
     )
     diagnostic_results = None
     screening_rows_df = None
-    if metadata is not None and artifact_path.is_file():
+    if persistence.metadata is not None and persistence.artifact_path.is_file():
         try:
             cached_artifact = load_policy_selection_diagnostic_artifact(
-                artifact_path,
-                expected_metadata=metadata,
-                expected_cache_signature=cache_signature,
+                persistence.artifact_path,
+                expected_metadata=persistence.metadata,
+                expected_cache_signature=persistence.cache_signature,
             )
             diagnostic_results = cached_artifact.results
-            if screening_rows_artifact_path.is_file():
+            if persistence.screening_rows_artifact_path.is_file():
                 screening_rows_df = load_screening_diagnostic_rows_artifact(
-                    screening_rows_artifact_path,
-                    expected_metadata=metadata,
-                    expected_cache_signature=cache_signature,
+                    persistence.screening_rows_artifact_path,
+                    expected_metadata=persistence.metadata,
+                    expected_cache_signature=persistence.cache_signature,
                 ).screening_rows_df
         except ValueError:
             diagnostic_results = None
@@ -810,10 +810,10 @@ def _write_policy_selection_diagnostic(
         wide_df=wide_df,
         diagnostic_results=diagnostic_results,
         screening_rows_df=screening_rows_df,
-        metadata=metadata,
-        cache_signature=cache_signature,
-        artifact_path=artifact_path,
-        screening_rows_artifact_path=screening_rows_artifact_path,
+        metadata=persistence.metadata,
+        cache_signature=persistence.cache_signature,
+        artifact_path=persistence.artifact_path,
+        screening_rows_artifact_path=persistence.screening_rows_artifact_path,
         output_dir=output_dir,
         run_suffix=run_suffix,
         min_x=min_x,
@@ -870,6 +870,32 @@ def _policy_selection_diagnostic_cache_signature(cfg: object) -> dict[str, objec
             ),
         },
     }
+
+
+def _policy_selection_diagnostic_persistence_context(
+    cfg: object,
+    *,
+    wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> PolicyDiagnosticPersistenceContext:
+    metadata = None
+    try:
+        metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=int(len(wide_df)),
+            mlip_feature_names=mlip_feature_names(wide_df),
+        )
+    except (AttributeError, ValueError):
+        metadata = None
+    return PolicyDiagnosticPersistenceContext(
+        metadata=metadata,
+        cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
+        artifact_path=output_dir / f"policy_selection_diagnostic_{run_suffix}.json",
+        screening_rows_artifact_path=(
+            output_dir / f"policy_selection_screening_rows_{run_suffix}.json"
+        ),
+    )
 
 
 def _build_policy_selection_diagnostic_results_for_cfg(
@@ -1155,23 +1181,19 @@ def _load_cached_policy_selection_results_for_dataset_cfg(
         if plot_cfg is not None
         else None
     ) or Path("data/results/plots")
-    run_suffix = _plot_output_suffix(dataset_cfg)
-    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
-    if not artifact_path.is_file():
-        return None
-    try:
-        metadata = learning_curve_sweep_metadata_from_config(
-            dataset_cfg,
-            dataset_size=int(len(wide_df)),
-            mlip_feature_names=mlip_feature_names(wide_df),
-        )
-    except (AttributeError, ValueError):
+    persistence = _policy_selection_diagnostic_persistence_context(
+        dataset_cfg,
+        wide_df=wide_df,
+        output_dir=output_dir,
+        run_suffix=_plot_output_suffix(dataset_cfg),
+    )
+    if persistence.metadata is None or not persistence.artifact_path.is_file():
         return None
     try:
         return load_policy_selection_diagnostic_artifact(
-            artifact_path,
-            expected_metadata=metadata,
-            expected_cache_signature=_policy_selection_diagnostic_cache_signature(dataset_cfg),
+            persistence.artifact_path,
+            expected_metadata=persistence.metadata,
+            expected_cache_signature=persistence.cache_signature,
         ).results
     except ValueError:
         return None
