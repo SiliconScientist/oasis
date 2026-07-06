@@ -1487,7 +1487,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
             ),
             plot=SimpleNamespace(
-                curve_window=SimpleNamespace(oracle_all_datasets_log_x=False)
+                curve_window=SimpleNamespace(oracle_all_datasets_log_x=True)
             ),
         )
 
@@ -1532,7 +1532,8 @@ class ExperimentRunnerTests(unittest.TestCase):
             [call.kwargs["span_variant"].key for call in mock_load_rows.call_args_list],
             ["absolute", "fraction"],
         )
-        self.assertFalse(mock_plot.call_args.kwargs["log_x"])
+        self.assertFalse(mock_plot.call_args_list[0].kwargs["log_x"])
+        self.assertTrue(mock_plot.call_args_list[1].kwargs["log_x"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,

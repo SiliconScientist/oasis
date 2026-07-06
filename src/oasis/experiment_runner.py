@@ -1108,10 +1108,13 @@ def write_all_datasets_oracle_learning_curve_plot(
         )
         if not oracle_rows:
             return None
+        log_x = bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False))
+        if span_variant is not None and span_variant.key == "absolute":
+            log_x = False
         return oracle_learning_curve_plot(
             pd.DataFrame(oracle_rows),
             output_path=output_path,
-            log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
+            log_x=log_x,
         )
 
     return render_budget_span_variants(
