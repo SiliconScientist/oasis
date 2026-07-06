@@ -26,7 +26,7 @@ from oasis.learning_curve.results_io import (
 from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCollection
 
 
-_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 2
+_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 3
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
     "policy_name",
@@ -73,6 +73,7 @@ class PolicySelectionDiagnosticResults:
 class PolicySelectionDiagnosticArtifact:
     metadata: LearningCurveSweepMetadata
     results: PolicySelectionDiagnosticResults
+    cache_signature: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +262,7 @@ def dump_policy_selection_diagnostic_artifact(
         "version": _POLICY_DIAGNOSTIC_ARTIFACT_VERSION,
         "metadata": artifact.metadata.to_bundle_mapping(),
         "results": dump_policy_selection_diagnostic_results(artifact.results),
+        "cache_signature": artifact.cache_signature,
     }
 
 
@@ -268,6 +270,7 @@ def load_policy_selection_diagnostic_artifact_mapping(
     payload: dict[str, Any],
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
 ) -> PolicySelectionDiagnosticArtifact:
     version = payload.get("version")
     if version != _POLICY_DIAGNOSTIC_ARTIFACT_VERSION:
@@ -284,9 +287,15 @@ def load_policy_selection_diagnostic_artifact_mapping(
     results_payload = payload.get("results")
     if not isinstance(results_payload, dict):
         raise TypeError("policy diagnostic artifact must contain results.")
+    cache_signature = payload.get("cache_signature")
+    if cache_signature is not None and not isinstance(cache_signature, dict):
+        raise TypeError("policy diagnostic artifact cache_signature must be a mapping.")
+    if expected_cache_signature is not None and cache_signature != expected_cache_signature:
+        raise ValueError("policy diagnostic artifact cache signature is incompatible.")
     return PolicySelectionDiagnosticArtifact(
         metadata=metadata,
         results=load_policy_selection_diagnostic_results_mapping(results_payload),
+        cache_signature=cache_signature,
     )
 
 
@@ -307,11 +316,13 @@ def load_policy_selection_diagnostic_artifact(
     path: str | Path,
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
 ) -> PolicySelectionDiagnosticArtifact:
     resolved_path = Path(path)
     return load_policy_selection_diagnostic_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
+        expected_cache_signature=expected_cache_signature,
     )
 
 

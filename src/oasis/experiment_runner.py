@@ -744,6 +744,7 @@ def _write_policy_selection_diagnostic(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path | None:
+    cache_signature = _policy_selection_diagnostic_cache_signature(cfg)
     metadata = None
     try:
         metadata = learning_curve_sweep_metadata_from_config(
@@ -760,6 +761,7 @@ def _write_policy_selection_diagnostic(
             diagnostic_results = load_policy_selection_diagnostic_artifact(
                 artifact_path,
                 expected_metadata=metadata,
+                expected_cache_signature=cache_signature,
             ).results
         except ValueError:
             diagnostic_results = None
@@ -777,6 +779,7 @@ def _write_policy_selection_diagnostic(
         wide_df=wide_df,
         diagnostic_results=diagnostic_results,
         metadata=metadata,
+        cache_signature=cache_signature,
         artifact_path=artifact_path,
         output_dir=output_dir,
         run_suffix=run_suffix,
@@ -784,6 +787,56 @@ def _write_policy_selection_diagnostic(
         max_x=max_x,
         include_x=include_x,
     )
+
+
+def _policy_selection_diagnostic_cache_signature(cfg: object) -> dict[str, object]:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    enabled_model_names = ()
+    if models_cfg is not None:
+        from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+
+        enabled_model_names = tuple(enabled_learning_curve_model_names_from_config(models_cfg))
+    return {
+        "learning_curve": {
+            "min_train": getattr(learning_curve_cfg, "min_train", None),
+            "max_train": getattr(learning_curve_cfg, "max_train", None),
+            "step": getattr(learning_curve_cfg, "step", 1),
+            "n_repeats": getattr(learning_curve_cfg, "n_repeats", 1),
+            "min_test_size": getattr(learning_curve_cfg, "min_test_size", 1),
+            "validation_fraction": getattr(learning_curve_cfg, "validation_fraction", 0.2),
+            "min_val_size": getattr(learning_curve_cfg, "min_val_size", 1),
+            "min_tuning_val_size": getattr(learning_curve_cfg, "min_tuning_val_size", 1),
+            "calibration_enabled": getattr(learning_curve_cfg, "calibration_enabled", False),
+            "calibration_fraction": getattr(learning_curve_cfg, "calibration_fraction", 0.2),
+            "min_cal_size": getattr(learning_curve_cfg, "min_cal_size", 1),
+            "min_inner_train_size": getattr(learning_curve_cfg, "min_inner_train_size", 1),
+            "sweep_sizes": list(getattr(learning_curve_cfg, "sweep_sizes", ())),
+            "sweep_fractions": list(getattr(learning_curve_cfg, "sweep_fractions", ())),
+            "enabled_model_names": list(enabled_model_names),
+        },
+        "screening": {
+            "screen_fraction": getattr(screening_cfg, "screen_fraction", None),
+            "min_screen_size": getattr(screening_cfg, "min_screen_size", 1),
+            "validation_fraction": getattr(screening_cfg, "validation_fraction", 0.2),
+            "min_val_size": getattr(screening_cfg, "min_val_size", 1),
+            "min_tuning_val_size": getattr(screening_cfg, "min_tuning_val_size", 1),
+            "calibration_enabled": getattr(screening_cfg, "calibration_enabled", False),
+            "calibration_fraction": getattr(screening_cfg, "calibration_fraction", 0.2),
+            "min_cal_size": getattr(screening_cfg, "min_cal_size", 1),
+            "min_inner_train_size": getattr(screening_cfg, "min_inner_train_size", 1),
+            "policy_names": list(
+                getattr(screening_cfg, "policy_names", ["min_screening_rmse"])
+            ),
+            "combined_miscalibration_lambda": getattr(
+                screening_cfg,
+                "combined_miscalibration_lambda",
+                1.0,
+            ),
+        },
+    }
 
 
 def _build_policy_selection_diagnostic_results_for_cfg(
@@ -878,6 +931,7 @@ def _write_policy_selection_diagnostic_outputs(
     wide_df: object,
     diagnostic_results: PolicySelectionDiagnosticResults,
     metadata: object | None,
+    cache_signature: dict[str, object],
     artifact_path: Path,
     output_dir: Path,
     run_suffix: str,
@@ -890,6 +944,7 @@ def _write_policy_selection_diagnostic_outputs(
             PolicySelectionDiagnosticArtifact(
                 metadata=metadata,
                 results=diagnostic_results,
+                cache_signature=cache_signature,
             ),
             artifact_path,
         )

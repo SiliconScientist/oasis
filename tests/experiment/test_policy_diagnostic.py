@@ -43,6 +43,23 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             dataset_size=24,
         )
 
+    @staticmethod
+    def _cache_signature() -> dict[str, object]:
+        return {
+            "learning_curve": {
+                "min_train": 4,
+                "max_train": 12,
+                "step": 2,
+                "n_repeats": 3,
+                "enabled_model_names": ["ridge", "weighted_linear"],
+            },
+            "screening": {
+                "screen_fraction": 0.25,
+                "policy_names": ["min_screening_rmse"],
+                "combined_miscalibration_lambda": 1.0,
+            },
+        }
+
     def test_normalize_policy_detail_frame_orders_and_coerces_types(self) -> None:
         frame = pd.DataFrame(
             {
@@ -124,6 +141,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     }
                 ),
             ),
+            cache_signature=self._cache_signature(),
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -132,12 +150,67 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             restored = load_policy_selection_diagnostic_artifact(
                 saved_path,
                 expected_metadata=self._metadata(),
+                expected_cache_signature=self._cache_signature(),
             )
 
         self.assertEqual(saved_path, path)
         self.assertEqual(restored.metadata, artifact.metadata)
+        self.assertEqual(restored.cache_signature, artifact.cache_signature)
         pd.testing.assert_frame_equal(restored.results.detail_df, artifact.results.detail_df)
         pd.testing.assert_frame_equal(restored.results.summary_df, artifact.results.summary_df)
+
+    def test_policy_diagnostic_artifact_rejects_incompatible_cache_signature(self) -> None:
+        artifact = PolicySelectionDiagnosticArtifact(
+            metadata=self._metadata(),
+            results=PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.31],
+                        "screening_selected_outer_rmse": [0.31],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.29],
+                        "screening_miscalibration_area": [0.11],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.31],
+                        "screening_selected_outer_rmse_mean": [0.31],
+                    }
+                ),
+            ),
+            cache_signature=self._cache_signature(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "policy_diagnostic.json"
+            save_policy_selection_diagnostic_artifact(artifact, path)
+            with self.assertRaisesRegex(ValueError, "cache signature is incompatible"):
+                load_policy_selection_diagnostic_artifact(
+                    path,
+                    expected_metadata=self._metadata(),
+                    expected_cache_signature={
+                        **self._cache_signature(),
+                        "screening": {
+                            **self._cache_signature()["screening"],
+                            "combined_miscalibration_lambda": 2.0,
+                        },
+                    },
+                )
 
     def test_summarize_policy_detail_frame_aggregates_by_budget(self) -> None:
         summary = summarize_policy_detail_frame(
