@@ -1475,6 +1475,42 @@ class ConfigParsingTests(unittest.TestCase):
             {"ridge": [5, 10]},
         )
 
+    def test_learning_curve_config_accepts_mixed_sweep_sizes_and_fractions(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "n_repeats": 3,
+                        "sweep_sizes": [1, 2, 3, 20],
+                        "sweep_fractions": [0.05, 0.1, 0.2],
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.learning_curve.sweep_sizes, [1, 2, 3, 20])
+        self.assertEqual(
+            cfg.experiment.learning_curve.sweep_fractions,
+            [0.05, 0.1, 0.2],
+        )
+
     def test_experiment_defaults_shared_by_learning_curve_and_screening(self) -> None:
         cfg = Config(
             **{

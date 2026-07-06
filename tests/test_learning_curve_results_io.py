@@ -879,6 +879,47 @@ class LearningCurveResultsIoTests(unittest.TestCase):
         self.assertEqual(metadata.requested_sweep_sizes, (2, 6, 18))
         self.assertEqual(metadata.requested_sweep_fractions, (0.1, 0.3, 0.9))
 
+    def test_sweep_metadata_from_config_records_mixed_explicit_and_fractional_sweep(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            seed=23,
+            dataset_profile=None,
+            plot=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    sweep_fractions=[0.05, 0.1, 0.2],
+                    sweep_sizes=[1, 2, 3, 20],
+                    n_repeats=4,
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    ),
+                )
+            ),
+        )
+
+        metadata = learning_curve_sweep_metadata_from_config(cfg, dataset_size=100)
+
+        self.assertEqual(metadata.min_train, 1)
+        self.assertEqual(metadata.max_train, 20)
+        self.assertEqual(metadata.step, 0)
+        self.assertEqual(metadata.requested_sweep_sizes, (1, 2, 3, 5, 10, 20))
+        self.assertEqual(metadata.requested_sweep_fractions, (0.05, 0.1, 0.2))
+
     def test_point_provenance_preserves_screening_columns(self) -> None:
         results = LearningCurveResults(
             ridge_df=pd.DataFrame(
