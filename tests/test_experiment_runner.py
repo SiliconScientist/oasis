@@ -14,15 +14,19 @@ from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
     _load_oracle_learning_curve_rows_for_dataset,
+    _load_policy_regret_rows_for_dataset,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
     BudgetSpanVariant,
+    PolicyDiagnosticBuildOutputs,
     configured_budget_span_variants,
+    load_all_datasets_policy_regret_rows,
     load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
     render_budget_span_variants,
     run_experiment,
     run_experiment_from_config,
+    write_all_datasets_policy_regret_plot,
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
     write_zero_shot_rmse_stage_plot,
@@ -342,21 +346,22 @@ class ExperimentRunnerTests(unittest.TestCase):
                     }
                 ),
             )
+            screening_rows_df = pd.DataFrame(
+                {
+                    "method": ["ridge", "ridge"],
+                    "budget": [4, 4],
+                    "repeat": [0, 1],
+                    "split_fingerprint": ["fp-0", "fp-1"],
+                    "screening_cv_rmse": [0.1, 0.11],
+                    "screening_miscalibration_area": [0.05, 0.04],
+                }
+            )
             with patch(
-                "oasis.experiment_runner.build_sweep_dataset_from_config",
-                return_value=SweepDataset(
-                    mlip_features=np.arange(6, dtype=float).reshape(-1, 1),
-                    targets=np.linspace(0.0, 1.0, 6),
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=screening_rows_df,
                 ),
-            ), patch(
-                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
-                return_value=("ridge",),
-            ), patch(
-                "oasis.learning_curve.registry.default_sweep_model_families",
-                return_value=(),
-            ), patch(
-                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
-                return_value=diagnostic_results,
             ) as mock_build_diagnostic:
                 artifact_path = _write_policy_selection_diagnostic(
                     cfg=cfg,
@@ -375,6 +380,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 summary_path = (
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
+                screening_rows_path = (
+                    output_dir / "policy_selection_screening_rows_anomalyaware_off.json"
+                )
                 oracle_plot_path = (
                     output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
@@ -382,6 +390,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
+                screening_rows_exists = screening_rows_path.is_file()
                 oracle_plot_exists = oracle_plot_path.is_file()
                 regret_plot_exists = regret_plot_path.is_file()
 
@@ -393,19 +402,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(artifact_exists)
         self.assertTrue(detail_exists)
         self.assertTrue(summary_exists)
+        self.assertTrue(screening_rows_exists)
         self.assertTrue(oracle_plot_exists)
         self.assertTrue(regret_plot_exists)
-        self.assertEqual(
-            mock_build_diagnostic.call_args.kwargs["policy_names"],
-            [
-                "min_screening_rmse",
-                "combined_screening_rmse_miscalibration",
-            ],
-        )
-        self.assertEqual(
-            mock_build_diagnostic.call_args.kwargs["combined_miscalibration_lambda"],
-            2.0,
-        )
+        mock_build_diagnostic.assert_called_once()
 
     def test_write_policy_selection_diagnostic_emits_dual_selected_vs_oracle_outputs(
         self,
@@ -500,22 +500,23 @@ class ExperimentRunnerTests(unittest.TestCase):
                     }
                 ),
             )
+            screening_rows_df = pd.DataFrame(
+                {
+                    "method": ["ridge"],
+                    "budget": [1],
+                    "repeat": [0],
+                    "split_fingerprint": ["fp-0"],
+                    "screening_cv_rmse": [0.1],
+                    "screening_miscalibration_area": [0.05],
+                }
+            )
 
             with patch(
-                "oasis.experiment_runner.build_sweep_dataset_from_config",
-                return_value=SweepDataset(
-                    mlip_features=np.arange(2, dtype=float).reshape(-1, 1),
-                    targets=np.linspace(0.0, 1.0, 2),
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=screening_rows_df,
                 ),
-            ), patch(
-                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
-                return_value=("ridge",),
-            ), patch(
-                "oasis.learning_curve.registry.default_sweep_model_families",
-                return_value=(),
-            ), patch(
-                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
-                return_value=diagnostic_results,
             ), patch(
                 "oasis.experiment_runner.policy_selected_vs_oracle_plot",
             ) as mock_selected_plot, patch(
@@ -559,6 +560,255 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_regret_plot.call_args_list[1].kwargs["output_path"],
             output_dir / "policy_regret_anomalyaware_off_fraction.png",
         )
+
+    def test_write_policy_selection_diagnostic_reuses_cached_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=4,
+                        max_train=8,
+                        step=2,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0, 3.0, 4.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1],
+                }
+            )
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path.write_text("cached", encoding="utf-8")
+
+            with patch(
+                "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                return_value=SimpleNamespace(results=diagnostic_results),
+            ) as mock_load, patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+            ) as mock_build:
+                saved_path = _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(saved_path, artifact_path)
+        mock_load.assert_called_once()
+        mock_build.assert_not_called()
+
+    def test_write_policy_selection_diagnostic_rebuilds_when_cached_artifact_is_incompatible(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=4,
+                        max_train=8,
+                        step=2,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0, 3.0, 4.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1],
+                }
+            )
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path.write_text("cached", encoding="utf-8")
+
+            with patch(
+                "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                side_effect=ValueError("incompatible"),
+            ) as mock_load, patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=pd.DataFrame(
+                        {
+                            "method": ["ridge"],
+                            "budget": [4],
+                            "repeat": [0],
+                            "split_fingerprint": ["fp-0"],
+                            "screening_cv_rmse": [0.1],
+                            "screening_miscalibration_area": [0.05],
+                        }
+                    ),
+                ),
+            ) as mock_build:
+                saved_path = _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(saved_path, artifact_path)
+        mock_load.assert_called_once()
+        mock_build.assert_called_once()
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
@@ -1391,6 +1641,297 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
+    def test_load_policy_regret_rows_for_dataset_applies_fraction_variant_per_dataset(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                ),
+                "khlohc": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "KHLOHC-TOL"
+                ),
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    n_repeats=1,
+                    models=SimpleNamespace(),
+                ),
+                screening=SimpleNamespace(screen_fraction=0.25),
+            ),
+        )
+        small_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
+        large_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3", "r4", "r5"])
+        def _wide_df_for_cfg(dataset_cfg):
+            return (
+                (small_wide_df, [], small_wide_df)
+                if dataset_cfg.dataset_profile.tag == "bio_mass"
+                else (large_wide_df, [], large_wide_df)
+            )
+
+        def _diagnostic_results_for_cfg(*, wide_df, **kwargs):
+            budgets = [2, 4] if len(wide_df) == 4 else [3, 6]
+            return PolicyDiagnosticBuildOutputs(
+                results=PolicySelectionDiagnosticResults(
+                    detail_df=pd.DataFrame(
+                        {
+                            "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                            "budget": budgets,
+                            "repeat": [0, 0],
+                            "oracle_method": ["ridge", "ridge"],
+                            "screening_selected_method": ["ridge", "ridge"],
+                            "oracle_outer_rmse": [0.2, 0.2],
+                            "screening_selected_outer_rmse": [0.2, 0.2],
+                            "regret": [0.0, 0.0],
+                            "screening_cv_rmse": [0.1, 0.1],
+                            "screening_miscalibration_area": [0.05, 0.05],
+                            "agreement": [True, True],
+                        }
+                    ),
+                    summary_df=pd.DataFrame(
+                        {
+                            "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                            "budget": budgets,
+                            "mean_regret": [0.01, 0.02],
+                            "std_regret": [0.0, 0.0],
+                            "se_regret": [0.0, 0.0],
+                            "ci95_low": [0.01, 0.02],
+                            "ci95_high": [0.01, 0.02],
+                            "agreement_rate": [1.0, 1.0],
+                            "oracle_outer_rmse_mean": [0.2, 0.2],
+                            "screening_selected_outer_rmse_mean": [0.21, 0.22],
+                        }
+                    ),
+                ),
+                screening_rows_df=pd.DataFrame(
+                    {
+                        "method": ["ridge", "ridge"],
+                        "budget": budgets,
+                        "repeat": [0, 0],
+                        "split_fingerprint": ["fp-a", "fp-b"],
+                        "screening_cv_rmse": [0.1, 0.1],
+                        "screening_miscalibration_area": [0.05, 0.05],
+                    }
+                ),
+            )
+
+        def _resolved_sizes(n_samples, **kwargs):
+            if n_samples == 4:
+                return [2, 4]
+            if n_samples == 6:
+                return [3, 6]
+            raise AssertionError(f"Unexpected n_samples={n_samples}")
+
+        with patch(
+            "oasis.experiment_runner.ensure_probe_artifacts",
+            return_value=False,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            side_effect=_wide_df_for_cfg,
+        ), patch(
+            "oasis.experiment_runner.build_auxiliary_views",
+            side_effect=lambda dataset_cfg, wide_df, probe_gnn_enabled: (wide_df, {}),
+        ), patch(
+            "oasis.experiment_runner.prepare_graph_view",
+            return_value=None,
+        ), patch(
+            "oasis.experiment_runner._apply_persistent_output_suffixes",
+            return_value="anomalyaware_off_latent_off_n2",
+        ), patch(
+            "oasis.experiment_runner._load_cached_policy_selection_results_for_dataset_cfg",
+            return_value=None,
+        ), patch(
+            "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+            side_effect=_diagnostic_results_for_cfg,
+        ), patch(
+            "oasis.experiment_runner.resolve_configured_sweep_sizes",
+            side_effect=_resolved_sizes,
+        ):
+            small_rows = _load_policy_regret_rows_for_dataset(
+                cfg,
+                dataset_tag="bio_mass",
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
+            )
+            large_rows = _load_policy_regret_rows_for_dataset(
+                cfg,
+                dataset_tag="khlohc",
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
+            )
+
+        self.assertEqual([row["budget"] for row in small_rows], [2, 4])
+        self.assertEqual([row["budget"] for row in large_rows], [3, 6])
+        self.assertEqual(
+            [row["dataset_label"] for row in large_rows],
+            ["KHLOHC-TOL", "KHLOHC-TOL"],
+        )
+
+    def test_load_policy_regret_rows_for_dataset_reuses_cached_policy_artifact(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                dataset_profile=SimpleNamespace(tag="bio_mass"),
+                datasets={
+                    "bio_mass": SimpleNamespace(
+                        mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                    )
+                },
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=4,
+                        step=2,
+                        n_repeats=1,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            fake_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
+            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path.write_text("cached", encoding="utf-8")
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [2],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [2],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            with patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.load_filtered_wide_predictions",
+                return_value=(fake_wide_df, [], fake_wide_df),
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value=(fake_wide_df, {}),
+            ), patch(
+                "oasis.experiment_runner._load_cached_policy_selection_results_for_dataset_cfg",
+                return_value=diagnostic_results,
+            ) as mock_load, patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+            ) as mock_build:
+                rows = _load_policy_regret_rows_for_dataset(
+                    cfg,
+                    dataset_tag="bio_mass",
+                )
+
+        self.assertEqual([row["budget"] for row in rows], [2])
+        mock_load.assert_called_once()
+        mock_build.assert_not_called()
+
+    def test_load_all_datasets_policy_regret_rows_preserves_dataset_order(self) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="rodrigo"),
+            datasets={
+                "mamun_oh": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+        )
+
+        with patch(
+            "oasis.experiment_runner._load_policy_regret_rows_for_dataset",
+            side_effect=[
+                [{"dataset": "rodrigo", "budget": 2, "mean_regret": 0.3}],
+                [{"dataset": "mamun_oh", "budget": 2, "mean_regret": 0.2}],
+                [{"dataset": "khlohc", "budget": 2, "mean_regret": 0.1}],
+            ],
+        ) as mock_load_rows:
+            rows = load_all_datasets_policy_regret_rows(cfg=cfg)
+
+        self.assertEqual(
+            [call.kwargs["dataset_tag"] for call in mock_load_rows.call_args_list],
+            ["rodrigo", "mamun_oh", "khlohc"],
+        )
+        self.assertEqual(
+            [call.kwargs["span_variant"] for call in mock_load_rows.call_args_list],
+            [None, None, None],
+        )
+        self.assertEqual(
+            [row["dataset"] for row in rows],
+            ["rodrigo", "mamun_oh", "khlohc"],
+        )
+
     def test_write_all_datasets_oracle_learning_curve_plot_skips_single_dataset(
         self,
     ) -> None:
@@ -1527,6 +2068,78 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_plot.call_args_list[1].kwargs["output_path"],
             tmp_path / "learning_curve_oracle_all_datasets_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            [call.kwargs["span_variant"].key for call in mock_load_rows.call_args_list],
+            ["absolute", "fraction"],
+        )
+        self.assertFalse(mock_plot.call_args_list[0].kwargs["log_x"])
+        self.assertTrue(mock_plot.call_args_list[1].kwargs["log_x"])
+
+    def test_write_all_datasets_policy_regret_plot_emits_dual_budget_span_outputs(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                ),
+                screening=SimpleNamespace(screen_fraction=0.25),
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_policy_regret_rows",
+                return_value=[
+                    {
+                        "dataset": "bio_mass",
+                        "dataset_label": "Bio-Mass",
+                        "policy_name": "min_screening_rmse",
+                        "budget": 2,
+                        "mean_regret": 0.01,
+                        "std_regret": 0.0,
+                        "se_regret": 0.0,
+                        "ci95_low": 0.01,
+                        "ci95_high": 0.01,
+                        "agreement_rate": 1.0,
+                        "oracle_outer_rmse_mean": 0.2,
+                        "screening_selected_outer_rmse_mean": 0.21,
+                    }
+                ],
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.all_datasets_policy_regret_plot",
+                side_effect=[
+                    tmp_path / "regret_absolute.png",
+                    tmp_path / "regret_fraction.png",
+                ],
+            ) as mock_plot:
+                saved_path = write_all_datasets_policy_regret_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "regret_absolute.png")
+        self.assertEqual(mock_load_rows.call_count, 2)
+        self.assertEqual(
+            mock_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "policy_regret_all_datasets_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "policy_regret_all_datasets_anomalyaware_off_fraction.png",
         )
         self.assertEqual(
             [call.kwargs["span_variant"].key for call in mock_load_rows.call_args_list],

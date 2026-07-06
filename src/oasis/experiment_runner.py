@@ -21,8 +21,18 @@ from oasis.exp import (
 from oasis.experiment.dataset import build_sweep_dataset_from_config, mlip_feature_names
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
-    build_policy_selection_diagnostic_results,
+    PolicySelectionDiagnosticResults,
+    ScreeningDiagnosticRowsArtifact,
+    _build_policy_selection_frames,
+    load_policy_selection_diagnostic_artifact,
+    load_screening_diagnostic_rows_artifact,
     save_policy_selection_diagnostic_artifact,
+    save_screening_diagnostic_rows_artifact,
+    summarize_policy_detail_frame,
+)
+from oasis.experiment.repeat_metrics import (
+    load_learning_curve_repeat_metrics_artifact,
+    repeat_metrics_artifact_path,
 )
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
@@ -53,6 +63,7 @@ from oasis.mlip.timing import load_generation_timing_summaries
 from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
     _filter_curve_frame,
+    all_datasets_policy_regret_plot,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -97,6 +108,20 @@ class BudgetSpanVariant:
                 )
             )
         return [int(value) for value in self.sweep_sizes]
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticBuildOutputs:
+    results: PolicySelectionDiagnosticResults
+    screening_rows_df: pd.DataFrame
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticPersistenceContext:
+    metadata: object | None
+    cache_signature: dict[str, object]
+    artifact_path: Path
+    screening_rows_artifact_path: Path
 
 
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
@@ -741,6 +766,149 @@ def _write_policy_selection_diagnostic(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path | None:
+    persistence = _policy_selection_diagnostic_persistence_context(
+        cfg,
+        wide_df=wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+    )
+    diagnostic_results = None
+    screening_rows_df = None
+    if persistence.metadata is not None and persistence.artifact_path.is_file():
+        try:
+            cached_artifact = load_policy_selection_diagnostic_artifact(
+                persistence.artifact_path,
+                expected_metadata=persistence.metadata,
+                expected_cache_signature=persistence.cache_signature,
+            )
+            diagnostic_results = cached_artifact.results
+            if persistence.screening_rows_artifact_path.is_file():
+                screening_rows_df = load_screening_diagnostic_rows_artifact(
+                    persistence.screening_rows_artifact_path,
+                    expected_metadata=persistence.metadata,
+                    expected_cache_signature=persistence.cache_signature,
+                ).screening_rows_df
+            print(f"Policy diagnostic artifact cache hit: {persistence.artifact_path}")
+        except ValueError:
+            diagnostic_results = None
+            screening_rows_df = None
+            print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
+    if diagnostic_results is None:
+        print("Policy diagnostic rebuild: computing fresh results")
+        build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
+            cfg=cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+            cached_screening_rows_df=screening_rows_df,
+        )
+        if build_outputs is None:
+            return None
+        diagnostic_results = build_outputs.results
+        screening_rows_df = build_outputs.screening_rows_df
+    if diagnostic_results is None:
+        return None
+    return _write_policy_selection_diagnostic_outputs(
+        cfg=cfg,
+        wide_df=wide_df,
+        diagnostic_results=diagnostic_results,
+        screening_rows_df=screening_rows_df,
+        metadata=persistence.metadata,
+        cache_signature=persistence.cache_signature,
+        artifact_path=persistence.artifact_path,
+        screening_rows_artifact_path=persistence.screening_rows_artifact_path,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+
+
+def _policy_selection_diagnostic_cache_signature(cfg: object) -> dict[str, object]:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    enabled_model_names = ()
+    if models_cfg is not None:
+        from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+
+        enabled_model_names = tuple(enabled_learning_curve_model_names_from_config(models_cfg))
+    return {
+        "learning_curve": {
+            "min_train": getattr(learning_curve_cfg, "min_train", None),
+            "max_train": getattr(learning_curve_cfg, "max_train", None),
+            "step": getattr(learning_curve_cfg, "step", 1),
+            "n_repeats": getattr(learning_curve_cfg, "n_repeats", 1),
+            "min_test_size": getattr(learning_curve_cfg, "min_test_size", 1),
+            "validation_fraction": getattr(learning_curve_cfg, "validation_fraction", 0.2),
+            "min_val_size": getattr(learning_curve_cfg, "min_val_size", 1),
+            "min_tuning_val_size": getattr(learning_curve_cfg, "min_tuning_val_size", 1),
+            "calibration_enabled": getattr(learning_curve_cfg, "calibration_enabled", False),
+            "calibration_fraction": getattr(learning_curve_cfg, "calibration_fraction", 0.2),
+            "min_cal_size": getattr(learning_curve_cfg, "min_cal_size", 1),
+            "min_inner_train_size": getattr(learning_curve_cfg, "min_inner_train_size", 1),
+            "sweep_sizes": list(getattr(learning_curve_cfg, "sweep_sizes", ())),
+            "sweep_fractions": list(getattr(learning_curve_cfg, "sweep_fractions", ())),
+            "enabled_model_names": list(enabled_model_names),
+        },
+        "screening": {
+            "screen_fraction": getattr(screening_cfg, "screen_fraction", None),
+            "min_screen_size": getattr(screening_cfg, "min_screen_size", 1),
+            "validation_fraction": getattr(screening_cfg, "validation_fraction", 0.2),
+            "min_val_size": getattr(screening_cfg, "min_val_size", 1),
+            "min_tuning_val_size": getattr(screening_cfg, "min_tuning_val_size", 1),
+            "calibration_enabled": getattr(screening_cfg, "calibration_enabled", False),
+            "calibration_fraction": getattr(screening_cfg, "calibration_fraction", 0.2),
+            "min_cal_size": getattr(screening_cfg, "min_cal_size", 1),
+            "min_inner_train_size": getattr(screening_cfg, "min_inner_train_size", 1),
+            "policy_names": list(
+                getattr(screening_cfg, "policy_names", ["min_screening_rmse"])
+            ),
+            "combined_miscalibration_lambda": getattr(
+                screening_cfg,
+                "combined_miscalibration_lambda",
+                1.0,
+            ),
+        },
+    }
+
+
+def _policy_selection_diagnostic_persistence_context(
+    cfg: object,
+    *,
+    wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> PolicyDiagnosticPersistenceContext:
+    metadata = None
+    try:
+        metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=int(len(wide_df)),
+            mlip_feature_names=mlip_feature_names(wide_df),
+        )
+    except (AttributeError, ValueError):
+        metadata = None
+    return PolicyDiagnosticPersistenceContext(
+        metadata=metadata,
+        cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
+        artifact_path=output_dir / f"policy_selection_diagnostic_{run_suffix}.json",
+        screening_rows_artifact_path=(
+            output_dir / f"policy_selection_screening_rows_{run_suffix}.json"
+        ),
+    )
+
+
+def _build_policy_selection_diagnostic_results_for_cfg(
+    *,
+    cfg: object,
+    wide_df: object,
+    graph_view: object,
+    auxiliary_views: dict[str, object] | None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
+) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
     screening_cfg = getattr(experiment_cfg, "screening", None)
@@ -771,18 +939,47 @@ def _write_policy_selection_diagnostic(
     )
     requested_sweep_sizes = resolve_configured_sweep_sizes(
         dataset.n_samples,
-        min_train=learning_curve_cfg.min_train,
-        max_train=learning_curve_cfg.max_train,
+        min_train=getattr(learning_curve_cfg, "min_train", None),
+        max_train=getattr(learning_curve_cfg, "max_train", None),
         step=getattr(learning_curve_cfg, "step", 1),
         sweep_sizes=getattr(learning_curve_cfg, "sweep_sizes", ()),
         sweep_fractions=getattr(learning_curve_cfg, "sweep_fractions", ()),
     )
-    diagnostic_results = build_policy_selection_diagnostic_results(
+    if not requested_sweep_sizes:
+        return None
+    diagnostic_min_train = getattr(learning_curve_cfg, "min_train", None)
+    if diagnostic_min_train is None:
+        diagnostic_min_train = min(requested_sweep_sizes)
+    diagnostic_max_train = getattr(learning_curve_cfg, "max_train", None)
+    if diagnostic_max_train is None:
+        diagnostic_max_train = max(requested_sweep_sizes)
+    cached_outer_repeat_metrics_df = None
+    results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    if results_bundle_path is not None:
+        try:
+            metadata = learning_curve_sweep_metadata_from_config(
+                cfg,
+                dataset_size=int(len(wide_df)),
+                mlip_feature_names=mlip_feature_names(wide_df),
+            )
+        except (AttributeError, ValueError):
+            metadata = None
+        if metadata is not None:
+            repeat_metrics_path = repeat_metrics_artifact_path(results_bundle_path)
+            if repeat_metrics_path.is_file():
+                try:
+                    cached_outer_repeat_metrics_df = load_learning_curve_repeat_metrics_artifact(
+                        repeat_metrics_path,
+                        expected_metadata=metadata,
+                    ).repeat_metrics_df
+                except ValueError:
+                    cached_outer_repeat_metrics_df = None
+    detail_df, screening_rows_df = _build_policy_selection_frames(
         dataset,
-        min_train=learning_curve_cfg.min_train,
-        max_train=learning_curve_cfg.max_train,
+        min_train=diagnostic_min_train,
+        max_train=diagnostic_max_train,
         step=getattr(learning_curve_cfg, "step", 1),
-        n_repeats=learning_curve_cfg.n_repeats,
+        n_repeats=getattr(learning_curve_cfg, "n_repeats", 1),
         seed=cfg.seed if getattr(cfg, "seed", None) is not None else 42,
         model_families=model_families,
         outer_validation_fraction=getattr(learning_curve_cfg, "validation_fraction", 0.2),
@@ -803,6 +1000,8 @@ def _write_policy_selection_diagnostic(
         screening_min_cal_size=getattr(screening_cfg, "min_cal_size", 1),
         screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
         requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
             screening_cfg,
@@ -810,19 +1009,49 @@ def _write_policy_selection_diagnostic(
             1.0,
         ),
     )
-    metadata = learning_curve_sweep_metadata_from_config(
-        cfg,
-        dataset_size=int(len(wide_df)),
-        mlip_feature_names=mlip_feature_names(wide_df),
-    )
-    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
-    save_policy_selection_diagnostic_artifact(
-        PolicySelectionDiagnosticArtifact(
-            metadata=metadata,
-            results=diagnostic_results,
+    return PolicyDiagnosticBuildOutputs(
+        results=PolicySelectionDiagnosticResults(
+            detail_df=detail_df,
+            summary_df=summarize_policy_detail_frame(detail_df),
         ),
-        artifact_path,
+        screening_rows_df=screening_rows_df,
     )
+
+
+def _write_policy_selection_diagnostic_outputs(
+    *,
+    cfg: object,
+    wide_df: object,
+    diagnostic_results: PolicySelectionDiagnosticResults,
+    screening_rows_df: pd.DataFrame | None,
+    metadata: object | None,
+    cache_signature: dict[str, object],
+    artifact_path: Path,
+    screening_rows_artifact_path: Path,
+    output_dir: Path,
+    run_suffix: str,
+    min_x: int | None,
+    max_x: int | None,
+    include_x: list[int] | None,
+) -> Path:
+    if metadata is not None:
+        save_policy_selection_diagnostic_artifact(
+            PolicySelectionDiagnosticArtifact(
+                metadata=metadata,
+                results=diagnostic_results,
+                cache_signature=cache_signature,
+            ),
+            artifact_path,
+        )
+        if screening_rows_df is not None:
+            save_screening_diagnostic_rows_artifact(
+                ScreeningDiagnosticRowsArtifact(
+                    metadata=metadata,
+                    screening_rows_df=screening_rows_df,
+                    cache_signature=cache_signature,
+                ),
+                screening_rows_artifact_path,
+            )
     diagnostic_results.detail_df.to_csv(
         output_dir / f"policy_selection_diagnostic_detail_{run_suffix}.csv",
         index=False,
@@ -876,6 +1105,175 @@ def _write_policy_selection_diagnostic(
         render_variant=_render_policy_regret_variant,
     )
     return artifact_path
+
+
+def _load_policy_regret_rows_for_dataset(
+    cfg: object,
+    *,
+    dataset_tag: str,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+) -> list[dict[str, object]]:
+    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
+    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
+    probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    wide_df, auxiliary_views = build_auxiliary_views(
+        dataset_cfg,
+        wide_df,
+        probe_gnn_enabled,
+    )
+    cached_results = _load_cached_policy_selection_results_for_dataset_cfg(
+        dataset_cfg,
+        wide_df=wide_df,
+    )
+    _apply_persistent_output_suffixes(
+        dataset_cfg,
+        dataset_size=_frame_height(wide_df),
+    )
+    _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
+    diagnostic_results = cached_results
+    if diagnostic_results is None:
+        print(f"All-datasets policy diagnostic miss for {dataset_tag}: rebuilding")
+        graph_view = prepare_graph_view(dataset_cfg, wide_df)
+        build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
+            cfg=dataset_cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+        diagnostic_results = None if build_outputs is None else build_outputs.results
+    else:
+        print(f"All-datasets policy diagnostic hit for {dataset_tag}")
+    if diagnostic_results is None:
+        return []
+    dataset_include_x = _merged_include_x(
+        include_x,
+        None
+        if span_variant is None
+        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+    )
+    summary_df = diagnostic_results.summary_df.copy()
+    summary_df.insert(0, "dataset_label", dataset_label)
+    summary_df.insert(0, "dataset", dataset_tag)
+    filtered_summary_df = _filter_curve_frame(
+        summary_df,
+        x_column="budget",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=dataset_include_x,
+    )
+    if filtered_summary_df is None or filtered_summary_df.empty:
+        return []
+    return filtered_summary_df.to_dict(orient="records")
+
+
+def _load_cached_policy_selection_results_for_dataset_cfg(
+    dataset_cfg: object,
+    *,
+    wide_df: object,
+) -> PolicySelectionDiagnosticResults | None:
+    plot_cfg = getattr(dataset_cfg, "plot", None)
+    output_dir = (
+        getattr(plot_cfg, "output_dir", None)
+        if plot_cfg is not None
+        else None
+    ) or Path("data/results/plots")
+    persistence = _policy_selection_diagnostic_persistence_context(
+        dataset_cfg,
+        wide_df=wide_df,
+        output_dir=output_dir,
+        run_suffix=_plot_output_suffix(dataset_cfg),
+    )
+    if persistence.metadata is None or not persistence.artifact_path.is_file():
+        return None
+    try:
+        return load_policy_selection_diagnostic_artifact(
+            persistence.artifact_path,
+            expected_metadata=persistence.metadata,
+            expected_cache_signature=persistence.cache_signature,
+        ).results
+    except ValueError:
+        return None
+
+
+def load_all_datasets_policy_regret_rows(
+    *,
+    cfg: object,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+) -> list[dict[str, object]]:
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1:
+        return []
+
+    regret_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        regret_rows.extend(
+            _load_policy_regret_rows_for_dataset(
+                cfg,
+                dataset_tag=dataset_tag,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+                span_variant=span_variant,
+            )
+        )
+    return regret_rows
+
+
+def write_all_datasets_policy_regret_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    if learning_curve_cfg is None or screening_cfg is None:
+        return None
+
+    def _render_regret_variant(
+        span_variant: BudgetSpanVariant | None,
+        output_path: Path,
+    ) -> Path | None:
+        regret_rows = load_all_datasets_policy_regret_rows(
+            cfg=cfg,
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+            span_variant=span_variant,
+        )
+        if not regret_rows:
+            return None
+        return all_datasets_policy_regret_plot(
+            pd.DataFrame(regret_rows),
+            output_path=output_path,
+            log_x=bool(span_variant is not None and span_variant.key == "fraction"),
+        )
+
+    return render_budget_span_variants(
+        cfg,
+        base_output_path=output_dir / f"policy_regret_all_datasets_{run_suffix}.png",
+        render_variant=_render_regret_variant,
+    )
 
 
 def _can_reuse_graph_artifact(
@@ -1684,6 +2082,14 @@ def run_experiment(cfg: object):
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=plot_kwargs["include_x"],
+        )
+        write_all_datasets_policy_regret_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
         )
     if learning_curve_plot_path is not None and screening_plot_path is not None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1554,6 +1554,109 @@ def policy_regret_plot(
     return output_path
 
 
+def all_datasets_policy_regret_plot(
+    summary_df: pd.DataFrame,
+    *,
+    output_path: str | Path,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    log_x: bool = False,
+) -> Path:
+    required_columns = {"dataset", "dataset_label", "budget", "mean_regret"}
+    missing_columns = required_columns.difference(summary_df.columns)
+    if missing_columns:
+        raise ValueError(
+            "summary_df is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+    if summary_df.empty:
+        raise ValueError("summary_df must contain at least one row.")
+
+    filtered = _filter_curve_frame(
+        summary_df.sort_values(["dataset", "budget"]).reset_index(drop=True),
+        x_column="budget",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+    if filtered is None or filtered.empty:
+        raise ValueError("summary_df does not contain any rows after x-axis filtering.")
+
+    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
+    label_rows = summary_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+        subset=["dataset"],
+        keep="first",
+    )
+    dataset_labels = (
+        label_rows.set_index("dataset")
+        .reindex(dataset_order)["dataset_label"]
+        .fillna(pd.Series(dataset_order, index=dataset_order))
+        .to_dict()
+    )
+    multiple_policies = (
+        "policy_name" in filtered.columns
+        and filtered["policy_name"].nunique(dropna=True) > 1
+    )
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    cmap = plt.cm.get_cmap("tab10", max(1, len(dataset_order)))
+    for idx, dataset in enumerate(dataset_order):
+        dataset_rows = filtered.loc[filtered["dataset"] == dataset]
+        if "policy_name" in dataset_rows.columns:
+            grouped = dataset_rows.groupby("policy_name", sort=True)
+        else:
+            grouped = [(None, dataset_rows)]
+        for policy_name, group in grouped:
+            ordered = group.sort_values("budget")
+            label = dataset_labels[dataset]
+            if multiple_policies and policy_name is not None:
+                label = f"{label}: {policy_name}"
+            color = cmap(idx)
+            ax.plot(
+                ordered["budget"],
+                ordered["mean_regret"],
+                marker="o",
+                color=color,
+                label=label,
+            )
+            if {"ci95_low", "ci95_high"}.issubset(ordered.columns):
+                ax.fill_between(
+                    ordered["budget"],
+                    ordered["ci95_low"],
+                    ordered["ci95_high"],
+                    color=color,
+                    alpha=0.2,
+                )
+            elif "std_regret" in ordered.columns:
+                ax.fill_between(
+                    ordered["budget"],
+                    ordered["mean_regret"] - ordered["std_regret"],
+                    ordered["mean_regret"] + ordered["std_regret"],
+                    color=color,
+                    alpha=0.2,
+                )
+
+    ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Sample budget", fontsize=fontsize)
+    ax.set_ylabel("Regret", fontsize=fontsize)
+    ax.set_title("Screening policy regret by dataset", fontsize=fontsize)
+    if log_x:
+        ax.set_xscale("log")
+    else:
+        _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def fixed_split_training_time_accuracy_plot(
     results: LearningCurveResults,
     generation_timing_by_mlip: dict[str, MlipGenerationTimingSummary],

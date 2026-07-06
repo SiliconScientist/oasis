@@ -10,14 +10,19 @@ import pandas as pd
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
+    ScreeningDiagnosticRowsArtifact,
     build_policy_selection_diagnostic_results,
     build_policy_selection_detail_frame,
     derive_family_split_collection_from_shared_outer_splits,
     generate_shared_outer_splits,
     load_policy_selection_diagnostic_artifact,
+    load_screening_diagnostic_rows_artifact,
     normalize_policy_detail_frame,
     normalize_policy_summary_frame,
+    normalize_screening_diagnostic_rows_frame,
     save_policy_selection_diagnostic_artifact,
+    save_screening_diagnostic_rows_artifact,
+    screening_split_fingerprint,
     summarize_policy_detail_frame,
 )
 from oasis.learning_curve.results_io import (
@@ -42,6 +47,23 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             dataset_tag="example_oh",
             dataset_size=24,
         )
+
+    @staticmethod
+    def _cache_signature() -> dict[str, object]:
+        return {
+            "learning_curve": {
+                "min_train": 4,
+                "max_train": 12,
+                "step": 2,
+                "n_repeats": 3,
+                "enabled_model_names": ["ridge", "weighted_linear"],
+            },
+            "screening": {
+                "screen_fraction": 0.25,
+                "policy_names": ["min_screening_rmse"],
+                "combined_miscalibration_lambda": 1.0,
+            },
+        }
 
     def test_normalize_policy_detail_frame_orders_and_coerces_types(self) -> None:
         frame = pd.DataFrame(
@@ -124,6 +146,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                     }
                 ),
             ),
+            cache_signature=self._cache_signature(),
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -132,12 +155,67 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             restored = load_policy_selection_diagnostic_artifact(
                 saved_path,
                 expected_metadata=self._metadata(),
+                expected_cache_signature=self._cache_signature(),
             )
 
         self.assertEqual(saved_path, path)
         self.assertEqual(restored.metadata, artifact.metadata)
+        self.assertEqual(restored.cache_signature, artifact.cache_signature)
         pd.testing.assert_frame_equal(restored.results.detail_df, artifact.results.detail_df)
         pd.testing.assert_frame_equal(restored.results.summary_df, artifact.results.summary_df)
+
+    def test_policy_diagnostic_artifact_rejects_incompatible_cache_signature(self) -> None:
+        artifact = PolicySelectionDiagnosticArtifact(
+            metadata=self._metadata(),
+            results=PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.31],
+                        "screening_selected_outer_rmse": [0.31],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.29],
+                        "screening_miscalibration_area": [0.11],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [4],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.31],
+                        "screening_selected_outer_rmse_mean": [0.31],
+                    }
+                ),
+            ),
+            cache_signature=self._cache_signature(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "policy_diagnostic.json"
+            save_policy_selection_diagnostic_artifact(artifact, path)
+            with self.assertRaisesRegex(ValueError, "cache signature is incompatible"):
+                load_policy_selection_diagnostic_artifact(
+                    path,
+                    expected_metadata=self._metadata(),
+                    expected_cache_signature={
+                        **self._cache_signature(),
+                        "screening": {
+                            **self._cache_signature()["screening"],
+                            "combined_miscalibration_lambda": 2.0,
+                        },
+                    },
+                )
 
     def test_summarize_policy_detail_frame_aggregates_by_budget(self) -> None:
         summary = summarize_policy_detail_frame(
@@ -196,6 +274,91 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             ],
         )
         self.assertEqual(summary["mean_regret"].tolist(), [0.1, 0.0])
+
+    def test_normalize_screening_diagnostic_rows_frame_orders_and_coerces_types(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "method": ["weighted_linear", "ridge"],
+                "budget": [8, 4],
+                "repeat": [1, 0],
+                "split_fingerprint": ["f1", "f0"],
+                "screening_cv_rmse": [0.19, 0.29],
+                "screening_miscalibration_area": [0.08, 0.11],
+                "ignored": [1, 2],
+            }
+        )
+
+        normalized = normalize_screening_diagnostic_rows_frame(frame)
+
+        self.assertEqual(
+            normalized.columns.tolist(),
+            [
+                "method",
+                "budget",
+                "repeat",
+                "split_fingerprint",
+                "screening_cv_rmse",
+                "screening_miscalibration_area",
+            ],
+        )
+        self.assertEqual(normalized["method"].tolist(), ["ridge", "weighted_linear"])
+        self.assertEqual(str(normalized["budget"].dtype), "Int64")
+
+    def test_screening_diagnostic_rows_artifact_round_trip(self) -> None:
+        artifact = ScreeningDiagnosticRowsArtifact(
+            metadata=self._metadata(),
+            screening_rows_df=pd.DataFrame(
+                {
+                    "method": ["weighted_linear", "ridge"],
+                    "budget": [8, 4],
+                    "repeat": [1, 0],
+                    "split_fingerprint": ["f1", "f0"],
+                    "screening_cv_rmse": [0.19, 0.29],
+                    "screening_miscalibration_area": [0.08, 0.11],
+                }
+            ),
+            cache_signature=self._cache_signature(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "screening_rows.json"
+            saved_path = save_screening_diagnostic_rows_artifact(artifact, path)
+            restored = load_screening_diagnostic_rows_artifact(
+                saved_path,
+                expected_metadata=self._metadata(),
+                expected_cache_signature=self._cache_signature(),
+            )
+
+        self.assertEqual(saved_path, path)
+        self.assertEqual(restored.metadata, artifact.metadata)
+        self.assertEqual(restored.cache_signature, artifact.cache_signature)
+        pd.testing.assert_frame_equal(
+            restored.screening_rows_df,
+            normalize_screening_diagnostic_rows_frame(artifact.screening_rows_df),
+        )
+
+    def test_screening_split_fingerprint_changes_when_split_indices_change(self) -> None:
+        first = generate_shared_outer_splits(
+            12,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=17,
+        )[0]
+        second = generate_shared_outer_splits(
+            12,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=18,
+        )[0]
+
+        self.assertNotEqual(
+            screening_split_fingerprint(first),
+            screening_split_fingerprint(second),
+        )
 
     def test_derived_family_splits_preserve_shared_outer_test_sets(self) -> None:
         shared_splits = generate_shared_outer_splits(
@@ -804,6 +967,168 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             [0.04, 0.0],
             atol=1e-12,
         )
+
+    def test_build_policy_selection_detail_frame_reuses_cached_outer_repeat_metrics(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+
+        class StubFamily:
+            def __init__(self, *, method_name: str, screening_rmse: float) -> None:
+                self.method_name = method_name
+                self.screening_rmse = screening_rmse
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return LearningCurveResults.from_mapping(
+                    {
+                        result_field: pd.DataFrame(
+                            {
+                                "n_train": [payload.split_collection.splits[0].sweep_size],
+                                "rmse_mean": [self.screening_rmse],
+                                "rmse_std": [0.0],
+                            }
+                        )
+                    }
+                )
+
+            def run_with_artifacts(self, payload):
+                del payload
+                raise AssertionError("outer metrics should be loaded from the repeat-metrics cache")
+
+        detail = build_policy_selection_detail_frame(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+            model_families=[
+                StubFamily(method_name="ridge", screening_rmse=0.1),
+                StubFamily(method_name="weighted_linear", screening_rmse=0.2),
+            ],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            cached_outer_repeat_metrics_df=pd.DataFrame(
+                {
+                    "method": ["ridge", "weighted_linear"],
+                    "budget": [4, 4],
+                    "repeat": [0, 0],
+                    "outer_test_rmse": [0.2, 0.25],
+                }
+            ),
+        )
+
+        self.assertEqual(detail["oracle_method"].tolist(), ["ridge"])
+        self.assertEqual(detail["screening_selected_method"].tolist(), ["ridge"])
+        self.assertEqual(detail["oracle_outer_rmse"].tolist(), [0.2])
+
+    def test_build_policy_selection_detail_frame_reuses_cached_screening_rows(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+        shared_split = generate_shared_outer_splits(
+            dataset.n_samples,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+        )[0]
+
+        class StubFamily:
+            def __init__(self, *, method_name: str) -> None:
+                self.method_name = method_name
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                del payload
+                raise AssertionError("screening rows should be loaded from the screening cache")
+
+            def run_with_artifacts(self, payload):
+                del payload
+                raise AssertionError("outer metrics should be loaded from the repeat-metrics cache")
+
+        detail = build_policy_selection_detail_frame(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+            model_families=[
+                StubFamily(method_name="ridge"),
+                StubFamily(method_name="weighted_linear"),
+            ],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            cached_outer_repeat_metrics_df=pd.DataFrame(
+                {
+                    "method": ["ridge", "weighted_linear"],
+                    "budget": [4, 4],
+                    "repeat": [0, 0],
+                    "outer_test_rmse": [0.2, 0.25],
+                }
+            ),
+            cached_screening_rows_df=pd.DataFrame(
+                {
+                    "method": ["ridge", "weighted_linear"],
+                    "budget": [4, 4],
+                    "repeat": [0, 0],
+                    "split_fingerprint": [
+                        screening_split_fingerprint(shared_split),
+                        screening_split_fingerprint(shared_split),
+                    ],
+                    "screening_cv_rmse": [0.1, 0.2],
+                    "screening_miscalibration_area": [0.01, 0.02],
+                }
+            ),
+        )
+
+        self.assertEqual(detail["screening_selected_method"].tolist(), ["ridge"])
+        self.assertEqual(detail["screening_cv_rmse"].tolist(), [0.1])
 
     def test_policy_regret_uses_paired_outer_test_rmse_not_screening_metrics(self) -> None:
         detail = normalize_policy_detail_frame(

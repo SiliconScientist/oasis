@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+import hashlib
 import json
 from io import StringIO
 from pathlib import Path
@@ -26,7 +27,8 @@ from oasis.learning_curve.results_io import (
 from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCollection
 
 
-_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 2
+_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 3
+_SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 1
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
     "policy_name",
@@ -53,6 +55,14 @@ _SUMMARY_COLUMNS = [
     "oracle_outer_rmse_mean",
     "screening_selected_outer_rmse_mean",
 ]
+_SCREENING_ROWS_COLUMNS = [
+    "method",
+    "budget",
+    "repeat",
+    "split_fingerprint",
+    "screening_cv_rmse",
+    "screening_miscalibration_area",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +83,7 @@ class PolicySelectionDiagnosticResults:
 class PolicySelectionDiagnosticArtifact:
     metadata: LearningCurveSweepMetadata
     results: PolicySelectionDiagnosticResults
+    cache_signature: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +98,20 @@ class SharedOuterSplit:
 class ScreeningDiagnosticMetrics:
     cv_rmse: float
     miscalibration_area: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningDiagnosticRowsArtifact:
+    metadata: LearningCurveSweepMetadata
+    screening_rows_df: pd.DataFrame
+    cache_signature: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "screening_rows_df",
+            normalize_screening_diagnostic_rows_frame(self.screening_rows_df),
+        )
 
 
 def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -127,6 +152,25 @@ def normalize_policy_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return (
         normalized.loc[:, _SUMMARY_COLUMNS]
         .sort_values(["policy_name", "budget"])
+        .reset_index(drop=True)
+    )
+
+
+def normalize_screening_diagnostic_rows_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(frame, _SCREENING_ROWS_COLUMNS, frame_name="screening diagnostic rows")
+    normalized = frame.copy()
+    normalized["method"] = normalized["method"].astype("string")
+    normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
+    normalized["repeat"] = pd.Series(normalized["repeat"], dtype="Int64")
+    normalized["split_fingerprint"] = normalized["split_fingerprint"].astype("string")
+    normalized["screening_cv_rmse"] = pd.Series(normalized["screening_cv_rmse"], dtype="Float64")
+    normalized["screening_miscalibration_area"] = pd.Series(
+        normalized["screening_miscalibration_area"],
+        dtype="Float64",
+    )
+    return (
+        normalized.loc[:, _SCREENING_ROWS_COLUMNS]
+        .sort_values(["method", "budget", "repeat"])
         .reset_index(drop=True)
     )
 
@@ -192,10 +236,12 @@ def build_policy_selection_diagnostic_results(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
-    detail_df = build_policy_selection_detail_frame(
+    detail_df, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -221,6 +267,8 @@ def build_policy_selection_diagnostic_results(
         screening_min_cal_size=screening_min_cal_size,
         screening_min_inner_train_size=screening_min_inner_train_size,
         requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
         policy_names=policy_names,
         combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
@@ -261,6 +309,7 @@ def dump_policy_selection_diagnostic_artifact(
         "version": _POLICY_DIAGNOSTIC_ARTIFACT_VERSION,
         "metadata": artifact.metadata.to_bundle_mapping(),
         "results": dump_policy_selection_diagnostic_results(artifact.results),
+        "cache_signature": artifact.cache_signature,
     }
 
 
@@ -268,6 +317,7 @@ def load_policy_selection_diagnostic_artifact_mapping(
     payload: dict[str, Any],
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
 ) -> PolicySelectionDiagnosticArtifact:
     version = payload.get("version")
     if version != _POLICY_DIAGNOSTIC_ARTIFACT_VERSION:
@@ -284,9 +334,15 @@ def load_policy_selection_diagnostic_artifact_mapping(
     results_payload = payload.get("results")
     if not isinstance(results_payload, dict):
         raise TypeError("policy diagnostic artifact must contain results.")
+    cache_signature = payload.get("cache_signature")
+    if cache_signature is not None and not isinstance(cache_signature, dict):
+        raise TypeError("policy diagnostic artifact cache_signature must be a mapping.")
+    if expected_cache_signature is not None and cache_signature != expected_cache_signature:
+        raise ValueError("policy diagnostic artifact cache signature is incompatible.")
     return PolicySelectionDiagnosticArtifact(
         metadata=metadata,
         results=load_policy_selection_diagnostic_results_mapping(results_payload),
+        cache_signature=cache_signature,
     )
 
 
@@ -307,11 +363,88 @@ def load_policy_selection_diagnostic_artifact(
     path: str | Path,
     *,
     expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
 ) -> PolicySelectionDiagnosticArtifact:
     resolved_path = Path(path)
     return load_policy_selection_diagnostic_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
+        expected_cache_signature=expected_cache_signature,
+    )
+
+
+def dump_screening_diagnostic_rows_artifact(
+    artifact: ScreeningDiagnosticRowsArtifact,
+) -> dict[str, Any]:
+    return {
+        "version": _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION,
+        "metadata": artifact.metadata.to_bundle_mapping(),
+        "screening_rows_df": artifact.screening_rows_df.to_json(orient="table"),
+        "cache_signature": artifact.cache_signature,
+    }
+
+
+def load_screening_diagnostic_rows_artifact_mapping(
+    payload: dict[str, Any],
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> ScreeningDiagnosticRowsArtifact:
+    version = payload.get("version")
+    if version != _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION:
+        raise ValueError(
+            f"unsupported screening diagnostic rows artifact version: {version!r}."
+        )
+    metadata_payload = payload.get("metadata")
+    if not isinstance(metadata_payload, dict):
+        raise TypeError("screening diagnostic rows artifact must contain metadata.")
+    metadata = LearningCurveSweepMetadata.from_bundle_mapping(
+        metadata_payload,
+        fallback=expected_metadata,
+    )
+    if expected_metadata is not None:
+        expected_metadata.assert_compatible(metadata)
+    rows_payload = payload.get("screening_rows_df")
+    if not isinstance(rows_payload, str):
+        raise TypeError(
+            "screening diagnostic rows artifact must contain a screening_rows_df JSON string."
+        )
+    cache_signature = payload.get("cache_signature")
+    if cache_signature is not None and not isinstance(cache_signature, dict):
+        raise TypeError("screening diagnostic rows artifact cache_signature must be a mapping.")
+    if expected_cache_signature is not None and cache_signature != expected_cache_signature:
+        raise ValueError("screening diagnostic rows artifact cache signature is incompatible.")
+    return ScreeningDiagnosticRowsArtifact(
+        metadata=metadata,
+        screening_rows_df=pd.read_json(StringIO(rows_payload), orient="table"),
+        cache_signature=cache_signature,
+    )
+
+
+def save_screening_diagnostic_rows_artifact(
+    artifact: ScreeningDiagnosticRowsArtifact,
+    path: str | Path,
+) -> Path:
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
+        json.dumps(dump_screening_diagnostic_rows_artifact(artifact), indent=2),
+        encoding="utf-8",
+    )
+    return resolved_path
+
+
+def load_screening_diagnostic_rows_artifact(
+    path: str | Path,
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> ScreeningDiagnosticRowsArtifact:
+    resolved_path = Path(path)
+    return load_screening_diagnostic_rows_artifact_mapping(
+        json.loads(resolved_path.read_text(encoding="utf-8")),
+        expected_metadata=expected_metadata,
+        expected_cache_signature=expected_cache_signature,
     )
 
 
@@ -422,9 +555,77 @@ def build_policy_selection_detail_frame(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
+    detail_df, _ = _build_policy_selection_frames(
+        dataset,
+        min_train=min_train,
+        max_train=max_train,
+        step=step,
+        n_repeats=n_repeats,
+        seed=seed,
+        model_families=model_families,
+        outer_validation_fraction=outer_validation_fraction,
+        outer_min_val_size=outer_min_val_size,
+        outer_min_tuning_val_size=outer_min_tuning_val_size,
+        outer_calibration_enabled=outer_calibration_enabled,
+        outer_calibration_fraction=outer_calibration_fraction,
+        outer_min_cal_size=outer_min_cal_size,
+        outer_min_inner_train_size=outer_min_inner_train_size,
+        min_test_size=min_test_size,
+        screening_fraction=screening_fraction,
+        min_screen_size=min_screen_size,
+        screening_validation_fraction=screening_validation_fraction,
+        screening_min_val_size=screening_min_val_size,
+        screening_min_tuning_val_size=screening_min_tuning_val_size,
+        screening_calibration_enabled=screening_calibration_enabled,
+        screening_calibration_fraction=screening_calibration_fraction,
+        screening_min_cal_size=screening_min_cal_size,
+        screening_min_inner_train_size=screening_min_inner_train_size,
+        requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
+    )
+    return detail_df
+
+
+def _build_policy_selection_frames(
+    dataset: SweepDataset,
+    *,
+    min_train: int,
+    max_train: int,
+    step: int,
+    n_repeats: int,
+    seed: int,
+    model_families: Sequence[Any],
+    outer_validation_fraction: float,
+    outer_min_val_size: int,
+    outer_min_tuning_val_size: int,
+    outer_calibration_enabled: bool,
+    outer_calibration_fraction: float,
+    outer_min_cal_size: int,
+    outer_min_inner_train_size: int,
+    min_test_size: int,
+    screening_fraction: float,
+    min_screen_size: int,
+    screening_validation_fraction: float,
+    screening_min_val_size: int,
+    screening_min_tuning_val_size: int,
+    screening_calibration_enabled: bool,
+    screening_calibration_fraction: float,
+    screening_min_cal_size: int,
+    screening_min_inner_train_size: int,
+    requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     shared_splits = generate_shared_outer_splits(
         dataset.n_samples,
         min_train=min_train,
@@ -436,10 +637,17 @@ def build_policy_selection_detail_frame(
         requested_sweep_sizes=requested_sweep_sizes,
     )
     if not shared_splits:
-        return normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS))
+        return (
+            normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS)),
+            normalize_screening_diagnostic_rows_frame(pd.DataFrame(columns=_SCREENING_ROWS_COLUMNS)),
+        )
 
     outer_rows: list[dict[str, Any]] = []
     screening_rows: list[dict[str, Any]] = []
+    reused_outer_metrics = 0
+    recomputed_outer_metrics = 0
+    reused_screening_rows = 0
+    recomputed_screening_rows = 0
     for family in model_families:
         method_name = _family_method_name(
             family,
@@ -461,21 +669,30 @@ def build_policy_selection_detail_frame(
         )
         if not split_collection.splits:
             continue
-        if not hasattr(family, "run_with_artifacts"):
-            raise TypeError(
-                f"family {method_name!r} must implement run_with_artifacts for policy diagnostics."
-            )
-        family_artifacts = family.run_with_artifacts(
-            SweepRunPayload(
-                dataset=dataset,
-                split_collection=split_collection,
-            )
+        repeat_metrics = _cached_outer_repeat_metrics_for_method(
+            cached_outer_repeat_metrics_df,
+            method_name=method_name,
+            shared_splits=shared_splits,
         )
-        repeat_metrics = getattr(family_artifacts, "repeat_metrics", None)
-        if repeat_metrics is None or repeat_metrics.empty:
-            raise ValueError(
-                f"family {method_name!r} did not produce repeat_metrics for policy diagnostics."
+        if repeat_metrics is None:
+            if not hasattr(family, "run_with_artifacts"):
+                raise TypeError(
+                    f"family {method_name!r} must implement run_with_artifacts for policy diagnostics."
+                )
+            family_artifacts = family.run_with_artifacts(
+                SweepRunPayload(
+                    dataset=dataset,
+                    split_collection=split_collection,
+                )
             )
+            repeat_metrics = getattr(family_artifacts, "repeat_metrics", None)
+            if repeat_metrics is None or repeat_metrics.empty:
+                raise ValueError(
+                    f"family {method_name!r} did not produce repeat_metrics for policy diagnostics."
+                )
+            recomputed_outer_metrics += len(shared_splits)
+        else:
+            reused_outer_metrics += len(shared_splits)
         for split in shared_splits:
             outer_match = repeat_metrics.loc[
                 (repeat_metrics["n_train"] == split.budget)
@@ -493,32 +710,43 @@ def build_policy_selection_detail_frame(
                 }
             )
 
-            screening_result = _run_family_screening_diagnostic(
-                family,
-                dataset=dataset.subset(split.train_idx),
-                budget=split.budget,
-                seed=_derived_split_seed(seed, split.budget, split.repeat, salt=7919),
-                screening_fraction=screening_fraction,
-                min_screen_size=min_screen_size,
-                validation_fraction=screening_validation_fraction,
-                min_val_size=screening_min_val_size,
-                min_tuning_val_size=screening_min_tuning_val_size,
-                calibration_enabled=screening_calibration_enabled,
-                calibration_fraction=screening_calibration_fraction,
-                min_cal_size=screening_min_cal_size,
-                min_inner_train_size=screening_min_inner_train_size,
+            cached_screening_row = _cached_screening_row_for_method(
+                cached_screening_rows_df,
+                method_name=method_name,
+                shared_split=split,
             )
-            if screening_result is None:
-                continue
-            screening_rows.append(
-                {
-                    "budget": split.budget,
-                    "repeat": split.repeat,
-                    "method": method_name,
-                    "screening_cv_rmse": screening_result.cv_rmse,
-                    "screening_miscalibration_area": screening_result.miscalibration_area,
-                }
-            )
+            if cached_screening_row is None:
+                screening_result = _run_family_screening_diagnostic(
+                    family,
+                    dataset=dataset.subset(split.train_idx),
+                    budget=split.budget,
+                    seed=_derived_split_seed(seed, split.budget, split.repeat, salt=7919),
+                    screening_fraction=screening_fraction,
+                    min_screen_size=min_screen_size,
+                    validation_fraction=screening_validation_fraction,
+                    min_val_size=screening_min_val_size,
+                    min_tuning_val_size=screening_min_tuning_val_size,
+                    calibration_enabled=screening_calibration_enabled,
+                    calibration_fraction=screening_calibration_fraction,
+                    min_cal_size=screening_min_cal_size,
+                    min_inner_train_size=screening_min_inner_train_size,
+                )
+                if screening_result is None:
+                    continue
+                screening_rows.append(
+                    {
+                        "budget": split.budget,
+                        "repeat": split.repeat,
+                        "method": method_name,
+                        "split_fingerprint": screening_split_fingerprint(split),
+                        "screening_cv_rmse": screening_result.cv_rmse,
+                        "screening_miscalibration_area": screening_result.miscalibration_area,
+                    }
+                )
+                recomputed_screening_rows += 1
+            else:
+                screening_rows.append(cached_screening_row)
+                reused_screening_rows += 1
 
     outer_frame = pd.DataFrame(outer_rows)
     screening_frame = pd.DataFrame(screening_rows)
@@ -566,7 +794,26 @@ def build_policy_selection_detail_frame(
                         "agreement": bool(oracle_row["method"] == selected_row["method"]),
                     }
                 )
-    return normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS))
+    if any(
+        count > 0
+        for count in (
+            reused_outer_metrics,
+            recomputed_outer_metrics,
+            reused_screening_rows,
+            recomputed_screening_rows,
+        )
+    ):
+        print(
+            "Policy diagnostic reuse:"
+            f" outer reused={reused_outer_metrics}, outer recomputed={recomputed_outer_metrics},"
+            f" screening reused={reused_screening_rows}, screening recomputed={recomputed_screening_rows}"
+        )
+    return (
+        normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS)),
+        normalize_screening_diagnostic_rows_frame(
+            pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
+        ),
+    )
 
 
 def _require_columns(
@@ -813,6 +1060,74 @@ def _run_family_screening_diagnostic(
         cv_rmse=float(result_frame["cv_rmse_mean"].iloc[0]),
         miscalibration_area=miscalibration_area,
     )
+
+
+def _cached_outer_repeat_metrics_for_method(
+    cached_outer_repeat_metrics_df: pd.DataFrame | None,
+    *,
+    method_name: str,
+    shared_splits: Sequence[SharedOuterSplit],
+) -> pd.DataFrame | None:
+    if cached_outer_repeat_metrics_df is None or cached_outer_repeat_metrics_df.empty:
+        return None
+    method_rows = cached_outer_repeat_metrics_df.loc[
+        cached_outer_repeat_metrics_df["method"].astype(str) == method_name,
+        ["budget", "repeat", "outer_test_rmse"],
+    ]
+    if method_rows.empty:
+        return None
+    expected_pairs = {(int(split.budget), int(split.repeat)) for split in shared_splits}
+    observed_pairs = {
+        (int(row.budget), int(row.repeat))
+        for row in method_rows.itertuples(index=False)
+    }
+    if not expected_pairs.issubset(observed_pairs):
+        return None
+    return method_rows.rename(columns={"budget": "n_train"}).reset_index(drop=True)
+
+
+def _cached_screening_row_for_method(
+    cached_screening_rows_df: pd.DataFrame | None,
+    *,
+    method_name: str,
+    shared_split: SharedOuterSplit,
+) -> dict[str, Any] | None:
+    if cached_screening_rows_df is None or cached_screening_rows_df.empty:
+        return None
+    fingerprint = screening_split_fingerprint(shared_split)
+    match = cached_screening_rows_df.loc[
+        (cached_screening_rows_df["method"].astype(str) == method_name)
+        & (cached_screening_rows_df["budget"].astype(int) == int(shared_split.budget))
+        & (cached_screening_rows_df["repeat"].astype(int) == int(shared_split.repeat))
+        & (cached_screening_rows_df["split_fingerprint"].astype(str) == fingerprint)
+    ]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return {
+        "method": method_name,
+        "budget": int(shared_split.budget),
+        "repeat": int(shared_split.repeat),
+        "split_fingerprint": fingerprint,
+        "screening_cv_rmse": float(row["screening_cv_rmse"]),
+        "screening_miscalibration_area": (
+            np.nan
+            if pd.isna(row["screening_miscalibration_area"])
+            else float(row["screening_miscalibration_area"])
+        ),
+    }
+
+
+def screening_split_fingerprint(shared_split: SharedOuterSplit) -> str:
+    train_values = ",".join(str(int(value)) for value in np.asarray(shared_split.train_idx, dtype=int))
+    test_values = ",".join(str(int(value)) for value in np.asarray(shared_split.test_idx, dtype=int))
+    payload = (
+        f"budget={int(shared_split.budget)};"
+        f"repeat={int(shared_split.repeat)};"
+        f"train={train_values};"
+        f"test={test_values}"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _derived_split_seed(seed: int, budget: int, repeat: int, *, salt: int) -> int:

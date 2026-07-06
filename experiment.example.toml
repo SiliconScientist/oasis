@@ -160,6 +160,14 @@ combined_miscalibration_lambda = 1.0
 # writes a shared-outer-split policy diagnostic to `plot.output_dir`.
 # That derived diagnostic uses screening CV only for method selection, then
 # evaluates the selected method on the paired outer held-out test split.
+# Cached policy-diagnostic artifacts now include:
+#   policy_selection_diagnostic_<suffix>.json
+#   policy_selection_screening_rows_<suffix>.json
+# plus the learning-curve repeat-metrics sidecar derived from
+# `experiment.learning_curve.results_bundle_path`.
+# Oasis reuses those caches when dataset metadata, the learning-curve sweep,
+# enabled methods, and screening-policy settings still match; changing any of
+# those inputs forces a rebuild for the affected dataset.
 
 [candidate_ranking]
 # Run with: `python -m oasis rank-candidates [config paths...]`
