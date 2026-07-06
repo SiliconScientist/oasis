@@ -1102,18 +1102,25 @@ def _load_policy_regret_rows_for_dataset(
         wide_df,
         probe_gnn_enabled,
     )
+    cached_results = _load_cached_policy_selection_results_for_dataset_cfg(
+        dataset_cfg,
+        wide_df=wide_df,
+    )
     _apply_persistent_output_suffixes(
         dataset_cfg,
         dataset_size=_frame_height(wide_df),
     )
     _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
-    graph_view = prepare_graph_view(dataset_cfg, wide_df)
-    diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
-        cfg=dataset_cfg,
-        wide_df=wide_df,
-        graph_view=graph_view,
-        auxiliary_views=auxiliary_views,
-    )
+    diagnostic_results = cached_results
+    if diagnostic_results is None:
+        graph_view = prepare_graph_view(dataset_cfg, wide_df)
+        build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
+            cfg=dataset_cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+        diagnostic_results = None if build_outputs is None else build_outputs.results
     if diagnostic_results is None:
         return []
     dataset_include_x = _merged_include_x(
@@ -1135,6 +1142,39 @@ def _load_policy_regret_rows_for_dataset(
     if filtered_summary_df is None or filtered_summary_df.empty:
         return []
     return filtered_summary_df.to_dict(orient="records")
+
+
+def _load_cached_policy_selection_results_for_dataset_cfg(
+    dataset_cfg: object,
+    *,
+    wide_df: object,
+) -> PolicySelectionDiagnosticResults | None:
+    plot_cfg = getattr(dataset_cfg, "plot", None)
+    output_dir = (
+        getattr(plot_cfg, "output_dir", None)
+        if plot_cfg is not None
+        else None
+    ) or Path("data/results/plots")
+    run_suffix = _plot_output_suffix(dataset_cfg)
+    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
+    if not artifact_path.is_file():
+        return None
+    try:
+        metadata = learning_curve_sweep_metadata_from_config(
+            dataset_cfg,
+            dataset_size=int(len(wide_df)),
+            mlip_feature_names=mlip_feature_names(wide_df),
+        )
+    except (AttributeError, ValueError):
+        return None
+    try:
+        return load_policy_selection_diagnostic_artifact(
+            artifact_path,
+            expected_metadata=metadata,
+            expected_cache_signature=_policy_selection_diagnostic_cache_signature(dataset_cfg),
+        ).results
+    except ValueError:
+        return None
 
 
 def load_all_datasets_policy_regret_rows(

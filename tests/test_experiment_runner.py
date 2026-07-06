@@ -1677,34 +1677,46 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         def _diagnostic_results_for_cfg(*, wide_df, **kwargs):
             budgets = [2, 4] if len(wide_df) == 4 else [3, 6]
-            return PolicySelectionDiagnosticResults(
-                detail_df=pd.DataFrame(
+            return PolicyDiagnosticBuildOutputs(
+                results=PolicySelectionDiagnosticResults(
+                    detail_df=pd.DataFrame(
+                        {
+                            "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                            "budget": budgets,
+                            "repeat": [0, 0],
+                            "oracle_method": ["ridge", "ridge"],
+                            "screening_selected_method": ["ridge", "ridge"],
+                            "oracle_outer_rmse": [0.2, 0.2],
+                            "screening_selected_outer_rmse": [0.2, 0.2],
+                            "regret": [0.0, 0.0],
+                            "screening_cv_rmse": [0.1, 0.1],
+                            "screening_miscalibration_area": [0.05, 0.05],
+                            "agreement": [True, True],
+                        }
+                    ),
+                    summary_df=pd.DataFrame(
+                        {
+                            "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                            "budget": budgets,
+                            "mean_regret": [0.01, 0.02],
+                            "std_regret": [0.0, 0.0],
+                            "se_regret": [0.0, 0.0],
+                            "ci95_low": [0.01, 0.02],
+                            "ci95_high": [0.01, 0.02],
+                            "agreement_rate": [1.0, 1.0],
+                            "oracle_outer_rmse_mean": [0.2, 0.2],
+                            "screening_selected_outer_rmse_mean": [0.21, 0.22],
+                        }
+                    ),
+                ),
+                screening_rows_df=pd.DataFrame(
                     {
-                        "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                        "method": ["ridge", "ridge"],
                         "budget": budgets,
                         "repeat": [0, 0],
-                        "oracle_method": ["ridge", "ridge"],
-                        "screening_selected_method": ["ridge", "ridge"],
-                        "oracle_outer_rmse": [0.2, 0.2],
-                        "screening_selected_outer_rmse": [0.2, 0.2],
-                        "regret": [0.0, 0.0],
+                        "split_fingerprint": ["fp-a", "fp-b"],
                         "screening_cv_rmse": [0.1, 0.1],
                         "screening_miscalibration_area": [0.05, 0.05],
-                        "agreement": [True, True],
-                    }
-                ),
-                summary_df=pd.DataFrame(
-                    {
-                        "policy_name": ["min_screening_rmse", "min_screening_rmse"],
-                        "budget": budgets,
-                        "mean_regret": [0.01, 0.02],
-                        "std_regret": [0.0, 0.0],
-                        "se_regret": [0.0, 0.0],
-                        "ci95_low": [0.01, 0.02],
-                        "ci95_high": [0.01, 0.02],
-                        "agreement_rate": [1.0, 1.0],
-                        "oracle_outer_rmse_mean": [0.2, 0.2],
-                        "screening_selected_outer_rmse_mean": [0.21, 0.22],
                     }
                 ),
             )
@@ -1731,6 +1743,9 @@ class ExperimentRunnerTests(unittest.TestCase):
         ), patch(
             "oasis.experiment_runner._apply_persistent_output_suffixes",
             return_value="anomalyaware_off_latent_off_n2",
+        ), patch(
+            "oasis.experiment_runner._load_cached_policy_selection_results_for_dataset_cfg",
+            return_value=None,
         ), patch(
             "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
             side_effect=_diagnostic_results_for_cfg,
@@ -1763,6 +1778,127 @@ class ExperimentRunnerTests(unittest.TestCase):
             [row["dataset_label"] for row in large_rows],
             ["KHLOHC-TOL", "KHLOHC-TOL"],
         )
+
+    def test_load_policy_regret_rows_for_dataset_reuses_cached_policy_artifact(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                dataset_profile=SimpleNamespace(tag="bio_mass"),
+                datasets={
+                    "bio_mass": SimpleNamespace(
+                        mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                    )
+                },
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=4,
+                        step=2,
+                        n_repeats=1,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            fake_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
+            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path.write_text("cached", encoding="utf-8")
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [2],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [2],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            with patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.load_filtered_wide_predictions",
+                return_value=(fake_wide_df, [], fake_wide_df),
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value=(fake_wide_df, {}),
+            ), patch(
+                "oasis.experiment_runner._load_cached_policy_selection_results_for_dataset_cfg",
+                return_value=diagnostic_results,
+            ) as mock_load, patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+            ) as mock_build:
+                rows = _load_policy_regret_rows_for_dataset(
+                    cfg,
+                    dataset_tag="bio_mass",
+                )
+
+        self.assertEqual([row["budget"] for row in rows], [2])
+        mock_load.assert_called_once()
+        mock_build.assert_not_called()
 
     def test_load_all_datasets_policy_regret_rows_preserves_dataset_order(self) -> None:
         cfg = SimpleNamespace(
