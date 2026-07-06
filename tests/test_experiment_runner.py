@@ -16,8 +16,11 @@ from oasis.experiment_runner import (
     _load_oracle_learning_curve_rows_for_dataset,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
+    BudgetSpanVariant,
+    configured_budget_span_variants,
     load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
+    render_budget_span_variants,
     run_experiment,
     run_experiment_from_config,
     write_all_datasets_zero_shot_rmse_stage_plot,
@@ -149,6 +152,102 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         return LearningCurveResults(ridge_df=ridge_frame)
 
+    def test_configured_budget_span_variants_uses_explicit_sizes_and_fractions(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2, 3, 20],
+                    sweep_fractions=[0.05, 0.1, 0.2],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual([variant.key for variant in variants], ["absolute", "fraction"])
+        self.assertEqual(variants[0].resolved_include_x(n_samples=100), [1, 2, 3, 20])
+        self.assertEqual(variants[1].resolved_include_x(n_samples=100), [5, 10, 20])
+
+    def test_configured_budget_span_variants_falls_back_to_integer_range(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[],
+                    sweep_fractions=[],
+                    min_train=2,
+                    max_train=6,
+                    step=2,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual(len(variants), 1)
+        self.assertEqual(variants[0].key, "absolute")
+        self.assertEqual(variants[0].resolved_include_x(n_samples=100), [2, 4, 6])
+
+    def test_configured_budget_span_variants_can_return_fraction_only(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[],
+                    sweep_fractions=[0.25, 0.5],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+
+        variants = configured_budget_span_variants(cfg)
+
+        self.assertEqual([variant.key for variant in variants], ["fraction"])
+        self.assertEqual(variants[0].resolved_include_x(n_samples=20), [5, 10])
+
+    def test_render_budget_span_variants_applies_suffixes_and_returns_absolute_path(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+        rendered: list[tuple[str | None, Path]] = []
+
+        def _render(span_variant, output_path):
+            rendered.append(
+                (
+                    None if span_variant is None else span_variant.key,
+                    output_path,
+                )
+            )
+            return output_path
+
+        saved_path = render_budget_span_variants(
+            cfg,
+            base_output_path=Path("plots/learning_curve.png"),
+            render_variant=_render,
+        )
+
+        self.assertEqual(
+            rendered,
+            [
+                ("absolute", Path("plots/learning_curve_absolute.png")),
+                ("fraction", Path("plots/learning_curve_fraction.png")),
+            ],
+        )
+        self.assertEqual(saved_path, Path("plots/learning_curve_absolute.png"))
+
     def test_write_policy_selection_diagnostic_saves_artifact_and_csvs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -277,9 +376,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
                 oracle_plot_path = (
-                    output_dir / "policy_selected_vs_oracle_anomalyaware_off.png"
+                    output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
-                regret_plot_path = output_dir / "policy_regret_anomalyaware_off.png"
+                regret_plot_path = output_dir / "policy_regret_anomalyaware_off_absolute.png"
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
@@ -306,6 +405,159 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_build_diagnostic.call_args.kwargs["combined_miscalibration_lambda"],
             2.0,
+        )
+
+    def test_write_policy_selection_diagnostic_emits_dual_selected_vs_oracle_outputs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=None,
+                        max_train=None,
+                        step=1,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[1, 2],
+                        sweep_fractions=[0.5, 1.0],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1],
+                }
+            )
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [1],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [1],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            with patch(
+                "oasis.experiment_runner.build_sweep_dataset_from_config",
+                return_value=SweepDataset(
+                    mlip_features=np.arange(2, dtype=float).reshape(-1, 1),
+                    targets=np.linspace(0.0, 1.0, 2),
+                ),
+            ), patch(
+                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
+                return_value=("ridge",),
+            ), patch(
+                "oasis.learning_curve.registry.default_sweep_model_families",
+                return_value=(),
+            ), patch(
+                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
+                return_value=diagnostic_results,
+            ), patch(
+                "oasis.experiment_runner.policy_selected_vs_oracle_plot",
+            ) as mock_selected_plot, patch(
+                "oasis.experiment_runner.policy_regret_plot",
+            ) as mock_regret_plot:
+                _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(mock_selected_plot.call_count, 2)
+        self.assertEqual(
+            mock_selected_plot.call_args_list[0].kwargs["output_path"],
+            output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[1].kwargs["output_path"],
+            output_dir / "policy_selected_vs_oracle_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[0].kwargs["include_x"],
+            [1, 2],
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[1].kwargs["include_x"],
+            [1, 2],
+        )
+        self.assertEqual(mock_regret_plot.call_count, 2)
+        self.assertEqual(
+            mock_regret_plot.call_args_list[0].kwargs["output_path"],
+            output_dir / "policy_regret_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_regret_plot.call_args_list[1].kwargs["output_path"],
+            output_dir / "policy_regret_anomalyaware_off_fraction.png",
         )
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
@@ -898,7 +1150,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
-    def test_load_oracle_learning_curve_rows_for_dataset_resolves_include_fractions_per_dataset(
+    def test_load_oracle_learning_curve_rows_for_dataset_resolves_fraction_span_per_dataset(
         self,
     ) -> None:
         cfg = SimpleNamespace(
@@ -966,13 +1218,21 @@ class ExperimentRunnerTests(unittest.TestCase):
                 cfg,
                 dataset_tag="bio_mass",
                 enabled_method_names=["ridge"],
-                include_fractions=[0.5, 1.0],
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
             )
             large_rows = _load_oracle_learning_curve_rows_for_dataset(
                 cfg,
                 dataset_tag="khlohc",
                 enabled_method_names=["ridge"],
-                include_fractions=[0.5, 1.0],
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
             )
 
         self.assertEqual([row["n_train"] for row in small_rows], [2, 4])
@@ -1011,7 +1271,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             [["ridge"], ["ridge"], ["ridge"]],
         )
         self.assertEqual(
-            [call.kwargs["include_fractions"] for call in mock_load_rows.call_args_list],
+            [call.kwargs["span_variant"] for call in mock_load_rows.call_args_list],
             [None, None, None],
         )
         self.assertEqual(
@@ -1206,7 +1466,74 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(saved_path, tmp_path / "oracle.png")
-        self.assertTrue(mock_plot.call_args.kwargs["log_x"])
+
+    def test_write_all_datasets_oracle_learning_curve_plot_emits_dual_budget_span_outputs(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                )
+            ),
+            plot=SimpleNamespace(
+                curve_window=SimpleNamespace(oracle_all_datasets_log_x=True)
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
+                return_value=[
+                    {
+                        "dataset": "bio_mass",
+                        "dataset_label": "Bio-Mass",
+                        "n_train": 2,
+                        "oracle_rmse": 0.35,
+                        "oracle_method": "ridge",
+                    }
+                ],
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot",
+                side_effect=[
+                    tmp_path / "oracle_absolute.png",
+                    tmp_path / "oracle_fraction.png",
+                ],
+            ) as mock_plot:
+                saved_path = write_all_datasets_oracle_learning_curve_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                )
+
+        self.assertEqual(saved_path, tmp_path / "oracle_absolute.png")
+        self.assertEqual(mock_load_rows.call_count, 2)
+        self.assertEqual(
+            mock_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "learning_curve_oracle_all_datasets_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "learning_curve_oracle_all_datasets_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            [call.kwargs["span_variant"].key for call in mock_load_rows.call_args_list],
+            ["absolute", "fraction"],
+        )
+        self.assertFalse(mock_plot.call_args_list[0].kwargs["log_x"])
+        self.assertTrue(mock_plot.call_args_list[1].kwargs["log_x"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
@@ -2472,10 +2799,80 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_oracle_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["max_x"], 50)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["include_x"], [10, 30])
-        self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_fractions"])
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+        )
+
+    def test_run_experiment_emits_dual_learning_curve_outputs_for_budget_spans(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        sweep_sizes=[1, 2],
+                        sweep_fractions=[0.5, 1.0],
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                side_effect=[
+                    tmp_path / "plots" / "learning_curve_absolute.png",
+                    tmp_path / "plots" / "learning_curve_fraction.png",
+                ],
+            ) as mock_learning_curve_plot:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_learning_curve_plot.call_count, 2)
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "plots" / "learning_curve_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "plots" / "learning_curve_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[0].kwargs["include_x"],
+            [1, 2],
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[1].kwargs["include_x"],
+            [1, 2],
         )
 
     def test_run_experiment_applies_strict_mlip_mask_to_learning_curve_zero_shot_baseline(
@@ -2569,7 +2966,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             places=12,
         )
 
-    def test_run_experiment_resolves_curve_window_include_fractions(self) -> None:
+    def test_run_experiment_ignores_legacy_curve_window_include_fractions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -2625,14 +3022,12 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_oracle_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
         self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_x"])
-        self.assertEqual(
-            mock_oracle_plot.call_args.kwargs["include_fractions"],
-            [0.5, 1.0],
-        )
 
-    def test_run_experiment_merges_curve_window_include_x_and_fractions(self) -> None:
+    def test_run_experiment_preserves_include_x_when_legacy_include_fractions_is_present(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -2685,7 +3080,62 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_curve_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2, 3])
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [3])
+
+    def test_run_experiment_deduplicates_overlapping_curve_window_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(
+                        min_x=None,
+                        max_x=None,
+                        include_x=[1, 2],
+                        include_fractions=[0.5, 1.0],
+                    ),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ) as mock_learning_curve_plot:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
 
     def test_run_experiment_full_dataset_window_disables_only_min_max(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2801,7 +3251,9 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["max_x"])
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [10, 30])
 
-    def test_run_experiment_full_dataset_window_preserves_include_fractions(self) -> None:
+    def test_run_experiment_full_dataset_window_ignores_legacy_include_fractions(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -2856,7 +3308,7 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["min_x"])
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["max_x"])
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
 
     def test_run_experiment_emits_uq_summary_figure_when_learning_curve_results_have_uq(
         self,
