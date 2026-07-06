@@ -376,7 +376,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
                 oracle_plot_path = (
-                    output_dir / "policy_selected_vs_oracle_anomalyaware_off.png"
+                    output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
                 regret_plot_path = output_dir / "policy_regret_anomalyaware_off.png"
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
@@ -1263,7 +1263,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             [["ridge"], ["ridge"], ["ridge"]],
         )
         self.assertEqual(
-            [call.kwargs["include_fractions"] for call in mock_load_rows.call_args_list],
+            [call.kwargs["span_variant"] for call in mock_load_rows.call_args_list],
             [None, None, None],
         )
         self.assertEqual(
@@ -2957,7 +2957,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             places=12,
         )
 
-    def test_run_experiment_resolves_curve_window_include_fractions(self) -> None:
+    def test_run_experiment_ignores_legacy_curve_window_include_fractions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -3013,14 +3013,12 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_oracle_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
         self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_x"])
-        self.assertEqual(
-            mock_oracle_plot.call_args.kwargs["include_fractions"],
-            [0.5, 1.0],
-        )
 
-    def test_run_experiment_merges_curve_window_include_x_and_fractions(self) -> None:
+    def test_run_experiment_preserves_include_x_when_legacy_include_fractions_is_present(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -3073,7 +3071,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_curve_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2, 3])
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [3])
 
     def test_run_experiment_deduplicates_overlapping_curve_window_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3244,7 +3242,9 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["max_x"])
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [10, 30])
 
-    def test_run_experiment_full_dataset_window_preserves_include_fractions(self) -> None:
+    def test_run_experiment_full_dataset_window_ignores_legacy_include_fractions(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             cfg = SimpleNamespace(
@@ -3299,7 +3299,7 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["min_x"])
         self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["max_x"])
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
+        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
 
     def test_run_experiment_emits_uq_summary_figure_when_learning_curve_results_have_uq(
         self,
