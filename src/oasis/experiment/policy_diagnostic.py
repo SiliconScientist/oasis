@@ -644,6 +644,10 @@ def _build_policy_selection_frames(
 
     outer_rows: list[dict[str, Any]] = []
     screening_rows: list[dict[str, Any]] = []
+    reused_outer_metrics = 0
+    recomputed_outer_metrics = 0
+    reused_screening_rows = 0
+    recomputed_screening_rows = 0
     for family in model_families:
         method_name = _family_method_name(
             family,
@@ -686,6 +690,9 @@ def _build_policy_selection_frames(
                 raise ValueError(
                     f"family {method_name!r} did not produce repeat_metrics for policy diagnostics."
                 )
+            recomputed_outer_metrics += len(shared_splits)
+        else:
+            reused_outer_metrics += len(shared_splits)
         for split in shared_splits:
             outer_match = repeat_metrics.loc[
                 (repeat_metrics["n_train"] == split.budget)
@@ -736,8 +743,10 @@ def _build_policy_selection_frames(
                         "screening_miscalibration_area": screening_result.miscalibration_area,
                     }
                 )
+                recomputed_screening_rows += 1
             else:
                 screening_rows.append(cached_screening_row)
+                reused_screening_rows += 1
 
     outer_frame = pd.DataFrame(outer_rows)
     screening_frame = pd.DataFrame(screening_rows)
@@ -785,6 +794,20 @@ def _build_policy_selection_frames(
                         "agreement": bool(oracle_row["method"] == selected_row["method"]),
                     }
                 )
+    if any(
+        count > 0
+        for count in (
+            reused_outer_metrics,
+            recomputed_outer_metrics,
+            reused_screening_rows,
+            recomputed_screening_rows,
+        )
+    ):
+        print(
+            "Policy diagnostic reuse:"
+            f" outer reused={reused_outer_metrics}, outer recomputed={recomputed_outer_metrics},"
+            f" screening reused={reused_screening_rows}, screening recomputed={recomputed_screening_rows}"
+        )
     return (
         normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS)),
         normalize_screening_diagnostic_rows_frame(

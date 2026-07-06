@@ -788,10 +788,13 @@ def _write_policy_selection_diagnostic(
                     expected_metadata=persistence.metadata,
                     expected_cache_signature=persistence.cache_signature,
                 ).screening_rows_df
+            print(f"Policy diagnostic artifact cache hit: {persistence.artifact_path}")
         except ValueError:
             diagnostic_results = None
             screening_rows_df = None
+            print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
     if diagnostic_results is None:
+        print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
             cfg=cfg,
             wide_df=wide_df,
@@ -1139,6 +1142,7 @@ def _load_policy_regret_rows_for_dataset(
     _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
     diagnostic_results = cached_results
     if diagnostic_results is None:
+        print(f"All-datasets policy diagnostic miss for {dataset_tag}: rebuilding")
         graph_view = prepare_graph_view(dataset_cfg, wide_df)
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
             cfg=dataset_cfg,
@@ -1147,6 +1151,8 @@ def _load_policy_regret_rows_for_dataset(
             auxiliary_views=auxiliary_views,
         )
         diagnostic_results = None if build_outputs is None else build_outputs.results
+    else:
+        print(f"All-datasets policy diagnostic hit for {dataset_tag}")
     if diagnostic_results is None:
         return []
     dataset_include_x = _merged_include_x(
