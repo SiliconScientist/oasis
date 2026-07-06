@@ -55,7 +55,12 @@ from oasis.learning_curve.results_io import (
     learning_curve_sweep_metadata_from_config,
     load_learning_curve_results_artifact,
 )
-from oasis.experiment_config import derive_dataset_profile_paths
+from oasis.experiment_config import (
+    derive_dataset_profile_paths,
+    policy_selection_diagnostic_bundle_path,
+    policy_selection_screening_rows_bundle_path,
+    zero_shot_bundle_path,
+)
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
     INFERENCE_DETAIL_COLUMNS,
@@ -341,6 +346,86 @@ def _show_lone_mlip_swarm(cfg: object) -> bool:
     return bool(getattr(plot_cfg, "zero_shot_stage_show_lone_mlip_swarm", True))
 
 
+def _zero_shot_stage_cache_signature(
+    cfg: object,
+    *,
+    result_files: list[Path] | tuple[Path, ...],
+) -> dict[str, object]:
+    return {
+        "enabled_models": list(_enabled_mlips(cfg) or ()),
+        "exclude_anomalous_mlips": bool(_exclude_anomalous_mlips_enabled(cfg)),
+        "minimum_quorum": int(_minimum_quorum(cfg)),
+        "result_files": [
+            {
+                "path": str(path),
+                "size": path.stat().st_size,
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+            for path in sorted((Path(path) for path in result_files), key=str)
+            if path.is_file()
+        ],
+    }
+
+
+def _zero_shot_stage_artifact_path(
+    cfg: object,
+) -> Path:
+    dataset_profile = getattr(cfg, "dataset_profile", None)
+    dataset_tag = getattr(dataset_profile, "tag", None)
+    if dataset_tag is not None:
+        named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+        profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
+        return _append_output_suffix(
+            zero_shot_bundle_path(profile_paths.results_bundle_path.stem),
+            _plot_output_suffix(cfg),
+        )
+
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    if results_bundle_path is not None:
+        return _append_output_suffix(
+            zero_shot_bundle_path(Path(results_bundle_path).stem),
+            _plot_output_suffix(cfg),
+        )
+    return _append_output_suffix(
+        zero_shot_bundle_path("dataset"),
+        _plot_output_suffix(cfg),
+    )
+
+
+def _load_zero_shot_stage_rows_artifact(
+    artifact_path: Path,
+    *,
+    expected_cache_signature: dict[str, object],
+) -> list[dict[str, object]]:
+    payload = json.loads(artifact_path.read_text())
+    if payload.get("cache_signature") != expected_cache_signature:
+        raise ValueError("zero-shot stage artifact cache signature mismatch.")
+    stage_rows = payload.get("stage_rows")
+    if not isinstance(stage_rows, list):
+        raise TypeError("zero-shot stage artifact must contain a stage_rows list.")
+    return stage_rows
+
+
+def _save_zero_shot_stage_rows_artifact(
+    artifact_path: Path,
+    *,
+    cache_signature: dict[str, object],
+    stage_rows: list[dict[str, object]],
+) -> Path:
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "cache_signature": cache_signature,
+                "stage_rows": stage_rows,
+            },
+            indent=2,
+        )
+    )
+    return artifact_path
+
+
 def _build_zero_shot_stage_rows(
     *,
     cfg: object,
@@ -401,6 +486,7 @@ def _load_zero_shot_stage_rows_for_dataset(
     cfg: object,
     *,
     dataset_tag: str,
+    cache_only: bool = False,
 ) -> list[dict[str, object]]:
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
@@ -411,6 +497,21 @@ def _load_zero_shot_stage_rows_for_dataset(
     )
     base_dir = profile_paths.analysis_base_dir
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
+    artifact_path = _zero_shot_stage_artifact_path(cfg)
+    cache_signature = _zero_shot_stage_cache_signature(
+        cfg,
+        result_files=result_files,
+    )
+    if artifact_path.is_file():
+        try:
+            return _load_zero_shot_stage_rows_artifact(
+                artifact_path,
+                expected_cache_signature=cache_signature,
+            )
+        except (TypeError, ValueError):
+            pass
+    if cache_only:
+        return []
     raw_wide_df = load_wide_predictions(result_files)
     filter_kwargs = _stage_filter_kwargs(cfg)
     selected_wide_df = filter_structures_with_insufficient_valid_mlips(
@@ -419,13 +520,19 @@ def _load_zero_shot_stage_rows_for_dataset(
     )
     raw_wide_df = _apply_dev_run_frame_cap(cfg, raw_wide_df)
     selected_wide_df = _apply_dev_run_frame_cap(cfg, selected_wide_df)
-    return _build_zero_shot_stage_rows(
+    stage_rows = _build_zero_shot_stage_rows(
         cfg=cfg,
         dataset_tag=dataset_tag,
         dataset_label=dataset_label,
         raw_wide_df=raw_wide_df,
         selected_wide_df=selected_wide_df,
     )
+    _save_zero_shot_stage_rows_artifact(
+        artifact_path,
+        cache_signature=cache_signature,
+        stage_rows=stage_rows,
+    )
+    return stage_rows
 
 
 def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
@@ -439,6 +546,24 @@ def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
     if callable(init_paths):
         init_paths()
     return dataset_cfg
+
+
+def _resolved_plot_output_dir(cfg: object) -> Path:
+    plot_cfg = getattr(cfg, "plot", None)
+    configured_output_dir = getattr(plot_cfg, "output_dir", None)
+    if configured_output_dir is not None:
+        return Path(configured_output_dir)
+    dataset_profile = getattr(cfg, "dataset_profile", None)
+    dataset_tag = getattr(dataset_profile, "tag", None)
+    if dataset_tag is not None:
+        named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+        run_dirname = (
+            dataset_tag
+            if named_profile is None
+            else named_profile.mlip_run_dirname_or_default(dataset_tag)
+        )
+        return Path("data/results/plots") / run_dirname
+    return Path("data/results/plots")
 
 
 def _load_oracle_learning_curve_rows_for_dataset(
@@ -905,12 +1030,28 @@ def _policy_selection_diagnostic_persistence_context(
         )
     except (AttributeError, ValueError):
         metadata = None
+    screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
+    screening_bundle = getattr(screening_cfg, "results_bundle_path", None)
+    if screening_bundle is not None:
+        screening_stem = Path(screening_bundle).stem
+    else:
+        dataset_profile = getattr(cfg, "dataset_profile", None)
+        dataset_tag = getattr(dataset_profile, "tag", None)
+        if dataset_tag is not None:
+            named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+            profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
+            screening_stem = _append_output_suffix(
+                profile_paths.results_bundle_path,
+                _plot_output_suffix(cfg),
+            ).stem
+        else:
+            screening_stem = f"dataset_{run_suffix}"
     return PolicyDiagnosticPersistenceContext(
         metadata=metadata,
         cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
-        artifact_path=output_dir / f"policy_selection_diagnostic_{run_suffix}.json",
-        screening_rows_artifact_path=(
-            output_dir / f"policy_selection_screening_rows_{run_suffix}.json"
+        artifact_path=policy_selection_diagnostic_bundle_path(screening_stem),
+        screening_rows_artifact_path=policy_selection_screening_rows_bundle_path(
+            screening_stem
         ),
     )
 
@@ -1199,12 +1340,7 @@ def _load_cached_policy_selection_results_for_dataset_cfg(
     *,
     wide_df: object,
 ) -> PolicySelectionDiagnosticResults | None:
-    plot_cfg = getattr(dataset_cfg, "plot", None)
-    output_dir = (
-        getattr(plot_cfg, "output_dir", None)
-        if plot_cfg is not None
-        else None
-    ) or Path("data/results/plots")
+    output_dir = _resolved_plot_output_dir(dataset_cfg)
     persistence = _policy_selection_diagnostic_persistence_context(
         dataset_cfg,
         wide_df=wide_df,
@@ -1393,6 +1529,7 @@ def write_zero_shot_rmse_stage_plot(
     cfg: object,
     raw_wide_df: object,
     selected_wide_df: object,
+    result_files: list[Path] | tuple[Path, ...] | None = None,
     output_dir: Path,
     run_suffix: str,
 ) -> Path | None:
@@ -1406,13 +1543,42 @@ def write_zero_shot_rmse_stage_plot(
         if named_profile is None
         else named_profile.mlip_run_dirname_or_default(dataset_tag)
     )
-    stage_rows = _build_zero_shot_stage_rows(
-        cfg=cfg,
-        dataset_tag=dataset_tag,
-        dataset_label=dataset_label,
-        raw_wide_df=raw_wide_df,
-        selected_wide_df=selected_wide_df,
-    )
+    stage_rows = None
+    if result_files is not None:
+        artifact_path = _zero_shot_stage_artifact_path(cfg)
+        cache_signature = _zero_shot_stage_cache_signature(
+            cfg,
+            result_files=result_files,
+        )
+        if artifact_path.is_file():
+            try:
+                stage_rows = _load_zero_shot_stage_rows_artifact(
+                    artifact_path,
+                    expected_cache_signature=cache_signature,
+                )
+            except (TypeError, ValueError):
+                stage_rows = None
+        if stage_rows is None:
+            stage_rows = _build_zero_shot_stage_rows(
+                cfg=cfg,
+                dataset_tag=dataset_tag,
+                dataset_label=dataset_label,
+                raw_wide_df=raw_wide_df,
+                selected_wide_df=selected_wide_df,
+            )
+            _save_zero_shot_stage_rows_artifact(
+                artifact_path,
+                cache_signature=cache_signature,
+                stage_rows=stage_rows,
+            )
+    if stage_rows is None:
+        stage_rows = _build_zero_shot_stage_rows(
+            cfg=cfg,
+            dataset_tag=dataset_tag,
+            dataset_label=dataset_label,
+            raw_wide_df=raw_wide_df,
+            selected_wide_df=selected_wide_df,
+        )
     if not stage_rows:
         print("Skipping zero-shot stage plot: selected dataset is empty")
         return None
@@ -1482,7 +1648,11 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
     stage_rows: list[dict[str, object]] = []
     for dataset_tag in configured_tags:
         stage_rows.extend(
-            _load_zero_shot_stage_rows_for_dataset(cfg, dataset_tag=dataset_tag)
+            _load_zero_shot_stage_rows_for_dataset(
+                cfg,
+                dataset_tag=dataset_tag,
+                cache_only=True,
+            )
         )
     if not stage_rows:
         return None
@@ -1736,7 +1906,7 @@ def write_parity_plot(
     result_files: list[Path],
     run_suffix: str,
 ) -> Path:
-    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    output_dir = _resolved_plot_output_dir(cfg)
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix_parts: list[str] = [run_suffix]
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
@@ -1983,7 +2153,7 @@ def run_experiment(cfg: object):
         result_files,
         run_suffix,
     )
-    output_dir = cfg.plot.output_dir if cfg.plot else Path("data/results/plots")
+    output_dir = _resolved_plot_output_dir(cfg)
     write_zero_shot_stage_parity_plots(
         cfg=cfg,
         selected_wide_df=zero_shot_stage_selected_wide_df,
@@ -1995,6 +2165,7 @@ def run_experiment(cfg: object):
         cfg=cfg,
         raw_wide_df=raw_wide_df,
         selected_wide_df=zero_shot_stage_selected_wide_df,
+        result_files=result_files,
         output_dir=output_dir,
         run_suffix=run_suffix,
     )

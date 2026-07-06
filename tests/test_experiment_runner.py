@@ -15,6 +15,9 @@ from oasis.experiment_runner import (
     _apply_dev_run_frame_cap,
     _load_oracle_learning_curve_rows_for_dataset,
     _load_policy_regret_rows_for_dataset,
+    _policy_selection_diagnostic_persistence_context,
+    _load_zero_shot_stage_rows_for_dataset,
+    _zero_shot_stage_artifact_path,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
     BudgetSpanVariant,
@@ -356,7 +359,15 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "screening_miscalibration_area": [0.05, 0.04],
                 }
             )
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
             with patch(
+                "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
+                return_value=screening_rows_path,
+            ), patch(
                 "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
                 return_value=PolicyDiagnosticBuildOutputs(
                     results=diagnostic_results,
@@ -380,9 +391,6 @@ class ExperimentRunnerTests(unittest.TestCase):
                 summary_path = (
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
-                screening_rows_path = (
-                    output_dir / "policy_selection_screening_rows_anomalyaware_off.json"
-                )
                 oracle_plot_path = (
                     output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
@@ -397,7 +405,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         assert artifact_path is not None
         self.assertEqual(
             artifact_path.name,
-            "policy_selection_diagnostic_anomalyaware_off.json",
+            "policy_selection_diagnostic.json",
         )
         self.assertTrue(artifact_exists)
         self.assertTrue(detail_exists)
@@ -653,10 +661,16 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ),
             )
 
-            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
             artifact_path.write_text("cached", encoding="utf-8")
 
             with patch(
+                "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
+                return_value=tmp_path / "policy_selection_screening_rows.json",
+            ), patch(
                 "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
                 return_value=SimpleNamespace(results=diagnostic_results),
             ) as mock_load, patch(
@@ -772,10 +786,16 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ),
             )
 
-            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
             artifact_path.write_text("cached", encoding="utf-8")
 
             with patch(
+                "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
+                return_value=tmp_path / "policy_selection_screening_rows.json",
+            ), patch(
                 "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
                 side_effect=ValueError("incompatible"),
             ) as mock_load, patch(
@@ -1843,7 +1863,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 plot=SimpleNamespace(output_dir=output_dir),
             )
             fake_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
-            artifact_path = output_dir / "policy_selection_diagnostic_anomalyaware_off.json"
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
             artifact_path.write_text("cached", encoding="utf-8")
             diagnostic_results = PolicySelectionDiagnosticResults(
                 detail_df=pd.DataFrame(
@@ -1878,6 +1898,12 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
 
             with patch(
+                "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
+                return_value=tmp_path / "policy_selection_screening_rows.json",
+            ), patch(
                 "oasis.experiment_runner.ensure_probe_artifacts",
                 return_value=False,
             ), patch(
@@ -2338,6 +2364,72 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "zero_shot_stage.png")
         self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
 
+    def test_write_zero_shot_rmse_stage_plot_uses_cached_stage_rows(self) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(zero_shot_stage_show_lone_mlip_swarm=False),
+            dataset_profile=SimpleNamespace(tag="example"),
+            datasets={},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+        frame = pl.DataFrame(
+            {
+                "reaction": ["r0"],
+                "reference_ads_eng": [0.0],
+                "a_mlip_ads_eng_median": [0.0],
+            }
+        )
+        cached_stage_rows = [
+            {
+                "dataset": "example",
+                "dataset_label": "example",
+                "stage": "Full / all MLIPs",
+                "rmse": 0.25,
+                "n_samples": 1,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result_file = tmp_path / "mlip.json"
+            result_file.write_text("{}")
+            artifact_path = tmp_path / "zero_shot_cache.json"
+            artifact_path.write_text("{}")
+            with patch(
+                "oasis.experiment_runner._zero_shot_stage_artifact_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_artifact",
+                return_value=cached_stage_rows,
+            ) as mock_load_artifact, patch(
+                "oasis.experiment_runner._build_zero_shot_stage_rows",
+                side_effect=AssertionError("should not rebuild cached zero-shot rows"),
+            ), patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage.png",
+            ) as mock_plot:
+                saved_path = write_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    raw_wide_df=frame,
+                    selected_wide_df=frame,
+                    result_files=[result_file],
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "zero_shot_stage.png")
+        mock_load_artifact.assert_called_once()
+        pd.testing.assert_frame_equal(
+            mock_plot.call_args.args[0].reset_index(drop=True),
+            pd.DataFrame(cached_stage_rows),
+        )
+
     def test_write_all_datasets_zero_shot_rmse_stage_plot_forwards_swarm_toggle_from_config(
         self,
     ) -> None:
@@ -2394,6 +2486,192 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(saved_path, tmp_path / "zero_shot_stage_all.png")
         self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
+
+    def test_write_all_datasets_zero_shot_rmse_stage_plot_uses_cache_only_loads(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(zero_shot_stage_show_lone_mlip_swarm=False),
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
+                side_effect=[
+                    [
+                        {
+                            "dataset": "bio_mass",
+                            "dataset_label": "Bio-Mass",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.4,
+                            "n_samples": 10,
+                        }
+                    ],
+                    [
+                        {
+                            "dataset": "khlohc",
+                            "dataset_label": "KHLOHC-TOL",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.5,
+                            "n_samples": 12,
+                        }
+                    ],
+                ],
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage_all.png",
+            ):
+                write_all_datasets_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(mock_load_rows.call_count, 2)
+        self.assertTrue(
+            all(call.kwargs["cache_only"] for call in mock_load_rows.call_args_list)
+        )
+
+    def test_load_zero_shot_stage_rows_for_dataset_skips_cache_miss_when_cache_only(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(output_dir=Path("unused")),
+            datasets={},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result_file = tmp_path / "mlip.json"
+            result_file.write_text("{}")
+            with patch(
+                "oasis.experiment_runner._zero_shot_stage_artifact_path",
+                return_value=tmp_path / "zero_shot_cache.json",
+            ), patch(
+                "oasis.experiment_runner.derive_dataset_profile_paths",
+                return_value=SimpleNamespace(analysis_base_dir=tmp_path),
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                side_effect=AssertionError("cache-only zero-shot load should not rebuild"),
+            ), patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[result_file],
+            ):
+                rows = _load_zero_shot_stage_rows_for_dataset(
+                    cfg,
+                    dataset_tag="example",
+                    cache_only=True,
+                )
+
+        self.assertEqual(rows, [])
+
+    def test_zero_shot_stage_artifact_path_uses_zero_shot_bundle_root(self) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={},
+            experiment=SimpleNamespace(learning_curve=SimpleNamespace()),
+        )
+
+        artifact_path = _zero_shot_stage_artifact_path(cfg)
+
+        self.assertEqual(
+            artifact_path,
+            Path("data/results/zero_shot/bio_mass_anomalyaware_off.json"),
+        )
+
+    def test_policy_selection_diagnostic_persistence_uses_screening_bundle_root(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    min_train=2,
+                    max_train=4,
+                    step=2,
+                    n_repeats=1,
+                    min_test_size=1,
+                    validation_fraction=0.2,
+                    min_val_size=1,
+                    min_tuning_val_size=1,
+                    calibration_enabled=False,
+                    calibration_fraction=0.2,
+                    min_cal_size=1,
+                    min_inner_train_size=1,
+                    sweep_sizes=[],
+                    sweep_fractions=[],
+                    models=SimpleNamespace(
+                        use_ridge=True,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    ),
+                ),
+                screening=SimpleNamespace(
+                    results_bundle_path=Path(
+                        "data/results/screening/bio_mass_anomalyaware_off_latent_off_n6.json"
+                    ),
+                    policy_names=["min_screening_rmse"],
+                    combined_miscalibration_lambda=1.0,
+                ),
+            )
+        )
+
+        persistence = _policy_selection_diagnostic_persistence_context(
+            cfg,
+            wide_df=pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1],
+                }
+            ),
+            output_dir=Path("unused"),
+            run_suffix="anomalyaware_off",
+        )
+
+        self.assertEqual(
+            persistence.artifact_path,
+            Path(
+                "data/results/screening/"
+                "policy_selection_diagnostic_bio_mass_anomalyaware_off_latent_off_n6.json"
+            ),
+        )
+        self.assertEqual(
+            persistence.screening_rows_artifact_path,
+            Path(
+                "data/results/screening/"
+                "policy_selection_screening_rows_bio_mass_anomalyaware_off_latent_off_n6.json"
+            ),
+        )
 
     def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(
         self,

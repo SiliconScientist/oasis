@@ -11,6 +11,7 @@ from oasis.experiment_config import (
     PlotConfig,
     ProbeFeatureConfig,
     derive_dataset_profile_paths,
+    plot_output_dir,
     screening_bundle_path,
 )
 from oasis.mlip_config import (
@@ -125,6 +126,13 @@ class Config(BaseModel):
         ):
             screening.results_bundle_path = screening_bundle_path(
                 profile_paths.results_bundle_path.stem
+            )
+
+        if self.plot is not None and self.plot.output_dir is None:
+            self.plot.output_dir = plot_output_dir(
+                named_profile.mlip_run_dirname_or_default(profile.tag)
+                if named_profile is not None
+                else profile.tag
             )
 
         if (

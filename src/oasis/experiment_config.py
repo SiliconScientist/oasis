@@ -318,7 +318,7 @@ class ExperimentConfig(BaseModel):
 
 
 class PlotConfig(BaseModel):
-    output_dir: Path
+    output_dir: Optional[Path] = None
     curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
     fixed_split: PlotFixedSplitConfig = Field(default_factory=PlotFixedSplitConfig)
     zero_shot_stage_show_lone_mlip_swarm: bool = True
@@ -411,6 +411,26 @@ def learning_curve_bundle_path(processed_basename: str) -> Path:
 
 def screening_bundle_path(processed_basename: str) -> Path:
     return Path("data/results/screening") / f"{processed_basename}.json"
+
+
+def plot_output_dir(run_dirname: str) -> Path:
+    return Path("data/results/plots") / run_dirname
+
+
+def policy_selection_diagnostic_bundle_path(processed_basename: str) -> Path:
+    return Path("data/results/screening") / (
+        f"policy_selection_diagnostic_{processed_basename}.json"
+    )
+
+
+def policy_selection_screening_rows_bundle_path(processed_basename: str) -> Path:
+    return Path("data/results/screening") / (
+        f"policy_selection_screening_rows_{processed_basename}.json"
+    )
+
+
+def zero_shot_bundle_path(processed_basename: str) -> Path:
+    return Path("data/results/zero_shot") / f"{processed_basename}.json"
 
 
 def probe_results_dir(probe_results_dirname: str) -> Path:

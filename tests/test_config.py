@@ -152,7 +152,12 @@ class ConfigParsingTests(unittest.TestCase):
                 "\n".join(
                     [
                         "[plot]",
-                        'output_dir = "data/results/plots"',
+                        "",
+                        "[dataset_profile]",
+                        'tag = "example"',
+                        "",
+                        "[datasets.example]",
+                        'mlip_run_dirname = "Example-Run"',
                         "",
                         "[experiment]",
                         "[experiment.learning_curve]",
@@ -170,7 +175,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(cfg.seed, 7)
         self.assertEqual(cfg.resolved_dataset_path, Path("data/raw_data/example.json"))
         assert cfg.plot is not None
-        self.assertEqual(cfg.plot.output_dir, Path("data/results/plots"))
+        self.assertEqual(cfg.plot.output_dir, Path("data/results/plots/Example-Run"))
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         self.assertEqual(cfg.experiment.learning_curve.n_repeats, 3)
@@ -200,6 +205,33 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertIsNone(cfg.experiment)
         self.assertIsNone(cfg.analysis)
         self.assertIsNone(cfg.plot)
+
+    def test_get_config_derives_plot_output_dir_from_dataset_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "example"',
+                        "",
+                        "[datasets.example]",
+                        'mlip_run_dirname = "Example-Run"',
+                        "",
+                        "[plot]",
+                        "zero_shot_stage_show_lone_mlip_swarm = false",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(experiment_path)
+
+        assert cfg.plot is not None
+        self.assertEqual(cfg.plot.output_dir, Path("data/results/plots/Example-Run"))
+        self.assertFalse(cfg.plot.zero_shot_stage_show_lone_mlip_swarm)
 
     def test_get_config_parses_screening_policy_diagnostic_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

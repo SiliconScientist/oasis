@@ -25,8 +25,8 @@ prefixes = ["ol", "sa", "ss"]
 # comparison_plot_path = "data/results/plots/shared_mae_comparison.png"
 
 [plot]
-output_dir = "data/results/plots"
 zero_shot_stage_show_lone_mlip_swarm = true
+# Plots default to `data/results/plots/<mlip_run_dirname>`.
 # With multiple entries under `[datasets]`, Oasis also writes an all-datasets
 # oracle learning-curve plot:
 #   learning_curve_oracle_all_datasets_<suffix>.png
