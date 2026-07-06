@@ -853,12 +853,27 @@ def _write_policy_selection_diagnostic(
         base_output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
         render_variant=_render_selected_vs_oracle_variant,
     )
-    policy_regret_plot(
-        diagnostic_results.summary_df,
-        output_path=output_dir / f"policy_regret_{run_suffix}.png",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=include_x,
+    def _render_policy_regret_variant(
+        span_variant: BudgetSpanVariant | None,
+        output_path: Path,
+    ) -> Path:
+        variant_include_x = include_x
+        if span_variant is not None:
+            variant_include_x = _merged_include_x(
+                include_x,
+                span_variant.resolved_include_x(n_samples=int(len(wide_df))),
+            )
+        return policy_regret_plot(
+            diagnostic_results.summary_df,
+            output_path=output_path,
+            min_x=min_x,
+            max_x=max_x,
+            include_x=variant_include_x,
+        )
+    render_budget_span_variants(
+        cfg,
+        base_output_path=output_dir / f"policy_regret_{run_suffix}.png",
+        render_variant=_render_policy_regret_variant,
     )
     return artifact_path
 

@@ -378,7 +378,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 oracle_plot_path = (
                     output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
-                regret_plot_path = output_dir / "policy_regret_anomalyaware_off.png"
+                regret_plot_path = output_dir / "policy_regret_anomalyaware_off_absolute.png"
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
@@ -550,7 +550,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_selected_plot.call_args_list[1].kwargs["include_x"],
             [1, 2],
         )
-        mock_regret_plot.assert_called_once()
+        self.assertEqual(mock_regret_plot.call_count, 2)
+        self.assertEqual(
+            mock_regret_plot.call_args_list[0].kwargs["output_path"],
+            output_dir / "policy_regret_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_regret_plot.call_args_list[1].kwargs["output_path"],
+            output_dir / "policy_regret_anomalyaware_off_fraction.png",
+        )
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
