@@ -237,10 +237,11 @@ def build_policy_selection_diagnostic_results(
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
-    detail_df = build_policy_selection_detail_frame(
+    detail_df, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -267,6 +268,7 @@ def build_policy_selection_diagnostic_results(
         screening_min_inner_train_size=screening_min_inner_train_size,
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
         policy_names=policy_names,
         combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
@@ -554,9 +556,76 @@ def build_policy_selection_detail_frame(
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
+    detail_df, _ = _build_policy_selection_frames(
+        dataset,
+        min_train=min_train,
+        max_train=max_train,
+        step=step,
+        n_repeats=n_repeats,
+        seed=seed,
+        model_families=model_families,
+        outer_validation_fraction=outer_validation_fraction,
+        outer_min_val_size=outer_min_val_size,
+        outer_min_tuning_val_size=outer_min_tuning_val_size,
+        outer_calibration_enabled=outer_calibration_enabled,
+        outer_calibration_fraction=outer_calibration_fraction,
+        outer_min_cal_size=outer_min_cal_size,
+        outer_min_inner_train_size=outer_min_inner_train_size,
+        min_test_size=min_test_size,
+        screening_fraction=screening_fraction,
+        min_screen_size=min_screen_size,
+        screening_validation_fraction=screening_validation_fraction,
+        screening_min_val_size=screening_min_val_size,
+        screening_min_tuning_val_size=screening_min_tuning_val_size,
+        screening_calibration_enabled=screening_calibration_enabled,
+        screening_calibration_fraction=screening_calibration_fraction,
+        screening_min_cal_size=screening_min_cal_size,
+        screening_min_inner_train_size=screening_min_inner_train_size,
+        requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
+    )
+    return detail_df
+
+
+def _build_policy_selection_frames(
+    dataset: SweepDataset,
+    *,
+    min_train: int,
+    max_train: int,
+    step: int,
+    n_repeats: int,
+    seed: int,
+    model_families: Sequence[Any],
+    outer_validation_fraction: float,
+    outer_min_val_size: int,
+    outer_min_tuning_val_size: int,
+    outer_calibration_enabled: bool,
+    outer_calibration_fraction: float,
+    outer_min_cal_size: int,
+    outer_min_inner_train_size: int,
+    min_test_size: int,
+    screening_fraction: float,
+    min_screen_size: int,
+    screening_validation_fraction: float,
+    screening_min_val_size: int,
+    screening_min_tuning_val_size: int,
+    screening_calibration_enabled: bool,
+    screening_calibration_fraction: float,
+    screening_min_cal_size: int,
+    screening_min_inner_train_size: int,
+    requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
+    cached_screening_rows_df: pd.DataFrame | None = None,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     shared_splits = generate_shared_outer_splits(
         dataset.n_samples,
         min_train=min_train,
@@ -568,7 +637,10 @@ def build_policy_selection_detail_frame(
         requested_sweep_sizes=requested_sweep_sizes,
     )
     if not shared_splits:
-        return normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS))
+        return (
+            normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS)),
+            normalize_screening_diagnostic_rows_frame(pd.DataFrame(columns=_SCREENING_ROWS_COLUMNS)),
+        )
 
     outer_rows: list[dict[str, Any]] = []
     screening_rows: list[dict[str, Any]] = []
@@ -631,33 +703,41 @@ def build_policy_selection_detail_frame(
                 }
             )
 
-            screening_result = _run_family_screening_diagnostic(
-                family,
-                dataset=dataset.subset(split.train_idx),
-                budget=split.budget,
-                seed=_derived_split_seed(seed, split.budget, split.repeat, salt=7919),
-                screening_fraction=screening_fraction,
-                min_screen_size=min_screen_size,
-                validation_fraction=screening_validation_fraction,
-                min_val_size=screening_min_val_size,
-                min_tuning_val_size=screening_min_tuning_val_size,
-                calibration_enabled=screening_calibration_enabled,
-                calibration_fraction=screening_calibration_fraction,
-                min_cal_size=screening_min_cal_size,
-                min_inner_train_size=screening_min_inner_train_size,
+            cached_screening_row = _cached_screening_row_for_method(
+                cached_screening_rows_df,
+                method_name=method_name,
+                shared_split=split,
             )
-            if screening_result is None:
-                continue
-            screening_rows.append(
-                {
-                    "budget": split.budget,
-                    "repeat": split.repeat,
-                    "method": method_name,
-                    "split_fingerprint": screening_split_fingerprint(split),
-                    "screening_cv_rmse": screening_result.cv_rmse,
-                    "screening_miscalibration_area": screening_result.miscalibration_area,
-                }
-            )
+            if cached_screening_row is None:
+                screening_result = _run_family_screening_diagnostic(
+                    family,
+                    dataset=dataset.subset(split.train_idx),
+                    budget=split.budget,
+                    seed=_derived_split_seed(seed, split.budget, split.repeat, salt=7919),
+                    screening_fraction=screening_fraction,
+                    min_screen_size=min_screen_size,
+                    validation_fraction=screening_validation_fraction,
+                    min_val_size=screening_min_val_size,
+                    min_tuning_val_size=screening_min_tuning_val_size,
+                    calibration_enabled=screening_calibration_enabled,
+                    calibration_fraction=screening_calibration_fraction,
+                    min_cal_size=screening_min_cal_size,
+                    min_inner_train_size=screening_min_inner_train_size,
+                )
+                if screening_result is None:
+                    continue
+                screening_rows.append(
+                    {
+                        "budget": split.budget,
+                        "repeat": split.repeat,
+                        "method": method_name,
+                        "split_fingerprint": screening_split_fingerprint(split),
+                        "screening_cv_rmse": screening_result.cv_rmse,
+                        "screening_miscalibration_area": screening_result.miscalibration_area,
+                    }
+                )
+            else:
+                screening_rows.append(cached_screening_row)
 
     outer_frame = pd.DataFrame(outer_rows)
     screening_frame = pd.DataFrame(screening_rows)
@@ -705,7 +785,12 @@ def build_policy_selection_detail_frame(
                         "agreement": bool(oracle_row["method"] == selected_row["method"]),
                     }
                 )
-    return normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS))
+    return (
+        normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS)),
+        normalize_screening_diagnostic_rows_frame(
+            pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
+        ),
+    )
 
 
 def _require_columns(
@@ -976,6 +1061,38 @@ def _cached_outer_repeat_metrics_for_method(
     if not expected_pairs.issubset(observed_pairs):
         return None
     return method_rows.rename(columns={"budget": "n_train"}).reset_index(drop=True)
+
+
+def _cached_screening_row_for_method(
+    cached_screening_rows_df: pd.DataFrame | None,
+    *,
+    method_name: str,
+    shared_split: SharedOuterSplit,
+) -> dict[str, Any] | None:
+    if cached_screening_rows_df is None or cached_screening_rows_df.empty:
+        return None
+    fingerprint = screening_split_fingerprint(shared_split)
+    match = cached_screening_rows_df.loc[
+        (cached_screening_rows_df["method"].astype(str) == method_name)
+        & (cached_screening_rows_df["budget"].astype(int) == int(shared_split.budget))
+        & (cached_screening_rows_df["repeat"].astype(int) == int(shared_split.repeat))
+        & (cached_screening_rows_df["split_fingerprint"].astype(str) == fingerprint)
+    ]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return {
+        "method": method_name,
+        "budget": int(shared_split.budget),
+        "repeat": int(shared_split.repeat),
+        "split_fingerprint": fingerprint,
+        "screening_cv_rmse": float(row["screening_cv_rmse"]),
+        "screening_miscalibration_area": (
+            np.nan
+            if pd.isna(row["screening_miscalibration_area"])
+            else float(row["screening_miscalibration_area"])
+        ),
+    }
 
 
 def screening_split_fingerprint(shared_split: SharedOuterSplit) -> str:

@@ -22,9 +22,13 @@ from oasis.experiment.dataset import build_sweep_dataset_from_config, mlip_featu
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
-    build_policy_selection_diagnostic_results,
+    ScreeningDiagnosticRowsArtifact,
+    _build_policy_selection_frames,
     load_policy_selection_diagnostic_artifact,
+    load_screening_diagnostic_rows_artifact,
     save_policy_selection_diagnostic_artifact,
+    save_screening_diagnostic_rows_artifact,
+    summarize_policy_detail_frame,
 )
 from oasis.experiment.repeat_metrics import (
     load_learning_curve_repeat_metrics_artifact,
@@ -104,6 +108,12 @@ class BudgetSpanVariant:
                 )
             )
         return [int(value) for value in self.sweep_sizes]
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticBuildOutputs:
+    results: PolicySelectionDiagnosticResults
+    screening_rows_df: pd.DataFrame
 
 
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
@@ -759,32 +769,51 @@ def _write_policy_selection_diagnostic(
     except (AttributeError, ValueError):
         metadata = None
     artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
+    screening_rows_artifact_path = (
+        output_dir / f"policy_selection_screening_rows_{run_suffix}.json"
+    )
     diagnostic_results = None
+    screening_rows_df = None
     if metadata is not None and artifact_path.is_file():
         try:
-            diagnostic_results = load_policy_selection_diagnostic_artifact(
+            cached_artifact = load_policy_selection_diagnostic_artifact(
                 artifact_path,
                 expected_metadata=metadata,
                 expected_cache_signature=cache_signature,
-            ).results
+            )
+            diagnostic_results = cached_artifact.results
+            if screening_rows_artifact_path.is_file():
+                screening_rows_df = load_screening_diagnostic_rows_artifact(
+                    screening_rows_artifact_path,
+                    expected_metadata=metadata,
+                    expected_cache_signature=cache_signature,
+                ).screening_rows_df
         except ValueError:
             diagnostic_results = None
+            screening_rows_df = None
     if diagnostic_results is None:
-        diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
+        build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
             cfg=cfg,
             wide_df=wide_df,
             graph_view=graph_view,
             auxiliary_views=auxiliary_views,
+            cached_screening_rows_df=screening_rows_df,
         )
+        if build_outputs is None:
+            return None
+        diagnostic_results = build_outputs.results
+        screening_rows_df = build_outputs.screening_rows_df
     if diagnostic_results is None:
         return None
     return _write_policy_selection_diagnostic_outputs(
         cfg=cfg,
         wide_df=wide_df,
         diagnostic_results=diagnostic_results,
+        screening_rows_df=screening_rows_df,
         metadata=metadata,
         cache_signature=cache_signature,
         artifact_path=artifact_path,
+        screening_rows_artifact_path=screening_rows_artifact_path,
         output_dir=output_dir,
         run_suffix=run_suffix,
         min_x=min_x,
@@ -849,7 +878,8 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     wide_df: object,
     graph_view: object,
     auxiliary_views: dict[str, object] | None,
-) -> PolicySelectionDiagnosticResults | None:
+    cached_screening_rows_df: pd.DataFrame | None = None,
+) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
     screening_cfg = getattr(experiment_cfg, "screening", None)
@@ -915,7 +945,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
                     ).repeat_metrics_df
                 except ValueError:
                     cached_outer_repeat_metrics_df = None
-    return build_policy_selection_diagnostic_results(
+    detail_df, screening_rows_df = _build_policy_selection_frames(
         dataset,
         min_train=diagnostic_min_train,
         max_train=diagnostic_max_train,
@@ -942,12 +972,20 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_screening_rows_df=cached_screening_rows_df,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
             screening_cfg,
             "combined_miscalibration_lambda",
             1.0,
         ),
+    )
+    return PolicyDiagnosticBuildOutputs(
+        results=PolicySelectionDiagnosticResults(
+            detail_df=detail_df,
+            summary_df=summarize_policy_detail_frame(detail_df),
+        ),
+        screening_rows_df=screening_rows_df,
     )
 
 
@@ -956,9 +994,11 @@ def _write_policy_selection_diagnostic_outputs(
     cfg: object,
     wide_df: object,
     diagnostic_results: PolicySelectionDiagnosticResults,
+    screening_rows_df: pd.DataFrame | None,
     metadata: object | None,
     cache_signature: dict[str, object],
     artifact_path: Path,
+    screening_rows_artifact_path: Path,
     output_dir: Path,
     run_suffix: str,
     min_x: int | None,
@@ -974,6 +1014,15 @@ def _write_policy_selection_diagnostic_outputs(
             ),
             artifact_path,
         )
+        if screening_rows_df is not None:
+            save_screening_diagnostic_rows_artifact(
+                ScreeningDiagnosticRowsArtifact(
+                    metadata=metadata,
+                    screening_rows_df=screening_rows_df,
+                    cache_signature=cache_signature,
+                ),
+                screening_rows_artifact_path,
+            )
     diagnostic_results.detail_df.to_csv(
         output_dir / f"policy_selection_diagnostic_detail_{run_suffix}.csv",
         index=False,

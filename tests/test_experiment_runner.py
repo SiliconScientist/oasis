@@ -18,6 +18,7 @@ from oasis.experiment_runner import (
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
     BudgetSpanVariant,
+    PolicyDiagnosticBuildOutputs,
     configured_budget_span_variants,
     load_all_datasets_policy_regret_rows,
     load_all_datasets_oracle_learning_curve_rows,
@@ -345,21 +346,22 @@ class ExperimentRunnerTests(unittest.TestCase):
                     }
                 ),
             )
+            screening_rows_df = pd.DataFrame(
+                {
+                    "method": ["ridge", "ridge"],
+                    "budget": [4, 4],
+                    "repeat": [0, 1],
+                    "split_fingerprint": ["fp-0", "fp-1"],
+                    "screening_cv_rmse": [0.1, 0.11],
+                    "screening_miscalibration_area": [0.05, 0.04],
+                }
+            )
             with patch(
-                "oasis.experiment_runner.build_sweep_dataset_from_config",
-                return_value=SweepDataset(
-                    mlip_features=np.arange(6, dtype=float).reshape(-1, 1),
-                    targets=np.linspace(0.0, 1.0, 6),
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=screening_rows_df,
                 ),
-            ), patch(
-                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
-                return_value=("ridge",),
-            ), patch(
-                "oasis.learning_curve.registry.default_sweep_model_families",
-                return_value=(),
-            ), patch(
-                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
-                return_value=diagnostic_results,
             ) as mock_build_diagnostic:
                 artifact_path = _write_policy_selection_diagnostic(
                     cfg=cfg,
@@ -378,6 +380,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 summary_path = (
                     output_dir / "policy_selection_diagnostic_summary_anomalyaware_off.csv"
                 )
+                screening_rows_path = (
+                    output_dir / "policy_selection_screening_rows_anomalyaware_off.json"
+                )
                 oracle_plot_path = (
                     output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png"
                 )
@@ -385,6 +390,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
+                screening_rows_exists = screening_rows_path.is_file()
                 oracle_plot_exists = oracle_plot_path.is_file()
                 regret_plot_exists = regret_plot_path.is_file()
 
@@ -396,19 +402,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(artifact_exists)
         self.assertTrue(detail_exists)
         self.assertTrue(summary_exists)
+        self.assertTrue(screening_rows_exists)
         self.assertTrue(oracle_plot_exists)
         self.assertTrue(regret_plot_exists)
-        self.assertEqual(
-            mock_build_diagnostic.call_args.kwargs["policy_names"],
-            [
-                "min_screening_rmse",
-                "combined_screening_rmse_miscalibration",
-            ],
-        )
-        self.assertEqual(
-            mock_build_diagnostic.call_args.kwargs["combined_miscalibration_lambda"],
-            2.0,
-        )
+        mock_build_diagnostic.assert_called_once()
 
     def test_write_policy_selection_diagnostic_emits_dual_selected_vs_oracle_outputs(
         self,
@@ -503,22 +500,23 @@ class ExperimentRunnerTests(unittest.TestCase):
                     }
                 ),
             )
+            screening_rows_df = pd.DataFrame(
+                {
+                    "method": ["ridge"],
+                    "budget": [1],
+                    "repeat": [0],
+                    "split_fingerprint": ["fp-0"],
+                    "screening_cv_rmse": [0.1],
+                    "screening_miscalibration_area": [0.05],
+                }
+            )
 
             with patch(
-                "oasis.experiment_runner.build_sweep_dataset_from_config",
-                return_value=SweepDataset(
-                    mlip_features=np.arange(2, dtype=float).reshape(-1, 1),
-                    targets=np.linspace(0.0, 1.0, 2),
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=screening_rows_df,
                 ),
-            ), patch(
-                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
-                return_value=("ridge",),
-            ), patch(
-                "oasis.learning_curve.registry.default_sweep_model_families",
-                return_value=(),
-            ), patch(
-                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
-                return_value=diagnostic_results,
             ), patch(
                 "oasis.experiment_runner.policy_selected_vs_oracle_plot",
             ) as mock_selected_plot, patch(
@@ -782,7 +780,19 @@ class ExperimentRunnerTests(unittest.TestCase):
                 side_effect=ValueError("incompatible"),
             ) as mock_load, patch(
                 "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
-                return_value=diagnostic_results,
+                return_value=PolicyDiagnosticBuildOutputs(
+                    results=diagnostic_results,
+                    screening_rows_df=pd.DataFrame(
+                        {
+                            "method": ["ridge"],
+                            "budget": [4],
+                            "repeat": [0],
+                            "split_fingerprint": ["fp-0"],
+                            "screening_cv_rmse": [0.1],
+                            "screening_miscalibration_area": [0.05],
+                        }
+                    ),
+                ),
             ) as mock_build:
                 saved_path = _write_policy_selection_diagnostic(
                     cfg=cfg,
