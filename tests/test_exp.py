@@ -98,6 +98,32 @@ class _GenerateSweepSplitsTests(unittest.TestCase):
             (10, 20, 90),
         )
 
+    def test_resolve_configured_sweep_sizes_unions_explicit_and_fractional_budgets(
+        self,
+    ) -> None:
+        self.assertEqual(
+            resolve_configured_sweep_sizes(
+                100,
+                min_train=None,
+                max_train=None,
+                sweep_sizes=[1, 2, 3, 20],
+                sweep_fractions=[0.05, 0.1, 0.2],
+            ),
+            (1, 2, 3, 5, 10, 20),
+        )
+
+    def test_resolve_configured_sweep_sizes_deduplicates_mixed_sources(self) -> None:
+        self.assertEqual(
+            resolve_configured_sweep_sizes(
+                100,
+                min_train=None,
+                max_train=None,
+                sweep_sizes=[5, 10, 20],
+                sweep_fractions=[0.05, 0.1, 0.2],
+            ),
+            (5, 10, 20),
+        )
+
     def test_generate_sweep_splits_honors_requested_sweep_sizes(self) -> None:
         splits = list(
             generate_sweep_splits(

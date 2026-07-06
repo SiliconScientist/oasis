@@ -37,19 +37,16 @@ def resolve_configured_sweep_sizes(
 
     explicit_sweep_sizes = normalize_requested_sweep_sizes(sweep_sizes or ())
     explicit_sweep_fractions = tuple(float(value) for value in (sweep_fractions or ()))
-    if explicit_sweep_sizes and explicit_sweep_fractions:
-        raise ValueError("sweep_sizes and sweep_fractions cannot both be provided.")
     if explicit_sweep_fractions:
         if any(value <= 0 or value > 1 for value in explicit_sweep_fractions):
             raise ValueError("sweep_fractions must be between 0 and 1.")
-        return tuple(
-            sorted(
-                {
-                    max(1, int(math.floor(value * n_samples)))
-                    for value in explicit_sweep_fractions
-                }
-            )
-        )
+        resolved_fractional_sizes = {
+            max(1, int(math.floor(value * n_samples)))
+            for value in explicit_sweep_fractions
+        }
+        if explicit_sweep_sizes:
+            return tuple(sorted(set(explicit_sweep_sizes) | resolved_fractional_sizes))
+        return tuple(sorted(resolved_fractional_sizes))
     if explicit_sweep_sizes:
         return explicit_sweep_sizes
     if min_train is None or max_train is None:
