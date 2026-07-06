@@ -23,6 +23,7 @@ from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
     build_policy_selection_diagnostic_results,
+    load_policy_selection_diagnostic_artifact,
     save_policy_selection_diagnostic_artifact,
 )
 from oasis.experiment.splits import resolve_configured_sweep_sizes
@@ -743,18 +744,40 @@ def _write_policy_selection_diagnostic(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path | None:
-    diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
-        cfg=cfg,
-        wide_df=wide_df,
-        graph_view=graph_view,
-        auxiliary_views=auxiliary_views,
-    )
+    metadata = None
+    try:
+        metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=int(len(wide_df)),
+            mlip_feature_names=mlip_feature_names(wide_df),
+        )
+    except (AttributeError, ValueError):
+        metadata = None
+    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
+    diagnostic_results = None
+    if metadata is not None and artifact_path.is_file():
+        try:
+            diagnostic_results = load_policy_selection_diagnostic_artifact(
+                artifact_path,
+                expected_metadata=metadata,
+            ).results
+        except ValueError:
+            diagnostic_results = None
+    if diagnostic_results is None:
+        diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
+            cfg=cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
     if diagnostic_results is None:
         return None
     return _write_policy_selection_diagnostic_outputs(
         cfg=cfg,
         wide_df=wide_df,
         diagnostic_results=diagnostic_results,
+        metadata=metadata,
+        artifact_path=artifact_path,
         output_dir=output_dir,
         run_suffix=run_suffix,
         min_x=min_x,
@@ -800,18 +823,26 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     )
     requested_sweep_sizes = resolve_configured_sweep_sizes(
         dataset.n_samples,
-        min_train=learning_curve_cfg.min_train,
-        max_train=learning_curve_cfg.max_train,
+        min_train=getattr(learning_curve_cfg, "min_train", None),
+        max_train=getattr(learning_curve_cfg, "max_train", None),
         step=getattr(learning_curve_cfg, "step", 1),
         sweep_sizes=getattr(learning_curve_cfg, "sweep_sizes", ()),
         sweep_fractions=getattr(learning_curve_cfg, "sweep_fractions", ()),
     )
+    if not requested_sweep_sizes:
+        return None
+    diagnostic_min_train = getattr(learning_curve_cfg, "min_train", None)
+    if diagnostic_min_train is None:
+        diagnostic_min_train = min(requested_sweep_sizes)
+    diagnostic_max_train = getattr(learning_curve_cfg, "max_train", None)
+    if diagnostic_max_train is None:
+        diagnostic_max_train = max(requested_sweep_sizes)
     return build_policy_selection_diagnostic_results(
         dataset,
-        min_train=learning_curve_cfg.min_train,
-        max_train=learning_curve_cfg.max_train,
+        min_train=diagnostic_min_train,
+        max_train=diagnostic_max_train,
         step=getattr(learning_curve_cfg, "step", 1),
-        n_repeats=learning_curve_cfg.n_repeats,
+        n_repeats=getattr(learning_curve_cfg, "n_repeats", 1),
         seed=cfg.seed if getattr(cfg, "seed", None) is not None else 42,
         model_families=model_families,
         outer_validation_fraction=getattr(learning_curve_cfg, "validation_fraction", 0.2),
@@ -846,25 +877,22 @@ def _write_policy_selection_diagnostic_outputs(
     cfg: object,
     wide_df: object,
     diagnostic_results: PolicySelectionDiagnosticResults,
+    metadata: object | None,
+    artifact_path: Path,
     output_dir: Path,
     run_suffix: str,
     min_x: int | None,
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path:
-    metadata = learning_curve_sweep_metadata_from_config(
-        cfg,
-        dataset_size=int(len(wide_df)),
-        mlip_feature_names=mlip_feature_names(wide_df),
-    )
-    artifact_path = output_dir / f"policy_selection_diagnostic_{run_suffix}.json"
-    save_policy_selection_diagnostic_artifact(
-        PolicySelectionDiagnosticArtifact(
-            metadata=metadata,
-            results=diagnostic_results,
-        ),
-        artifact_path,
-    )
+    if metadata is not None:
+        save_policy_selection_diagnostic_artifact(
+            PolicySelectionDiagnosticArtifact(
+                metadata=metadata,
+                results=diagnostic_results,
+            ),
+            artifact_path,
+        )
     diagnostic_results.detail_df.to_csv(
         output_dir / f"policy_selection_diagnostic_detail_{run_suffix}.csv",
         index=False,
