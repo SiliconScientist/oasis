@@ -21,6 +21,7 @@ from oasis.exp import (
 from oasis.experiment.dataset import build_sweep_dataset_from_config, mlip_feature_names
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
+    PolicySelectionDiagnosticResults,
     build_policy_selection_diagnostic_results,
     save_policy_selection_diagnostic_artifact,
 )
@@ -53,6 +54,7 @@ from oasis.mlip.timing import load_generation_timing_summaries
 from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
     _filter_curve_frame,
+    all_datasets_policy_regret_plot,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -741,6 +743,33 @@ def _write_policy_selection_diagnostic(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path | None:
+    diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
+        cfg=cfg,
+        wide_df=wide_df,
+        graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
+    )
+    if diagnostic_results is None:
+        return None
+    return _write_policy_selection_diagnostic_outputs(
+        cfg=cfg,
+        wide_df=wide_df,
+        diagnostic_results=diagnostic_results,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+    )
+
+
+def _build_policy_selection_diagnostic_results_for_cfg(
+    *,
+    cfg: object,
+    wide_df: object,
+    graph_view: object,
+    auxiliary_views: dict[str, object] | None,
+) -> PolicySelectionDiagnosticResults | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
     screening_cfg = getattr(experiment_cfg, "screening", None)
@@ -777,7 +806,7 @@ def _write_policy_selection_diagnostic(
         sweep_sizes=getattr(learning_curve_cfg, "sweep_sizes", ()),
         sweep_fractions=getattr(learning_curve_cfg, "sweep_fractions", ()),
     )
-    diagnostic_results = build_policy_selection_diagnostic_results(
+    return build_policy_selection_diagnostic_results(
         dataset,
         min_train=learning_curve_cfg.min_train,
         max_train=learning_curve_cfg.max_train,
@@ -810,6 +839,19 @@ def _write_policy_selection_diagnostic(
             1.0,
         ),
     )
+
+
+def _write_policy_selection_diagnostic_outputs(
+    *,
+    cfg: object,
+    wide_df: object,
+    diagnostic_results: PolicySelectionDiagnosticResults,
+    output_dir: Path,
+    run_suffix: str,
+    min_x: int | None,
+    max_x: int | None,
+    include_x: list[int] | None,
+) -> Path:
     metadata = learning_curve_sweep_metadata_from_config(
         cfg,
         dataset_size=int(len(wide_df)),
@@ -876,6 +918,136 @@ def _write_policy_selection_diagnostic(
         render_variant=_render_policy_regret_variant,
     )
     return artifact_path
+
+
+def _load_policy_regret_rows_for_dataset(
+    cfg: object,
+    *,
+    dataset_tag: str,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+) -> list[dict[str, object]]:
+    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
+    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
+    probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    wide_df, auxiliary_views = build_auxiliary_views(
+        dataset_cfg,
+        wide_df,
+        probe_gnn_enabled,
+    )
+    _apply_persistent_output_suffixes(
+        dataset_cfg,
+        dataset_size=_frame_height(wide_df),
+    )
+    _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
+    graph_view = prepare_graph_view(dataset_cfg, wide_df)
+    diagnostic_results = _build_policy_selection_diagnostic_results_for_cfg(
+        cfg=dataset_cfg,
+        wide_df=wide_df,
+        graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
+    )
+    if diagnostic_results is None:
+        return []
+    dataset_include_x = _merged_include_x(
+        include_x,
+        None
+        if span_variant is None
+        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+    )
+    summary_df = diagnostic_results.summary_df.copy()
+    summary_df.insert(0, "dataset_label", dataset_label)
+    summary_df.insert(0, "dataset", dataset_tag)
+    filtered_summary_df = _filter_curve_frame(
+        summary_df,
+        x_column="budget",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=dataset_include_x,
+    )
+    if filtered_summary_df is None or filtered_summary_df.empty:
+        return []
+    return filtered_summary_df.to_dict(orient="records")
+
+
+def load_all_datasets_policy_regret_rows(
+    *,
+    cfg: object,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+) -> list[dict[str, object]]:
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1:
+        return []
+
+    regret_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        regret_rows.extend(
+            _load_policy_regret_rows_for_dataset(
+                cfg,
+                dataset_tag=dataset_tag,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+                span_variant=span_variant,
+            )
+        )
+    return regret_rows
+
+
+def write_all_datasets_policy_regret_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    screening_cfg = getattr(experiment_cfg, "screening", None)
+    if learning_curve_cfg is None or screening_cfg is None:
+        return None
+
+    def _render_regret_variant(
+        span_variant: BudgetSpanVariant | None,
+        output_path: Path,
+    ) -> Path | None:
+        regret_rows = load_all_datasets_policy_regret_rows(
+            cfg=cfg,
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+            span_variant=span_variant,
+        )
+        if not regret_rows:
+            return None
+        return all_datasets_policy_regret_plot(
+            pd.DataFrame(regret_rows),
+            output_path=output_path,
+            log_x=bool(span_variant is not None and span_variant.key == "fraction"),
+        )
+
+    return render_budget_span_variants(
+        cfg,
+        base_output_path=output_dir / f"policy_regret_all_datasets_{run_suffix}.png",
+        render_variant=_render_regret_variant,
+    )
 
 
 def _can_reuse_graph_artifact(
@@ -1684,6 +1856,14 @@ def run_experiment(cfg: object):
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=plot_kwargs["include_x"],
+        )
+        write_all_datasets_policy_regret_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
         )
     if learning_curve_plot_path is not None and screening_plot_path is not None:
         with tempfile.TemporaryDirectory() as tmpdir:
