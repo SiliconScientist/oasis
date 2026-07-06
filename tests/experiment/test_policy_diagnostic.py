@@ -941,6 +941,84 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             atol=1e-12,
         )
 
+    def test_build_policy_selection_detail_frame_reuses_cached_outer_repeat_metrics(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+
+        class StubFamily:
+            def __init__(self, *, method_name: str, screening_rmse: float) -> None:
+                self.method_name = method_name
+                self.screening_rmse = screening_rmse
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return LearningCurveResults.from_mapping(
+                    {
+                        result_field: pd.DataFrame(
+                            {
+                                "n_train": [payload.split_collection.splits[0].sweep_size],
+                                "rmse_mean": [self.screening_rmse],
+                                "rmse_std": [0.0],
+                            }
+                        )
+                    }
+                )
+
+            def run_with_artifacts(self, payload):
+                del payload
+                raise AssertionError("outer metrics should be loaded from the repeat-metrics cache")
+
+        detail = build_policy_selection_detail_frame(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+            model_families=[
+                StubFamily(method_name="ridge", screening_rmse=0.1),
+                StubFamily(method_name="weighted_linear", screening_rmse=0.2),
+            ],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            cached_outer_repeat_metrics_df=pd.DataFrame(
+                {
+                    "method": ["ridge", "weighted_linear"],
+                    "budget": [4, 4],
+                    "repeat": [0, 0],
+                    "outer_test_rmse": [0.2, 0.25],
+                }
+            ),
+        )
+
+        self.assertEqual(detail["oracle_method"].tolist(), ["ridge"])
+        self.assertEqual(detail["screening_selected_method"].tolist(), ["ridge"])
+        self.assertEqual(detail["oracle_outer_rmse"].tolist(), [0.2])
+
     def test_policy_regret_uses_paired_outer_test_rmse_not_screening_metrics(self) -> None:
         detail = normalize_policy_detail_frame(
             pd.DataFrame(

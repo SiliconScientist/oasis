@@ -233,6 +233,7 @@ def build_policy_selection_diagnostic_results(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
@@ -262,6 +263,7 @@ def build_policy_selection_diagnostic_results(
         screening_min_cal_size=screening_min_cal_size,
         screening_min_inner_train_size=screening_min_inner_train_size,
         requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
         policy_names=policy_names,
         combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
@@ -548,6 +550,7 @@ def build_policy_selection_detail_frame(
     screening_min_cal_size: int,
     screening_min_inner_train_size: int,
     requested_sweep_sizes: Collection[int] | None = None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
@@ -587,21 +590,27 @@ def build_policy_selection_detail_frame(
         )
         if not split_collection.splits:
             continue
-        if not hasattr(family, "run_with_artifacts"):
-            raise TypeError(
-                f"family {method_name!r} must implement run_with_artifacts for policy diagnostics."
-            )
-        family_artifacts = family.run_with_artifacts(
-            SweepRunPayload(
-                dataset=dataset,
-                split_collection=split_collection,
-            )
+        repeat_metrics = _cached_outer_repeat_metrics_for_method(
+            cached_outer_repeat_metrics_df,
+            method_name=method_name,
+            shared_splits=shared_splits,
         )
-        repeat_metrics = getattr(family_artifacts, "repeat_metrics", None)
-        if repeat_metrics is None or repeat_metrics.empty:
-            raise ValueError(
-                f"family {method_name!r} did not produce repeat_metrics for policy diagnostics."
+        if repeat_metrics is None:
+            if not hasattr(family, "run_with_artifacts"):
+                raise TypeError(
+                    f"family {method_name!r} must implement run_with_artifacts for policy diagnostics."
+                )
+            family_artifacts = family.run_with_artifacts(
+                SweepRunPayload(
+                    dataset=dataset,
+                    split_collection=split_collection,
+                )
             )
+            repeat_metrics = getattr(family_artifacts, "repeat_metrics", None)
+            if repeat_metrics is None or repeat_metrics.empty:
+                raise ValueError(
+                    f"family {method_name!r} did not produce repeat_metrics for policy diagnostics."
+                )
         for split in shared_splits:
             outer_match = repeat_metrics.loc[
                 (repeat_metrics["n_train"] == split.budget)
@@ -939,6 +948,30 @@ def _run_family_screening_diagnostic(
         cv_rmse=float(result_frame["cv_rmse_mean"].iloc[0]),
         miscalibration_area=miscalibration_area,
     )
+
+
+def _cached_outer_repeat_metrics_for_method(
+    cached_outer_repeat_metrics_df: pd.DataFrame | None,
+    *,
+    method_name: str,
+    shared_splits: Sequence[SharedOuterSplit],
+) -> pd.DataFrame | None:
+    if cached_outer_repeat_metrics_df is None or cached_outer_repeat_metrics_df.empty:
+        return None
+    method_rows = cached_outer_repeat_metrics_df.loc[
+        cached_outer_repeat_metrics_df["method"].astype(str) == method_name,
+        ["budget", "repeat", "outer_test_rmse"],
+    ]
+    if method_rows.empty:
+        return None
+    expected_pairs = {(int(split.budget), int(split.repeat)) for split in shared_splits}
+    observed_pairs = {
+        (int(row.budget), int(row.repeat))
+        for row in method_rows.itertuples(index=False)
+    }
+    if not expected_pairs.issubset(observed_pairs):
+        return None
+    return method_rows.rename(columns={"budget": "n_train"}).reset_index(drop=True)
 
 
 def _derived_split_seed(seed: int, budget: int, repeat: int, *, salt: int) -> int:

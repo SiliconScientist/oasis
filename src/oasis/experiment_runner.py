@@ -26,6 +26,10 @@ from oasis.experiment.policy_diagnostic import (
     load_policy_selection_diagnostic_artifact,
     save_policy_selection_diagnostic_artifact,
 )
+from oasis.experiment.repeat_metrics import (
+    load_learning_curve_repeat_metrics_artifact,
+    repeat_metrics_artifact_path,
+)
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import learning_screening_figure, uq_summary_figure
 from oasis.learning_curve.time_accuracy import (
@@ -890,6 +894,27 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     diagnostic_max_train = getattr(learning_curve_cfg, "max_train", None)
     if diagnostic_max_train is None:
         diagnostic_max_train = max(requested_sweep_sizes)
+    cached_outer_repeat_metrics_df = None
+    results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    if results_bundle_path is not None:
+        try:
+            metadata = learning_curve_sweep_metadata_from_config(
+                cfg,
+                dataset_size=int(len(wide_df)),
+                mlip_feature_names=mlip_feature_names(wide_df),
+            )
+        except (AttributeError, ValueError):
+            metadata = None
+        if metadata is not None:
+            repeat_metrics_path = repeat_metrics_artifact_path(results_bundle_path)
+            if repeat_metrics_path.is_file():
+                try:
+                    cached_outer_repeat_metrics_df = load_learning_curve_repeat_metrics_artifact(
+                        repeat_metrics_path,
+                        expected_metadata=metadata,
+                    ).repeat_metrics_df
+                except ValueError:
+                    cached_outer_repeat_metrics_df = None
     return build_policy_selection_diagnostic_results(
         dataset,
         min_train=diagnostic_min_train,
@@ -916,6 +941,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         screening_min_cal_size=getattr(screening_cfg, "min_cal_size", 1),
         screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
         requested_sweep_sizes=requested_sweep_sizes,
+        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
             screening_cfg,
