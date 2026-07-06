@@ -809,13 +809,28 @@ def _write_policy_selection_diagnostic(
         output_dir / f"policy_selection_diagnostic_summary_{run_suffix}.csv",
         index=False,
     )
-    policy_selected_vs_oracle_plot(
-        diagnostic_results.summary_df,
-        output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=include_x,
-    )
+    budget_span_variants = configured_budget_span_variants(cfg)
+    if budget_span_variants:
+        for span_variant in budget_span_variants:
+            policy_selected_vs_oracle_plot(
+                diagnostic_results.summary_df,
+                output_path=output_dir
+                / f"policy_selected_vs_oracle_{run_suffix}_{span_variant.output_suffix}.png",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=_merged_include_x(
+                    include_x,
+                    span_variant.resolved_include_x(n_samples=int(len(wide_df))),
+                ),
+            )
+    else:
+        policy_selected_vs_oracle_plot(
+            diagnostic_results.summary_df,
+            output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+        )
     policy_regret_plot(
         diagnostic_results.summary_df,
         output_path=output_dir / f"policy_regret_{run_suffix}.png",

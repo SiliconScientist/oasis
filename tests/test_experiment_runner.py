@@ -366,6 +366,151 @@ class ExperimentRunnerTests(unittest.TestCase):
             2.0,
         )
 
+    def test_write_policy_selection_diagnostic_emits_dual_selected_vs_oracle_outputs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=None,
+                        max_train=None,
+                        step=1,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[1, 2],
+                        sweep_fractions=[0.5, 1.0],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1],
+                }
+            )
+            diagnostic_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [1],
+                        "repeat": [0],
+                        "oracle_method": ["ridge"],
+                        "screening_selected_method": ["ridge"],
+                        "oracle_outer_rmse": [0.2],
+                        "screening_selected_outer_rmse": [0.2],
+                        "regret": [0.0],
+                        "screening_cv_rmse": [0.1],
+                        "screening_miscalibration_area": [0.05],
+                        "agreement": [True],
+                    }
+                ),
+                summary_df=pd.DataFrame(
+                    {
+                        "policy_name": ["min_screening_rmse"],
+                        "budget": [1],
+                        "mean_regret": [0.0],
+                        "std_regret": [0.0],
+                        "se_regret": [0.0],
+                        "ci95_low": [0.0],
+                        "ci95_high": [0.0],
+                        "agreement_rate": [1.0],
+                        "oracle_outer_rmse_mean": [0.2],
+                        "screening_selected_outer_rmse_mean": [0.2],
+                    }
+                ),
+            )
+
+            with patch(
+                "oasis.experiment_runner.build_sweep_dataset_from_config",
+                return_value=SweepDataset(
+                    mlip_features=np.arange(2, dtype=float).reshape(-1, 1),
+                    targets=np.linspace(0.0, 1.0, 2),
+                ),
+            ), patch(
+                "oasis.learning_curve.registry.enabled_learning_curve_model_names_from_config",
+                return_value=("ridge",),
+            ), patch(
+                "oasis.learning_curve.registry.default_sweep_model_families",
+                return_value=(),
+            ), patch(
+                "oasis.experiment_runner.build_policy_selection_diagnostic_results",
+                return_value=diagnostic_results,
+            ), patch(
+                "oasis.experiment_runner.policy_selected_vs_oracle_plot",
+            ) as mock_selected_plot, patch(
+                "oasis.experiment_runner.policy_regret_plot",
+            ) as mock_regret_plot:
+                _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(mock_selected_plot.call_count, 2)
+        self.assertEqual(
+            mock_selected_plot.call_args_list[0].kwargs["output_path"],
+            output_dir / "policy_selected_vs_oracle_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[1].kwargs["output_path"],
+            output_dir / "policy_selected_vs_oracle_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[0].kwargs["include_x"],
+            [1, 2],
+        )
+        self.assertEqual(
+            mock_selected_plot.call_args_list[1].kwargs["include_x"],
+            [1, 2],
+        )
+        mock_regret_plot.assert_called_once()
+
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
         cfg = SimpleNamespace()
 
