@@ -146,6 +146,20 @@ def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...
     return tuple(variants)
 
 
+def _merged_include_x(
+    *value_groups: list[int] | tuple[int, ...] | None,
+) -> list[int] | None:
+    merged = sorted(
+        {
+            int(value)
+            for values in value_groups
+            if values is not None
+            for value in values
+        }
+    )
+    return merged or None
+
+
 def _frame_head(frame: object, n_rows: int):
     if hasattr(frame, "head"):
         return frame.head(n_rows)
@@ -1503,32 +1517,7 @@ def run_experiment(cfg: object):
         getattr(curve_window_cfg, "full_dataset_window", False)
     ) or bool(getattr(curve_window_cfg, "all", False))
     configured_include_x = getattr(curve_window_cfg, "include_x", None)
-    configured_include_fractions = getattr(
-        curve_window_cfg, "include_fractions", None
-    )
-    resolved_include_fraction_x = (
-        list(
-            resolve_configured_sweep_sizes(
-                _frame_height(wide_df),
-                min_train=None,
-                max_train=None,
-                sweep_fractions=configured_include_fractions,
-            )
-        )
-        if configured_include_fractions
-        else None
-    )
-    resolved_include_x = None
-    if configured_include_x or resolved_include_fraction_x:
-        resolved_include_x = sorted(
-            {
-                int(value)
-                for value in (
-                    list(configured_include_x or [])
-                    + list(resolved_include_fraction_x or [])
-                )
-            }
-        )
+    resolved_include_x = _merged_include_x(configured_include_x)
     plot_kwargs = (
         {
             "min_x": None,
@@ -1548,6 +1537,7 @@ def run_experiment(cfg: object):
     learning_curve_results = None
     learning_curve_plot_path = None
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    budget_span_variants = configured_budget_span_variants(cfg)
     if learning_curve_cfg is not None:
         enabled_learning_curve_method_names = enabled_learning_curve_model_names_from_config(
             getattr(learning_curve_cfg, "models", None)
@@ -1558,12 +1548,30 @@ def run_experiment(cfg: object):
             graph_view=graph_view,
             auxiliary_views=auxiliary_views,
         )
-        learning_curve_plot_path = learning_curve_plot(
-            results=learning_curve_results,
-            output_path=output_dir / f"learning_curve_{run_suffix}.png",
-            zero_shot_rmse=zero_shot_rmse,
-            **plot_kwargs,
-        )
+        if budget_span_variants:
+            for variant in budget_span_variants:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                variant_plot_path = learning_curve_plot(
+                    results=learning_curve_results,
+                    output_path=output_dir
+                    / f"learning_curve_{run_suffix}_{variant.output_suffix}.png",
+                    zero_shot_rmse=zero_shot_rmse,
+                    min_x=plot_kwargs["min_x"],
+                    max_x=plot_kwargs["max_x"],
+                    include_x=variant_include_x,
+                )
+                if variant.key == "absolute" or learning_curve_plot_path is None:
+                    learning_curve_plot_path = variant_plot_path
+        else:
+            learning_curve_plot_path = learning_curve_plot(
+                results=learning_curve_results,
+                output_path=output_dir / f"learning_curve_{run_suffix}.png",
+                zero_shot_rmse=zero_shot_rmse,
+                **plot_kwargs,
+            )
         write_all_datasets_oracle_learning_curve_plot(
             cfg=cfg,
             output_dir=output_dir,
@@ -1572,7 +1580,6 @@ def run_experiment(cfg: object):
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=configured_include_x,
-            include_fractions=configured_include_fractions,
         )
         write_time_accuracy_plots(
             learning_curve_results=learning_curve_results,

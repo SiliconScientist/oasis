@@ -2529,10 +2529,80 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_oracle_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["max_x"], 50)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["include_x"], [10, 30])
-        self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_fractions"])
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+        )
+
+    def test_run_experiment_emits_dual_learning_curve_outputs_for_budget_spans(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        sweep_sizes=[1, 2],
+                        sweep_fractions=[0.5, 1.0],
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                side_effect=[
+                    tmp_path / "plots" / "learning_curve_absolute.png",
+                    tmp_path / "plots" / "learning_curve_fraction.png",
+                ],
+            ) as mock_learning_curve_plot:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_learning_curve_plot.call_count, 2)
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "plots" / "learning_curve_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "plots" / "learning_curve_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[0].kwargs["include_x"],
+            [1, 2],
+        )
+        self.assertEqual(
+            mock_learning_curve_plot.call_args_list[1].kwargs["include_x"],
+            [1, 2],
         )
 
     def test_run_experiment_applies_strict_mlip_mask_to_learning_curve_zero_shot_baseline(
