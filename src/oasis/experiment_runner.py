@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from time import perf_counter
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -158,6 +159,27 @@ def _merged_include_x(
         }
     )
     return merged or None
+
+
+def render_budget_span_variants(
+    cfg: object,
+    *,
+    base_output_path: Path,
+    render_variant: Callable[[BudgetSpanVariant | None, Path], Path | None],
+) -> Path | None:
+    budget_span_variants = configured_budget_span_variants(cfg)
+    if not budget_span_variants:
+        return render_variant(None, base_output_path)
+
+    saved_path = None
+    for span_variant in budget_span_variants:
+        output_path = base_output_path.with_name(
+            f"{base_output_path.stem}_{span_variant.output_suffix}{base_output_path.suffix}"
+        )
+        saved_variant_path = render_variant(span_variant, output_path)
+        if span_variant.key == "absolute" or saved_path is None:
+            saved_path = saved_variant_path
+    return saved_path
 
 
 def _frame_head(frame: object, n_rows: int):
@@ -809,28 +831,28 @@ def _write_policy_selection_diagnostic(
         output_dir / f"policy_selection_diagnostic_summary_{run_suffix}.csv",
         index=False,
     )
-    budget_span_variants = configured_budget_span_variants(cfg)
-    if budget_span_variants:
-        for span_variant in budget_span_variants:
-            policy_selected_vs_oracle_plot(
-                diagnostic_results.summary_df,
-                output_path=output_dir
-                / f"policy_selected_vs_oracle_{run_suffix}_{span_variant.output_suffix}.png",
-                min_x=min_x,
-                max_x=max_x,
-                include_x=_merged_include_x(
-                    include_x,
-                    span_variant.resolved_include_x(n_samples=int(len(wide_df))),
-                ),
+    def _render_selected_vs_oracle_variant(
+        span_variant: BudgetSpanVariant | None,
+        output_path: Path,
+    ) -> Path:
+        variant_include_x = include_x
+        if span_variant is not None:
+            variant_include_x = _merged_include_x(
+                include_x,
+                span_variant.resolved_include_x(n_samples=int(len(wide_df))),
             )
-    else:
-        policy_selected_vs_oracle_plot(
+        return policy_selected_vs_oracle_plot(
             diagnostic_results.summary_df,
-            output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
+            output_path=output_path,
             min_x=min_x,
             max_x=max_x,
-            include_x=include_x,
+            include_x=variant_include_x,
         )
+    render_budget_span_variants(
+        cfg,
+        base_output_path=output_dir / f"policy_selected_vs_oracle_{run_suffix}.png",
+        render_variant=_render_selected_vs_oracle_variant,
+    )
     policy_regret_plot(
         diagnostic_results.summary_df,
         output_path=output_dir / f"policy_regret_{run_suffix}.png",
@@ -1057,48 +1079,30 @@ def write_all_datasets_oracle_learning_curve_plot(
         return None
 
     curve_window_cfg = getattr(getattr(cfg, "plot", None), "curve_window", None)
-    budget_span_variants = configured_budget_span_variants(cfg)
-    if budget_span_variants:
-        saved_path = None
-        for span_variant in budget_span_variants:
-            oracle_rows = load_all_datasets_oracle_learning_curve_rows(
-                cfg=cfg,
-                enabled_method_names=enabled_method_names,
-                min_x=min_x,
-                max_x=max_x,
-                include_x=include_x,
-                span_variant=span_variant,
-            )
-            if not oracle_rows:
-                continue
-            output_path = (
-                output_dir
-                / f"learning_curve_oracle_all_datasets_{run_suffix}_{span_variant.output_suffix}.png"
-            )
-            saved_variant_path = oracle_learning_curve_plot(
-                pd.DataFrame(oracle_rows),
-                output_path=output_path,
-                log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
-            )
-            if span_variant.key == "absolute" or saved_path is None:
-                saved_path = saved_variant_path
-        return saved_path
+    def _render_oracle_variant(
+        span_variant: BudgetSpanVariant | None,
+        output_path: Path,
+    ) -> Path | None:
+        oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+            cfg=cfg,
+            enabled_method_names=enabled_method_names,
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+            span_variant=span_variant,
+        )
+        if not oracle_rows:
+            return None
+        return oracle_learning_curve_plot(
+            pd.DataFrame(oracle_rows),
+            output_path=output_path,
+            log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
+        )
 
-    oracle_rows = load_all_datasets_oracle_learning_curve_rows(
-        cfg=cfg,
-        enabled_method_names=enabled_method_names,
-        min_x=min_x,
-        max_x=max_x,
-        include_x=include_x,
-    )
-    if not oracle_rows:
-        return None
-
-    output_path = output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png"
-    return oracle_learning_curve_plot(
-        pd.DataFrame(oracle_rows),
-        output_path=output_path,
-        log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
+    return render_budget_span_variants(
+        cfg,
+        base_output_path=output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png",
+        render_variant=_render_oracle_variant,
     )
 
 
@@ -1561,7 +1565,6 @@ def run_experiment(cfg: object):
     learning_curve_results = None
     learning_curve_plot_path = None
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
-    budget_span_variants = configured_budget_span_variants(cfg)
     if learning_curve_cfg is not None:
         enabled_learning_curve_method_names = enabled_learning_curve_model_names_from_config(
             getattr(learning_curve_cfg, "models", None)
@@ -1572,30 +1575,29 @@ def run_experiment(cfg: object):
             graph_view=graph_view,
             auxiliary_views=auxiliary_views,
         )
-        if budget_span_variants:
-            for variant in budget_span_variants:
+        def _render_learning_curve_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path:
+            variant_include_x = plot_kwargs["include_x"]
+            if span_variant is not None:
                 variant_include_x = _merged_include_x(
                     plot_kwargs["include_x"],
-                    variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
                 )
-                variant_plot_path = learning_curve_plot(
-                    results=learning_curve_results,
-                    output_path=output_dir
-                    / f"learning_curve_{run_suffix}_{variant.output_suffix}.png",
-                    zero_shot_rmse=zero_shot_rmse,
-                    min_x=plot_kwargs["min_x"],
-                    max_x=plot_kwargs["max_x"],
-                    include_x=variant_include_x,
-                )
-                if variant.key == "absolute" or learning_curve_plot_path is None:
-                    learning_curve_plot_path = variant_plot_path
-        else:
-            learning_curve_plot_path = learning_curve_plot(
+            return learning_curve_plot(
                 results=learning_curve_results,
-                output_path=output_dir / f"learning_curve_{run_suffix}.png",
+                output_path=output_path,
                 zero_shot_rmse=zero_shot_rmse,
-                **plot_kwargs,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
             )
+        learning_curve_plot_path = render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"learning_curve_{run_suffix}.png",
+            render_variant=_render_learning_curve_variant,
+        )
         write_all_datasets_oracle_learning_curve_plot(
             cfg=cfg,
             output_dir=output_dir,

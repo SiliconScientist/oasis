@@ -20,6 +20,7 @@ from oasis.experiment_runner import (
     configured_budget_span_variants,
     load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
+    render_budget_span_variants,
     run_experiment,
     run_experiment_from_config,
     write_all_datasets_zero_shot_rmse_stage_plot,
@@ -206,6 +207,46 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual([variant.key for variant in variants], ["fraction"])
         self.assertEqual(variants[0].resolved_include_x(n_samples=20), [5, 10])
+
+    def test_render_budget_span_variants_applies_suffixes_and_returns_absolute_path(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+        rendered: list[tuple[str | None, Path]] = []
+
+        def _render(span_variant, output_path):
+            rendered.append(
+                (
+                    None if span_variant is None else span_variant.key,
+                    output_path,
+                )
+            )
+            return output_path
+
+        saved_path = render_budget_span_variants(
+            cfg,
+            base_output_path=Path("plots/learning_curve.png"),
+            render_variant=_render,
+        )
+
+        self.assertEqual(
+            rendered,
+            [
+                ("absolute", Path("plots/learning_curve_absolute.png")),
+                ("fraction", Path("plots/learning_curve_fraction.png")),
+            ],
+        )
+        self.assertEqual(saved_path, Path("plots/learning_curve_absolute.png"))
 
     def test_write_policy_selection_diagnostic_saves_artifact_and_csvs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
