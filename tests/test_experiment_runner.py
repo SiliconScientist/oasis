@@ -16,6 +16,7 @@ from oasis.experiment_runner import (
     _load_oracle_learning_curve_rows_for_dataset,
     _build_zero_shot_stage_rows,
     _write_policy_selection_diagnostic,
+    BudgetSpanVariant,
     configured_budget_span_variants,
     load_all_datasets_oracle_learning_curve_rows,
     load_filtered_wide_predictions,
@@ -955,7 +956,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
-    def test_load_oracle_learning_curve_rows_for_dataset_resolves_include_fractions_per_dataset(
+    def test_load_oracle_learning_curve_rows_for_dataset_resolves_fraction_span_per_dataset(
         self,
     ) -> None:
         cfg = SimpleNamespace(
@@ -1023,13 +1024,21 @@ class ExperimentRunnerTests(unittest.TestCase):
                 cfg,
                 dataset_tag="bio_mass",
                 enabled_method_names=["ridge"],
-                include_fractions=[0.5, 1.0],
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
             )
             large_rows = _load_oracle_learning_curve_rows_for_dataset(
                 cfg,
                 dataset_tag="khlohc",
                 enabled_method_names=["ridge"],
-                include_fractions=[0.5, 1.0],
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
             )
 
         self.assertEqual([row["n_train"] for row in small_rows], [2, 4])
@@ -1263,7 +1272,73 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(saved_path, tmp_path / "oracle.png")
-        self.assertTrue(mock_plot.call_args.kwargs["log_x"])
+
+    def test_write_all_datasets_oracle_learning_curve_plot_emits_dual_budget_span_outputs(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                )
+            ),
+            plot=SimpleNamespace(
+                curve_window=SimpleNamespace(oracle_all_datasets_log_x=False)
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
+                return_value=[
+                    {
+                        "dataset": "bio_mass",
+                        "dataset_label": "Bio-Mass",
+                        "n_train": 2,
+                        "oracle_rmse": 0.35,
+                        "oracle_method": "ridge",
+                    }
+                ],
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot",
+                side_effect=[
+                    tmp_path / "oracle_absolute.png",
+                    tmp_path / "oracle_fraction.png",
+                ],
+            ) as mock_plot:
+                saved_path = write_all_datasets_oracle_learning_curve_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                )
+
+        self.assertEqual(saved_path, tmp_path / "oracle_absolute.png")
+        self.assertEqual(mock_load_rows.call_count, 2)
+        self.assertEqual(
+            mock_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "learning_curve_oracle_all_datasets_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "learning_curve_oracle_all_datasets_anomalyaware_off_fraction.png",
+        )
+        self.assertEqual(
+            [call.kwargs["span_variant"].key for call in mock_load_rows.call_args_list],
+            ["absolute", "fraction"],
+        )
+        self.assertFalse(mock_plot.call_args.kwargs["log_x"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,

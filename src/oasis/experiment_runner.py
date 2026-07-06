@@ -399,7 +399,7 @@ def _load_oracle_learning_curve_rows_for_dataset(
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
-    include_fractions: list[float] | tuple[float, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
 ) -> list[dict[str, object]]:
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
@@ -442,28 +442,12 @@ def _load_oracle_learning_curve_rows_for_dataset(
         dataset=dataset_tag,
         dataset_label=dataset_label,
     )
-    resolved_include_fraction_x = (
-        list(
-            resolve_configured_sweep_sizes(
-                _frame_height(wide_df),
-                min_train=None,
-                max_train=None,
-                sweep_fractions=include_fractions,
-            )
-        )
-        if include_fractions
-        else None
+    dataset_include_x = _merged_include_x(
+        include_x,
+        None
+        if span_variant is None
+        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
     )
-    dataset_include_x = None
-    if include_x or resolved_include_fraction_x:
-        dataset_include_x = sorted(
-            {
-                int(value)
-                for value in (
-                    list(include_x or []) + list(resolved_include_fraction_x or [])
-                )
-            }
-        )
     filtered_oracle_df = _filter_curve_frame(
         oracle_df,
         x_column="n_train",
@@ -1018,7 +1002,7 @@ def load_all_datasets_oracle_learning_curve_rows(
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
-    include_fractions: list[float] | tuple[float, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
 ) -> list[dict[str, object]]:
     configured_tags = list(getattr(cfg, "datasets", {}))
     current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
@@ -1037,7 +1021,7 @@ def load_all_datasets_oracle_learning_curve_rows(
                 min_x=min_x,
                 max_x=max_x,
                 include_x=include_x,
-                include_fractions=include_fractions,
+                span_variant=span_variant,
             )
         )
     return oracle_rows
@@ -1052,11 +1036,38 @@ def write_all_datasets_oracle_learning_curve_plot(
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
-    include_fractions: list[float] | tuple[float, ...] | None = None,
 ) -> Path | None:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
         return None
+
+    curve_window_cfg = getattr(getattr(cfg, "plot", None), "curve_window", None)
+    budget_span_variants = configured_budget_span_variants(cfg)
+    if budget_span_variants:
+        saved_path = None
+        for span_variant in budget_span_variants:
+            oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+                cfg=cfg,
+                enabled_method_names=enabled_method_names,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+                span_variant=span_variant,
+            )
+            if not oracle_rows:
+                continue
+            output_path = (
+                output_dir
+                / f"learning_curve_oracle_all_datasets_{run_suffix}_{span_variant.output_suffix}.png"
+            )
+            saved_variant_path = oracle_learning_curve_plot(
+                pd.DataFrame(oracle_rows),
+                output_path=output_path,
+                log_x=bool(getattr(curve_window_cfg, "oracle_all_datasets_log_x", False)),
+            )
+            if span_variant.key == "absolute" or saved_path is None:
+                saved_path = saved_variant_path
+        return saved_path
 
     oracle_rows = load_all_datasets_oracle_learning_curve_rows(
         cfg=cfg,
@@ -1064,12 +1075,10 @@ def write_all_datasets_oracle_learning_curve_plot(
         min_x=min_x,
         max_x=max_x,
         include_x=include_x,
-        include_fractions=include_fractions,
     )
     if not oracle_rows:
         return None
 
-    curve_window_cfg = getattr(getattr(cfg, "plot", None), "curve_window", None)
     output_path = output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png"
     return oracle_learning_curve_plot(
         pd.DataFrame(oracle_rows),
