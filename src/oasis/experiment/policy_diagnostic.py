@@ -27,6 +27,7 @@ from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCol
 
 
 _POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 3
+_SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 1
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
     "policy_name",
@@ -52,6 +53,13 @@ _SUMMARY_COLUMNS = [
     "agreement_rate",
     "oracle_outer_rmse_mean",
     "screening_selected_outer_rmse_mean",
+]
+_SCREENING_ROWS_COLUMNS = [
+    "method",
+    "budget",
+    "repeat",
+    "screening_cv_rmse",
+    "screening_miscalibration_area",
 ]
 
 
@@ -88,6 +96,20 @@ class SharedOuterSplit:
 class ScreeningDiagnosticMetrics:
     cv_rmse: float
     miscalibration_area: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningDiagnosticRowsArtifact:
+    metadata: LearningCurveSweepMetadata
+    screening_rows_df: pd.DataFrame
+    cache_signature: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "screening_rows_df",
+            normalize_screening_diagnostic_rows_frame(self.screening_rows_df),
+        )
 
 
 def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -128,6 +150,24 @@ def normalize_policy_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return (
         normalized.loc[:, _SUMMARY_COLUMNS]
         .sort_values(["policy_name", "budget"])
+        .reset_index(drop=True)
+    )
+
+
+def normalize_screening_diagnostic_rows_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(frame, _SCREENING_ROWS_COLUMNS, frame_name="screening diagnostic rows")
+    normalized = frame.copy()
+    normalized["method"] = normalized["method"].astype("string")
+    normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
+    normalized["repeat"] = pd.Series(normalized["repeat"], dtype="Int64")
+    normalized["screening_cv_rmse"] = pd.Series(normalized["screening_cv_rmse"], dtype="Float64")
+    normalized["screening_miscalibration_area"] = pd.Series(
+        normalized["screening_miscalibration_area"],
+        dtype="Float64",
+    )
+    return (
+        normalized.loc[:, _SCREENING_ROWS_COLUMNS]
+        .sort_values(["method", "budget", "repeat"])
         .reset_index(drop=True)
     )
 
@@ -320,6 +360,81 @@ def load_policy_selection_diagnostic_artifact(
 ) -> PolicySelectionDiagnosticArtifact:
     resolved_path = Path(path)
     return load_policy_selection_diagnostic_artifact_mapping(
+        json.loads(resolved_path.read_text(encoding="utf-8")),
+        expected_metadata=expected_metadata,
+        expected_cache_signature=expected_cache_signature,
+    )
+
+
+def dump_screening_diagnostic_rows_artifact(
+    artifact: ScreeningDiagnosticRowsArtifact,
+) -> dict[str, Any]:
+    return {
+        "version": _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION,
+        "metadata": artifact.metadata.to_bundle_mapping(),
+        "screening_rows_df": artifact.screening_rows_df.to_json(orient="table"),
+        "cache_signature": artifact.cache_signature,
+    }
+
+
+def load_screening_diagnostic_rows_artifact_mapping(
+    payload: dict[str, Any],
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> ScreeningDiagnosticRowsArtifact:
+    version = payload.get("version")
+    if version != _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION:
+        raise ValueError(
+            f"unsupported screening diagnostic rows artifact version: {version!r}."
+        )
+    metadata_payload = payload.get("metadata")
+    if not isinstance(metadata_payload, dict):
+        raise TypeError("screening diagnostic rows artifact must contain metadata.")
+    metadata = LearningCurveSweepMetadata.from_bundle_mapping(
+        metadata_payload,
+        fallback=expected_metadata,
+    )
+    if expected_metadata is not None:
+        expected_metadata.assert_compatible(metadata)
+    rows_payload = payload.get("screening_rows_df")
+    if not isinstance(rows_payload, str):
+        raise TypeError(
+            "screening diagnostic rows artifact must contain a screening_rows_df JSON string."
+        )
+    cache_signature = payload.get("cache_signature")
+    if cache_signature is not None and not isinstance(cache_signature, dict):
+        raise TypeError("screening diagnostic rows artifact cache_signature must be a mapping.")
+    if expected_cache_signature is not None and cache_signature != expected_cache_signature:
+        raise ValueError("screening diagnostic rows artifact cache signature is incompatible.")
+    return ScreeningDiagnosticRowsArtifact(
+        metadata=metadata,
+        screening_rows_df=pd.read_json(StringIO(rows_payload), orient="table"),
+        cache_signature=cache_signature,
+    )
+
+
+def save_screening_diagnostic_rows_artifact(
+    artifact: ScreeningDiagnosticRowsArtifact,
+    path: str | Path,
+) -> Path:
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
+        json.dumps(dump_screening_diagnostic_rows_artifact(artifact), indent=2),
+        encoding="utf-8",
+    )
+    return resolved_path
+
+
+def load_screening_diagnostic_rows_artifact(
+    path: str | Path,
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> ScreeningDiagnosticRowsArtifact:
+    resolved_path = Path(path)
+    return load_screening_diagnostic_rows_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
         expected_cache_signature=expected_cache_signature,

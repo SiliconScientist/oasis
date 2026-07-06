@@ -10,14 +10,18 @@ import pandas as pd
 from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
+    ScreeningDiagnosticRowsArtifact,
     build_policy_selection_diagnostic_results,
     build_policy_selection_detail_frame,
     derive_family_split_collection_from_shared_outer_splits,
     generate_shared_outer_splits,
     load_policy_selection_diagnostic_artifact,
+    load_screening_diagnostic_rows_artifact,
     normalize_policy_detail_frame,
     normalize_policy_summary_frame,
+    normalize_screening_diagnostic_rows_frame,
     save_policy_selection_diagnostic_artifact,
+    save_screening_diagnostic_rows_artifact,
     summarize_policy_detail_frame,
 )
 from oasis.learning_curve.results_io import (
@@ -269,6 +273,65 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
             ],
         )
         self.assertEqual(summary["mean_regret"].tolist(), [0.1, 0.0])
+
+    def test_normalize_screening_diagnostic_rows_frame_orders_and_coerces_types(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "method": ["weighted_linear", "ridge"],
+                "budget": [8, 4],
+                "repeat": [1, 0],
+                "screening_cv_rmse": [0.19, 0.29],
+                "screening_miscalibration_area": [0.08, 0.11],
+                "ignored": [1, 2],
+            }
+        )
+
+        normalized = normalize_screening_diagnostic_rows_frame(frame)
+
+        self.assertEqual(
+            normalized.columns.tolist(),
+            [
+                "method",
+                "budget",
+                "repeat",
+                "screening_cv_rmse",
+                "screening_miscalibration_area",
+            ],
+        )
+        self.assertEqual(normalized["method"].tolist(), ["ridge", "weighted_linear"])
+        self.assertEqual(str(normalized["budget"].dtype), "Int64")
+
+    def test_screening_diagnostic_rows_artifact_round_trip(self) -> None:
+        artifact = ScreeningDiagnosticRowsArtifact(
+            metadata=self._metadata(),
+            screening_rows_df=pd.DataFrame(
+                {
+                    "method": ["weighted_linear", "ridge"],
+                    "budget": [8, 4],
+                    "repeat": [1, 0],
+                    "screening_cv_rmse": [0.19, 0.29],
+                    "screening_miscalibration_area": [0.08, 0.11],
+                }
+            ),
+            cache_signature=self._cache_signature(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "screening_rows.json"
+            saved_path = save_screening_diagnostic_rows_artifact(artifact, path)
+            restored = load_screening_diagnostic_rows_artifact(
+                saved_path,
+                expected_metadata=self._metadata(),
+                expected_cache_signature=self._cache_signature(),
+            )
+
+        self.assertEqual(saved_path, path)
+        self.assertEqual(restored.metadata, artifact.metadata)
+        self.assertEqual(restored.cache_signature, artifact.cache_signature)
+        pd.testing.assert_frame_equal(
+            restored.screening_rows_df,
+            normalize_screening_diagnostic_rows_frame(artifact.screening_rows_df),
+        )
 
     def test_derived_family_splits_preserve_shared_outer_test_sets(self) -> None:
         shared_splits = generate_shared_outer_splits(
