@@ -51,7 +51,10 @@ from oasis.experiment_data import (
     load_probe_graph_dataset_view,
     save_aligned_graph_dataset_parquet,
 )
-from oasis.learning_curve.results_io import learning_curve_sweep_metadata_from_config
+from oasis.learning_curve.results_io import (
+    learning_curve_sweep_metadata_from_config,
+    load_learning_curve_results_artifact,
+)
 from oasis.experiment_config import derive_dataset_profile_paths
 from oasis.io import load_sample_atoms_for_wide_df
 from oasis.mlip.artifacts import (
@@ -447,6 +450,7 @@ def _load_oracle_learning_curve_rows_for_dataset(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     span_variant: BudgetSpanVariant | None = None,
+    cache_only: bool = False,
 ) -> list[dict[str, object]]:
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
@@ -476,13 +480,23 @@ def _load_oracle_learning_curve_rows_for_dataset(
         dataset_size=_frame_height(wide_df),
     )
     _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
-    graph_view = prepare_graph_view(dataset_cfg, wide_df)
-    results = load_or_run_learning_curve_results_from_config(
-        wide_df,
+    results = _load_cached_learning_curve_results_for_dataset_cfg(
         dataset_cfg,
-        graph_view=graph_view,
-        auxiliary_views=auxiliary_views,
+        wide_df=wide_df,
     )
+    if results is None:
+        if cache_only:
+            print(f"All-datasets oracle cache miss for {dataset_tag}: skipping")
+            return []
+        graph_view = prepare_graph_view(dataset_cfg, wide_df)
+        results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            dataset_cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+    else:
+        print(f"All-datasets oracle cache hit for {dataset_tag}")
     oracle_df = oracle_learning_curve_frame(
         results,
         enabled_method_names=list(enabled_method_names),
@@ -1115,6 +1129,7 @@ def _load_policy_regret_rows_for_dataset(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     span_variant: BudgetSpanVariant | None = None,
+    cache_only: bool = False,
 ) -> list[dict[str, object]]:
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
@@ -1142,6 +1157,9 @@ def _load_policy_regret_rows_for_dataset(
     _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
     diagnostic_results = cached_results
     if diagnostic_results is None:
+        if cache_only:
+            print(f"All-datasets policy diagnostic miss for {dataset_tag}: skipping")
+            return []
         print(f"All-datasets policy diagnostic miss for {dataset_tag}: rebuilding")
         graph_view = prepare_graph_view(dataset_cfg, wide_df)
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
@@ -1205,6 +1223,37 @@ def _load_cached_policy_selection_results_for_dataset_cfg(
         return None
 
 
+def _load_cached_learning_curve_results_for_dataset_cfg(
+    dataset_cfg: object,
+    *,
+    wide_df: object,
+):
+    learning_curve_cfg = getattr(getattr(dataset_cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is None:
+        return None
+    results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    if results_bundle_path is None or not Path(results_bundle_path).is_file():
+        return None
+    try:
+        metadata = learning_curve_sweep_metadata_from_config(
+            dataset_cfg,
+            dataset_size=int(len(wide_df)),
+            mlip_feature_names=mlip_feature_names(wide_df),
+        )
+    except (AttributeError, ValueError):
+        return None
+    try:
+        return load_learning_curve_results_artifact(
+            results_bundle_path,
+            expected_metadata=metadata,
+            ignore_enabled_models=True,
+            ignore_train_grid=True,
+            ignore_repeat_count=True,
+        ).results
+    except ValueError:
+        return None
+
+
 def load_all_datasets_policy_regret_rows(
     *,
     cfg: object,
@@ -1230,6 +1279,7 @@ def load_all_datasets_policy_regret_rows(
                 max_x=max_x,
                 include_x=include_x,
                 span_variant=span_variant,
+                cache_only=True,
             )
         )
     return regret_rows
@@ -1472,6 +1522,7 @@ def load_all_datasets_oracle_learning_curve_rows(
                 max_x=max_x,
                 include_x=include_x,
                 span_variant=span_variant,
+                cache_only=True,
             )
         )
     return oracle_rows
