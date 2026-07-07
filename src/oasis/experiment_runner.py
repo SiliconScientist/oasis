@@ -2035,20 +2035,18 @@ def write_uq_summary_figure(
     if not _has_uq_summary(results):
         return None
 
-    panel_stem_prefix = f"{panel_prefix}_" if panel_prefix else ""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        panel_paths = write_uq_summary_panels(
-            results=results,
-            output_dir=Path(tmpdir),
-            run_suffix=run_suffix,
-            zero_shot_uq=zero_shot_uq,
-            panel_prefix=panel_prefix,
-            **plot_kwargs,
-        )
-        return stitch_uq_summary_figure(
-            output_path=output_path,
-            panel_paths=panel_paths,
-        )
+    panel_paths = write_uq_summary_panels(
+        results=results,
+        output_dir=output_path.parent,
+        run_suffix=run_suffix,
+        zero_shot_uq=zero_shot_uq,
+        panel_prefix=panel_prefix,
+        **plot_kwargs,
+    )
+    return stitch_uq_summary_figure(
+        output_path=output_path,
+        panel_paths=panel_paths,
+    )
 
 
 def write_uq_summary_panels(
