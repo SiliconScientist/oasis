@@ -73,6 +73,7 @@ from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
     _filter_curve_frame,
     all_datasets_policy_regret_plot,
+    all_datasets_uq_oracle_plot,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -81,6 +82,7 @@ from oasis.plot import (
     miscalibration_area_plot,
     oracle_learning_curve_frame,
     oracle_learning_curve_plot,
+    oracle_uq_curve_frame,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -1724,6 +1726,120 @@ def load_all_datasets_oracle_learning_curve_rows(
     return oracle_rows
 
 
+def _load_all_datasets_oracle_uq_rows(
+    cfg: object,
+    *,
+    dataset_tag: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+    cache_only: bool = False,
+) -> list[dict[str, object]]:
+    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
+    learning_curve_cfg = getattr(
+        getattr(dataset_cfg, "experiment", None),
+        "learning_curve",
+        None,
+    )
+    if learning_curve_cfg is None:
+        return []
+
+    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
+    dataset_label = (
+        dataset_tag
+        if named_profile is None
+        else named_profile.mlip_run_dirname_or_default(dataset_tag)
+    )
+    probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    wide_df, auxiliary_views = build_auxiliary_views(
+        dataset_cfg,
+        wide_df,
+        probe_gnn_enabled,
+    )
+    _apply_persistent_output_suffixes(
+        dataset_cfg,
+        dataset_size=_frame_height(wide_df),
+    )
+    _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
+    results = _load_cached_learning_curve_results_for_dataset_cfg(
+        dataset_cfg,
+        wide_df=wide_df,
+    )
+    if results is None:
+        if cache_only:
+            print(f"All-datasets UQ oracle cache miss for {dataset_tag}: skipping")
+            return []
+        graph_view = prepare_graph_view(dataset_cfg, wide_df)
+        results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            dataset_cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+    else:
+        print(f"All-datasets UQ oracle cache hit for {dataset_tag}")
+
+    oracle_df = oracle_uq_curve_frame(
+        results,
+        enabled_method_names=list(enabled_method_names),
+        dataset=dataset_tag,
+        dataset_label=dataset_label,
+    )
+    dataset_include_x = _merged_include_x(
+        include_x,
+        None
+        if span_variant is None
+        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+    )
+    filtered_oracle_df = _filter_curve_frame(
+        oracle_df,
+        x_column="n_train",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=dataset_include_x,
+    )
+    if filtered_oracle_df is None or filtered_oracle_df.empty:
+        return []
+    return filtered_oracle_df.to_dict(orient="records")
+
+
+def load_all_datasets_oracle_uq_rows(
+    *,
+    cfg: object,
+    enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    span_variant: BudgetSpanVariant | None = None,
+) -> list[dict[str, object]]:
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1:
+        return []
+
+    oracle_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        oracle_rows.extend(
+            _load_all_datasets_oracle_uq_rows(
+                cfg,
+                dataset_tag=dataset_tag,
+                enabled_method_names=enabled_method_names,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+                span_variant=span_variant,
+                cache_only=True,
+            )
+        )
+    return oracle_rows
+
+
 def write_all_datasets_oracle_learning_curve_plot(
     *,
     cfg: object,
@@ -1767,6 +1883,87 @@ def write_all_datasets_oracle_learning_curve_plot(
         base_output_path=output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png",
         render_variant=_render_oracle_variant,
     )
+
+
+def write_all_datasets_uq_oracle_plots(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> dict[str, Path] | None:
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is None:
+        return None
+
+    metric_specs = (
+        (
+            "miscalibration_area",
+            "oracle_miscalibration_area",
+            "Oracle miscalibration area",
+            "Oracle miscalibration area by dataset",
+        ),
+        (
+            "sharpness",
+            "oracle_sharpness",
+            "Oracle sharpness",
+            "Oracle sharpness by dataset",
+        ),
+        (
+            "dispersion",
+            "oracle_dispersion",
+            "Oracle dispersion",
+            "Oracle dispersion by dataset",
+        ),
+    )
+    saved_paths: dict[str, Path] = {}
+    oracle_rows_by_variant: dict[str | None, list[dict[str, object]]] = {}
+
+    for metric_key, metric_column, ylabel, title in metric_specs:
+        def _render_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+            *,
+            _metric_column: str = metric_column,
+            _ylabel: str = ylabel,
+            _title: str = title,
+        ) -> Path | None:
+            variant_key = None if span_variant is None else span_variant.key
+            oracle_rows = oracle_rows_by_variant.get(variant_key)
+            if oracle_rows is None:
+                oracle_rows = load_all_datasets_oracle_uq_rows(
+                    cfg=cfg,
+                    enabled_method_names=enabled_method_names,
+                    min_x=min_x,
+                    max_x=max_x,
+                    include_x=include_x,
+                    span_variant=span_variant,
+                )
+                oracle_rows_by_variant[variant_key] = oracle_rows
+            if not oracle_rows:
+                return None
+            return all_datasets_uq_oracle_plot(
+                pd.DataFrame(oracle_rows),
+                output_path=output_path,
+                metric_column=_metric_column,
+                ylabel=_ylabel,
+                title=_title,
+                log_x=bool(span_variant is not None and span_variant.key == "fraction"),
+            )
+
+        saved_path = render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir
+            / f"uq_oracle_all_datasets_{metric_key}_{run_suffix}.png",
+            render_variant=_render_variant,
+        )
+        if saved_path is not None:
+            saved_paths[metric_key] = saved_path
+
+    return saved_paths or None
 
 
 def build_auxiliary_views(
@@ -2296,6 +2493,15 @@ def run_experiment(cfg: object):
             render_variant=_render_learning_curve_variant,
         )
         write_all_datasets_oracle_learning_curve_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        write_all_datasets_uq_oracle_plots(
             cfg=cfg,
             output_dir=output_dir,
             run_suffix=run_suffix,
