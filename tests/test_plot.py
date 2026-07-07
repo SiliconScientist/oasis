@@ -605,11 +605,31 @@ class PlotTests(unittest.TestCase):
                 zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
                 fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
                 ax = fig.axes[0]
+                legends = [
+                    artist for artist in ax.get_children() if artist.__class__.__name__ == "Legend"
+                ]
 
             self.assertTrue(output_path.exists())
             self.assertEqual(len(ax.patches), 3)
-            self.assertEqual(len(ax.collections), 1)
-            self.assertEqual(len(ax.collections[0].get_offsets()), 2)
+            self.assertEqual(len(ax.collections), 2)
+            self.assertEqual(
+                sum(len(collection.get_offsets()) for collection in ax.collections),
+                2,
+            )
+            self.assertEqual(
+                len(
+                    {
+                        tuple(round(float(channel), 6) for channel in collection.get_facecolors()[0])
+                        for collection in ax.collections
+                    }
+                ),
+                2,
+            )
+            self.assertEqual(len(legends), 2)
+            self.assertEqual(
+                [text.get_text() for text in legends[1].get_texts()],
+                ["mlip_a", "mlip_b"],
+            )
 
     def test_zero_shot_rmse_stage_plot_can_disable_lone_mlip_swarm(self) -> None:
         stage_df = pd.DataFrame(
@@ -682,6 +702,9 @@ class PlotTests(unittest.TestCase):
                 zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
                 fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
                 ax = fig.axes[0]
+                legends = [
+                    artist for artist in ax.get_children() if artist.__class__.__name__ == "Legend"
+                ]
 
             self.assertTrue(output_path.exists())
             self.assertEqual(len(ax.patches), 6)
@@ -689,6 +712,7 @@ class PlotTests(unittest.TestCase):
                 [tick.get_text() for tick in ax.get_xticklabels()],
                 ["OH-BMA", "KHLOHC-TOL"],
             )
+            self.assertEqual(len(legends), 1)
 
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(

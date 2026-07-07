@@ -14,6 +14,7 @@ import matplotlib
 if "MPLBACKEND" not in os.environ:
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
@@ -34,6 +35,19 @@ _MLIP_DISPLAY_NAMES = {
     "orb-v3-conservative-inf-omat": "ORB-v3\nconservative",
     "uma-s-1p1": "UMA-s-1p1",
 }
+_MLIP_SWARM_MARKERS = ("o", "s", "^", "D", "P", "X", "v", "<", ">", "8", "h", "*")
+_MLIP_SWARM_COLORS = (
+    "tab:blue",
+    "tab:orange",
+    "tab:green",
+    "tab:red",
+    "tab:purple",
+    "tab:brown",
+    "tab:pink",
+    "tab:gray",
+    "tab:olive",
+    "tab:cyan",
+)
 _DEFAULT_PLOT_FONTSIZE = 16
 _DEFAULT_TICK_FONTSIZE = 8
 _DEFAULT_LEGEND_FONTSIZE = 8
@@ -55,6 +69,10 @@ _METHOD_RESULT_FIELDS = {
     method_name: result_field
     for method_name, result_field, *_ in _METHOD_PLOT_STYLES
 }
+
+
+def _mlip_display_name(mlip: str) -> str:
+    return _MLIP_DISPLAY_NAMES.get(mlip, mlip)
 
 
 def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -479,17 +497,33 @@ def zero_shot_rmse_stage_plot(
                 continue
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
-                bar.get_height(),
+                max(bar.get_height() * 0.03, 0.02),
                 f"n={int(n_samples)}",
                 ha="center",
                 va="bottom",
                 fontsize=_DEFAULT_TICK_FONTSIZE,
+                zorder=6,
+                bbox={
+                    "boxstyle": "round,pad=0.15",
+                    "facecolor": "white",
+                    "edgecolor": "black",
+                    "linewidth": 0.6,
+                    "alpha": 0.95,
+                },
             )
 
     if show_lone_mlip_swarm and not swarm_rows.empty:
         swarm_stage = "Full / all MLIPs"
         swarm_offset = offsets[stage_order.index(swarm_stage)]
-        point_label_used = False
+        swarm_mlips = sorted(swarm_rows["mlip"].dropna().unique().tolist())
+        swarm_markers = {
+            mlip: _MLIP_SWARM_MARKERS[index % len(_MLIP_SWARM_MARKERS)]
+            for index, mlip in enumerate(swarm_mlips)
+        }
+        swarm_colors = {
+            mlip: _MLIP_SWARM_COLORS[index % len(_MLIP_SWARM_COLORS)]
+            for index, mlip in enumerate(swarm_mlips)
+        }
         for dataset_index, dataset_name in enumerate(dataset_order):
             dataset_swarm = swarm_rows.loc[
                 (swarm_rows["dataset"] == dataset_name)
@@ -502,23 +536,53 @@ def zero_shot_rmse_stage_plot(
                 local_offsets = np.array([0.0])
             else:
                 local_offsets = np.linspace(-width * 0.28, width * 0.28, num=point_count)
-            ax.scatter(
-                np.full(point_count, x[dataset_index] + swarm_offset) + local_offsets,
-                dataset_swarm["rmse"].to_numpy(),
-                s=28,
-                color="black",
-                alpha=0.75,
-                zorder=4,
-                label="Lone MLIP RMSE" if not point_label_used else None,
-            )
-            point_label_used = True
+            for local_offset, (_, row) in zip(
+                local_offsets,
+                dataset_swarm.iterrows(),
+                strict=True,
+            ):
+                ax.scatter(
+                    x[dataset_index] + swarm_offset + local_offset,
+                    row["rmse"],
+                    s=40,
+                    color=swarm_colors[row["mlip"]],
+                    edgecolors="black",
+                    linewidths=0.6,
+                    marker=swarm_markers[row["mlip"]],
+                    alpha=0.85,
+                    zorder=4,
+                )
 
     ax.set_xticks(x, dataset_labels)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
     ax.set_title("Zero-shot mean-MLIP RMSE by filtering stage", fontsize=fontsize)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, axis="y", linestyle="--", alpha=0.3)
-    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    stage_legend = ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE, loc="upper left")
+    if show_lone_mlip_swarm and not swarm_rows.empty:
+        mlip_handles = [
+            Line2D(
+                [],
+                [],
+                linestyle="None",
+                marker=swarm_markers[mlip],
+                markerfacecolor=swarm_colors[mlip],
+                markeredgecolor="black",
+                markeredgewidth=0.6,
+                color=swarm_colors[mlip],
+                markersize=5,
+                label=_mlip_display_name(mlip),
+            )
+            for mlip in swarm_mlips
+        ]
+        ax.add_artist(stage_legend)
+        ax.legend(
+            handles=mlip_handles,
+            title="Lone MLIPs",
+            fontsize=_DEFAULT_LEGEND_FONTSIZE,
+            title_fontsize=_DEFAULT_LEGEND_FONTSIZE,
+            loc="upper right",
+        )
     plt.tight_layout()
 
     output_path = Path(output_path)
