@@ -4440,6 +4440,108 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "tmp" / "dispersion.png",
         )
 
+    def test_run_experiment_persists_learning_curve_uq_component_plots_for_both_span_variants(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        sweep_sizes=[5, 10],
+                        sweep_fractions=[0.5, 1.0],
+                        min_train=None,
+                        max_train=None,
+                        step=1,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame(reactions=[f"r{i}" for i in range(10)])
+            results = self._uq_results()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ), patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_miscalibration_plot, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_sharpness_plot, patch(
+                "oasis.experiment_runner.dispersion_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_dispersion_plot, patch(
+                "oasis.experiment_runner.uq_summary_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_uq_summary_figure:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_miscalibration_plot.call_count, 2)
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_miscalibration_plot.call_args_list],
+            [
+                "miscalibration_area_panel_anomalyaware_off_absolute.png",
+                "miscalibration_area_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).parent for call in mock_miscalibration_plot.call_args_list],
+            [tmp_path / "plots", tmp_path / "plots"],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_sharpness_plot.call_args_list],
+            [
+                "sharpness_panel_anomalyaware_off_absolute.png",
+                "sharpness_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_dispersion_plot.call_args_list],
+            [
+                "dispersion_panel_anomalyaware_off_absolute.png",
+                "dispersion_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_uq_summary_figure.call_args_list],
+            [
+                "uq_summary_figure_anomalyaware_off_absolute.png",
+                "uq_summary_figure_anomalyaware_off_fraction.png",
+            ],
+        )
+
     def test_run_experiment_emits_screening_uq_summary_figure_when_screening_results_have_uq(
         self,
     ) -> None:
@@ -4551,4 +4653,126 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_uq_summary_figure.call_args.kwargs["dispersion_path"],
             tmp_path / "tmp" / "screening_dispersion.png",
+        )
+
+    def test_run_experiment_persists_screening_uq_component_plots_for_both_span_variants(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        sweep_sizes=[5, 10],
+                        sweep_fractions=[0.5, 1.0],
+                        min_train=None,
+                        max_train=None,
+                        step=1,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        results_bundle_path=None,
+                        reuse_results=False,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                    ),
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame(reactions=[f"r{i}" for i in range(10)])
+            learning_results = LearningCurveResults.empty()
+            screening_results = self._uq_results()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                side_effect=[learning_results, screening_results],
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ), patch(
+                "oasis.experiment_runner.screening_budget_plot",
+                return_value=tmp_path / "plots" / "screening_budget.png",
+            ), patch(
+                "oasis.experiment_runner.learning_screening_figure",
+                return_value=tmp_path / "plots" / "learning_screening_figure.png",
+            ), patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_miscalibration_plot, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_sharpness_plot, patch(
+                "oasis.experiment_runner.dispersion_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_dispersion_plot, patch(
+                "oasis.experiment_runner.uq_summary_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_uq_summary_figure:
+                run_experiment(cfg)
+
+        self.assertEqual(mock_miscalibration_plot.call_count, 2)
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_miscalibration_plot.call_args_list],
+            [
+                "screening_miscalibration_area_panel_anomalyaware_off_absolute.png",
+                "screening_miscalibration_area_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).parent for call in mock_miscalibration_plot.call_args_list],
+            [tmp_path / "plots", tmp_path / "plots"],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_sharpness_plot.call_args_list],
+            [
+                "screening_sharpness_panel_anomalyaware_off_absolute.png",
+                "screening_sharpness_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_dispersion_plot.call_args_list],
+            [
+                "screening_dispersion_panel_anomalyaware_off_absolute.png",
+                "screening_dispersion_panel_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [Path(call.kwargs["output_path"]).name for call in mock_uq_summary_figure.call_args_list],
+            [
+                "screening_uq_summary_figure_anomalyaware_off_absolute.png",
+                "screening_uq_summary_figure_anomalyaware_off_fraction.png",
+            ],
         )
