@@ -2073,7 +2073,6 @@ def write_uq_summary_panels(
     sharpness_path = sharpness_plot(
         results,
         output_path=output_dir / f"{panel_stem_prefix}sharpness_panel_{run_suffix}.png",
-        show_legend=False,
         show_xlabel=False,
         zero_shot_value=zero_shot_uq["sharpness"],
         **plot_kwargs,
@@ -2081,7 +2080,6 @@ def write_uq_summary_panels(
     dispersion_path = dispersion_plot(
         results,
         output_path=output_dir / f"{panel_stem_prefix}dispersion_panel_{run_suffix}.png",
-        show_legend=False,
         zero_shot_value=zero_shot_uq["dispersion"],
         **plot_kwargs,
     )
