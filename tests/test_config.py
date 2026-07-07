@@ -273,6 +273,73 @@ class ConfigParsingTests(unittest.TestCase):
             ],
         )
         self.assertEqual(cfg.experiment.screening.combined_miscalibration_lambda, 2.5)
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.low_data_domain.method_name,
+            "residual",
+        )
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.high_data_domain.method_name,
+            "kernel_ridge",
+        )
+
+    def test_get_config_parses_screening_plot_baseline_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "example"',
+                        "",
+                        "[datasets.example]",
+                        'raw_dataset_filename = "example.json"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[experiment.screening]",
+                        "screen_fraction = 0.25",
+                        "",
+                        "[experiment.screening.plot_baselines.low_data_domain]",
+                        "enabled = false",
+                        'method_name = "weighted_simplex"',
+                        'label = "Low-data weighted simplex"',
+                        "",
+                        "[experiment.screening.plot_baselines.high_data_domain]",
+                        "enabled = true",
+                        'method_name = "ridge"',
+                        'label = "Late ridge"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(experiment_path)
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.screening is not None
+        self.assertFalse(cfg.experiment.screening.plot_baselines.low_data_domain.enabled)
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.low_data_domain.method_name,
+            "weighted_simplex",
+        )
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.low_data_domain.label,
+            "Low-data weighted simplex",
+        )
+        self.assertTrue(cfg.experiment.screening.plot_baselines.high_data_domain.enabled)
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.high_data_domain.method_name,
+            "ridge",
+        )
+        self.assertEqual(
+            cfg.experiment.screening.plot_baselines.high_data_domain.label,
+            "Late ridge",
+        )
 
     def test_load_config_data_loads_experiment_only_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

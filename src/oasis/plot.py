@@ -1452,6 +1452,7 @@ def _fixed_split_time_accuracy_plot(
 def policy_selected_vs_oracle_plot(
     summary_df: pd.DataFrame,
     *,
+    fixed_method_summary_df: pd.DataFrame | None = None,
     output_path: str | Path,
     min_x: int | None = None,
     max_x: int | None = None,
@@ -1509,6 +1510,31 @@ def policy_selected_vs_oracle_plot(
             color="tab:orange",
             label="Screening-selected held-out RMSE",
         )
+    if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
+        fixed_frame = _filter_curve_frame(
+            fixed_method_summary_df.sort_values(["baseline_name", "budget"]).reset_index(drop=True),
+            x_column="budget",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+        )
+        baseline_styles = [
+            ("tab:green", "^", ":"),
+            ("tab:brown", "D", "-."),
+        ]
+        for index, (baseline_name, group) in enumerate(
+            fixed_frame.groupby("baseline_name", sort=True)
+        ):
+            color, marker, linestyle = baseline_styles[index % len(baseline_styles)]
+            ordered = group.sort_values("budget")
+            ax.plot(
+                ordered["budget"],
+                ordered["outer_rmse_mean"],
+                marker=marker,
+                color=color,
+                linestyle=linestyle,
+                label=f"{baseline_name} held-out RMSE",
+            )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
     ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
@@ -1526,6 +1552,7 @@ def policy_selected_vs_oracle_plot(
 def policy_regret_plot(
     summary_df: pd.DataFrame,
     *,
+    fixed_method_summary_df: pd.DataFrame | None = None,
     output_path: str | Path,
     min_x: int | None = None,
     max_x: int | None = None,
@@ -1602,6 +1629,31 @@ def policy_regret_plot(
                 color="tab:red",
                 alpha=0.2,
                 label="Std. dev.",
+            )
+    if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
+        fixed_frame = _filter_curve_frame(
+            fixed_method_summary_df.sort_values(["baseline_name", "budget"]).reset_index(drop=True),
+            x_column="budget",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=include_x,
+        )
+        baseline_styles = [
+            ("tab:green", "^", ":"),
+            ("tab:brown", "D", "-."),
+        ]
+        for index, (baseline_name, group) in enumerate(
+            fixed_frame.groupby("baseline_name", sort=True)
+        ):
+            color, marker, linestyle = baseline_styles[index % len(baseline_styles)]
+            ordered = group.sort_values("budget")
+            ax.plot(
+                ordered["budget"],
+                ordered["mean_regret"],
+                marker=marker,
+                color=color,
+                linestyle=linestyle,
+                label=f"{baseline_name} regret",
             )
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)

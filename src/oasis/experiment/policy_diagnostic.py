@@ -27,7 +27,7 @@ from oasis.learning_curve.results_io import (
 from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCollection
 
 
-_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 3
+_POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 4
 _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 1
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
@@ -63,15 +63,38 @@ _SCREENING_ROWS_COLUMNS = [
     "screening_cv_rmse",
     "screening_miscalibration_area",
 ]
+_OUTER_METRICS_COLUMNS = [
+    "budget",
+    "repeat",
+    "method",
+    "outer_test_rmse",
+]
+_FIXED_METHOD_BASELINE_SUMMARY_COLUMNS = [
+    "baseline_name",
+    "method",
+    "budget",
+    "mean_regret",
+    "std_regret",
+    "se_regret",
+    "ci95_low",
+    "ci95_high",
+    "outer_rmse_mean",
+]
 
 
 @dataclass(frozen=True, slots=True)
 class PolicySelectionDiagnosticResults:
     detail_df: pd.DataFrame
+    outer_metrics_df: pd.DataFrame
     summary_df: pd.DataFrame
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "detail_df", normalize_policy_detail_frame(self.detail_df))
+        object.__setattr__(
+            self,
+            "outer_metrics_df",
+            normalize_outer_metrics_frame(self.outer_metrics_df),
+        )
         object.__setattr__(
             self,
             "summary_df",
@@ -175,6 +198,41 @@ def normalize_screening_diagnostic_rows_frame(frame: pd.DataFrame) -> pd.DataFra
     )
 
 
+def normalize_outer_metrics_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(frame, _OUTER_METRICS_COLUMNS, frame_name="outer metrics")
+    normalized = frame.copy()
+    normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
+    normalized["repeat"] = pd.Series(normalized["repeat"], dtype="Int64")
+    normalized["method"] = normalized["method"].astype("string")
+    normalized["outer_test_rmse"] = pd.Series(normalized["outer_test_rmse"], dtype="Float64")
+    return (
+        normalized.loc[:, _OUTER_METRICS_COLUMNS]
+        .sort_values(["method", "budget", "repeat"])
+        .reset_index(drop=True)
+    )
+
+
+def normalize_fixed_method_baseline_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(
+        frame,
+        _FIXED_METHOD_BASELINE_SUMMARY_COLUMNS,
+        frame_name="fixed method baseline summary",
+    )
+    normalized = frame.copy()
+    normalized["baseline_name"] = normalized["baseline_name"].astype("string")
+    normalized["method"] = normalized["method"].astype("string")
+    normalized["budget"] = pd.Series(normalized["budget"], dtype="Int64")
+    for column in _FIXED_METHOD_BASELINE_SUMMARY_COLUMNS:
+        if column in {"baseline_name", "method", "budget"}:
+            continue
+        normalized[column] = pd.Series(normalized[column], dtype="Float64")
+    return (
+        normalized.loc[:, _FIXED_METHOD_BASELINE_SUMMARY_COLUMNS]
+        .sort_values(["baseline_name", "budget", "method"])
+        .reset_index(drop=True)
+    )
+
+
 def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
     normalized_detail = normalize_policy_detail_frame(detail_df)
     if normalized_detail.empty:
@@ -209,6 +267,64 @@ def summarize_policy_detail_frame(detail_df: pd.DataFrame) -> pd.DataFrame:
     return normalize_policy_summary_frame(pd.DataFrame(rows, columns=_SUMMARY_COLUMNS))
 
 
+def summarize_fixed_method_baseline_frame(
+    outer_metrics_df: pd.DataFrame,
+    *,
+    baselines: Sequence[tuple[str, str]],
+) -> pd.DataFrame:
+    normalized_outer = normalize_outer_metrics_frame(outer_metrics_df)
+    if normalized_outer.empty or not baselines:
+        return normalize_fixed_method_baseline_summary_frame(
+            pd.DataFrame(columns=_FIXED_METHOD_BASELINE_SUMMARY_COLUMNS)
+        )
+
+    oracle_by_split = (
+        normalized_outer.groupby(["budget", "repeat"], sort=True)["outer_test_rmse"]
+        .min()
+        .rename("oracle_outer_rmse")
+        .reset_index()
+    )
+    rows: list[dict[str, float | int | str]] = []
+    for method_name, baseline_name in baselines:
+        baseline_rows = normalized_outer.loc[
+            normalized_outer["method"].astype(str) == method_name
+        ].copy()
+        if baseline_rows.empty:
+            continue
+        merged = baseline_rows.merge(
+            oracle_by_split,
+            on=["budget", "repeat"],
+            how="inner",
+        )
+        if merged.empty:
+            continue
+        merged["regret"] = (
+            merged["outer_test_rmse"].astype(float) - merged["oracle_outer_rmse"].astype(float)
+        )
+        for budget, group in merged.groupby("budget", sort=True):
+            regret = group["regret"].astype(float).to_numpy()
+            outer_rmse = group["outer_test_rmse"].astype(float).to_numpy()
+            std_regret = float(np.std(regret))
+            se_regret = float(std_regret / np.sqrt(len(regret)))
+            mean_regret = float(np.mean(regret))
+            rows.append(
+                {
+                    "baseline_name": baseline_name,
+                    "method": method_name,
+                    "budget": int(budget),
+                    "mean_regret": mean_regret,
+                    "std_regret": std_regret,
+                    "se_regret": se_regret,
+                    "ci95_low": mean_regret - 1.96 * se_regret,
+                    "ci95_high": mean_regret + 1.96 * se_regret,
+                    "outer_rmse_mean": float(np.mean(outer_rmse)),
+                }
+            )
+    return normalize_fixed_method_baseline_summary_frame(
+        pd.DataFrame(rows, columns=_FIXED_METHOD_BASELINE_SUMMARY_COLUMNS)
+    )
+
+
 def build_policy_selection_diagnostic_results(
     dataset: SweepDataset,
     *,
@@ -241,7 +357,7 @@ def build_policy_selection_diagnostic_results(
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
-    detail_df, _ = _build_policy_selection_frames(
+    detail_df, outer_metrics_df, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -274,6 +390,7 @@ def build_policy_selection_diagnostic_results(
     )
     return PolicySelectionDiagnosticResults(
         detail_df=detail_df,
+        outer_metrics_df=outer_metrics_df,
         summary_df=summarize_policy_detail_frame(detail_df),
     )
 
@@ -283,6 +400,7 @@ def dump_policy_selection_diagnostic_results(
 ) -> dict[str, str]:
     return {
         "detail_df": results.detail_df.to_json(orient="table"),
+        "outer_metrics_df": results.outer_metrics_df.to_json(orient="table"),
         "summary_df": results.summary_df.to_json(orient="table"),
     }
 
@@ -291,13 +409,17 @@ def load_policy_selection_diagnostic_results_mapping(
     payload: dict[str, Any],
 ) -> PolicySelectionDiagnosticResults:
     detail_payload = payload.get("detail_df")
+    outer_metrics_payload = payload.get("outer_metrics_df")
     summary_payload = payload.get("summary_df")
     if not isinstance(detail_payload, str):
         raise TypeError("policy diagnostic results must contain a detail_df JSON string.")
+    if not isinstance(outer_metrics_payload, str):
+        raise TypeError("policy diagnostic results must contain an outer_metrics_df JSON string.")
     if not isinstance(summary_payload, str):
         raise TypeError("policy diagnostic results must contain a summary_df JSON string.")
     return PolicySelectionDiagnosticResults(
         detail_df=pd.read_json(StringIO(detail_payload), orient="table"),
+        outer_metrics_df=pd.read_json(StringIO(outer_metrics_payload), orient="table"),
         summary_df=pd.read_json(StringIO(summary_payload), orient="table"),
     )
 
@@ -560,7 +682,7 @@ def build_policy_selection_detail_frame(
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
-    detail_df, _ = _build_policy_selection_frames(
+    detail_df, _, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -639,6 +761,7 @@ def _build_policy_selection_frames(
     if not shared_splits:
         return (
             normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS)),
+            normalize_outer_metrics_frame(pd.DataFrame(columns=_OUTER_METRICS_COLUMNS)),
             normalize_screening_diagnostic_rows_frame(pd.DataFrame(columns=_SCREENING_ROWS_COLUMNS)),
         )
 
@@ -810,6 +933,7 @@ def _build_policy_selection_frames(
         )
     return (
         normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS)),
+        normalize_outer_metrics_frame(pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)),
         normalize_screening_diagnostic_rows_frame(
             pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
         ),

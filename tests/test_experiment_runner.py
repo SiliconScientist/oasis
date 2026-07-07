@@ -13,6 +13,7 @@ import polars as pl
 from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
+    _configured_policy_fixed_method_baselines,
     _load_oracle_learning_curve_rows_for_dataset,
     _load_policy_regret_rows_for_dataset,
     _policy_selection_diagnostic_persistence_context,
@@ -158,6 +159,31 @@ class ExperimentRunnerTests(unittest.TestCase):
             }
         )
         return LearningCurveResults(ridge_df=ridge_frame)
+
+    def test_configured_policy_fixed_method_baselines_honors_toggles_and_labels(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                screening=SimpleNamespace(
+                    plot_baselines=SimpleNamespace(
+                        low_data_domain=SimpleNamespace(
+                            enabled=False,
+                            method_name="residual",
+                            label="Few-shot (residual)",
+                        ),
+                        high_data_domain=SimpleNamespace(
+                            enabled=True,
+                            method_name="ridge",
+                            label="Late ridge",
+                        ),
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(
+            _configured_policy_fixed_method_baselines(cfg),
+            (("ridge", "Late ridge"),),
+        )
 
     def test_configured_budget_span_variants_uses_explicit_sizes_and_fractions(self) -> None:
         cfg = SimpleNamespace(
@@ -334,6 +360,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "agreement": [True, True],
                     }
                 ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [4, 4],
+                        "repeat": [0, 1],
+                        "method": ["ridge", "ridge"],
+                        "outer_test_rmse": [0.2, 0.25],
+                    }
+                ),
                 summary_df=pd.DataFrame(
                     {
                         "policy_name": ["min_screening_rmse"],
@@ -493,6 +527,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "agreement": [True],
                     }
                 ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [1],
+                        "repeat": [0],
+                        "method": ["ridge"],
+                        "outer_test_rmse": [0.2],
+                    }
+                ),
                 summary_df=pd.DataFrame(
                     {
                         "policy_name": ["min_screening_rmse"],
@@ -645,6 +687,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "agreement": [True],
                     }
                 ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [4],
+                        "repeat": [0],
+                        "method": ["ridge"],
+                        "outer_test_rmse": [0.2],
+                    }
+                ),
                 summary_df=pd.DataFrame(
                     {
                         "policy_name": ["min_screening_rmse"],
@@ -768,6 +818,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "screening_cv_rmse": [0.1],
                         "screening_miscalibration_area": [0.05],
                         "agreement": [True],
+                    }
+                ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [4],
+                        "repeat": [0],
+                        "method": ["ridge"],
+                        "outer_test_rmse": [0.2],
                     }
                 ),
                 summary_df=pd.DataFrame(
@@ -1715,6 +1773,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                             "agreement": [True, True],
                         }
                     ),
+                    outer_metrics_df=pd.DataFrame(
+                        {
+                            "budget": budgets,
+                            "repeat": [0, 0],
+                            "method": ["ridge", "ridge"],
+                            "outer_test_rmse": [0.2, 0.2],
+                        }
+                    ),
                     summary_df=pd.DataFrame(
                         {
                             "policy_name": ["min_screening_rmse", "min_screening_rmse"],
@@ -1879,6 +1945,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                         "screening_cv_rmse": [0.1],
                         "screening_miscalibration_area": [0.05],
                         "agreement": [True],
+                    }
+                ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [2],
+                        "repeat": [0],
+                        "method": ["ridge"],
+                        "outer_test_rmse": [0.2],
                     }
                 ),
                 summary_df=pd.DataFrame(

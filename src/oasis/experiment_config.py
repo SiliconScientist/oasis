@@ -220,6 +220,27 @@ class LearningCurveExperimentConfig(BaseModel):
     models: Optional[LearningCurveModelsConfig] = None
 
 
+class ScreeningPlotBaselineConfig(BaseModel):
+    enabled: bool = True
+    method_name: str
+    label: str | None = None
+
+
+class ScreeningPlotBaselinesConfig(BaseModel):
+    low_data_domain: ScreeningPlotBaselineConfig = Field(
+        default_factory=lambda: ScreeningPlotBaselineConfig(
+            method_name="residual",
+            label="Few-shot (residual)",
+        )
+    )
+    high_data_domain: ScreeningPlotBaselineConfig = Field(
+        default_factory=lambda: ScreeningPlotBaselineConfig(
+            method_name="kernel_ridge",
+            label="Kernel ridge",
+        )
+    )
+
+
 class ScreeningExperimentConfig(BaseModel):
     budget_mode: LearningCurveBudgetMode = "screening_fraction"
     screen_fraction: float | None = None
@@ -240,6 +261,9 @@ class ScreeningExperimentConfig(BaseModel):
         default_factory=lambda: ["min_screening_rmse"]
     )
     combined_miscalibration_lambda: float = 1.0
+    plot_baselines: ScreeningPlotBaselinesConfig = Field(
+        default_factory=ScreeningPlotBaselinesConfig
+    )
 
 
 class ExperimentDefaultsConfig(BaseModel):

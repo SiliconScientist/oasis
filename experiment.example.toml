@@ -153,6 +153,19 @@ policy_names = [
     "combined_screening_rmse_miscalibration",
 ]
 combined_miscalibration_lambda = 1.0
+# Optional fixed-method overlays for the screening policy plots.
+# Toggle either domain off with `enabled = false`, or swap in any enabled
+# learning-curve method via `method_name`.
+#
+# [experiment.screening.plot_baselines.low_data_domain]
+# enabled = true
+# method_name = "residual"
+# label = "Few-shot (residual)"
+#
+# [experiment.screening.plot_baselines.high_data_domain]
+# enabled = true
+# method_name = "kernel_ridge"
+# label = "Kernel ridge"
 # results_bundle_path defaults to `data/results/screening/<dataset>.json`
 # results_bundle_path = "data/results/screening/example_oh.json"
 # force_refresh_train_sizes = { ridge = [10], weighted_simplex = [15] }

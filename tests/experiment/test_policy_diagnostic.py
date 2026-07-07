@@ -18,11 +18,13 @@ from oasis.experiment.policy_diagnostic import (
     load_policy_selection_diagnostic_artifact,
     load_screening_diagnostic_rows_artifact,
     normalize_policy_detail_frame,
+    normalize_outer_metrics_frame,
     normalize_policy_summary_frame,
     normalize_screening_diagnostic_rows_frame,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
     screening_split_fingerprint,
+    summarize_fixed_method_baseline_frame,
     summarize_policy_detail_frame,
 )
 from oasis.learning_curve.results_io import (
@@ -108,6 +110,22 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required columns"):
             normalize_policy_summary_frame(pd.DataFrame({"budget": [4]}))
 
+    def test_normalize_outer_metrics_frame_orders_and_coerces_types(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "budget": [8, 4],
+                "repeat": [1, 0],
+                "method": ["weighted_linear", "ridge"],
+                "outer_test_rmse": [0.21, 0.31],
+            }
+        )
+
+        normalized = normalize_outer_metrics_frame(frame)
+
+        self.assertEqual(normalized["budget"].tolist(), [4, 8])
+        self.assertEqual(normalized["method"].tolist(), ["ridge", "weighted_linear"])
+        self.assertEqual(str(normalized["outer_test_rmse"].dtype), "Float64")
+
     def test_policy_diagnostic_artifact_round_trip(self) -> None:
         artifact = PolicySelectionDiagnosticArtifact(
             metadata=self._metadata(),
@@ -129,6 +147,21 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                         "screening_cv_rmse": [0.29, 0.27, 0.23],
                         "screening_miscalibration_area": [0.11, 0.12, 0.09],
                         "agreement": [True, False, True],
+                    }
+                ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [4, 4, 4, 4, 8, 8],
+                        "repeat": [0, 0, 1, 1, 0, 0],
+                        "method": [
+                            "ridge",
+                            "weighted_linear",
+                            "ridge",
+                            "weighted_linear",
+                            "ridge",
+                            "weighted_linear",
+                        ],
+                        "outer_test_rmse": [0.31, 0.34, 0.33, 0.28, 0.25, 0.29],
                     }
                 ),
                 summary_df=pd.DataFrame(
@@ -162,6 +195,10 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(restored.metadata, artifact.metadata)
         self.assertEqual(restored.cache_signature, artifact.cache_signature)
         pd.testing.assert_frame_equal(restored.results.detail_df, artifact.results.detail_df)
+        pd.testing.assert_frame_equal(
+            restored.results.outer_metrics_df,
+            artifact.results.outer_metrics_df,
+        )
         pd.testing.assert_frame_equal(restored.results.summary_df, artifact.results.summary_df)
 
     def test_policy_diagnostic_artifact_rejects_incompatible_cache_signature(self) -> None:
@@ -181,6 +218,14 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                         "screening_cv_rmse": [0.29],
                         "screening_miscalibration_area": [0.11],
                         "agreement": [True],
+                    }
+                ),
+                outer_metrics_df=pd.DataFrame(
+                    {
+                        "budget": [4, 4],
+                        "repeat": [0, 0],
+                        "method": ["ridge", "weighted_linear"],
+                        "outer_test_rmse": [0.31, 0.34],
                     }
                 ),
                 summary_df=pd.DataFrame(
@@ -242,7 +287,43 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
 
         self.assertEqual(summary["budget"].tolist(), [4, 8])
         self.assertEqual(summary["mean_regret"].tolist(), [0.05, 0.0])
-        self.assertEqual(summary["agreement_rate"].tolist(), [0.5, 1.0])
+
+    def test_summarize_fixed_method_baseline_frame_aggregates_selected_methods(self) -> None:
+        summary = summarize_fixed_method_baseline_frame(
+            pd.DataFrame(
+                {
+                    "budget": [4, 4, 4, 4, 8, 8, 8, 8],
+                    "repeat": [0, 0, 1, 1, 0, 0, 1, 1],
+                    "method": [
+                        "residual",
+                        "kernel_ridge",
+                        "residual",
+                        "kernel_ridge",
+                        "residual",
+                        "kernel_ridge",
+                        "residual",
+                        "kernel_ridge",
+                    ],
+                    "outer_test_rmse": [0.22, 0.30, 0.21, 0.24, 0.25, 0.19, 0.24, 0.18],
+                }
+            ),
+            baselines=(
+                ("residual", "Few-shot (residual)"),
+                ("kernel_ridge", "Kernel ridge"),
+            ),
+        )
+
+        self.assertEqual(
+            summary["baseline_name"].tolist(),
+            [
+                "Few-shot (residual)",
+                "Few-shot (residual)",
+                "Kernel ridge",
+                "Kernel ridge",
+            ],
+        )
+        self.assertEqual(summary["budget"].tolist(), [4, 8, 4, 8])
+        self.assertEqual(summary["mean_regret"].round(6).tolist(), [0.0, 0.06, 0.055, 0.0])
 
     def test_summarize_policy_detail_frame_groups_by_policy_name(self) -> None:
         summary = summarize_policy_detail_frame(

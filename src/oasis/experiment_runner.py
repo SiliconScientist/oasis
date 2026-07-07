@@ -28,6 +28,7 @@ from oasis.experiment.policy_diagnostic import (
     load_screening_diagnostic_rows_artifact,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
+    summarize_fixed_method_baseline_frame,
     summarize_policy_detail_frame,
 )
 from oasis.experiment.repeat_metrics import (
@@ -122,6 +123,24 @@ class BudgetSpanVariant:
 class PolicyDiagnosticBuildOutputs:
     results: PolicySelectionDiagnosticResults
     screening_rows_df: pd.DataFrame
+
+
+def _configured_policy_fixed_method_baselines(cfg: object) -> tuple[tuple[str, str], ...]:
+    screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
+    plot_baselines_cfg = getattr(screening_cfg, "plot_baselines", None)
+    if plot_baselines_cfg is None:
+        return ()
+    baselines: list[tuple[str, str]] = []
+    for field_name in ("low_data_domain", "high_data_domain"):
+        baseline_cfg = getattr(plot_baselines_cfg, field_name, None)
+        if baseline_cfg is None or not getattr(baseline_cfg, "enabled", True):
+            continue
+        method_name = str(getattr(baseline_cfg, "method_name", "")).strip()
+        if not method_name:
+            continue
+        label = getattr(baseline_cfg, "label", None)
+        baselines.append((method_name, method_name if label is None else str(label)))
+    return tuple(baselines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1129,7 +1148,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
                     ).repeat_metrics_df
                 except ValueError:
                     cached_outer_repeat_metrics_df = None
-    detail_df, screening_rows_df = _build_policy_selection_frames(
+    detail_df, outer_metrics_df, screening_rows_df = _build_policy_selection_frames(
         dataset,
         min_train=diagnostic_min_train,
         max_train=diagnostic_max_train,
@@ -1167,6 +1186,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     return PolicyDiagnosticBuildOutputs(
         results=PolicySelectionDiagnosticResults(
             detail_df=detail_df,
+            outer_metrics_df=outer_metrics_df,
             summary_df=summarize_policy_detail_frame(detail_df),
         ),
         screening_rows_df=screening_rows_df,
@@ -1189,6 +1209,10 @@ def _write_policy_selection_diagnostic_outputs(
     max_x: int | None,
     include_x: list[int] | None,
 ) -> Path:
+    fixed_method_summary_df = summarize_fixed_method_baseline_frame(
+        diagnostic_results.outer_metrics_df,
+        baselines=_configured_policy_fixed_method_baselines(cfg),
+    )
     if metadata is not None:
         save_policy_selection_diagnostic_artifact(
             PolicySelectionDiagnosticArtifact(
@@ -1227,6 +1251,7 @@ def _write_policy_selection_diagnostic_outputs(
             )
         return policy_selected_vs_oracle_plot(
             diagnostic_results.summary_df,
+            fixed_method_summary_df=fixed_method_summary_df,
             output_path=output_path,
             min_x=min_x,
             max_x=max_x,
@@ -1249,6 +1274,7 @@ def _write_policy_selection_diagnostic_outputs(
             )
         return policy_regret_plot(
             diagnostic_results.summary_df,
+            fixed_method_summary_df=fixed_method_summary_df,
             output_path=output_path,
             min_x=min_x,
             max_x=max_x,
