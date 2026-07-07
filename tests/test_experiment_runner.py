@@ -14,6 +14,7 @@ from oasis.experiment_runner import (
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
     _configured_policy_fixed_method_baselines,
+    _load_all_datasets_oracle_uq_rows,
     _load_oracle_learning_curve_rows_for_dataset,
     _load_policy_regret_rows_for_dataset,
     _policy_selection_diagnostic_persistence_context,
@@ -30,6 +31,7 @@ from oasis.experiment_runner import (
     render_budget_span_variants,
     run_experiment,
     run_experiment_from_config,
+    write_all_datasets_uq_oracle_plots,
     write_all_datasets_policy_regret_plot,
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
@@ -1720,6 +1722,104 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
+    def test_load_all_datasets_oracle_uq_rows_selects_per_dataset_miscalibration_oracle(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                ),
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    models=SimpleNamespace(
+                        use_ridge=False,
+                        use_kernel_ridge=False,
+                        use_lasso=False,
+                        use_elastic_net=False,
+                        use_residual=False,
+                        use_weighted_linear=False,
+                        use_weighted_simplex=False,
+                        use_graph_mean=False,
+                        use_gnn_direct=False,
+                        use_probe_gnn=False,
+                        use_latent=False,
+                        moe=SimpleNamespace(enabled=False),
+                        probe_gnn=SimpleNamespace(enabled=False),
+                        gnn_direct=SimpleNamespace(enabled=False),
+                    )
+                )
+            ),
+        )
+        fake_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
+        results = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "miscalibration_area": [0.20, 0.10],
+                    "sharpness": [0.30, 0.25],
+                    "dispersion": [0.40, 0.35],
+                }
+            ),
+            probe_gnn_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "miscalibration_area": [0.15, 0.12],
+                    "sharpness": [0.45, 0.22],
+                    "dispersion": [0.55, 0.32],
+                }
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner.ensure_probe_artifacts",
+            return_value=False,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            return_value=(fake_wide_df, [], fake_wide_df),
+        ), patch(
+            "oasis.experiment_runner.build_auxiliary_views",
+            return_value=(fake_wide_df, {}),
+        ), patch(
+            "oasis.experiment_runner._apply_persistent_output_suffixes",
+            return_value="anomalyaware_off_latent_off_n4",
+        ), patch(
+            "oasis.experiment_runner._load_cached_learning_curve_results_for_dataset_cfg",
+            return_value=results,
+        ):
+            rows = _load_all_datasets_oracle_uq_rows(
+                cfg,
+                dataset_tag="bio_mass",
+                enabled_method_names=["ridge", "probe_gnn"],
+            )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 2,
+                    "oracle_miscalibration_area": 0.15,
+                    "oracle_sharpness": 0.45,
+                    "oracle_dispersion": 0.55,
+                    "oracle_method": "probe_gnn",
+                },
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 4,
+                    "oracle_miscalibration_area": 0.10,
+                    "oracle_sharpness": 0.25,
+                    "oracle_dispersion": 0.35,
+                    "oracle_method": "ridge",
+                },
+            ],
+        )
+
     def test_load_policy_regret_rows_for_dataset_applies_fraction_variant_per_dataset(
         self,
     ) -> None:
@@ -2297,6 +2397,79 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         self.assertFalse(mock_plot.call_args_list[0].kwargs["log_x"])
         self.assertTrue(mock_plot.call_args_list[1].kwargs["log_x"])
+
+    def test_write_all_datasets_uq_oracle_plots_emit_dual_budget_span_outputs(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_uq_rows",
+                return_value=[
+                    {
+                        "dataset": "bio_mass",
+                        "dataset_label": "Bio-Mass",
+                        "n_train": 2,
+                        "oracle_miscalibration_area": 0.15,
+                        "oracle_sharpness": 0.45,
+                        "oracle_dispersion": 0.55,
+                        "oracle_method": "probe_gnn",
+                    }
+                ],
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.all_datasets_uq_oracle_plot",
+                side_effect=[
+                    tmp_path / "miscal_absolute.png",
+                    tmp_path / "miscal_fraction.png",
+                    tmp_path / "sharp_absolute.png",
+                    tmp_path / "sharp_fraction.png",
+                    tmp_path / "disp_absolute.png",
+                    tmp_path / "disp_fraction.png",
+                ],
+            ) as mock_plot:
+                saved_paths = write_all_datasets_uq_oracle_plots(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge", "probe_gnn"],
+                )
+
+        self.assertEqual(
+            saved_paths,
+            {
+                "miscalibration_area": tmp_path / "miscal_absolute.png",
+                "sharpness": tmp_path / "sharp_absolute.png",
+                "dispersion": tmp_path / "disp_absolute.png",
+            },
+        )
+        self.assertEqual(mock_load_rows.call_count, 2)
+        self.assertEqual(mock_plot.call_count, 6)
+        self.assertEqual(
+            mock_plot.call_args_list[0].kwargs["output_path"],
+            tmp_path / "uq_oracle_all_datasets_miscalibration_area_anomalyaware_off_absolute.png",
+        )
+        self.assertEqual(
+            mock_plot.call_args_list[1].kwargs["output_path"],
+            tmp_path / "uq_oracle_all_datasets_miscalibration_area_anomalyaware_off_fraction.png",
+        )
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,

@@ -16,6 +16,7 @@ from oasis.learning_curve.results_io import (
 )
 from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.plot import (
+    all_datasets_uq_oracle_plot,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -24,6 +25,7 @@ from oasis.plot import (
     miscalibration_area_plot,
     oracle_learning_curve_frame,
     oracle_learning_curve_plot,
+    oracle_uq_curve_frame,
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
@@ -427,6 +429,86 @@ class PlotTests(unittest.TestCase):
             }
         )
         pd.testing.assert_frame_equal(oracle_df, expected)
+
+    def test_oracle_uq_curve_frame_selects_lowest_miscalibration_method_per_train_size(
+        self,
+    ) -> None:
+        ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "miscalibration_area": [0.20, 0.10],
+                "sharpness": [0.30, 0.25],
+                "dispersion": [0.40, 0.35],
+            }
+        )
+        probe_gnn_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "miscalibration_area": [0.15, 0.12],
+                "sharpness": [0.45, 0.22],
+                "dispersion": [0.55, 0.32],
+            }
+        )
+        results = LearningCurveResults(
+            ridge_uq_df=ridge_uq_df,
+            probe_gnn_uq_df=probe_gnn_uq_df,
+        )
+
+        oracle_df = oracle_uq_curve_frame(
+            results,
+            enabled_method_names=["ridge", "probe_gnn"],
+            dataset="bio_mass",
+            dataset_label="Bio-Mass",
+        )
+
+        expected = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass"],
+                "n_train": [2, 4],
+                "oracle_miscalibration_area": [0.15, 0.10],
+                "oracle_sharpness": [0.45, 0.25],
+                "oracle_dispersion": [0.55, 0.35],
+                "oracle_method": ["probe_gnn", "ridge"],
+            }
+        )
+        pd.testing.assert_frame_equal(oracle_df, expected)
+
+    def test_all_datasets_uq_oracle_plot_renders_selected_metric(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "KHLOHC-TOL", "KHLOHC-TOL"],
+                "n_train": [2, 4, 2, 4],
+                "oracle_miscalibration_area": [0.15, 0.10, 0.22, 0.18],
+                "oracle_sharpness": [0.45, 0.25, 0.50, 0.40],
+                "oracle_dispersion": [0.55, 0.35, 0.60, 0.48],
+                "oracle_method": ["probe_gnn", "ridge", "ridge", "ridge"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_uq_multi.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = all_datasets_uq_oracle_plot(
+                    oracle_df,
+                    output_path=output_path,
+                    metric_column="oracle_sharpness",
+                    ylabel="Oracle sharpness",
+                    title="Oracle sharpness by dataset",
+                )
+                fig = all_datasets_uq_oracle_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.get_ylabel(), "Oracle sharpness")
+            self.assertEqual(ax.get_title(), "Oracle sharpness by dataset")
+            self.assertEqual(len(ax.lines), 2)
+            self.assertEqual(
+                [text.get_text() for text in ax.get_legend().get_texts()],
+                ["Bio-Mass", "KHLOHC-TOL"],
+            )
 
     def test_oracle_learning_curve_plot_renders_single_dataset_curve(self) -> None:
         oracle_df = pd.DataFrame(
