@@ -2030,15 +2030,19 @@ def write_uq_summary_figure(
     run_suffix: str,
     zero_shot_uq: dict[str, float],
     panel_prefix: str = "",
+    artifact_suffix: str = "",
     **plot_kwargs,
 ) -> Path | None:
     if not _has_uq_summary(results):
         return None
 
+    panel_run_suffix = (
+        f"{run_suffix}_{artifact_suffix}" if artifact_suffix else run_suffix
+    )
     panel_paths = write_uq_summary_panels(
         results=results,
         output_dir=output_path.parent,
-        run_suffix=run_suffix,
+        run_suffix=panel_run_suffix,
         zero_shot_uq=zero_shot_uq,
         panel_prefix=panel_prefix,
         **plot_kwargs,
@@ -2319,12 +2323,33 @@ def run_experiment(cfg: object):
             train_fraction=fixed_split_train_fraction,
             generation_timing_by_method=generation_timing_by_method,
         )
-        write_uq_summary_figure(
-            results=learning_curve_results,
-            output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
-            run_suffix=run_suffix,
-            zero_shot_uq=zero_shot_uq,
-            **plot_kwargs,
+        def _render_learning_curve_uq_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path | None:
+            variant_include_x = plot_kwargs["include_x"]
+            artifact_suffix = ""
+            if span_variant is not None:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                artifact_suffix = span_variant.output_suffix
+            return write_uq_summary_figure(
+                results=learning_curve_results,
+                output_path=output_path,
+                run_suffix=run_suffix,
+                zero_shot_uq=zero_shot_uq,
+                artifact_suffix=artifact_suffix,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
+            )
+
+        render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
+            render_variant=_render_learning_curve_uq_variant,
         )
 
     screening_run_cfg = _screening_run_cfg(cfg)
@@ -2342,13 +2367,34 @@ def run_experiment(cfg: object):
             output_path=output_dir / f"screening_budget_{run_suffix}.png",
             **plot_kwargs,
         )
-        write_uq_summary_figure(
-            results=screening_results,
-            output_path=output_dir / f"screening_uq_summary_figure_{run_suffix}.png",
-            run_suffix=run_suffix,
-            zero_shot_uq=zero_shot_uq,
-            panel_prefix="screening",
-            **plot_kwargs,
+        def _render_screening_uq_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path | None:
+            variant_include_x = plot_kwargs["include_x"]
+            artifact_suffix = ""
+            if span_variant is not None:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                artifact_suffix = span_variant.output_suffix
+            return write_uq_summary_figure(
+                results=screening_results,
+                output_path=output_path,
+                run_suffix=run_suffix,
+                zero_shot_uq=zero_shot_uq,
+                panel_prefix="screening",
+                artifact_suffix=artifact_suffix,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
+            )
+
+        render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"screening_uq_summary_figure_{run_suffix}.png",
+            render_variant=_render_screening_uq_variant,
         )
     if learning_curve_cfg is not None and screening_run_cfg is not None:
         _write_policy_selection_diagnostic(
