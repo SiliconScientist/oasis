@@ -2037,37 +2037,70 @@ def write_uq_summary_figure(
 
     panel_stem_prefix = f"{panel_prefix}_" if panel_prefix else ""
     with tempfile.TemporaryDirectory() as tmpdir:
-        miscalibration_path = miscalibration_area_plot(
-            results,
-            output_path=Path(tmpdir)
-            / f"{panel_stem_prefix}miscalibration_area_panel_{run_suffix}.png",
-            show_xlabel=False,
-            zero_shot_value=zero_shot_uq["miscalibration_area"],
+        panel_paths = write_uq_summary_panels(
+            results=results,
+            output_dir=Path(tmpdir),
+            run_suffix=run_suffix,
+            zero_shot_uq=zero_shot_uq,
+            panel_prefix=panel_prefix,
             **plot_kwargs,
         )
-        sharpness_path = sharpness_plot(
-            results,
-            output_path=Path(tmpdir)
-            / f"{panel_stem_prefix}sharpness_panel_{run_suffix}.png",
-            show_legend=False,
-            show_xlabel=False,
-            zero_shot_value=zero_shot_uq["sharpness"],
-            **plot_kwargs,
-        )
-        dispersion_path = dispersion_plot(
-            results,
-            output_path=Path(tmpdir)
-            / f"{panel_stem_prefix}dispersion_panel_{run_suffix}.png",
-            show_legend=False,
-            zero_shot_value=zero_shot_uq["dispersion"],
-            **plot_kwargs,
-        )
-        return uq_summary_figure(
-            miscalibration_area_path=miscalibration_path,
-            sharpness_path=sharpness_path,
-            dispersion_path=dispersion_path,
+        return stitch_uq_summary_figure(
             output_path=output_path,
+            panel_paths=panel_paths,
         )
+
+
+def write_uq_summary_panels(
+    *,
+    results: object,
+    output_dir: Path,
+    run_suffix: str,
+    zero_shot_uq: dict[str, float],
+    panel_prefix: str = "",
+    **plot_kwargs,
+) -> dict[str, Path]:
+    panel_stem_prefix = f"{panel_prefix}_" if panel_prefix else ""
+    miscalibration_path = miscalibration_area_plot(
+        results,
+        output_path=output_dir / f"{panel_stem_prefix}miscalibration_area_panel_{run_suffix}.png",
+        show_xlabel=False,
+        zero_shot_value=zero_shot_uq["miscalibration_area"],
+        **plot_kwargs,
+    )
+    sharpness_path = sharpness_plot(
+        results,
+        output_path=output_dir / f"{panel_stem_prefix}sharpness_panel_{run_suffix}.png",
+        show_legend=False,
+        show_xlabel=False,
+        zero_shot_value=zero_shot_uq["sharpness"],
+        **plot_kwargs,
+    )
+    dispersion_path = dispersion_plot(
+        results,
+        output_path=output_dir / f"{panel_stem_prefix}dispersion_panel_{run_suffix}.png",
+        show_legend=False,
+        zero_shot_value=zero_shot_uq["dispersion"],
+        **plot_kwargs,
+    )
+    return {
+        "miscalibration_area": miscalibration_path,
+        "sharpness": sharpness_path,
+        "dispersion": dispersion_path,
+    }
+
+
+def stitch_uq_summary_figure(
+    *,
+    output_path: Path,
+    panel_paths: dict[str, Path],
+) -> Path:
+    return uq_summary_figure(
+        miscalibration_area_path=panel_paths["miscalibration_area"],
+        sharpness_path=panel_paths["sharpness"],
+        dispersion_path=panel_paths["dispersion"],
+        output_path=output_path,
+    )
 
 
 def write_time_accuracy_plots(
