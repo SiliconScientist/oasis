@@ -21,6 +21,21 @@ from oasis.sweep import SweepModelCapabilities, TrainValTestSweepRunnerInput
 from oasis.tune import LearnedTrialTuningSpec, TrialTuningSpec
 
 
+def _shared_or_family_optuna_cfg(model_cfg: Any, family_name: str) -> Any:
+    shared_optuna_cfg = getattr(getattr(model_cfg, "tuning", None), "optuna", None)
+    if shared_optuna_cfg is not None:
+        return shared_optuna_cfg
+    family_cfg = getattr(model_cfg, family_name, None)
+    family_optuna_cfg = getattr(getattr(family_cfg, "tuning", None), "optuna", None)
+    if family_optuna_cfg is not None:
+        return family_optuna_cfg
+    raise ValueError(
+        f"Optuna config is required for learned model '{family_name}'. "
+        "Set [tuning.optuna] or "
+        f"[models.{family_name}.tuning.optuna]."
+    )
+
+
 def _probe_gnn_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
     from oasis.learning_curve.families.probe_gnn import ProbeGnnTuningSpec
 
@@ -36,11 +51,7 @@ def _probe_gnn_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningS
 def _probe_gnn_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
     from oasis.tune import study_factory_from_optuna_cfg
 
-    optuna_cfg = getattr(
-        getattr(getattr(model_cfg, "probe_gnn", None), "tuning", None), "optuna", None
-    )
-    if optuna_cfg is None:
-        return {"n_trials": 10}
+    optuna_cfg = _shared_or_family_optuna_cfg(model_cfg, "probe_gnn")
     return {
         "n_trials": optuna_cfg.n_trials,
         "timeout_s": optuna_cfg.timeout_s,
@@ -63,11 +74,7 @@ def _gnn_direct_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuning
 def _gnn_direct_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
     from oasis.tune import study_factory_from_optuna_cfg
 
-    optuna_cfg = getattr(
-        getattr(getattr(model_cfg, "gnn_direct", None), "tuning", None), "optuna", None
-    )
-    if optuna_cfg is None:
-        return {"n_trials": 10}
+    optuna_cfg = _shared_or_family_optuna_cfg(model_cfg, "gnn_direct")
     return {
         "n_trials": optuna_cfg.n_trials,
         "timeout_s": optuna_cfg.timeout_s,
@@ -154,11 +161,7 @@ def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
 def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
     from oasis.tune import study_factory_from_optuna_cfg
 
-    optuna_cfg = getattr(
-        getattr(getattr(model_cfg, "moe", None), "tuning", None), "optuna", None
-    )
-    if optuna_cfg is None:
-        return {"n_trials": 10}
+    optuna_cfg = _shared_or_family_optuna_cfg(model_cfg, "moe")
     return {
         "n_trials": optuna_cfg.n_trials,
         "timeout_s": optuna_cfg.timeout_s,

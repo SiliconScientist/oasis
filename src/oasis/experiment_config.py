@@ -146,6 +146,7 @@ class LearningCurveModelsConfig(BaseModel):
     use_graph_mean: bool = False
     use_gnn_direct: bool = False
     use_probe_gnn: bool = False
+    tuning: MoETuningConfig = Field(default_factory=MoETuningConfig)
     moe: MoEConfig = Field(default_factory=MoEConfig)
     probe_gnn: ProbeGnnConfig = Field(default_factory=ProbeGnnConfig)
     gnn_direct: GnnDirectConfig = Field(default_factory=GnnDirectConfig)

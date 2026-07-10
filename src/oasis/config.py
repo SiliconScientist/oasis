@@ -122,10 +122,20 @@ def _normalize_experiment_layout(raw_cfg: dict) -> dict:
             else dict(tuning_cfg["optuna"])
         )
         experiment_cfg.pop("tuning", None)
-    if shared_optuna_cfg is None:
+    if not isinstance(models_cfg, dict):
         return raw_cfg
 
-    if not isinstance(models_cfg, dict):
+    if shared_optuna_cfg is not None:
+        models_tuning_cfg = models_cfg.get("tuning")
+        if not isinstance(models_tuning_cfg, dict):
+            models_tuning_cfg = {}
+            models_cfg["tuning"] = models_tuning_cfg
+        models_tuning_cfg["optuna"] = deep_merge_dicts(
+            shared_optuna_cfg,
+            models_tuning_cfg.get("optuna", {}),
+        )
+
+    if shared_optuna_cfg is None:
         return raw_cfg
 
     for family_name in ("moe", "probe_gnn", "gnn_direct"):

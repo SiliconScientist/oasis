@@ -590,12 +590,16 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         assert cfg.experiment.learning_curve.models is not None
+        shared_optuna = cfg.experiment.learning_curve.models.tuning.optuna
         moe_optuna = cfg.experiment.learning_curve.models.moe.tuning.optuna
         probe_optuna = cfg.experiment.learning_curve.models.probe_gnn.tuning.optuna
+        assert shared_optuna is not None
         assert moe_optuna is not None
         assert probe_optuna is not None
         self.assertTrue(cfg.experiment.learning_curve.models.use_probe_gnn)
         self.assertTrue(cfg.experiment.learning_curve.models.probe_gnn.enabled)
+        self.assertEqual(shared_optuna.n_trials, 12)
+        self.assertEqual(shared_optuna.sampler, "tpe")
         self.assertEqual(moe_optuna.n_trials, 12)
         self.assertEqual(moe_optuna.sampler, "tpe")
         self.assertEqual(probe_optuna.n_trials, 5)
@@ -2234,6 +2238,7 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_linear)
         self.assertFalse(cfg.experiment.learning_curve.models.use_weighted_simplex)
         self.assertFalse(cfg.experiment.learning_curve.models.moe.enabled)
+        self.assertIsNone(cfg.experiment.learning_curve.models.tuning.optuna)
         self.assertEqual(cfg.experiment.learning_curve.models.moe.hidden_dims, [])
         self.assertEqual(cfg.experiment.learning_curve.models.moe.training.batch_size, 32)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.training.eval_batch_size)
@@ -2295,6 +2300,7 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         assert cfg.experiment.learning_curve.models is not None
+        self.assertIsNone(cfg.experiment.learning_curve.models.tuning.optuna)
         assert cfg.experiment.learning_curve.models.moe.tuning.optuna is not None
         self.assertEqual(cfg.experiment.learning_curve.models.moe.tuning.optuna.n_trials, 50)
         self.assertIsNone(cfg.experiment.learning_curve.models.moe.tuning.optuna.sampler)
@@ -2347,9 +2353,60 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment.learning_curve is not None
         assert cfg.experiment.learning_curve.models is not None
         probe = cfg.experiment.learning_curve.models.probe_gnn
+        self.assertIsNone(cfg.experiment.learning_curve.models.tuning.optuna)
         self.assertEqual(probe.training.seed, 7)
         assert probe.tuning.optuna is not None
         self.assertEqual(probe.tuning.optuna.seed, 11)
+
+    def test_top_level_optuna_config_is_available_as_shared_learning_curve_tuning(self) -> None:
+        cfg = Config(
+            **{
+                "seed": 29,
+                "tuning": {
+                    "optuna": {
+                        "n_trials": 50,
+                    }
+                },
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                        "models": {
+                            "use_ridge": False,
+                            "use_kernel_ridge": False,
+                            "use_lasso": False,
+                            "use_elastic_net": False,
+                            "use_residual": True,
+                            "use_gnn_direct": True,
+                        },
+                    }
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.learning_curve is not None
+        assert cfg.experiment.learning_curve.models is not None
+        shared_optuna = cfg.experiment.learning_curve.models.tuning.optuna
+        assert shared_optuna is not None
+        self.assertEqual(shared_optuna.n_trials, 50)
+        self.assertEqual(shared_optuna.seed, 29)
 
     def test_global_device_is_inherited_by_torch_learned_families(self) -> None:
         cfg = Config(

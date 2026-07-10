@@ -7,6 +7,7 @@ from oasis.experiment_config import (
     DatasetProfileConfig,
     DatasetProfilePathsConfig,
     ExperimentConfig,
+    MoETuningConfig,
     NamedDatasetConfig,
     PlotConfig,
     ProbeFeatureConfig,
@@ -36,6 +37,7 @@ class Config(BaseModel):
     analysis: Optional[AnalysisConfig] = None
     # Optional external probe artifacts used only by probe-aware methods.
     probe_features: Optional[ProbeFeatureConfig] = None
+    tuning: Optional[MoETuningConfig] = None
     experiment: Optional[ExperimentConfig] = None
     candidate_ranking: Optional[CandidateRankingConfig] = None
     plot: Optional[PlotConfig] = None
@@ -206,6 +208,9 @@ class Config(BaseModel):
     ) -> DatasetProfilePathsConfig:
         return derive_dataset_profile_paths(tag, named_profile)
 
+    def _shared_optuna_cfg(self) -> Any | None:
+        return getattr(self.tuning, "optuna", None)
+
     def _validate_derived_paths(self) -> None:
         if self.experiment is not None:
             self.experiment.validate_screening_dependency()
@@ -268,6 +273,17 @@ class Config(BaseModel):
             return
 
         models_cfg = learning_curve.models
+        shared_optuna_cfg = self._shared_optuna_cfg()
+        if shared_optuna_cfg is not None:
+            models_tuning_cfg = getattr(models_cfg, "tuning", None)
+            if models_tuning_cfg is not None and getattr(models_tuning_cfg, "optuna", None) is None:
+                models_tuning_cfg.optuna = shared_optuna_cfg.model_copy(deep=True)
+
+        shared_tuning_cfg = getattr(models_cfg, "tuning", None)
+        shared_optuna_cfg = getattr(shared_tuning_cfg, "optuna", None)
+        if shared_optuna_cfg is not None and shared_optuna_cfg.seed is None:
+            shared_optuna_cfg.seed = self.seed
+
         for family_cfg_name in ("moe", "probe_gnn", "gnn_direct"):
             family_cfg = getattr(models_cfg, family_cfg_name, None)
             if family_cfg is None:

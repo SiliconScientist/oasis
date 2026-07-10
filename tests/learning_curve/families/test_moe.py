@@ -25,6 +25,16 @@ from oasis.sweep import GraphDatasetView, GraphRecord, SweepDataset, TrainValTes
 from oasis.tune import LearnedOptunaModelSelectionSweepRunner, LearnedTrialTuningSpec
 
 
+def _shared_optuna_cfg(n_trials: int = 3) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        n_trials=n_trials,
+        timeout_s=None,
+        sampler=None,
+        pruner=None,
+        seed=None,
+    )
+
+
 @dataclass
 class _MockTrial:
     """Minimal trial stub: supports suggest_float during objective and .params afterwards."""
@@ -185,11 +195,15 @@ class MoERegistrationTests(unittest.TestCase):
 
 
 def _model_cfg(gate_type: str) -> object:
-    return types.SimpleNamespace(moe=types.SimpleNamespace(gate_type=gate_type))
+    return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=_shared_optuna_cfg()),
+        moe=types.SimpleNamespace(gate_type=gate_type),
+    )
 
 
 def _model_cfg_gnn(hidden_dims: list[int] | None = None) -> object:
     return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=_shared_optuna_cfg()),
         moe=types.SimpleNamespace(
             gate_type="gnn",
             training=MoETrainingConfig(epochs=2),
@@ -242,6 +256,7 @@ class MoEGateDispatchTests(unittest.TestCase):
 
 def _model_cfg_with_optuna(n_trials: int) -> object:
     return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=None),
         moe=types.SimpleNamespace(
             gate_type="mlip_baseline",
             tuning=types.SimpleNamespace(
@@ -259,6 +274,7 @@ def _model_cfg_with_optuna(n_trials: int) -> object:
 
 def _model_cfg_no_optuna() -> object:
     return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=None),
         moe=types.SimpleNamespace(
             gate_type="mlip_baseline",
             tuning=types.SimpleNamespace(optuna=None),
@@ -276,10 +292,9 @@ class MoEOptunaConfigThreadingTests(unittest.TestCase):
         kwargs = _moe_config_runner_kwargs(_model_cfg_with_optuna(3))
         self.assertEqual(kwargs["n_trials"], 3)
 
-    def test_runner_kwargs_fallback_when_optuna_is_none(self) -> None:
-        kwargs = _moe_config_runner_kwargs(_model_cfg_no_optuna())
-        self.assertEqual(kwargs["n_trials"], 10)
-        self.assertNotIn("study_factory", kwargs)
+    def test_runner_kwargs_require_explicit_optuna_config(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Optuna config is required"):
+            _moe_config_runner_kwargs(_model_cfg_no_optuna())
 
     def test_runner_kwargs_includes_study_factory_when_optuna_set(self) -> None:
         kwargs = _moe_config_runner_kwargs(_model_cfg_with_optuna(5))
@@ -382,6 +397,7 @@ def _model_cfg_schnet(
     r_max: float = 6.0,
 ) -> object:
     return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=_shared_optuna_cfg()),
         moe=types.SimpleNamespace(
             gate_type="schnet",
             training=MoETrainingConfig(epochs=2),
@@ -557,6 +573,7 @@ class SchNetGateIntegrationTests(unittest.TestCase):
 
 def _model_cfg_probe_gnn(hidden_dims: list[int] | None = None) -> object:
     return types.SimpleNamespace(
+        tuning=types.SimpleNamespace(optuna=_shared_optuna_cfg()),
         probe_gnn=types.SimpleNamespace(
             enabled=True,
             training=MoETrainingConfig(epochs=2),
