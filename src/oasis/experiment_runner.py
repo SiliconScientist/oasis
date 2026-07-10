@@ -511,11 +511,7 @@ def _load_zero_shot_stage_rows_for_dataset(
 ) -> list[dict[str, object]]:
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
-    dataset_label = (
-        dataset_tag
-        if named_profile is None
-        else named_profile.mlip_run_dirname_or_default(dataset_tag)
-    )
+    dataset_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
     base_dir = profile_paths.analysis_base_dir
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     artifact_path = _zero_shot_stage_artifact_path(cfg)
@@ -569,6 +565,19 @@ def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
     return dataset_cfg
 
 
+def _dataset_label_for_tag(cfg: object, *, dataset_tag: str) -> str:
+    named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+    if named_profile is None:
+        return dataset_tag
+    resolver = getattr(named_profile, "mlip_run_dirname_or_default", None)
+    if callable(resolver):
+        return str(resolver(dataset_tag))
+    configured_name = getattr(named_profile, "mlip_run_dirname", None)
+    if configured_name is not None:
+        return str(configured_name)
+    return dataset_tag
+
+
 def _resolved_plot_output_dir(cfg: object) -> Path:
     plot_cfg = getattr(cfg, "plot", None)
     configured_output_dir = getattr(plot_cfg, "output_dir", None)
@@ -577,12 +586,7 @@ def _resolved_plot_output_dir(cfg: object) -> Path:
     dataset_profile = getattr(cfg, "dataset_profile", None)
     dataset_tag = getattr(dataset_profile, "tag", None)
     if dataset_tag is not None:
-        named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
-        run_dirname = (
-            dataset_tag
-            if named_profile is None
-            else named_profile.mlip_run_dirname_or_default(dataset_tag)
-        )
+        run_dirname = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
         return Path("data/results/plots") / run_dirname
     return Path("data/results/plots")
 
@@ -607,12 +611,7 @@ def _load_oracle_learning_curve_rows_for_dataset(
     if learning_curve_cfg is None:
         return []
 
-    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
-    dataset_label = (
-        dataset_tag
-        if named_profile is None
-        else named_profile.mlip_run_dirname_or_default(dataset_tag)
-    )
+    dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
     wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
@@ -1301,12 +1300,7 @@ def _load_policy_regret_rows_for_dataset(
     cache_only: bool = False,
 ) -> list[dict[str, object]]:
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
-    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
-    dataset_label = (
-        dataset_tag
-        if named_profile is None
-        else named_profile.mlip_run_dirname_or_default(dataset_tag)
-    )
+    dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
     wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
@@ -1565,12 +1559,7 @@ def write_zero_shot_rmse_stage_plot(
         return None
 
     dataset_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", "dataset")
-    named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
-    dataset_label = (
-        dataset_tag
-        if named_profile is None
-        else named_profile.mlip_run_dirname_or_default(dataset_tag)
-    )
+    dataset_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
     stage_rows = None
     if result_files is not None:
         artifact_path = _zero_shot_stage_artifact_path(cfg)
@@ -1746,12 +1735,7 @@ def _load_all_datasets_oracle_uq_rows(
     if learning_curve_cfg is None:
         return []
 
-    named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
-    dataset_label = (
-        dataset_tag
-        if named_profile is None
-        else named_profile.mlip_run_dirname_or_default(dataset_tag)
-    )
+    dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
     wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
