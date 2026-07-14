@@ -1299,6 +1299,20 @@ class SweepOutputRegressionTests(unittest.TestCase):
             results.kernel_ridge_selection_df["n_train"].tolist(),
             results.kernel_ridge_df["n_train"].tolist(),
         )
+        self.assertIsNotNone(results.kernel_ridge_uq_df)
+        self.assertEqual(
+            results.kernel_ridge_uq_df["n_train"].tolist(),
+            results.kernel_ridge_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            results.kernel_ridge_uq_df["uncertainty_kind"].tolist(),
+            ["calibrated"] * len(results.kernel_ridge_uq_df),
+        )
+        self.assertEqual(
+            results.kernel_ridge_uq_df["uncertainty_note"].tolist(),
+            ["post-hoc scalar calibrated spread"]
+            * len(results.kernel_ridge_uq_df),
+        )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_ridge_train_test_runner_payload_preserves_legacy_behavior(self) -> None:
@@ -1944,7 +1958,7 @@ class BoundaryTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(results.kernel_ridge_df)
-        self.assertEqual(results.kernel_ridge_df["n_train"].tolist(), [2, 3])
+        self.assertEqual(results.kernel_ridge_df["n_train"].tolist(), [3])
 
     def test_validation_aware_supervised_runner_uses_train_val_test_path(self) -> None:
         class ValidationAwareLinearModel:

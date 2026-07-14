@@ -2174,6 +2174,7 @@ def _has_uq_summary(results: object) -> bool:
         "resid_uq_df",
         "weighted_simplex_uq_df",
         "ridge_uq_df",
+        "kernel_ridge_uq_df",
         "moe_uq_df",
     ):
         frame = getattr(results, field_name, None)

@@ -135,6 +135,36 @@ def _result_frame_train_sizes(
     return {int(value) for value in frame[budget_column].tolist()}
 
 
+def _cached_method_train_sizes(
+    results: LearningCurveResults,
+    method_name: str,
+    family: Any | None = None,
+) -> set[int]:
+    spec = getattr(family, "spec", None)
+    required_fields = [
+        getattr(spec, "result_field", None)
+        or getattr(family, "result_field", None)
+        or learning_curve_result_field_for_method_name(method_name),
+        getattr(spec, "selection_metadata_field", None)
+        or getattr(family, "selection_metadata_field", None),
+        getattr(spec, "uq_summary_field", None)
+        or getattr(family, "uq_summary_field", None),
+    ]
+    available_sizes: set[int] | None = None
+    for field_name in required_fields:
+        if field_name is None:
+            continue
+        frame = getattr(results, field_name)
+        if frame is None:
+            return set()
+        budget_column = _result_frame_budget_column(frame)
+        frame_sizes = {int(value) for value in frame[budget_column].tolist()}
+        available_sizes = (
+            frame_sizes if available_sizes is None else available_sizes & frame_sizes
+        )
+    return set() if available_sizes is None else available_sizes
+
+
 def _filter_learning_curve_frame_by_train_sizes(
     frame: Any,
     allowed_train_sizes: Collection[int],

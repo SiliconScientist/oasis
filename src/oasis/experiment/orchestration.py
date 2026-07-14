@@ -8,9 +8,9 @@ import pandas as pd
 
 from oasis.experiment.core import (
     _build_family_split_collection,
+    _cached_method_train_sizes,
     _family_method_name,
     _remove_method_train_sizes_from_results,
-    _result_frame_train_sizes,
     _run_learning_curve_experiments_with_budget_mode_artifacts,
     _unique_sweep_sizes,
 )
@@ -352,6 +352,7 @@ def run_learning_curve_experiments_from_config(
     families_to_run: Sequence[Any] | None = available_families
     enabled_model_names_to_run = enabled_model_names
     missing_sweep_sizes_by_method: dict[str, tuple[int, ...]] = {}
+    rerun_train_sizes_by_method: dict[str, set[int]] = {}
     if (
         cfg is not None
         and experiment_cfg is not None
@@ -439,10 +440,10 @@ def run_learning_curve_experiments_from_config(
                     min_test_size=getattr(experiment_cfg, "min_test_size", 1),
                 )
                 requested_sizes = _unique_sweep_sizes(split_collection)
-                cached_sizes = _result_frame_train_sizes(
+                cached_sizes = _cached_method_train_sizes(
                     cached_results,
                     method_name,
-                    learning_curve_result_field_for_method_name,
+                    family,
                 )
                 missing_sizes = tuple(
                     sweep_size
@@ -459,6 +460,12 @@ def run_learning_curve_experiments_from_config(
                 )
                 if requested_run_sizes:
                     missing_sweep_sizes_by_method[method_name] = requested_run_sizes
+                    rerun_train_sizes_by_method[method_name] = set(requested_run_sizes)
+                    cached_results = _remove_method_train_sizes_from_results(
+                        cached_results,
+                        method_name,
+                        requested_run_sizes,
+                    )
                     selected_families.append(family)
                 else:
                     cached_method_names.add(method_name)
@@ -577,12 +584,16 @@ def run_learning_curve_experiments_from_config(
                 )
                 if field_name is not None
             }
+            overwrite_train_sizes_methods = set(force_refresh_train_sizes) | set(
+                rerun_train_sizes_by_method
+            )
             overwrite_train_sizes_by_field = {
                 field_name: {
                     int(value)
                     for value in force_refresh_train_sizes.get(method_name, set())
+                    | rerun_train_sizes_by_method.get(method_name, set())
                 }
-                for method_name in force_refresh_train_sizes
+                for method_name in overwrite_train_sizes_methods
                 for field_name in (
                     learning_curve_result_field_for_method_name(method_name),
                     learning_curve_selection_field_for_method_name(method_name),
@@ -783,10 +794,10 @@ def load_or_run_learning_curve_results_from_config(
                         min_test_size=getattr(experiment_cfg, "min_test_size", 1),
                     )
                 )
-                cached_sizes = _result_frame_train_sizes(
+                cached_sizes = _cached_method_train_sizes(
                     cached_results,
                     method_name,
-                    learning_curve_result_field_for_method_name,
+                    family,
                 )
                 if any(size not in cached_sizes for size in requested_sizes):
                     all_methods_fully_cached = False

@@ -275,6 +275,32 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
 
+    def test_miscalibration_area_plot_renders_kernel_ridge_uq_curve(self) -> None:
+        kernel_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [3, 4],
+                "miscalibration_area": [0.18, 0.11],
+                "sharpness": [0.28, 0.21],
+                "dispersion": [0.38, 0.31],
+                "uncertainty_kind": ["calibrated", "calibrated"],
+            }
+        )
+        results = LearningCurveResults(kernel_ridge_uq_df=kernel_ridge_uq_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "miscalibration_kernel_ridge.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = miscalibration_area_plot(
+                    results,
+                    output_path=output_path,
+                )
+                fig = miscalibration_area_plot.__globals__["plt"].gcf()
+                labels = [line.get_label() for line in fig.axes[0].lines]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertIn("Kernel Ridge", labels)
+
     def test_uq_metric_plots_use_integer_x_ticks(self) -> None:
         uq_df = pd.DataFrame(
             {

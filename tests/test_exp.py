@@ -3603,6 +3603,21 @@ class ExpIntegrationTests(unittest.TestCase):
                 "rmse_std": [0.05, 0.04],
             }
         )
+        ridge_selection_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "alpha": [0.1, 0.1],
+            }
+        )
+        ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "miscalibration_area": [0.2, 0.1],
+                "sharpness": [0.3, 0.2],
+                "dispersion": [0.4, 0.3],
+                "uncertainty_kind": ["calibrated", "calibrated"],
+            }
+        )
         weighted_linear_df = pd.DataFrame(
             {
                 "n_train": [2, 3],
@@ -3616,6 +3631,8 @@ class ExpIntegrationTests(unittest.TestCase):
             save_learning_curve_results_artifact(
                 LearningCurveResults(
                     ridge_df=ridge_df,
+                    ridge_selection_df=ridge_selection_df,
+                    ridge_uq_df=ridge_uq_df,
                     weighted_linear_df=weighted_linear_df,
                 ),
                 LearningCurveSweepMetadata(
@@ -3670,6 +3687,100 @@ class ExpIntegrationTests(unittest.TestCase):
 
         pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
         self.assertFalse(mock_run.called)
+
+    def test_load_or_run_learning_curve_results_from_config_does_not_reuse_bundle_when_required_uq_frame_is_missing(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        kernel_ridge_df = pd.DataFrame(
+            {
+                "n_train": [3],
+                "rmse_mean": [0.3],
+                "rmse_std": [0.04],
+            }
+        )
+        fresh_results = LearningCurveResults(
+            kernel_ridge_df=kernel_ridge_df,
+            kernel_ridge_selection_df=pd.DataFrame(
+                {"n_train": [3], "alpha": [1.0], "gamma": [0.1], "kernel": ["rbf"]}
+            ),
+            kernel_ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [3],
+                    "miscalibration_area": [0.12],
+                    "sharpness": [0.22],
+                    "dispersion": [0.32],
+                    "uncertainty_kind": ["calibrated"],
+                }
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults(kernel_ridge_df=kernel_ridge_df),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=3,
+                    max_train=3,
+                    step=1,
+                    n_repeats=1,
+                    enabled_models=("kernel_ridge",),
+                    mlip_feature_names=("ridge",),
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=4,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        models=SimpleNamespace(
+                            use_ridge=False,
+                            use_kernel_ridge=True,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with patch(
+                "oasis.experiment.orchestration.run_learning_curve_experiments_from_config",
+                return_value=fresh_results,
+            ) as mock_run:
+                results = load_or_run_learning_curve_results_from_config(df, cfg=cfg)
+
+        self.assertTrue(mock_run.called)
+        pd.testing.assert_frame_equal(results.kernel_ridge_df, fresh_results.kernel_ridge_df)
+        pd.testing.assert_frame_equal(
+            results.kernel_ridge_uq_df,
+            fresh_results.kernel_ridge_uq_df,
+        )
 
     def test_load_or_run_learning_curve_results_from_config_reuses_bundle_when_requested_bounds_are_infeasible(
         self,
@@ -3761,11 +3872,30 @@ class ExpIntegrationTests(unittest.TestCase):
                 "rmse_std": [0.06, 0.05, 0.04, 0.035, 0.03],
             }
         )
+        ridge_selection_df = pd.DataFrame(
+            {
+                "n_train": [1, 2, 3, 4, 5],
+                "alpha": [0.1, 0.1, 0.1, 0.1, 0.1],
+            }
+        )
+        ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [1, 2, 3, 4, 5],
+                "miscalibration_area": [0.5, 0.4, 0.3, 0.25, 0.2],
+                "sharpness": [0.6, 0.5, 0.4, 0.35, 0.3],
+                "dispersion": [0.7, 0.6, 0.5, 0.45, 0.4],
+                "uncertainty_kind": ["calibrated"] * 5,
+            }
+        )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             bundle_path = Path(tmp_dir) / "learning_curve_results.json"
             save_learning_curve_results_artifact(
-                LearningCurveResults(ridge_df=ridge_df),
+                LearningCurveResults(
+                    ridge_df=ridge_df,
+                    ridge_selection_df=ridge_selection_df,
+                    ridge_uq_df=ridge_uq_df,
+                ),
                 LearningCurveSweepMetadata(
                     seed=23,
                     min_train=1,
@@ -4527,6 +4657,141 @@ class ExpIntegrationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             bundle_artifact.results.weighted_linear_df,
             cached_weighted_linear_df,
+        )
+
+    def test_run_learning_curve_experiments_from_config_replaces_cached_method_rows_when_uq_frame_is_missing(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+        cached_kernel_ridge_df = pd.DataFrame(
+            {
+                "n_train": [3],
+                "rmse_mean": [0.8],
+                "rmse_std": [0.07],
+            }
+        )
+        refreshed_kernel_ridge_df = pd.DataFrame(
+            {
+                "n_train": [3],
+                "rmse_mean": [0.4],
+                "rmse_std": [0.05],
+            }
+        )
+        refreshed_kernel_ridge_selection_df = pd.DataFrame(
+            {"n_train": [3], "alpha": [1.0], "gamma": [0.1], "kernel": ["rbf"]}
+        )
+        refreshed_kernel_ridge_uq_df = pd.DataFrame(
+            {
+                "n_train": [3],
+                "miscalibration_area": [0.14],
+                "sharpness": [0.24],
+                "dispersion": [0.34],
+                "uncertainty_kind": ["calibrated"],
+            }
+        )
+
+        class StubFamily:
+            method_name = "kernel_ridge"
+            result_field = "kernel_ridge_df"
+            selection_metadata_field = "kernel_ridge_selection_df"
+            uq_summary_field = "kernel_ridge_uq_df"
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                return LearningCurveResults(
+                    kernel_ridge_df=refreshed_kernel_ridge_df,
+                    kernel_ridge_selection_df=refreshed_kernel_ridge_selection_df,
+                    kernel_ridge_uq_df=refreshed_kernel_ridge_uq_df,
+                )
+
+        family = StubFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            save_learning_curve_results_artifact(
+                LearningCurveResults(kernel_ridge_df=cached_kernel_ridge_df),
+                LearningCurveSweepMetadata(
+                    seed=23,
+                    min_train=3,
+                    max_train=3,
+                    step=1,
+                    n_repeats=1,
+                    enabled_models=("kernel_ridge",),
+                    mlip_feature_names=("ridge",),
+                ),
+                bundle_path,
+            )
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=3,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                        models=SimpleNamespace(
+                            use_ridge=False,
+                            use_kernel_ridge=True,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            bundle_artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(family.calls, 1)
+        pd.testing.assert_frame_equal(
+            results.kernel_ridge_df,
+            refreshed_kernel_ridge_df,
+        )
+        pd.testing.assert_frame_equal(
+            results.kernel_ridge_uq_df,
+            refreshed_kernel_ridge_uq_df,
+        )
+        pd.testing.assert_frame_equal(
+            bundle_artifact.results.kernel_ridge_df,
+            refreshed_kernel_ridge_df,
+        )
+        pd.testing.assert_frame_equal(
+            bundle_artifact.results.kernel_ridge_uq_df,
+            refreshed_kernel_ridge_uq_df,
         )
 
     def test_run_learning_curve_experiments_from_config_force_refreshes_selected_train_sizes_in_bundle(

@@ -137,6 +137,20 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
 
     @staticmethod
+    def _kernel_ridge_only_uq_results() -> LearningCurveResults:
+        return LearningCurveResults(
+            kernel_ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [5, 10],
+                    "miscalibration_area": [0.18, 0.11],
+                    "sharpness": [0.24, 0.19],
+                    "dispersion": [0.34, 0.27],
+                    "uncertainty_kind": ["calibrated", "calibrated"],
+                }
+            )
+        )
+
+    @staticmethod
     def _timed_learning_curve_results() -> LearningCurveResults:
         ridge_frame = pd.DataFrame(
             {
@@ -4612,6 +4626,72 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_uq_summary_figure.call_args.kwargs["dispersion_path"],
             tmp_path / "tmp" / "dispersion.png",
         )
+
+    def test_run_experiment_emits_uq_summary_figure_for_kernel_ridge_only_uq(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+            results = self._kernel_ridge_only_uq_results()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=results,
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ), patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                return_value=tmp_path / "tmp" / "miscalibration.png",
+            ) as mock_miscalibration_plot, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                return_value=tmp_path / "tmp" / "sharpness.png",
+            ), patch(
+                "oasis.experiment_runner.dispersion_plot",
+                return_value=tmp_path / "tmp" / "dispersion.png",
+            ), patch(
+                "oasis.experiment_runner.uq_summary_figure",
+                return_value=tmp_path / "plots" / "uq_summary_figure.png",
+            ) as mock_uq_summary_figure:
+                run_experiment(cfg)
+
+        mock_miscalibration_plot.assert_called_once()
+        mock_uq_summary_figure.assert_called_once()
 
     def test_run_experiment_persists_learning_curve_uq_component_plots_for_both_span_variants(
         self,
