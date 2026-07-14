@@ -229,9 +229,18 @@ class SweepOutputRegressionTests(unittest.TestCase):
                     requires_inner_validation=True,
                     requires_calibration=True,
                 ),
-                SweepFamilyRequirements(requires_inner_validation=True),
-                SweepFamilyRequirements(requires_inner_validation=True),
-                SweepFamilyRequirements(requires_inner_validation=True),
+                SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
+                SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
+                SweepFamilyRequirements(
+                    requires_inner_validation=True,
+                    requires_calibration=True,
+                ),
                 SweepFamilyRequirements(requires_calibration=True),
                 SweepFamilyRequirements(requires_calibration=True),
                 SweepFamilyRequirements(requires_calibration=True),
@@ -250,9 +259,9 @@ class SweepOutputRegressionTests(unittest.TestCase):
             built_in_capabilities,
             [
                 SweepModelCapabilities(requires_validation=True, requires_calibration=True),
-                SweepModelCapabilities(requires_validation=True),
-                SweepModelCapabilities(requires_validation=True),
-                SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(requires_validation=True, requires_calibration=True),
+                SweepModelCapabilities(requires_validation=True, requires_calibration=True),
+                SweepModelCapabilities(requires_validation=True, requires_calibration=True),
                 SweepModelCapabilities(requires_calibration=True),
                 SweepModelCapabilities(requires_calibration=True),
                 SweepModelCapabilities(requires_calibration=True),
@@ -1023,15 +1032,15 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 sklearn_specs["ridge"].hyperparameter_spec,
             ),
             "kernel_ridge_df": sweep_model_with_hyperparameter_selection(
-                validation_payload,
+                validation_calibration_payload,
                 sklearn_specs["kernel_ridge"].hyperparameter_spec,
             ),
             "lasso_df": sweep_model_with_hyperparameter_selection(
-                validation_payload,
+                validation_calibration_payload,
                 sklearn_specs["lasso"].hyperparameter_spec,
             ),
             "elastic_df": sweep_model_with_hyperparameter_selection(
-                validation_payload,
+                validation_calibration_payload,
                 sklearn_specs["elastic"].hyperparameter_spec,
             ),
             "resid_df": residual_sweep(calibration_payload).metrics,
@@ -1312,6 +1321,49 @@ class SweepOutputRegressionTests(unittest.TestCase):
             results.kernel_ridge_uq_df["uncertainty_note"].tolist(),
             ["post-hoc scalar calibrated spread"]
             * len(results.kernel_ridge_uq_df),
+        )
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_sparse_linear_selection_methods_emit_uncertainty_summaries(self) -> None:
+        X, y = self._regression_dataset()
+
+        results = run_learning_curve_experiments(
+            SweepDataset(mlip_features=X, targets=y),
+            min_train=2,
+            max_train=4,
+            n_repeats=1,
+            seed=41,
+            enabled_model_names=["lasso", "elastic"],
+        )
+
+        self.assertIsNotNone(results.lasso_selection_df)
+        self.assertEqual(
+            results.lasso_selection_df.columns.tolist(),
+            ["n_train", "alpha"],
+        )
+        self.assertIsNotNone(results.lasso_uq_df)
+        self.assertEqual(
+            results.lasso_uq_df["n_train"].tolist(),
+            results.lasso_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            results.lasso_uq_df["uncertainty_kind"].tolist(),
+            ["calibrated"] * len(results.lasso_uq_df),
+        )
+
+        self.assertIsNotNone(results.elastic_selection_df)
+        self.assertEqual(
+            results.elastic_selection_df.columns.tolist(),
+            ["n_train", "alpha", "l1_ratio"],
+        )
+        self.assertIsNotNone(results.elastic_uq_df)
+        self.assertEqual(
+            results.elastic_uq_df["n_train"].tolist(),
+            results.elastic_df["n_train"].tolist(),
+        )
+        self.assertEqual(
+            results.elastic_uq_df["uncertainty_kind"].tolist(),
+            ["calibrated"] * len(results.elastic_uq_df),
         )
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
@@ -1891,8 +1943,8 @@ class BoundaryTests(unittest.TestCase):
             enabled_model_names=["lasso", "elastic"],
         )
 
-        self.assertEqual(results.lasso_df["n_train"].tolist(), [2, 3])
-        self.assertEqual(results.elastic_df["n_train"].tolist(), [2, 3])
+        self.assertEqual(results.lasso_df["n_train"].tolist(), [3])
+        self.assertEqual(results.elastic_df["n_train"].tolist(), [3])
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_train_test_baselines_remain_unaffected_by_lasso_and_elastic(self) -> None:

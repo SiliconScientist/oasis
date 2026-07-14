@@ -2175,6 +2175,8 @@ def _has_uq_summary(results: object) -> bool:
         "weighted_simplex_uq_df",
         "ridge_uq_df",
         "kernel_ridge_uq_df",
+        "lasso_uq_df",
+        "elastic_uq_df",
         "moe_uq_df",
     ):
         frame = getattr(results, field_name, None)
