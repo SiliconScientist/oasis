@@ -148,7 +148,8 @@ def _configured_policy_fixed_method_baselines(cfg: object) -> tuple[tuple[str, s
 @dataclass(frozen=True, slots=True)
 class PolicyDiagnosticPersistenceContext:
     metadata: object | None
-    cache_signature: dict[str, object]
+    diagnostic_cache_signature: dict[str, object]
+    screening_rows_cache_signature: dict[str, object]
     artifact_path: Path
     screening_rows_artifact_path: Path
 
@@ -932,26 +933,45 @@ def _write_policy_selection_diagnostic(
         run_suffix=run_suffix,
     )
     diagnostic_results = None
+    cached_outer_repeat_metrics_df = None
     screening_rows_df = None
+    if persistence.metadata is not None and persistence.screening_rows_artifact_path.is_file():
+        try:
+            screening_rows_df = load_screening_diagnostic_rows_artifact(
+                persistence.screening_rows_artifact_path,
+                expected_metadata=persistence.metadata,
+                expected_cache_signature=persistence.screening_rows_cache_signature,
+            ).screening_rows_df
+        except ValueError:
+            screening_rows_df = None
     if persistence.metadata is not None and persistence.artifact_path.is_file():
         try:
             cached_artifact = load_policy_selection_diagnostic_artifact(
                 persistence.artifact_path,
                 expected_metadata=persistence.metadata,
-                expected_cache_signature=persistence.cache_signature,
+                expected_cache_signature=persistence.diagnostic_cache_signature,
             )
             diagnostic_results = cached_artifact.results
-            if persistence.screening_rows_artifact_path.is_file():
-                screening_rows_df = load_screening_diagnostic_rows_artifact(
-                    persistence.screening_rows_artifact_path,
-                    expected_metadata=persistence.metadata,
-                    expected_cache_signature=persistence.cache_signature,
-                ).screening_rows_df
             print(f"Policy diagnostic artifact cache hit: {persistence.artifact_path}")
         except ValueError:
             diagnostic_results = None
-            screening_rows_df = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
+            try:
+                prior_artifact = load_policy_selection_diagnostic_artifact(
+                    persistence.artifact_path,
+                    expected_metadata=persistence.metadata,
+                )
+            except ValueError:
+                prior_artifact = None
+            if prior_artifact is not None:
+                prior_signature = _policy_selection_cache_signature_without_policy(
+                    prior_artifact.cache_signature
+                )
+                current_signature = _policy_selection_cache_signature_without_policy(
+                    persistence.diagnostic_cache_signature
+                )
+                if prior_signature == current_signature:
+                    cached_outer_repeat_metrics_df = prior_artifact.results.outer_metrics_df
     if diagnostic_results is None:
         print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
@@ -959,6 +979,7 @@ def _write_policy_selection_diagnostic(
             wide_df=wide_df,
             graph_view=graph_view,
             auxiliary_views=auxiliary_views,
+            cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
             cached_screening_rows_df=screening_rows_df,
         )
         if build_outputs is None:
@@ -973,7 +994,8 @@ def _write_policy_selection_diagnostic(
         diagnostic_results=diagnostic_results,
         screening_rows_df=screening_rows_df,
         metadata=persistence.metadata,
-        cache_signature=persistence.cache_signature,
+        diagnostic_cache_signature=persistence.diagnostic_cache_signature,
+        screening_rows_cache_signature=persistence.screening_rows_cache_signature,
         artifact_path=persistence.artifact_path,
         screening_rows_artifact_path=persistence.screening_rows_artifact_path,
         output_dir=output_dir,
@@ -1022,16 +1044,35 @@ def _policy_selection_diagnostic_cache_signature(cfg: object) -> dict[str, objec
             "calibration_fraction": getattr(screening_cfg, "calibration_fraction", 0.2),
             "min_cal_size": getattr(screening_cfg, "min_cal_size", 1),
             "min_inner_train_size": getattr(screening_cfg, "min_inner_train_size", 1),
-            "policy_names": list(
-                getattr(screening_cfg, "policy_names", ["min_screening_rmse"])
-            ),
-            "combined_miscalibration_lambda": getattr(
-                screening_cfg,
-                "combined_miscalibration_lambda",
-                1.0,
-            ),
         },
     }
+
+
+def _policy_selection_diagnostic_results_cache_signature(cfg: object) -> dict[str, object]:
+    signature = _policy_selection_diagnostic_cache_signature(cfg)
+    screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
+    signature["screening"]["policy_names"] = list(
+        getattr(screening_cfg, "policy_names", ["min_screening_rmse"])
+    )
+    signature["screening"]["combined_miscalibration_lambda"] = getattr(
+        screening_cfg,
+        "combined_miscalibration_lambda",
+        1.0,
+    )
+    return signature
+
+
+def _policy_selection_cache_signature_without_policy(
+    cache_signature: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if cache_signature is None:
+        return None
+    normalized = copy.deepcopy(cache_signature)
+    screening_signature = normalized.get("screening")
+    if isinstance(screening_signature, dict):
+        screening_signature.pop("policy_names", None)
+        screening_signature.pop("combined_miscalibration_lambda", None)
+    return normalized
 
 
 def _policy_selection_diagnostic_persistence_context(
@@ -1068,7 +1109,10 @@ def _policy_selection_diagnostic_persistence_context(
             screening_stem = f"dataset_{run_suffix}"
     return PolicyDiagnosticPersistenceContext(
         metadata=metadata,
-        cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
+        diagnostic_cache_signature=_policy_selection_diagnostic_results_cache_signature(
+            cfg
+        ),
+        screening_rows_cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
         artifact_path=policy_selection_diagnostic_bundle_path(screening_stem),
         screening_rows_artifact_path=policy_selection_screening_rows_bundle_path(
             screening_stem
@@ -1082,6 +1126,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     wide_df: object,
     graph_view: object,
     auxiliary_views: dict[str, object] | None,
+    cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
 ) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
@@ -1128,9 +1173,9 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     diagnostic_max_train = getattr(learning_curve_cfg, "max_train", None)
     if diagnostic_max_train is None:
         diagnostic_max_train = max(requested_sweep_sizes)
-    cached_outer_repeat_metrics_df = None
+    resolved_cached_outer_repeat_metrics_df = cached_outer_repeat_metrics_df
     results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
-    if results_bundle_path is not None:
+    if resolved_cached_outer_repeat_metrics_df is None and results_bundle_path is not None:
         try:
             metadata = learning_curve_sweep_metadata_from_config(
                 cfg,
@@ -1143,12 +1188,12 @@ def _build_policy_selection_diagnostic_results_for_cfg(
             repeat_metrics_path = repeat_metrics_artifact_path(results_bundle_path)
             if repeat_metrics_path.is_file():
                 try:
-                    cached_outer_repeat_metrics_df = load_learning_curve_repeat_metrics_artifact(
+                    resolved_cached_outer_repeat_metrics_df = load_learning_curve_repeat_metrics_artifact(
                         repeat_metrics_path,
                         expected_metadata=metadata,
                     ).repeat_metrics_df
                 except ValueError:
-                    cached_outer_repeat_metrics_df = None
+                    resolved_cached_outer_repeat_metrics_df = None
     detail_df, outer_metrics_df, screening_rows_df = _build_policy_selection_frames(
         dataset,
         min_train=diagnostic_min_train,
@@ -1175,7 +1220,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         screening_min_cal_size=getattr(screening_cfg, "min_cal_size", 1),
         screening_min_inner_train_size=getattr(screening_cfg, "min_inner_train_size", 1),
         requested_sweep_sizes=requested_sweep_sizes,
-        cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
+        cached_outer_repeat_metrics_df=resolved_cached_outer_repeat_metrics_df,
         cached_screening_rows_df=cached_screening_rows_df,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
@@ -1201,7 +1246,8 @@ def _write_policy_selection_diagnostic_outputs(
     diagnostic_results: PolicySelectionDiagnosticResults,
     screening_rows_df: pd.DataFrame | None,
     metadata: object | None,
-    cache_signature: dict[str, object],
+    diagnostic_cache_signature: dict[str, object],
+    screening_rows_cache_signature: dict[str, object],
     artifact_path: Path,
     screening_rows_artifact_path: Path,
     output_dir: Path,
@@ -1219,7 +1265,7 @@ def _write_policy_selection_diagnostic_outputs(
             PolicySelectionDiagnosticArtifact(
                 metadata=metadata,
                 results=diagnostic_results,
-                cache_signature=cache_signature,
+                cache_signature=diagnostic_cache_signature,
             ),
             artifact_path,
         )
@@ -1228,7 +1274,7 @@ def _write_policy_selection_diagnostic_outputs(
                 ScreeningDiagnosticRowsArtifact(
                     metadata=metadata,
                     screening_rows_df=screening_rows_df,
-                    cache_signature=cache_signature,
+                    cache_signature=screening_rows_cache_signature,
                 ),
                 screening_rows_artifact_path,
             )
@@ -1375,7 +1421,7 @@ def _load_cached_policy_selection_results_for_dataset_cfg(
         return load_policy_selection_diagnostic_artifact(
             persistence.artifact_path,
             expected_metadata=persistence.metadata,
-            expected_cache_signature=persistence.cache_signature,
+            expected_cache_signature=persistence.diagnostic_cache_signature,
         ).results
     except ValueError:
         return None

@@ -917,7 +917,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(saved_path, artifact_path)
-        mock_load.assert_called_once()
+        self.assertEqual(mock_load.call_count, 2)
         mock_build.assert_called_once()
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
@@ -2948,6 +2948,172 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "data/results/screening/"
                 "policy_selection_screening_rows_bio_mass_anomalyaware_off_latent_off_n6.json"
             ),
+        )
+        self.assertEqual(
+            persistence.diagnostic_cache_signature["screening"]["policy_names"],
+            ["min_screening_rmse"],
+        )
+        self.assertNotIn(
+            "policy_names",
+            persistence.screening_rows_cache_signature["screening"],
+        )
+
+        cfg.experiment.screening.policy_names = [
+            "combined_screening_rmse_miscalibration"
+        ]
+        cfg.experiment.screening.combined_miscalibration_lambda = 2.0
+        updated_persistence = _policy_selection_diagnostic_persistence_context(
+            cfg,
+            wide_df=pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1],
+                }
+            ),
+            output_dir=Path("unused"),
+            run_suffix="anomalyaware_off",
+        )
+        self.assertNotEqual(
+            persistence.diagnostic_cache_signature,
+            updated_persistence.diagnostic_cache_signature,
+        )
+        self.assertEqual(
+            persistence.screening_rows_cache_signature,
+            updated_persistence.screening_rows_cache_signature,
+        )
+
+    def test_policy_diagnostic_reuses_screening_rows_when_policy_artifact_misses(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
+            artifact_path.write_text("{}", encoding="utf-8")
+            screening_rows_path.write_text("{}", encoding="utf-8")
+
+            cached_screening_rows = pd.DataFrame(
+                {
+                    "method": ["ridge"],
+                    "budget": [5],
+                    "repeat": [0],
+                    "split_fingerprint": ["abc"],
+                    "screening_cv_rmse": [0.1],
+                    "screening_miscalibration_area": [0.05],
+                }
+            )
+            dummy_results = PolicySelectionDiagnosticResults(
+                detail_df=pd.DataFrame(
+                    [
+                        {
+                            "policy_name": "combined_screening_rmse_miscalibration",
+                            "budget": 5,
+                            "repeat": 0,
+                            "oracle_method": "ridge",
+                            "screening_selected_method": "ridge",
+                            "oracle_outer_rmse": 0.1,
+                            "screening_selected_outer_rmse": 0.1,
+                            "regret": 0.0,
+                            "screening_cv_rmse": 0.1,
+                            "screening_miscalibration_area": 0.05,
+                            "agreement": True,
+                        }
+                    ]
+                ),
+                outer_metrics_df=pd.DataFrame(
+                    [{"budget": 5, "repeat": 0, "method": "ridge", "outer_test_rmse": 0.1}]
+                ),
+                summary_df=pd.DataFrame(
+                    [
+                        {
+                            "policy_name": "combined_screening_rmse_miscalibration",
+                            "budget": 5,
+                            "mean_regret": 0.0,
+                            "std_regret": 0.0,
+                            "se_regret": 0.0,
+                            "ci95_low": 0.0,
+                            "ci95_high": 0.0,
+                            "agreement_rate": 1.0,
+                            "oracle_outer_rmse_mean": 0.1,
+                            "screening_selected_outer_rmse_mean": 0.1,
+                        }
+                    ]
+                ),
+            )
+            persistence = SimpleNamespace(
+                metadata=object(),
+                diagnostic_cache_signature={
+                    "learning_curve": {"min_train": 5},
+                    "screening": {
+                        "screen_fraction": 0.2,
+                        "policy_names": ["combined_screening_rmse_miscalibration"],
+                        "combined_miscalibration_lambda": 1.0,
+                    },
+                },
+                screening_rows_cache_signature={
+                    "learning_curve": {"min_train": 5},
+                    "screening": {"screen_fraction": 0.2},
+                },
+                artifact_path=artifact_path,
+                screening_rows_artifact_path=screening_rows_path,
+            )
+            captured: dict[str, pd.DataFrame | None] = {}
+
+            def _fake_build(**kwargs):
+                captured["outer_metrics_df"] = kwargs["cached_outer_repeat_metrics_df"]
+                captured["screening_rows_df"] = kwargs["cached_screening_rows_df"]
+                return PolicyDiagnosticBuildOutputs(
+                    results=dummy_results,
+                    screening_rows_df=kwargs["cached_screening_rows_df"],
+                )
+
+            with patch(
+                "oasis.experiment_runner._policy_selection_diagnostic_persistence_context",
+                return_value=persistence,
+            ), patch(
+                "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                side_effect=[
+                    ValueError("policy mismatch"),
+                    SimpleNamespace(
+                        cache_signature={
+                            "learning_curve": {"min_train": 5},
+                            "screening": {"screen_fraction": 0.2},
+                        },
+                        results=SimpleNamespace(
+                            outer_metrics_df=dummy_results.outer_metrics_df
+                        ),
+                    ),
+                ],
+            ), patch(
+                "oasis.experiment_runner.load_screening_diagnostic_rows_artifact",
+                return_value=SimpleNamespace(screening_rows_df=cached_screening_rows),
+            ), patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                side_effect=_fake_build,
+            ), patch(
+                "oasis.experiment_runner._write_policy_selection_diagnostic_outputs",
+                return_value=tmp_path / "out.png",
+            ):
+                result = _write_policy_selection_diagnostic(
+                    cfg=SimpleNamespace(),
+                    wide_df=pd.DataFrame(),
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=tmp_path,
+                    run_suffix="test",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(result, tmp_path / "out.png")
+        pd.testing.assert_frame_equal(
+            captured["outer_metrics_df"],
+            dummy_results.outer_metrics_df,
+        )
+        pd.testing.assert_frame_equal(
+            captured["screening_rows_df"],
+            cached_screening_rows,
         )
 
     def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(
