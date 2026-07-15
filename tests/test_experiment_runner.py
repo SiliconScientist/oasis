@@ -3116,6 +3116,183 @@ class ExperimentRunnerTests(unittest.TestCase):
             cached_screening_rows,
         )
 
+    def test_policy_diagnostic_reuses_superset_method_cache_when_method_disabled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
+            artifact_path.write_text("{}", encoding="utf-8")
+            screening_rows_path.write_text("{}", encoding="utf-8")
+
+            prior_outer_metrics_df = pd.DataFrame(
+                [
+                    {"budget": 5, "repeat": 0, "method": "ridge", "outer_test_rmse": 0.1},
+                    {
+                        "budget": 5,
+                        "repeat": 0,
+                        "method": "weighted_linear",
+                        "outer_test_rmse": 0.12,
+                    },
+                ]
+            )
+            prior_screening_rows_df = pd.DataFrame(
+                [
+                    {
+                        "method": "ridge",
+                        "budget": 5,
+                        "repeat": 0,
+                        "split_fingerprint": "ridge-fp",
+                        "screening_cv_rmse": 0.1,
+                        "screening_miscalibration_area": 0.05,
+                    },
+                    {
+                        "method": "weighted_linear",
+                        "budget": 5,
+                        "repeat": 0,
+                        "split_fingerprint": "weighted-fp",
+                        "screening_cv_rmse": 0.09,
+                        "screening_miscalibration_area": 0.04,
+                    },
+                ]
+            )
+            persistence = SimpleNamespace(
+                metadata=object(),
+                diagnostic_cache_signature={
+                    "learning_curve": {
+                        "min_train": 5,
+                        "enabled_model_names": ["ridge"],
+                    },
+                    "screening": {
+                        "screen_fraction": 0.2,
+                        "policy_names": ["min_screening_rmse"],
+                        "combined_miscalibration_lambda": 1.0,
+                    },
+                },
+                screening_rows_cache_signature={
+                    "learning_curve": {
+                        "min_train": 5,
+                        "enabled_model_names": ["ridge"],
+                    },
+                    "screening": {"screen_fraction": 0.2},
+                },
+                artifact_path=artifact_path,
+                screening_rows_artifact_path=screening_rows_path,
+            )
+            captured: dict[str, pd.DataFrame | None] = {}
+
+            def _fake_build(**kwargs):
+                captured["outer_metrics_df"] = kwargs["cached_outer_repeat_metrics_df"]
+                captured["screening_rows_df"] = kwargs["cached_screening_rows_df"]
+                return PolicyDiagnosticBuildOutputs(
+                    results=PolicySelectionDiagnosticResults(
+                        detail_df=pd.DataFrame(
+                            [
+                                {
+                                    "policy_name": "min_screening_rmse",
+                                    "budget": 5,
+                                    "repeat": 0,
+                                    "oracle_method": "ridge",
+                                    "screening_selected_method": "ridge",
+                                    "oracle_outer_rmse": 0.1,
+                                    "screening_selected_outer_rmse": 0.1,
+                                    "regret": 0.0,
+                                    "screening_cv_rmse": 0.1,
+                                    "screening_miscalibration_area": 0.05,
+                                    "agreement": True,
+                                }
+                            ]
+                        ),
+                        outer_metrics_df=kwargs["cached_outer_repeat_metrics_df"],
+                        summary_df=pd.DataFrame(
+                            [
+                                {
+                                    "policy_name": "min_screening_rmse",
+                                    "budget": 5,
+                                    "mean_regret": 0.0,
+                                    "std_regret": 0.0,
+                                    "se_regret": 0.0,
+                                    "ci95_low": 0.0,
+                                    "ci95_high": 0.0,
+                                    "agreement_rate": 1.0,
+                                    "oracle_outer_rmse_mean": 0.1,
+                                    "screening_selected_outer_rmse_mean": 0.1,
+                                }
+                            ]
+                        ),
+                    ),
+                    screening_rows_df=kwargs["cached_screening_rows_df"],
+                )
+
+            with patch(
+                "oasis.experiment_runner._policy_selection_diagnostic_persistence_context",
+                return_value=persistence,
+            ), patch(
+                "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                side_effect=[
+                    ValueError("method mismatch"),
+                    SimpleNamespace(
+                        cache_signature={
+                            "learning_curve": {
+                                "min_train": 5,
+                                "enabled_model_names": ["ridge", "weighted_linear"],
+                            },
+                            "screening": {"screen_fraction": 0.2},
+                        },
+                        results=SimpleNamespace(
+                            outer_metrics_df=prior_outer_metrics_df
+                        ),
+                    ),
+                ],
+            ), patch(
+                "oasis.experiment_runner.load_screening_diagnostic_rows_artifact",
+                side_effect=[
+                    ValueError("method mismatch"),
+                    SimpleNamespace(
+                        cache_signature={
+                            "learning_curve": {
+                                "min_train": 5,
+                                "enabled_model_names": ["ridge", "weighted_linear"],
+                            },
+                            "screening": {"screen_fraction": 0.2},
+                        },
+                        screening_rows_df=prior_screening_rows_df,
+                    ),
+                ],
+            ), patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                side_effect=_fake_build,
+            ), patch(
+                "oasis.experiment_runner._write_policy_selection_diagnostic_outputs",
+                return_value=tmp_path / "out.png",
+            ):
+                result = _write_policy_selection_diagnostic(
+                    cfg=SimpleNamespace(),
+                    wide_df=pd.DataFrame(),
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=tmp_path,
+                    run_suffix="test",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(result, tmp_path / "out.png")
+        pd.testing.assert_frame_equal(
+            captured["outer_metrics_df"].reset_index(drop=True),
+            prior_outer_metrics_df.loc[
+                prior_outer_metrics_df["method"] == "ridge"
+            ].reset_index(drop=True),
+        )
+        pd.testing.assert_frame_equal(
+            captured["screening_rows_df"].reset_index(drop=True),
+            prior_screening_rows_df.loc[
+                prior_screening_rows_df["method"] == "ridge"
+            ].reset_index(drop=True),
+        )
+
     def test_run_experiment_separates_persistent_cache_paths_for_latent_filtered_data(
         self,
     ) -> None:

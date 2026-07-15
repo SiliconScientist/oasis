@@ -934,6 +934,9 @@ def _write_policy_selection_diagnostic(
     )
     diagnostic_results = None
     cached_outer_repeat_metrics_df = None
+    current_enabled_methods = _policy_selection_enabled_method_names(
+        persistence.diagnostic_cache_signature
+    )
     screening_rows_df = None
     if persistence.metadata is not None and persistence.screening_rows_artifact_path.is_file():
         try:
@@ -944,6 +947,21 @@ def _write_policy_selection_diagnostic(
             ).screening_rows_df
         except ValueError:
             screening_rows_df = None
+            try:
+                prior_screening_rows_artifact = load_screening_diagnostic_rows_artifact(
+                    persistence.screening_rows_artifact_path,
+                    expected_metadata=persistence.metadata,
+                )
+            except ValueError:
+                prior_screening_rows_artifact = None
+            if prior_screening_rows_artifact is not None and _policy_selection_cache_can_reuse_method_subset(
+                prior_screening_rows_artifact.cache_signature,
+                persistence.screening_rows_cache_signature,
+            ):
+                screening_rows_df = _filter_cached_policy_frame_to_methods(
+                    prior_screening_rows_artifact.screening_rows_df,
+                    allowed_methods=current_enabled_methods,
+                )
     if persistence.metadata is not None and persistence.artifact_path.is_file():
         try:
             cached_artifact = load_policy_selection_diagnostic_artifact(
@@ -963,15 +981,14 @@ def _write_policy_selection_diagnostic(
                 )
             except ValueError:
                 prior_artifact = None
-            if prior_artifact is not None:
-                prior_signature = _policy_selection_cache_signature_without_policy(
-                    prior_artifact.cache_signature
+            if prior_artifact is not None and _policy_selection_cache_can_reuse_method_subset(
+                prior_artifact.cache_signature,
+                persistence.diagnostic_cache_signature,
+            ):
+                cached_outer_repeat_metrics_df = _filter_cached_policy_frame_to_methods(
+                    prior_artifact.results.outer_metrics_df,
+                    allowed_methods=current_enabled_methods,
                 )
-                current_signature = _policy_selection_cache_signature_without_policy(
-                    persistence.diagnostic_cache_signature
-                )
-                if prior_signature == current_signature:
-                    cached_outer_repeat_metrics_df = prior_artifact.results.outer_metrics_df
     if diagnostic_results is None:
         print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
@@ -1073,6 +1090,65 @@ def _policy_selection_cache_signature_without_policy(
         screening_signature.pop("policy_names", None)
         screening_signature.pop("combined_miscalibration_lambda", None)
     return normalized
+
+
+def _policy_selection_cache_signature_without_policy_or_methods(
+    cache_signature: dict[str, object] | None,
+) -> dict[str, object] | None:
+    normalized = _policy_selection_cache_signature_without_policy(cache_signature)
+    if normalized is None:
+        return None
+    learning_curve_signature = normalized.get("learning_curve")
+    if isinstance(learning_curve_signature, dict):
+        learning_curve_signature.pop("enabled_model_names", None)
+    return normalized
+
+
+def _policy_selection_enabled_method_names(
+    cache_signature: dict[str, object] | None,
+) -> set[str]:
+    if cache_signature is None:
+        return set()
+    learning_curve_signature = cache_signature.get("learning_curve")
+    if not isinstance(learning_curve_signature, dict):
+        return set()
+    raw_names = learning_curve_signature.get("enabled_model_names", ())
+    if not isinstance(raw_names, list):
+        return set()
+    return {str(value) for value in raw_names}
+
+
+def _policy_selection_cache_can_reuse_method_subset(
+    prior_cache_signature: dict[str, object] | None,
+    current_cache_signature: dict[str, object] | None,
+) -> bool:
+    prior_signature = _policy_selection_cache_signature_without_policy_or_methods(
+        prior_cache_signature
+    )
+    current_signature = _policy_selection_cache_signature_without_policy_or_methods(
+        current_cache_signature
+    )
+    if prior_signature != current_signature:
+        return False
+    prior_methods = _policy_selection_enabled_method_names(prior_cache_signature)
+    current_methods = _policy_selection_enabled_method_names(current_cache_signature)
+    return current_methods.issubset(prior_methods)
+
+
+def _filter_cached_policy_frame_to_methods(
+    frame: pd.DataFrame | None,
+    *,
+    allowed_methods: set[str],
+) -> pd.DataFrame | None:
+    if frame is None:
+        return None
+    if frame.empty:
+        return frame
+    if not allowed_methods:
+        return frame
+    if "method" not in frame.columns:
+        return frame
+    return frame.loc[frame["method"].astype(str).isin(allowed_methods)].reset_index(drop=True)
 
 
 def _policy_selection_diagnostic_persistence_context(
