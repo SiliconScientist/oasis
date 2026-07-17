@@ -213,6 +213,110 @@ def _metadata_for_available_results(
     )
 
 
+def _persist_learning_curve_bundle_checkpoint(
+    *,
+    results_bundle_path: Path,
+    expected_metadata: LearningCurveSweepMetadata,
+    existing_bundle_results: LearningCurveResults,
+    existing_bundle_point_provenance: dict[str, pd.DataFrame],
+    existing_bundle_metadata: LearningCurveSweepMetadata,
+    existing_repeat_metrics_df: pd.DataFrame | None,
+    fresh_results: LearningCurveResults,
+    fresh_repeat_metrics_df: pd.DataFrame | None,
+    current_method_names: Collection[str],
+    force_refresh_train_sizes: Mapping[str, Collection[int]],
+    rerun_train_sizes_by_method: Mapping[str, Collection[int]],
+) -> tuple[
+    LearningCurveResults,
+    dict[str, pd.DataFrame],
+    LearningCurveSweepMetadata,
+    pd.DataFrame | None,
+]:
+    overwrite_fields = {
+        field_name
+        for method_name in current_method_names
+        for field_name in (
+            learning_curve_result_field_for_method_name(method_name),
+            learning_curve_selection_field_for_method_name(method_name),
+            learning_curve_uq_field_for_method_name(method_name),
+        )
+        if field_name is not None
+    }
+    overwrite_train_sizes_methods = {
+        method_name
+        for method_name in current_method_names
+        if method_name in force_refresh_train_sizes or method_name in rerun_train_sizes_by_method
+    }
+    overwrite_train_sizes_by_field = {
+        field_name: {
+            int(value)
+            for value in force_refresh_train_sizes.get(method_name, ())
+        }
+        | {
+            int(value)
+            for value in rerun_train_sizes_by_method.get(method_name, ())
+        }
+        for method_name in overwrite_train_sizes_methods
+        for field_name in (
+            learning_curve_result_field_for_method_name(method_name),
+            learning_curve_selection_field_for_method_name(method_name),
+            learning_curve_uq_field_for_method_name(method_name),
+        )
+        if field_name is not None
+    }
+    bundle_results = existing_bundle_results.merge(
+        fresh_results,
+        overwrite_fields=overwrite_fields,
+        overwrite_train_sizes_by_field=overwrite_train_sizes_by_field,
+    )
+    bundle_point_provenance = merge_learning_curve_point_provenance(
+        existing_bundle_point_provenance,
+        build_learning_curve_point_provenance(
+            fresh_results,
+            expected_metadata,
+        ),
+        overwrite_fields=overwrite_fields,
+        overwrite_train_sizes_by_field=overwrite_train_sizes_by_field,
+    )
+    bundle_metadata = _metadata_for_available_results(
+        expected_metadata,
+        bundle_results,
+        existing_bundle_metadata,
+    )
+    save_learning_curve_results_artifact(
+        bundle_results,
+        bundle_metadata,
+        results_bundle_path,
+        point_provenance=bundle_point_provenance,
+    )
+
+    updated_repeat_metrics_df = existing_repeat_metrics_df
+    if (
+        expected_metadata.budget_mode == "full_remainder_test"
+        and fresh_repeat_metrics_df is not None
+        and not fresh_repeat_metrics_df.empty
+    ):
+        updated_repeat_metrics_df = merge_learning_curve_repeat_metrics(
+            existing_repeat_metrics_df,
+            fresh_repeat_metrics_df,
+        )
+        if updated_repeat_metrics_df is not None:
+            save_learning_curve_repeat_metrics_artifact(
+                LearningCurveRepeatMetricsArtifact(
+                    metadata=bundle_metadata,
+                    repeat_metrics_df=updated_repeat_metrics_df,
+                ),
+                repeat_metrics_artifact_path(results_bundle_path),
+            )
+
+    return (
+        bundle_results,
+        bundle_point_provenance,
+        bundle_metadata,
+        updated_repeat_metrics_df,
+    )
+
+
 def run_learning_curve_experiments_from_config(
     df: Any,
     cfg: Config | None,
@@ -476,6 +580,89 @@ def run_learning_curve_experiments_from_config(
                 if method_name not in cached_method_names
             )
 
+    expected_metadata = None
+    existing_bundle_results = LearningCurveResults.empty()
+    existing_bundle_point_provenance: dict[str, pd.DataFrame] = {}
+    existing_bundle_metadata = None
+    existing_repeat_metrics_df = None
+    per_family_artifacts_callback = None
+    if cfg is not None and experiment_cfg is not None and results_bundle_path is not None:
+        expected_metadata = learning_curve_sweep_metadata_from_config(
+            cfg,
+            dataset_size=len(df),
+            mlip_feature_names=current_mlip_feature_names,
+        )
+        resolved_bundle_path = Path(results_bundle_path)
+        if resolved_bundle_path.is_file():
+            try:
+                existing_bundle = load_learning_curve_results_artifact(
+                    resolved_bundle_path,
+                    expected_metadata=expected_metadata,
+                    ignore_enabled_models=True,
+                    ignore_train_grid=True,
+                    ignore_repeat_count=True,
+                )
+                existing_bundle_results = existing_bundle.results
+                existing_bundle_point_provenance = existing_bundle.point_provenance
+                existing_bundle_metadata = existing_bundle.metadata
+            except ValueError:
+                existing_bundle_results = LearningCurveResults.empty()
+                existing_bundle_point_provenance = {}
+        if existing_bundle_metadata is None:
+            existing_bundle_metadata = expected_metadata
+        repeat_metrics_path = repeat_metrics_artifact_path(resolved_bundle_path)
+        if (
+            expected_metadata.budget_mode == "full_remainder_test"
+            and repeat_metrics_path.is_file()
+        ):
+            try:
+                existing_repeat_metrics_df = (
+                    load_learning_curve_repeat_metrics_artifact(
+                        repeat_metrics_path,
+                        expected_metadata=expected_metadata,
+                    ).repeat_metrics_df
+                )
+            except ValueError:
+                existing_repeat_metrics_df = None
+
+        def per_family_artifacts_callback(
+            method_name: str,
+            family_results: LearningCurveResults,
+            repeat_metrics: Any,
+        ) -> None:
+            nonlocal existing_bundle_results
+            nonlocal existing_bundle_point_provenance
+            nonlocal existing_bundle_metadata
+            nonlocal existing_repeat_metrics_df
+            family_repeat_metrics_df = None
+            if (
+                expected_metadata is not None
+                and expected_metadata.budget_mode == "full_remainder_test"
+                and repeat_metrics is not None
+            ):
+                family_repeat_metrics_df = (
+                    repeat_metrics.rename(columns={"n_train": "budget"})
+                    .assign(method=method_name)
+                )
+            (
+                existing_bundle_results,
+                existing_bundle_point_provenance,
+                existing_bundle_metadata,
+                existing_repeat_metrics_df,
+            ) = _persist_learning_curve_bundle_checkpoint(
+                results_bundle_path=resolved_bundle_path,
+                expected_metadata=expected_metadata,
+                existing_bundle_results=existing_bundle_results,
+                existing_bundle_point_provenance=existing_bundle_point_provenance,
+                existing_bundle_metadata=existing_bundle_metadata,
+                existing_repeat_metrics_df=existing_repeat_metrics_df,
+                fresh_results=family_results,
+                fresh_repeat_metrics_df=family_repeat_metrics_df,
+                current_method_names=(method_name,),
+                force_refresh_train_sizes=force_refresh_train_sizes,
+                rerun_train_sizes_by_method=rerun_train_sizes_by_method,
+            )
+
     fresh_results = LearningCurveResults.empty()
     fresh_repeat_metrics_df = None
     if (families_to_run is None and enabled_model_names_to_run) or families_to_run:
@@ -542,6 +729,7 @@ def run_learning_curve_experiments_from_config(
             ),
             model_families=families_to_run,
             requested_sweep_sizes_by_method=missing_sweep_sizes_by_method or None,
+            per_family_artifacts_callback=per_family_artifacts_callback,
         )
         fresh_results = fresh_artifacts.results
         fresh_repeat_metrics_df = fresh_artifacts.repeat_metrics_df

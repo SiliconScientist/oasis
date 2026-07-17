@@ -4265,6 +4265,134 @@ class ExpIntegrationTests(unittest.TestCase):
         pd.testing.assert_frame_equal(results.ridge_df, ridge_df)
         pd.testing.assert_frame_equal(results.weighted_linear_df, weighted_linear_df)
 
+    def test_run_learning_curve_experiments_from_config_checkpoints_completed_methods_before_later_failure(
+        self,
+    ) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+                "linear_mlip_ads_eng_median": [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
+            }
+        )
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        weighted_linear_df = pd.DataFrame(
+            {
+                "n_train": [2, 3],
+                "rmse_mean": [0.35, 0.25],
+                "rmse_std": [0.04, 0.03],
+            }
+        )
+
+        class RidgeFamily:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.method_name = "ridge"
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                return LearningCurveResults.from_mapping({"ridge_df": ridge_df})
+
+        class FlakyWeightedLinearFamily:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.method_name = "weighted_linear"
+                self.fail_once = True
+
+            def requirements(self) -> SweepFamilyRequirements:
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                self.calls += 1
+                del payload
+                if self.fail_once:
+                    self.fail_once = False
+                    raise RuntimeError("weighted_linear interrupted")
+                return LearningCurveResults.from_mapping(
+                    {"weighted_linear_df": weighted_linear_df}
+                )
+
+        ridge_family = RidgeFamily()
+        weighted_linear_family = FlakyWeightedLinearFamily()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=True,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "weighted_linear interrupted"):
+                run_learning_curve_experiments_from_config(
+                    df,
+                    cfg=cfg,
+                    model_families=[ridge_family, weighted_linear_family],
+                )
+
+            interrupted_artifact = load_learning_curve_results_artifact(bundle_path)
+            resumed_results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[ridge_family, weighted_linear_family],
+            )
+            resumed_artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(ridge_family.calls, 1)
+        self.assertEqual(weighted_linear_family.calls, 2)
+        pd.testing.assert_frame_equal(interrupted_artifact.results.ridge_df, ridge_df)
+        self.assertIsNone(interrupted_artifact.results.weighted_linear_df)
+        pd.testing.assert_frame_equal(resumed_results.ridge_df, ridge_df)
+        pd.testing.assert_frame_equal(
+            resumed_results.weighted_linear_df,
+            weighted_linear_df,
+        )
+        pd.testing.assert_frame_equal(resumed_artifact.results.ridge_df, ridge_df)
+        pd.testing.assert_frame_equal(
+            resumed_artifact.results.weighted_linear_df,
+            weighted_linear_df,
+        )
+
     def test_run_learning_curve_experiments_from_config_gap_fills_missing_train_sizes_within_method(
         self,
     ) -> None:

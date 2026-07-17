@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
 
 from oasis.experiment_config import LearningCurveBudgetMode
@@ -359,6 +359,7 @@ def _run_learning_curve_experiments_with_budget_mode_artifacts(
     min_test_size: int = 1,
     model_families: Sequence[Any] | None = None,
     requested_sweep_sizes_by_method: Mapping[str, Collection[int]] | None = None,
+    per_family_artifacts_callback: Callable[[str, LearningCurveResults, Any], None] | None = None,
 ) -> LearningCurveExecutionArtifacts:
     families = model_families
     if families is None:
@@ -438,6 +439,15 @@ def _run_learning_curve_experiments_with_budget_mode_artifacts(
                 repeat_metrics.rename(columns={"n_train": "budget"}).assign(method=method_name)
             )
         results = results.merge(family_results)
+        if (
+            per_family_artifacts_callback is not None
+            and method_name is not None
+        ):
+            per_family_artifacts_callback(
+                method_name,
+                family_results,
+                repeat_metrics,
+            )
     repeat_metrics_df = None
     if repeat_metric_frames:
         import pandas as pd
