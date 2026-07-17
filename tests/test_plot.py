@@ -883,6 +883,55 @@ class PlotTests(unittest.TestCase):
             )
             self.assertEqual(len(legends), 1)
 
+    def test_zero_shot_rmse_stage_plot_clips_offscale_values(self) -> None:
+        stage_df = pd.DataFrame(
+            {
+                "dataset": ["mamun_oh"] * 5,
+                "dataset_label": ["OH-BMA"] * 5,
+                "stage": [
+                    "Full / all MLIPs",
+                    "Matched subset / all MLIPs",
+                    "Matched subset / anomaly-aware selection",
+                    "Full / all MLIPs",
+                    "Full / all MLIPs",
+                ],
+                "rmse": [3.6, 2.8, 2.4, 3.4, 1.7],
+                "n_samples": [1235, 1094, 1094, 1235, 1235],
+                "mlip": [None, None, None, "mlip_a", "mlip_b"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "zero_shot_stage_clipped.png"
+            with patch("oasis.plot.plt.close"):
+                zero_shot_rmse_stage_plot(
+                    stage_df,
+                    output_path=output_path,
+                    max_rmse=3.0,
+                )
+                fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+                legends = [
+                    artist for artist in ax.get_children() if artist.__class__.__name__ == "Legend"
+                ]
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.get_ylim()[1], 3.0)
+            self.assertEqual(len(legends), 2)
+            self.assertEqual(
+                [text.get_text() for text in legends[1].get_texts()][-1],
+                "↑ clipped above 3 eV",
+            )
+            self.assertGreaterEqual(
+                sum(text.get_text() == "↑" for text in ax.texts),
+                2,
+            )
+            self.assertAlmostEqual(max(patch.get_height() for patch in ax.patches), 3.0)
+            self.assertAlmostEqual(
+                max(float(offset[1]) for collection in ax.collections for offset in collection.get_offsets()),
+                3.0,
+            )
+
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(
             {

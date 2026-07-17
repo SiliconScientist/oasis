@@ -2261,6 +2261,28 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(rows, [{"dataset": "bio_mass", "n_train": 2, "oracle_rmse": 0.3}])
         self.assertEqual(mock_load_rows.call_count, 2)
 
+    def test_load_all_datasets_oracle_learning_curve_rows_returns_empty_when_no_methods_enabled(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+        )
+
+        with patch(
+            "oasis.experiment_runner._load_oracle_learning_curve_rows_for_dataset"
+        ) as mock_load_rows:
+            rows = load_all_datasets_oracle_learning_curve_rows(
+                cfg=cfg,
+                enabled_method_names=[],
+            )
+
+        self.assertEqual(rows, [])
+        mock_load_rows.assert_not_called()
+
     def test_load_all_datasets_policy_regret_rows_skips_cache_misses(self) -> None:
         cfg = SimpleNamespace(
             dataset_profile=SimpleNamespace(tag="bio_mass"),
@@ -2307,6 +2329,38 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(saved_path)
         mock_plot.assert_not_called()
+
+    def test_write_all_datasets_oracle_learning_curve_plot_skips_when_no_methods_enabled(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows"
+            ) as mock_load_rows, patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot"
+            ) as mock_plot:
+                saved_path = write_all_datasets_oracle_learning_curve_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=[],
+                )
+
+        self.assertIsNone(saved_path)
+        mock_plot.assert_not_called()
+        mock_load_rows.assert_not_called()
 
     def test_write_all_datasets_oracle_learning_curve_plot_forwards_log_x_toggle(
         self,
@@ -2711,6 +2765,67 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "zero_shot_stage.png")
         self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
 
+    def test_write_zero_shot_rmse_stage_plot_forwards_max_rmse_from_config(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(
+                zero_shot_stage_show_lone_mlip_swarm=False,
+                zero_shot_stage_max_rmse=3.0,
+            ),
+            dataset_profile=SimpleNamespace(tag="example"),
+            datasets={},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+        frame = pl.DataFrame(
+            {
+                "reaction": ["r0", "r1"],
+                "reference_ads_eng": [0.0, 1.0],
+                "a_mlip_ads_eng_median": [0.0, 1.0],
+                "b_mlip_ads_eng_median": [1.0, 2.0],
+                "a_slab_conv": [0, 0],
+                "a_ads_conv": [0, 0],
+                "a_slab_move": [0, 0],
+                "a_ads_move": [0, 0],
+                "a_slab_seed": [0, 0],
+                "a_ads_seed": [0, 0],
+                "a_ads_eng_seed": [0, 0],
+                "a_adsorbate_migration": [0, 0],
+                "b_slab_conv": [0, 0],
+                "b_ads_conv": [0, 0],
+                "b_slab_move": [0, 0],
+                "b_ads_move": [0, 0],
+                "b_slab_seed": [0, 0],
+                "b_ads_seed": [0, 0],
+                "b_ads_eng_seed": [0, 0],
+                "b_adsorbate_migration": [0, 0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage.png",
+            ) as mock_plot:
+                saved_path = write_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    raw_wide_df=frame,
+                    selected_wide_df=frame,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "zero_shot_stage.png")
+        self.assertEqual(mock_plot.call_args.kwargs["max_rmse"], 3.0)
+
     def test_write_zero_shot_rmse_stage_plot_uses_cached_stage_rows(self) -> None:
         cfg = SimpleNamespace(
             plot=SimpleNamespace(zero_shot_stage_show_lone_mlip_swarm=False),
@@ -2833,6 +2948,66 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(saved_path, tmp_path / "zero_shot_stage_all.png")
         self.assertFalse(mock_plot.call_args.kwargs["show_lone_mlip_swarm"])
+
+    def test_write_all_datasets_zero_shot_rmse_stage_plot_forwards_max_rmse_from_config(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(
+                zero_shot_stage_show_lone_mlip_swarm=False,
+                zero_shot_stage_max_rmse=3.0,
+            ),
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(),
+                "khlohc": SimpleNamespace(),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
+                side_effect=[
+                    [
+                        {
+                            "dataset": "bio_mass",
+                            "dataset_label": "Bio-Mass",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.4,
+                            "n_samples": 10,
+                        }
+                    ],
+                    [
+                        {
+                            "dataset": "khlohc",
+                            "dataset_label": "KHLOHC-TOL",
+                            "stage": "Full / all MLIPs",
+                            "rmse": 0.5,
+                            "n_samples": 12,
+                        }
+                    ],
+                ],
+            ), patch(
+                "oasis.experiment_runner.zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "zero_shot_stage_all.png",
+            ) as mock_plot:
+                saved_path = write_all_datasets_zero_shot_rmse_stage_plot(
+                    cfg=cfg,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "zero_shot_stage_all.png")
+        self.assertEqual(mock_plot.call_args.kwargs["max_rmse"], 3.0)
 
     def test_write_all_datasets_zero_shot_rmse_stage_plot_uses_cache_only_loads(
         self,

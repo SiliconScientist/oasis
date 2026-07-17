@@ -11,6 +11,7 @@ if "MPLCONFIGDIR" not in os.environ:
     os.environ["MPLCONFIGDIR"] = str(mplconfigdir)
 
 import matplotlib
+
 if "MPLBACKEND" not in os.environ:
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -53,12 +54,33 @@ _DEFAULT_TICK_FONTSIZE = 8
 _DEFAULT_LEGEND_FONTSIZE = 8
 _METHOD_PLOT_STYLES = (
     ("ridge", "ridge_df", "ridge_uq_df", "Ridge", "o", "tab:blue"),
-    ("kernel_ridge", "kernel_ridge_df", "kernel_ridge_uq_df", "Kernel Ridge", "X", "tab:cyan"),
+    (
+        "kernel_ridge",
+        "kernel_ridge_df",
+        "kernel_ridge_uq_df",
+        "Kernel Ridge",
+        "X",
+        "tab:cyan",
+    ),
     ("lasso", "lasso_df", "lasso_uq_df", "Lasso", "s", "tab:orange"),
     ("elastic", "elastic_df", "elastic_uq_df", "Elastic Net", "D", "tab:purple"),
     ("residual", "resid_df", "resid_uq_df", "Residual", "^", "tab:green"),
-    ("weighted_linear", "weighted_linear_df", "weighted_linear_uq_df", "Weighted linear", "*", "tab:gray"),
-    ("weighted_simplex", "weighted_simplex_df", "weighted_simplex_uq_df", "Weighted simplex", "8", "teal"),
+    (
+        "weighted_linear",
+        "weighted_linear_df",
+        "weighted_linear_uq_df",
+        "Weighted linear",
+        "*",
+        "tab:gray",
+    ),
+    (
+        "weighted_simplex",
+        "weighted_simplex_df",
+        "weighted_simplex_uq_df",
+        "Weighted simplex",
+        "8",
+        "teal",
+    ),
     ("graph_mean", "graph_mean_df", "graph_mean_uq_df", "Graph mean", "P", "tab:red"),
     ("moe", "moe_df", "moe_uq_df", "MoE", "*", "tab:purple"),
     ("gnn_direct", "gnn_direct_df", "gnn_direct_uq_df", "GNN direct", "s", "tab:cyan"),
@@ -66,12 +88,10 @@ _METHOD_PLOT_STYLES = (
     ("latent", "latent_df", "latent_uq_df", "Latent", "v", "tab:brown"),
 )
 _METHOD_RESULT_FIELDS = {
-    method_name: result_field
-    for method_name, result_field, *_ in _METHOD_PLOT_STYLES
+    method_name: result_field for method_name, result_field, *_ in _METHOD_PLOT_STYLES
 }
 _METHOD_UQ_FIELDS = {
-    method_name: uq_field
-    for method_name, _, uq_field, *_ in _METHOD_PLOT_STYLES
+    method_name: uq_field for method_name, _, uq_field, *_ in _METHOD_PLOT_STYLES
 }
 
 
@@ -101,8 +121,7 @@ def oracle_learning_curve_frame(
     )
     if unknown_methods:
         raise ValueError(
-            "enabled_method_names contains unknown methods: "
-            f"{unknown_methods}"
+            f"enabled_method_names contains unknown methods: {unknown_methods}"
         )
 
     oracle_rows: list[pd.DataFrame] = []
@@ -133,7 +152,9 @@ def oracle_learning_curve_frame(
         .first()
         .loc[:, ["n_train", "oracle_rmse", "oracle_method"]]
     )
-    oracle.insert(0, "dataset_label", dataset if dataset_label is None else dataset_label)
+    oracle.insert(
+        0, "dataset_label", dataset if dataset_label is None else dataset_label
+    )
     oracle.insert(0, "dataset", dataset)
     return oracle
 
@@ -148,12 +169,12 @@ def oracle_uq_curve_frame(
     unknown_methods = sorted(
         method_name
         for method_name in enabled_method_names
-        if method_name not in _METHOD_UQ_FIELDS or method_name not in _METHOD_RESULT_FIELDS
+        if method_name not in _METHOD_UQ_FIELDS
+        or method_name not in _METHOD_RESULT_FIELDS
     )
     if unknown_methods:
         raise ValueError(
-            "enabled_method_names contains unknown methods: "
-            f"{unknown_methods}"
+            f"enabled_method_names contains unknown methods: {unknown_methods}"
         )
 
     oracle_rows: list[pd.DataFrame] = []
@@ -171,7 +192,9 @@ def oracle_uq_curve_frame(
             "n_train",
             "rmse_mean",
         }
-        missing_result_columns = result_required_columns.difference(result_frame.columns)
+        missing_result_columns = result_required_columns.difference(
+            result_frame.columns
+        )
         if missing_result_columns:
             raise ValueError(
                 f"{method_name!r} result frame is missing required columns: "
@@ -190,7 +213,8 @@ def oracle_uq_curve_frame(
                 f"{sorted(missing_uq_columns)}"
             )
         oracle_rows.append(
-            result_frame.loc[:, ["n_train", "rmse_mean"]].merge(
+            result_frame.loc[:, ["n_train", "rmse_mean"]]
+            .merge(
                 uq_frame.loc[
                     :,
                     ["n_train", "miscalibration_area", "sharpness", "dispersion"],
@@ -231,7 +255,9 @@ def oracle_uq_curve_frame(
             ],
         ]
     )
-    oracle.insert(0, "dataset_label", dataset if dataset_label is None else dataset_label)
+    oracle.insert(
+        0, "dataset_label", dataset if dataset_label is None else dataset_label
+    )
     oracle.insert(0, "dataset", dataset)
     return oracle
 
@@ -270,9 +296,7 @@ def _screening_metric_columns(frame: pd.DataFrame) -> tuple[str, str]:
         return "cv_rmse_mean", "cv_rmse_std"
     if "rmse_mean" in frame.columns and "rmse_std" in frame.columns:
         return "rmse_mean", "rmse_std"
-    raise ValueError(
-        "screening result frames must contain cv_rmse_mean/cv_rmse_std."
-    )
+    raise ValueError("screening result frames must contain cv_rmse_mean/cv_rmse_std.")
 
 
 def _set_integer_x_ticks(ax: Any) -> None:
@@ -321,7 +345,9 @@ def _plot_uq_metric_curve(
 ) -> Path:
     x_column, title_axis_label, xlabel = _uq_x_axis_config(results)
     order_frame = (
-        _ordered_screening_frame if x_column == "n_budget" else _ordered_learning_curve_frame
+        _ordered_screening_frame
+        if x_column == "n_budget"
+        else _ordered_learning_curve_frame
     )
     results = LearningCurveResults.from_mapping(
         {
@@ -523,13 +549,13 @@ def zero_shot_rmse_stage_plot(
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_lone_mlip_swarm: bool = True,
+    max_rmse: float | None = None,
 ) -> Path:
     required_columns = {"dataset", "stage", "rmse", "n_samples"}
     missing_columns = required_columns.difference(stage_df.columns)
     if missing_columns:
         raise ValueError(
-            "stage_df is missing required columns: "
-            f"{sorted(missing_columns)}"
+            f"stage_df is missing required columns: {sorted(missing_columns)}"
         )
     if stage_df.empty:
         raise ValueError("stage_df must contain at least one row.")
@@ -577,6 +603,7 @@ def zero_shot_rmse_stage_plot(
     x = np.arange(len(dataset_order))
     width = 0.24
     offsets = np.linspace(-width, width, num=len(stage_order))
+    clipped_any = False
 
     fig, ax = plt.subplots(figsize=(max(7, 2 + 2.2 * len(dataset_order)), 4.5))
     for offset, stage_name in zip(offsets, stage_order, strict=True):
@@ -587,14 +614,21 @@ def zero_shot_rmse_stage_plot(
         )
         if stage_rows["rmse"].isna().all():
             continue
+        plotted_rmse = stage_rows["rmse"].copy()
+        clipped_mask = pd.Series(False, index=stage_rows.index)
+        if max_rmse is not None:
+            clipped_mask = plotted_rmse > max_rmse
+            plotted_rmse = plotted_rmse.clip(upper=max_rmse)
         bars = ax.bar(
             x + offset,
-            stage_rows["rmse"],
+            plotted_rmse,
             width,
             label=stage_name,
             color=stage_colors[stage_name],
         )
-        for bar, n_samples in zip(bars, stage_rows["n_samples"], strict=True):
+        for bar_index, (bar, n_samples) in enumerate(
+            zip(bars, stage_rows["n_samples"], strict=True)
+        ):
             if pd.isna(n_samples) or pd.isna(bar.get_height()):
                 continue
             ax.text(
@@ -613,6 +647,19 @@ def zero_shot_rmse_stage_plot(
                     "alpha": 0.95,
                 },
             )
+            if bool(clipped_mask.iloc[bar_index]):
+                clipped_any = True
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    max_rmse,
+                    "↑",
+                    ha="center",
+                    va="bottom",
+                    fontsize=_DEFAULT_TICK_FONTSIZE + 4,
+                    color="black",
+                    clip_on=False,
+                    zorder=7,
+                )
 
     if show_lone_mlip_swarm and not swarm_rows.empty:
         swarm_stage = "Full / all MLIPs"
@@ -637,15 +684,22 @@ def zero_shot_rmse_stage_plot(
             if point_count == 1:
                 local_offsets = np.array([0.0])
             else:
-                local_offsets = np.linspace(-width * 0.28, width * 0.28, num=point_count)
+                local_offsets = np.linspace(
+                    -width * 0.28, width * 0.28, num=point_count
+                )
             for local_offset, (_, row) in zip(
                 local_offsets,
                 dataset_swarm.iterrows(),
                 strict=True,
             ):
+                plotted_rmse = row["rmse"]
+                is_clipped = False
+                if max_rmse is not None and plotted_rmse > max_rmse:
+                    plotted_rmse = max_rmse
+                    is_clipped = True
                 ax.scatter(
                     x[dataset_index] + swarm_offset + local_offset,
-                    row["rmse"],
+                    plotted_rmse,
                     s=40,
                     color=swarm_colors[row["mlip"]],
                     edgecolors="black",
@@ -654,10 +708,25 @@ def zero_shot_rmse_stage_plot(
                     alpha=0.85,
                     zorder=4,
                 )
+                if is_clipped:
+                    clipped_any = True
+                    ax.text(
+                        x[dataset_index] + swarm_offset + local_offset,
+                        max_rmse,
+                        "↑",
+                        ha="center",
+                        va="bottom",
+                        fontsize=_DEFAULT_TICK_FONTSIZE + 4,
+                        color=swarm_colors[row["mlip"]],
+                        clip_on=False,
+                        zorder=7,
+                    )
 
     ax.set_xticks(x, dataset_labels)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
     ax.set_title("Zero-shot mean-MLIP RMSE by filtering stage", fontsize=fontsize)
+    if max_rmse is not None:
+        ax.set_ylim(top=max_rmse)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, axis="y", linestyle="--", alpha=0.3)
     stage_legend = ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE, loc="upper left")
@@ -677,6 +746,20 @@ def zero_shot_rmse_stage_plot(
             )
             for mlip in swarm_mlips
         ]
+        if max_rmse is not None and clipped_any:
+            mlip_handles.append(
+                Line2D(
+                    [],
+                    [],
+                    linestyle="None",
+                    marker="$↑$",
+                    markerfacecolor="black",
+                    markeredgecolor="black",
+                    color="black",
+                    markersize=8,
+                    label=f"Clipped above {max_rmse:g} eV",
+                )
+            )
         ax.add_artist(stage_legend)
         ax.legend(
             handles=mlip_handles,
@@ -710,8 +793,7 @@ def oracle_learning_curve_plot(
     missing_columns = required_columns.difference(oracle_df.columns)
     if missing_columns:
         raise ValueError(
-            "oracle_df is missing required columns: "
-            f"{sorted(missing_columns)}"
+            f"oracle_df is missing required columns: {sorted(missing_columns)}"
         )
     if oracle_df.empty:
         raise ValueError("oracle_df must contain at least one row.")
@@ -1220,10 +1302,8 @@ def screening_budget_plot(
         )
         ax.fill_between(
             results.weighted_linear_df["n_budget"],
-            results.weighted_linear_df[mean_col]
-            - results.weighted_linear_df[std_col],
-            results.weighted_linear_df[mean_col]
-            + results.weighted_linear_df[std_col],
+            results.weighted_linear_df[mean_col] - results.weighted_linear_df[std_col],
+            results.weighted_linear_df[mean_col] + results.weighted_linear_df[std_col],
             color="tab:gray",
             alpha=0.2,
             label="Weighted linear +/- 1sd",
@@ -1579,7 +1659,9 @@ def policy_selected_vs_oracle_plot(
         include_x=include_x,
     )
     fig, ax = plt.subplots(figsize=(7, 4))
-    oracle_frame = frame.sort_values("budget").drop_duplicates(subset=["budget"], keep="first")
+    oracle_frame = frame.sort_values("budget").drop_duplicates(
+        subset=["budget"], keep="first"
+    )
     ax.plot(
         oracle_frame["budget"],
         oracle_frame["oracle_outer_rmse_mean"],
@@ -1595,7 +1677,9 @@ def policy_selected_vs_oracle_plot(
             "tab:purple",
             "tab:brown",
         ]
-        for index, (policy_name, group) in enumerate(frame.groupby("policy_name", sort=True)):
+        for index, (policy_name, group) in enumerate(
+            frame.groupby("policy_name", sort=True)
+        ):
             ordered = group.sort_values("budget")
             ax.plot(
                 ordered["budget"],
@@ -1614,7 +1698,9 @@ def policy_selected_vs_oracle_plot(
         )
     if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
         fixed_frame = _filter_curve_frame(
-            fixed_method_summary_df.sort_values(["baseline_name", "budget"]).reset_index(drop=True),
+            fixed_method_summary_df.sort_values(
+                ["baseline_name", "budget"]
+            ).reset_index(drop=True),
             x_column="budget",
             min_x=min_x,
             max_x=max_x,
@@ -1680,7 +1766,9 @@ def policy_regret_plot(
             "tab:purple",
             "tab:brown",
         ]
-        for index, (policy_name, group) in enumerate(frame.groupby("policy_name", sort=True)):
+        for index, (policy_name, group) in enumerate(
+            frame.groupby("policy_name", sort=True)
+        ):
             ordered = group.sort_values("budget")
             color = colors[index % len(colors)]
             ax.plot(
@@ -1734,7 +1822,9 @@ def policy_regret_plot(
             )
     if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
         fixed_frame = _filter_curve_frame(
-            fixed_method_summary_df.sort_values(["baseline_name", "budget"]).reset_index(drop=True),
+            fixed_method_summary_df.sort_values(
+                ["baseline_name", "budget"]
+            ).reset_index(drop=True),
             x_column="budget",
             min_x=min_x,
             max_x=max_x,
@@ -1786,8 +1876,7 @@ def all_datasets_policy_regret_plot(
     missing_columns = required_columns.difference(summary_df.columns)
     if missing_columns:
         raise ValueError(
-            "summary_df is missing required columns: "
-            f"{sorted(missing_columns)}"
+            f"summary_df is missing required columns: {sorted(missing_columns)}"
         )
     if summary_df.empty:
         raise ValueError("summary_df must contain at least one row.")
@@ -1892,8 +1981,7 @@ def all_datasets_uq_oracle_plot(
     missing_columns = required_columns.difference(oracle_df.columns)
     if missing_columns:
         raise ValueError(
-            "oracle_df is missing required columns: "
-            f"{sorted(missing_columns)}"
+            f"oracle_df is missing required columns: {sorted(missing_columns)}"
         )
     if oracle_df.empty:
         raise ValueError("oracle_df must contain at least one row.")

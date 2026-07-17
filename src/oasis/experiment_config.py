@@ -348,6 +348,7 @@ class PlotConfig(BaseModel):
     curve_window: PlotCurveWindowConfig = Field(default_factory=PlotCurveWindowConfig)
     fixed_split: PlotFixedSplitConfig = Field(default_factory=PlotFixedSplitConfig)
     zero_shot_stage_show_lone_mlip_swarm: bool = True
+    zero_shot_stage_max_rmse: Optional[float] = None
 
 
 class ProbeFeatureConfig(BaseModel):

@@ -368,6 +368,12 @@ def _show_lone_mlip_swarm(cfg: object) -> bool:
     return bool(getattr(plot_cfg, "zero_shot_stage_show_lone_mlip_swarm", True))
 
 
+def _zero_shot_stage_max_rmse(cfg: object) -> float | None:
+    plot_cfg = getattr(cfg, "plot", None)
+    value = getattr(plot_cfg, "zero_shot_stage_max_rmse", None)
+    return float(value) if value is not None else None
+
+
 def _zero_shot_stage_cache_signature(
     cfg: object,
     *,
@@ -604,6 +610,8 @@ def _load_oracle_learning_curve_rows_for_dataset(
     span_variant: BudgetSpanVariant | None = None,
     cache_only: bool = False,
 ) -> list[dict[str, object]]:
+    if not enabled_method_names:
+        return []
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
         getattr(dataset_cfg, "experiment", None),
@@ -1728,6 +1736,7 @@ def write_zero_shot_rmse_stage_plot(
         stage_df,
         output_path=output_path,
         show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
+        max_rmse=_zero_shot_stage_max_rmse(cfg),
     )
 
 
@@ -1802,6 +1811,7 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
         pd.DataFrame(stage_rows),
         output_path=output_path,
         show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
+        max_rmse=_zero_shot_stage_max_rmse(cfg),
     )
 
 
@@ -1814,6 +1824,8 @@ def load_all_datasets_oracle_learning_curve_rows(
     include_x: list[int] | tuple[int, ...] | None = None,
     span_variant: BudgetSpanVariant | None = None,
 ) -> list[dict[str, object]]:
+    if not enabled_method_names:
+        return []
     configured_tags = list(getattr(cfg, "datasets", {}))
     current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
     if current_tag and current_tag not in configured_tags:
@@ -1849,6 +1861,8 @@ def _load_all_datasets_oracle_uq_rows(
     span_variant: BudgetSpanVariant | None = None,
     cache_only: bool = False,
 ) -> list[dict[str, object]]:
+    if not enabled_method_names:
+        return []
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     learning_curve_cfg = getattr(
         getattr(dataset_cfg, "experiment", None),
@@ -1923,6 +1937,8 @@ def load_all_datasets_oracle_uq_rows(
     include_x: list[int] | tuple[int, ...] | None = None,
     span_variant: BudgetSpanVariant | None = None,
 ) -> list[dict[str, object]]:
+    if not enabled_method_names:
+        return []
     configured_tags = list(getattr(cfg, "datasets", {}))
     current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
     if current_tag and current_tag not in configured_tags:
@@ -1958,7 +1974,7 @@ def write_all_datasets_oracle_learning_curve_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
 ) -> Path | None:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
-    if learning_curve_cfg is None:
+    if learning_curve_cfg is None or not enabled_method_names:
         return None
 
     curve_window_cfg = getattr(getattr(cfg, "plot", None), "curve_window", None)
@@ -2003,7 +2019,7 @@ def write_all_datasets_uq_oracle_plots(
     include_x: list[int] | tuple[int, ...] | None = None,
 ) -> dict[str, Path] | None:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
-    if learning_curve_cfg is None:
+    if learning_curve_cfg is None or not enabled_method_names:
         return None
 
     metric_specs = (
