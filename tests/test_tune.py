@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import warnings
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -1938,6 +1939,80 @@ class TuneTests(unittest.TestCase):
         pd.testing.assert_frame_equal(first.metrics, second.metrics)
         pd.testing.assert_frame_equal(first.selection_metadata, second.selection_metadata)
         self.assertEqual(first.selection_metadata["n_train"].tolist(), [4])
+
+    def test_sweep_optuna_model_selection_emits_budget_complete_callbacks(self) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+            targets=np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+        )
+        payload = SweepRunnerPayload(
+            splits=(
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=2,
+                    train_idx=np.array([0]),
+                    val_idx=np.array([1]),
+                    test_idx=np.array([2]),
+                ),
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([0]),
+                    val_idx=np.array([1]),
+                    test_idx=np.array([2]),
+                ),
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=2,
+                    train_idx=np.array([0]),
+                    val_idx=np.array([1]),
+                    test_idx=np.array([2]),
+                ),
+                TrainValTestSweepRunnerInput(
+                    dataset=dataset,
+                    sweep_size=3,
+                    train_idx=np.array([0]),
+                    val_idx=np.array([1]),
+                    test_idx=np.array([2]),
+                ),
+            )
+        )
+
+        class DummyModel:
+            def predict(self, X):
+                return np.zeros(len(X), dtype=float)
+
+        callback_artifacts = []
+        rmse_values = iter([0.2, 0.4, 0.3, 0.5])
+
+        with patch(
+            "oasis.tune._fit_optuna_selected_model",
+            side_effect=lambda *args, **kwargs: (DummyModel(), {"alpha": 1.0}),
+        ), patch(
+            "oasis.tune._mean_squared_error",
+            side_effect=lambda y_true, y_pred: next(rmse_values) ** 2,
+        ):
+            result = sweep_optuna_model_selection(
+                payload,
+                tuning_spec=object(),
+                n_trials=1,
+                budget_complete_callback=callback_artifacts.append,
+            )
+
+        self.assertEqual(len(callback_artifacts), 2)
+        self.assertEqual(
+            [artifact.metrics["n_train"].iloc[0] for artifact in callback_artifacts],
+            [2, 3],
+        )
+        self.assertEqual(
+            callback_artifacts[0].repeat_metrics["repeat"].tolist(),
+            [0, 1],
+        )
+        self.assertEqual(
+            callback_artifacts[1].repeat_metrics["repeat"].tolist(),
+            [0, 1],
+        )
+        self.assertEqual(result.metrics["n_train"].tolist(), [2, 3])
 
 
 @unittest.skipUnless(HAS_TUNE, "requires tune dependencies")

@@ -259,6 +259,70 @@ class SweepRunnerArtifacts:
     repeat_metrics: pd.DataFrame | None = None
 
 
+def _expected_split_counts_by_size(
+    splits: Iterable[TrainValTestSweepRunnerInput],
+) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for split in splits:
+        counts[int(split.sweep_size)] = counts.get(int(split.sweep_size), 0) + 1
+    return counts
+
+
+def _emit_budget_complete_artifacts(
+    *,
+    budget_complete_callback: Callable[[SweepRunnerArtifacts], None] | None,
+    sweep_size: int,
+    rmses_by_size: dict[int, list[float]],
+    repeat_metrics_by_size: dict[int, list[float]],
+    metadata_by_size: dict[int, list[Mapping[str, Any]]] | None = None,
+    fit_times_by_size: dict[int, list[float]] | None = None,
+    uq_artifacts: list[dict[str, Any]] | None = None,
+    uncertainty_kind: str | None = None,
+    uncertainty_note: str | None = None,
+) -> None:
+    if budget_complete_callback is None:
+        return
+    metrics = (
+        _timed_sweep_results_frame(
+            {sweep_size: rmses_by_size[sweep_size]},
+            {sweep_size: fit_times_by_size.get(sweep_size, [])},
+        )
+        if fit_times_by_size is not None
+        else _sweep_results_frame({sweep_size: rmses_by_size[sweep_size]})
+    )
+    selection_metadata = (
+        None
+        if metadata_by_size is None or sweep_size not in metadata_by_size
+        else _selection_metadata_frame({sweep_size: metadata_by_size[sweep_size]})
+    )
+    repeat_metrics = _repeat_metrics_frame(
+        {sweep_size: repeat_metrics_by_size[sweep_size]}
+    )
+    budget_uq_summary = None
+    if (
+        uq_artifacts is not None
+        and uncertainty_kind is not None
+        and any(artifact["sweep_size"] == sweep_size for artifact in uq_artifacts)
+    ):
+        budget_uq_summary = _uq_summary_frame(
+            [
+                artifact
+                for artifact in uq_artifacts
+                if artifact["sweep_size"] == sweep_size
+            ],
+            uncertainty_kind=uncertainty_kind,
+            uncertainty_note=uncertainty_note,
+        )
+    budget_complete_callback(
+        SweepRunnerArtifacts(
+            metrics=metrics,
+            selection_metadata=selection_metadata,
+            uq_summary=budget_uq_summary,
+            repeat_metrics=repeat_metrics,
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SupervisedModelSelectionSweepRunner:
     """Reusable runner for train/val/test supervised model selection.
@@ -405,6 +469,8 @@ class OptunaModelSelectionSweepRunner:
     def run_artifacts_with_validation(
         self,
         payload: SweepRunnerPayload,
+        *,
+        budget_complete_callback: Callable[[SweepRunnerArtifacts], None] | None = None,
     ) -> SweepRunnerArtifacts:
         return sweep_optuna_model_selection(
             payload,
@@ -413,6 +479,7 @@ class OptunaModelSelectionSweepRunner:
             timeout_s=self.timeout_s,
             study_factory=self.study_factory,
             refit_policy=self.refit_policy,
+            budget_complete_callback=budget_complete_callback,
         )
 
 
@@ -441,6 +508,8 @@ class LearnedOptunaModelSelectionSweepRunner:
     def run_artifacts_with_validation(
         self,
         payload: SweepRunnerPayload,
+        *,
+        budget_complete_callback: Callable[[SweepRunnerArtifacts], None] | None = None,
     ) -> SweepRunnerArtifacts:
         return sweep_learned_optuna_model_selection(
             payload,
@@ -449,6 +518,7 @@ class LearnedOptunaModelSelectionSweepRunner:
             timeout_s=self.timeout_s,
             study_factory=self.study_factory,
             refit_policy=self.refit_policy,
+            budget_complete_callback=budget_complete_callback,
         )
 
 
@@ -1071,11 +1141,13 @@ def sweep_optuna_model_selection(
         _default_optuna_study_factory
     ),
     refit_policy: SelectionRefitPolicy = "train_plus_val",
+    budget_complete_callback: Callable[[SweepRunnerArtifacts], None] | None = None,
 ) -> SweepRunnerArtifacts:
     """Optimize trials on train/val, refit once, then evaluate once on outer test."""
 
     payload = _as_runner_payload(payload)
     splits = _assert_train_val_test_payload(payload)
+    expected_counts_by_size = _expected_split_counts_by_size(splits)
     rmses_by_size: dict[int, list[float]] = {}
     repeat_metrics_by_size: dict[int, list[float]] = {}
     metadata_by_size: dict[int, list[Mapping[str, Any]]] = {}
@@ -1094,6 +1166,14 @@ def sweep_optuna_model_selection(
         rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
         repeat_metrics_by_size.setdefault(split.sweep_size, []).append(rmse)
         metadata_by_size.setdefault(split.sweep_size, []).append(metadata)
+        if len(rmses_by_size[split.sweep_size]) == expected_counts_by_size[split.sweep_size]:
+            _emit_budget_complete_artifacts(
+                budget_complete_callback=budget_complete_callback,
+                sweep_size=int(split.sweep_size),
+                rmses_by_size=rmses_by_size,
+                repeat_metrics_by_size=repeat_metrics_by_size,
+                metadata_by_size=metadata_by_size,
+            )
     return SweepRunnerArtifacts(
         metrics=_sweep_results_frame(rmses_by_size),
         selection_metadata=_selection_metadata_frame(metadata_by_size),
@@ -1111,6 +1191,7 @@ def sweep_learned_optuna_model_selection(
         _default_optuna_study_factory
     ),
     refit_policy: SelectionRefitPolicy = "train_plus_val",
+    budget_complete_callback: Callable[[SweepRunnerArtifacts], None] | None = None,
 ) -> SweepRunnerArtifacts:
     """Optimize learned-model trials on train/val subsets, then test once."""
 
@@ -1119,6 +1200,7 @@ def sweep_learned_optuna_model_selection(
         splits = _assert_train_val_cal_test_payload(payload)
     else:
         splits = _assert_train_val_test_payload(payload)
+    expected_counts_by_size = _expected_split_counts_by_size(splits)
     rmses_by_size: dict[int, list[float]] = {}
     repeat_metrics_by_size: dict[int, list[float]] = {}
     fit_times_by_size: dict[int, list[float]] = {}
@@ -1179,6 +1261,18 @@ def sweep_learned_optuna_model_selection(
                     "y_pred": preds,
                     "spread": spread,
                 }
+            )
+        if len(rmses_by_size[split.sweep_size]) == expected_counts_by_size[split.sweep_size]:
+            _emit_budget_complete_artifacts(
+                budget_complete_callback=budget_complete_callback,
+                sweep_size=int(split.sweep_size),
+                rmses_by_size=rmses_by_size,
+                repeat_metrics_by_size=repeat_metrics_by_size,
+                metadata_by_size=metadata_by_size,
+                fit_times_by_size=fit_times_by_size,
+                uq_artifacts=uq_artifacts,
+                uncertainty_kind=uncertainty_kind,
+                uncertainty_note=uncertainty_note,
             )
     uq_summary = None
     if uq_artifacts and uncertainty_kind is not None:

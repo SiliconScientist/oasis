@@ -4393,6 +4393,163 @@ class ExpIntegrationTests(unittest.TestCase):
             weighted_linear_df,
         )
 
+    @unittest.skipUnless(HAS_METHOD, "requires learning-curve runner dependencies")
+    def test_run_learning_curve_experiments_from_config_reuses_budget_level_checkpoint_within_method(
+        self,
+    ) -> None:
+        from oasis.tune import SweepRunnerArtifacts
+
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1, 5.1, 6.1],
+            }
+        )
+
+        class BudgetCheckpointRunner:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.seen_sweep_sizes: list[list[int]] = []
+                self.fail_once = True
+
+            def run(
+                self,
+                payload,
+                *,
+                budget_complete_callback=None,
+            ):
+                self.calls += 1
+                sweep_sizes = [int(split.sweep_size) for split in payload.splits]
+                self.seen_sweep_sizes.append(sweep_sizes)
+                if self.fail_once:
+                    self.fail_once = False
+                    if budget_complete_callback is not None:
+                        budget_complete_callback(
+                            SweepRunnerArtifacts(
+                                metrics=pd.DataFrame(
+                                    {
+                                        "n_train": [2],
+                                        "rmse_mean": [0.4],
+                                        "rmse_std": [0.05],
+                                    }
+                                ),
+                                repeat_metrics=pd.DataFrame(
+                                    {
+                                        "n_train": [2],
+                                        "repeat": [0],
+                                        "outer_test_rmse": [0.4],
+                                    }
+                                ),
+                            )
+                        )
+                    raise RuntimeError("budget 3 interrupted")
+                return SweepRunnerArtifacts(
+                    metrics=pd.DataFrame(
+                        {
+                            "n_train": [3],
+                            "rmse_mean": [0.3],
+                            "rmse_std": [0.04],
+                        }
+                    ),
+                    repeat_metrics=pd.DataFrame(
+                        {
+                            "n_train": [3],
+                            "repeat": [0],
+                            "outer_test_rmse": [0.3],
+                        }
+                    ),
+                )
+
+        runner = BudgetCheckpointRunner()
+        family = ConfiguredSweepModelFamily(
+            spec=SweepFamilySpec(
+                result_field="ridge_df",
+                runner=runner,
+                capabilities=SweepModelCapabilities(),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bundle_path = Path(tmp_dir) / "learning_curve_results.json"
+            cfg = SimpleNamespace(
+                seed=23,
+                plot=SimpleNamespace(filters=None),
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=2,
+                        max_train=3,
+                        step=1,
+                        n_repeats=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        min_test_size=1,
+                        results_bundle_path=bundle_path,
+                        reuse_results=True,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    )
+                ),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "budget 3 interrupted"):
+                run_learning_curve_experiments_from_config(
+                    df,
+                    cfg=cfg,
+                    model_families=[family],
+                )
+
+            interrupted_artifact = load_learning_curve_results_artifact(bundle_path)
+            resumed_results = run_learning_curve_experiments_from_config(
+                df,
+                cfg=cfg,
+                model_families=[family],
+            )
+            resumed_artifact = load_learning_curve_results_artifact(bundle_path)
+
+        self.assertEqual(runner.calls, 2)
+        self.assertEqual(runner.seen_sweep_sizes[0], [2, 3])
+        self.assertEqual(runner.seen_sweep_sizes[1], [3])
+        pd.testing.assert_frame_equal(
+            interrupted_artifact.results.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [2],
+                    "rmse_mean": [0.4],
+                    "rmse_std": [0.05],
+                }
+            ),
+        )
+        pd.testing.assert_frame_equal(
+            resumed_results.ridge_df,
+            pd.DataFrame(
+                {
+                    "n_train": [2, 3],
+                    "rmse_mean": [0.4, 0.3],
+                    "rmse_std": [0.05, 0.04],
+                }
+            ),
+        )
+        pd.testing.assert_frame_equal(
+            resumed_artifact.results.ridge_df,
+            resumed_results.ridge_df,
+        )
+
     def test_run_learning_curve_experiments_from_config_gap_fills_missing_train_sizes_within_method(
         self,
     ) -> None:

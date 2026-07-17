@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
+import inspect
 from typing import Any
 
 from oasis.experiment_config import LearningCurveBudgetMode
@@ -415,11 +416,31 @@ def _run_learning_curve_experiments_with_budget_mode_artifacts(
             if not split_collection.splits:
                 continue
         payload = SweepRunPayload(dataset=dataset, split_collection=split_collection)
-        family_artifacts = (
-            family.run_with_artifacts(payload)
-            if hasattr(family, "run_with_artifacts")
-            else LearningCurveExecutionArtifacts(results=family.run(payload))
-        )
+        if hasattr(family, "run_with_artifacts"):
+            run_with_artifacts = family.run_with_artifacts
+            run_signature = inspect.signature(run_with_artifacts)
+            run_kwargs: dict[str, Any] = {}
+            if (
+                per_family_artifacts_callback is not None
+                and method_name is not None
+                and (
+                    "budget_complete_callback" in run_signature.parameters
+                    or any(
+                        parameter.kind == inspect.Parameter.VAR_KEYWORD
+                        for parameter in run_signature.parameters.values()
+                    )
+                )
+            ):
+                run_kwargs["budget_complete_callback"] = (
+                    lambda partial_results, partial_repeat_metrics: per_family_artifacts_callback(
+                        method_name,
+                        partial_results,
+                        partial_repeat_metrics,
+                    )
+                )
+            family_artifacts = run_with_artifacts(payload, **run_kwargs)
+        else:
+            family_artifacts = LearningCurveExecutionArtifacts(results=family.run(payload))
         family_results = family_artifacts.results
         if budget_mode == "screening_fraction":
             family_results = _annotate_screening_results(

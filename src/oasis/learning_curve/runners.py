@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+import inspect
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -173,10 +174,46 @@ class ConfiguredSweepModelFamily:
     def run(self, payload: SweepRunPayload) -> LearningCurveResults:
         return self.run_with_artifacts(payload).results
 
-    def run_with_artifacts(self, payload: SweepRunPayload) -> SweepFamilyRunArtifacts:
+    def run_with_artifacts(
+        self,
+        payload: SweepRunPayload,
+        *,
+        budget_complete_callback: Callable[[LearningCurveResults, pd.DataFrame | None], None]
+        | None = None,
+    ) -> SweepFamilyRunArtifacts:
         runner_payload = payload.to_runner_payload()
         run = _select_runner_call(self.spec.runner, runner_payload)
-        base_output = _normalize_runner_output(run(runner_payload))
+        run_kwargs: dict[str, Any] = {}
+        if budget_complete_callback is not None:
+            run_signature = inspect.signature(run)
+            if (
+                "budget_complete_callback" in run_signature.parameters
+                or any(
+                    parameter.kind == inspect.Parameter.VAR_KEYWORD
+                    for parameter in run_signature.parameters.values()
+                )
+            ):
+                def _runner_budget_complete_callback(
+                    partial_artifacts: SweepRunnerArtifacts,
+                ) -> None:
+                    partial_results: dict[str, pd.DataFrame | None] = {
+                        self.spec.result_field: partial_artifacts.metrics,
+                    }
+                    if self.spec.selection_metadata_field is not None:
+                        partial_results[self.spec.selection_metadata_field] = (
+                            partial_artifacts.selection_metadata
+                        )
+                    if self.spec.uq_summary_field is not None:
+                        partial_results[self.spec.uq_summary_field] = (
+                            partial_artifacts.uq_summary
+                        )
+                    budget_complete_callback(
+                        LearningCurveResults.from_mapping(partial_results),
+                        partial_artifacts.repeat_metrics,
+                    )
+
+                run_kwargs["budget_complete_callback"] = _runner_budget_complete_callback
+        base_output = _normalize_runner_output(run(runner_payload, **run_kwargs))
         results: dict[str, pd.DataFrame | None] = {
             self.spec.result_field: base_output.metrics,
         }

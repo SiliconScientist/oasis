@@ -920,7 +920,7 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(len(legends), 2)
             self.assertEqual(
                 [text.get_text() for text in legends[1].get_texts()][-1],
-                "↑ clipped above 3 eV",
+                "Clipped above 3 eV",
             )
             self.assertGreaterEqual(
                 sum(text.get_text() == "↑" for text in ax.texts),
