@@ -3533,6 +3533,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         mlip_selection=SimpleNamespace(
                             exclude_anomalous=False,
@@ -4228,6 +4230,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                         ),
                         models=SimpleNamespace(
                             use_latent=False,
+                            use_gnn_direct=True,
+                            gnn_direct=SimpleNamespace(enabled=True),
                             probe_gnn=SimpleNamespace(enabled=False),
                         ),
                     )
@@ -4295,6 +4299,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                         graph_dataset=None,
                         models=SimpleNamespace(
                             use_latent=False,
+                            use_gnn_direct=True,
+                            gnn_direct=SimpleNamespace(enabled=True),
                             probe_gnn=SimpleNamespace(enabled=False),
                         ),
                     )
@@ -4357,6 +4363,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         results_bundle_path=tmp_path / "learning.json",
                         models=SimpleNamespace(
@@ -4454,6 +4462,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         models=SimpleNamespace(
                             use_latent=False,
@@ -4498,13 +4508,19 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["max_x"], 50)
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [10, 30])
+        self.assertEqual(
+            mock_learning_curve_plot.call_args.kwargs["include_x"],
+            [1, 2, 10, 30],
+        )
         self.assertEqual(mock_oracle_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["max_x"], 50)
-        self.assertEqual(mock_oracle_plot.call_args.kwargs["include_x"], [10, 30])
+        self.assertEqual(
+            mock_oracle_plot.call_args.kwargs["include_x"],
+            [10, 30],
+        )
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["output_path"],
-            tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            tmp_path / "plots" / "learning_curve_anomalyaware_off_absolute.png",
         )
 
     def test_run_experiment_emits_dual_learning_curve_outputs_for_budget_spans(self) -> None:
@@ -4678,6 +4694,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         models=SimpleNamespace(
                             use_latent=False,
@@ -4725,7 +4743,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_oracle_plot:
                 run_experiment(cfg)
 
-        self.assertIsNone(mock_learning_curve_plot.call_args.kwargs["include_x"])
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
         self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_x"])
 
     def test_run_experiment_preserves_include_x_when_legacy_include_fractions_is_present(
@@ -4739,6 +4757,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         models=SimpleNamespace(
                             use_latent=False,
@@ -4783,7 +4803,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_curve_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [3])
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2, 3])
 
     def test_run_experiment_deduplicates_overlapping_curve_window_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -5373,6 +5393,8 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         budget_mode="full_remainder_test",
+                        min_train=1,
+                        max_train=2,
                         graph_dataset=None,
                         models=SimpleNamespace(
                             use_latent=False,
@@ -5448,19 +5470,21 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_miscalibration_plot.call_count, 1)
         self.assertEqual(
             Path(mock_miscalibration_plot.call_args.kwargs["output_path"]).name,
-            "screening_miscalibration_area_panel_anomalyaware_off.png",
+            "screening_miscalibration_area_panel_anomalyaware_off_absolute.png",
         )
         self.assertEqual(
             Path(mock_sharpness_plot.call_args.kwargs["output_path"]).name,
-            "screening_sharpness_panel_anomalyaware_off.png",
+            "screening_sharpness_panel_anomalyaware_off_absolute.png",
         )
         self.assertEqual(
             Path(mock_dispersion_plot.call_args.kwargs["output_path"]).name,
-            "screening_dispersion_panel_anomalyaware_off.png",
+            "screening_dispersion_panel_anomalyaware_off_absolute.png",
         )
         self.assertEqual(
             mock_uq_summary_figure.call_args.kwargs["output_path"],
-            tmp_path / "plots" / "screening_uq_summary_figure_anomalyaware_off.png",
+            tmp_path
+            / "plots"
+            / "screening_uq_summary_figure_anomalyaware_off_absolute.png",
         )
         self.assertEqual(
             mock_uq_summary_figure.call_args.kwargs["miscalibration_area_path"],

@@ -1032,7 +1032,10 @@ class LoadProbeGraphDatasetViewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "bad.json"
             path.write_text(json.dumps(dataset), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "missing 'raw.Tolstar'"):
+            with self.assertRaisesRegex(
+                ValueError,
+                "No adsorbed '\\*star' key found.*fallback was available",
+            ):
                 load_probe_graph_dataset_view(path)
 
     def test_loads_probe_features_in_memory_from_results_dir(self) -> None:
