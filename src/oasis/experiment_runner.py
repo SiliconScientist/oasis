@@ -513,9 +513,10 @@ def _load_zero_shot_stage_rows_for_dataset(
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
     dataset_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
+    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     base_dir = profile_paths.analysis_base_dir
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
-    artifact_path = _zero_shot_stage_artifact_path(cfg)
+    artifact_path = _zero_shot_stage_artifact_path(dataset_cfg)
     cache_signature = _zero_shot_stage_cache_signature(
         cfg,
         result_files=result_files,
@@ -2289,6 +2290,28 @@ def prepare_graph_view(cfg: object, wide_df: object):
     return graph_view
 
 
+def _learning_curve_requires_graph_view(cfg: object) -> bool:
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    if models_cfg is None:
+        return False
+
+    if bool(getattr(models_cfg, "use_graph_mean", False)):
+        return True
+    if bool(getattr(models_cfg, "use_gnn_direct", False)) or bool(
+        getattr(getattr(models_cfg, "gnn_direct", None), "enabled", False)
+    ):
+        return True
+
+    moe_cfg = getattr(models_cfg, "moe", None)
+    if bool(getattr(moe_cfg, "enabled", False)) and getattr(
+        moe_cfg, "gate_type", "mlip_baseline"
+    ) in {"gnn", "schnet"}:
+        return True
+
+    return False
+
+
 def _has_uq_summary(results: object) -> bool:
     if results is None:
         return False
@@ -2525,7 +2548,11 @@ def run_experiment(cfg: object):
         output_dir=output_dir,
         run_suffix=run_suffix,
     )
-    graph_view = prepare_graph_view(cfg, wide_df)
+    graph_view = (
+        prepare_graph_view(cfg, wide_df)
+        if _learning_curve_requires_graph_view(cfg)
+        else None
+    )
     write_zero_shot_rmse_stage_plot(
         cfg=cfg,
         raw_wide_df=raw_wide_df,

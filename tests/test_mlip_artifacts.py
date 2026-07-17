@@ -124,6 +124,26 @@ class MlipArtifactTests(unittest.TestCase):
 
         self.assertEqual([path.name for path in files], ["orb_v3_result.json"])
 
+    def test_find_result_files_supports_flat_dataset_roots(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            root_result = base_dir / "mace_result.json"
+            nested_dir = base_dir / "orb_v3"
+            nested_dir.mkdir()
+            nested_result = nested_dir / "orb_v3_result.json"
+            root_result.write_text(
+                json.dumps({"rxn-1": {"final": {}}}),
+                encoding="utf-8",
+            )
+            nested_result.write_text(
+                json.dumps({"rxn-1": {"final": {}}}),
+                encoding="utf-8",
+            )
+
+            files = find_result_files(base_dir)
+
+        self.assertEqual(files, [root_result, nested_result])
+
     def test_find_result_files_raises_when_enabled_model_is_missing(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir)

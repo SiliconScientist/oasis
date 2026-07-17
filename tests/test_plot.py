@@ -456,15 +456,29 @@ class PlotTests(unittest.TestCase):
         )
         pd.testing.assert_frame_equal(oracle_df, expected)
 
-    def test_oracle_uq_curve_frame_selects_lowest_miscalibration_method_per_train_size(
+    def test_oracle_uq_curve_frame_selects_lowest_rmse_method_per_train_size(
         self,
     ) -> None:
+        ridge_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.10, 0.12],
+                "rmse_std": [0.0, 0.0],
+            }
+        )
         ridge_uq_df = pd.DataFrame(
             {
                 "n_train": [2, 4],
                 "miscalibration_area": [0.20, 0.10],
                 "sharpness": [0.30, 0.25],
                 "dispersion": [0.40, 0.35],
+            }
+        )
+        probe_gnn_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.11, 0.09],
+                "rmse_std": [0.0, 0.0],
             }
         )
         probe_gnn_uq_df = pd.DataFrame(
@@ -476,7 +490,9 @@ class PlotTests(unittest.TestCase):
             }
         )
         results = LearningCurveResults(
+            ridge_df=ridge_df,
             ridge_uq_df=ridge_uq_df,
+            probe_gnn_df=probe_gnn_df,
             probe_gnn_uq_df=probe_gnn_uq_df,
         )
 
@@ -492,10 +508,10 @@ class PlotTests(unittest.TestCase):
                 "dataset": ["bio_mass", "bio_mass"],
                 "dataset_label": ["Bio-Mass", "Bio-Mass"],
                 "n_train": [2, 4],
-                "oracle_miscalibration_area": [0.15, 0.10],
-                "oracle_sharpness": [0.45, 0.25],
-                "oracle_dispersion": [0.55, 0.35],
-                "oracle_method": ["probe_gnn", "ridge"],
+                "oracle_miscalibration_area": [0.20, 0.12],
+                "oracle_sharpness": [0.30, 0.22],
+                "oracle_dispersion": [0.40, 0.32],
+                "oracle_method": ["ridge", "probe_gnn"],
             }
         )
         pd.testing.assert_frame_equal(oracle_df, expected)

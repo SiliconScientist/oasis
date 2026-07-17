@@ -807,6 +807,55 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/ch3_oh_mamun/oasis_Benchmarking_Analysis.xlsx"),
         )
 
+    def test_named_dataset_profile_honors_analysis_base_dir_override(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {
+                    "tag": "mamun_oh",
+                },
+                "datasets": {
+                    "mamun_oh": {
+                        "raw_dataset_filename": "MamunHighT2019_oh_adsorption.json",
+                        "mlip_run_dirname": "OH-BMA",
+                        "analysis_base_dir": "data/mlips/backup_copy/OH-BMA",
+                    }
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        assert cfg.analysis is not None
+        self.assertEqual(
+            cfg.analysis.base_dir,
+            Path("data/mlips/backup_copy/OH-BMA"),
+        )
+
     def test_screening_mode_derives_separate_screening_results_bundle_path(self) -> None:
         cfg = Config(
             **{

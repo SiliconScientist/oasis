@@ -148,7 +148,7 @@ def oracle_uq_curve_frame(
     unknown_methods = sorted(
         method_name
         for method_name in enabled_method_names
-        if method_name not in _METHOD_UQ_FIELDS
+        if method_name not in _METHOD_UQ_FIELDS or method_name not in _METHOD_RESULT_FIELDS
     )
     if unknown_methods:
         raise ValueError(
@@ -158,26 +158,50 @@ def oracle_uq_curve_frame(
 
     oracle_rows: list[pd.DataFrame] = []
     for method_name in enabled_method_names:
-        frame = getattr(results, _METHOD_UQ_FIELDS[method_name])
-        if frame is None or frame.empty:
+        result_frame = getattr(results, _METHOD_RESULT_FIELDS[method_name])
+        uq_frame = getattr(results, _METHOD_UQ_FIELDS[method_name])
+        if (
+            result_frame is None
+            or result_frame.empty
+            or uq_frame is None
+            or uq_frame.empty
+        ):
             continue
-        required_columns = {
+        result_required_columns = {
+            "n_train",
+            "rmse_mean",
+        }
+        missing_result_columns = result_required_columns.difference(result_frame.columns)
+        if missing_result_columns:
+            raise ValueError(
+                f"{method_name!r} result frame is missing required columns: "
+                f"{sorted(missing_result_columns)}"
+            )
+        uq_required_columns = {
             "n_train",
             "miscalibration_area",
             "sharpness",
             "dispersion",
         }
-        missing_columns = required_columns.difference(frame.columns)
-        if missing_columns:
+        missing_uq_columns = uq_required_columns.difference(uq_frame.columns)
+        if missing_uq_columns:
             raise ValueError(
                 f"{method_name!r} UQ frame is missing required columns: "
-                f"{sorted(missing_columns)}"
+                f"{sorted(missing_uq_columns)}"
             )
         oracle_rows.append(
-            frame.loc[:, ["n_train", "miscalibration_area", "sharpness", "dispersion"]]
+            result_frame.loc[:, ["n_train", "rmse_mean"]].merge(
+                uq_frame.loc[
+                    :,
+                    ["n_train", "miscalibration_area", "sharpness", "dispersion"],
+                ],
+                on="n_train",
+                how="inner",
+            )
             .assign(oracle_method=method_name)
             .rename(
                 columns={
+                    "rmse_mean": "oracle_rmse",
                     "miscalibration_area": "oracle_miscalibration_area",
                     "sharpness": "oracle_sharpness",
                     "dispersion": "oracle_dispersion",
@@ -190,9 +214,7 @@ def oracle_uq_curve_frame(
 
     candidates = (
         pd.concat(oracle_rows, ignore_index=True)
-        .sort_values(
-            ["n_train", "oracle_miscalibration_area", "oracle_method"]
-        )
+        .sort_values(["n_train", "oracle_rmse", "oracle_method"])
         .reset_index(drop=True)
     )
     oracle = (

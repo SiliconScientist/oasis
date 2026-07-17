@@ -49,6 +49,12 @@ def find_result_files(
     enabled_models: list[str] | None = None,
 ) -> list[Path]:
     candidates = sorted(base_dir.glob(pattern))
+    if pattern == "*/*_result.json":
+        # Accept both the standard per-model subdirectory layout and legacy
+        # flat dataset roots such as OC20-Dense-NHx.
+        candidates = sorted(
+            dict.fromkeys([*candidates, *base_dir.glob("*_result.json")])
+        )
     if exclude_processed:
         candidates = [
             path

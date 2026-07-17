@@ -35,6 +35,7 @@ class NamedDatasetConfig(BaseModel):
     processed_basename: Optional[str] = None
     probe_dataset_filename: Optional[str] = None
     probe_mlip_results_dir: Optional[str] = None
+    analysis_base_dir: Optional[Path] = None
     # Directory name for external probe MLIP results, typically produced by Moira.
     probe_results_dirname: Optional[str] = None
     mlip_run_dirname: Optional[str] = None
@@ -493,5 +494,9 @@ def derive_dataset_profile_paths(
         summary_workbook_path=analysis_workbook_path(summary_run_dirname),
         comparison_workbook_path=analysis_workbook_path(analysis_run_dirname),
         comparison_plot_path=comparison_plot_path(tag),
-        analysis_base_dir=mlip_results_dir(mlip_run_dirname),
+        analysis_base_dir=(
+            Path(named_profile.analysis_base_dir)
+            if named_profile.analysis_base_dir is not None
+            else mlip_results_dir(mlip_run_dirname)
+        ),
     )

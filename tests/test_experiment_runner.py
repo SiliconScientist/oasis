@@ -1078,6 +1078,62 @@ class ExperimentRunnerTests(unittest.TestCase):
             ):
                 run_experiment(cfg)
 
+    def test_run_experiment_skips_graph_view_for_non_graph_models(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        graph_dataset=None,
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            use_graph_mean=False,
+                            use_gnn_direct=False,
+                            gnn_direct=SimpleNamespace(enabled=False),
+                            use_probe_gnn=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            moe=SimpleNamespace(enabled=False, gate_type="mlip_baseline"),
+                        ),
+                    )
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.build_auxiliary_views",
+                return_value=(fake_wide_df, {}),
+            ), patch(
+                "oasis.experiment_runner.ensure_probe_artifacts",
+                return_value=False,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.prepare_graph_view",
+                side_effect=AssertionError(
+                    "prepare_graph_view should not run for non-graph models"
+                ),
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                return_value=LearningCurveResults.empty(),
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                return_value=tmp_path / "plots" / "learning_curve.png",
+            ):
+                run_experiment(cfg)
+
     def test_run_experiment_requires_external_probe_results_dir_when_probe_gnn_enabled(
         self,
     ) -> None:
@@ -1752,7 +1808,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
         )
 
-    def test_load_all_datasets_oracle_uq_rows_selects_per_dataset_miscalibration_oracle(
+    def test_load_all_datasets_oracle_uq_rows_selects_per_dataset_rmse_oracle(
         self,
     ) -> None:
         cfg = SimpleNamespace(
@@ -1786,12 +1842,26 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         fake_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
         results = LearningCurveResults(
+            ridge_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.10, 0.12],
+                    "rmse_std": [0.0, 0.0],
+                }
+            ),
             ridge_uq_df=pd.DataFrame(
                 {
                     "n_train": [2, 4],
                     "miscalibration_area": [0.20, 0.10],
                     "sharpness": [0.30, 0.25],
                     "dispersion": [0.40, 0.35],
+                }
+            ),
+            probe_gnn_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.11, 0.09],
+                    "rmse_std": [0.0, 0.0],
                 }
             ),
             probe_gnn_uq_df=pd.DataFrame(
@@ -1833,19 +1903,19 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "dataset": "bio_mass",
                     "dataset_label": "Bio-Mass",
                     "n_train": 2,
-                    "oracle_miscalibration_area": 0.15,
-                    "oracle_sharpness": 0.45,
-                    "oracle_dispersion": 0.55,
-                    "oracle_method": "probe_gnn",
+                    "oracle_miscalibration_area": 0.20,
+                    "oracle_sharpness": 0.30,
+                    "oracle_dispersion": 0.40,
+                    "oracle_method": "ridge",
                 },
                 {
                     "dataset": "bio_mass",
                     "dataset_label": "Bio-Mass",
                     "n_train": 4,
-                    "oracle_miscalibration_area": 0.10,
-                    "oracle_sharpness": 0.25,
-                    "oracle_dispersion": 0.35,
-                    "oracle_method": "ridge",
+                    "oracle_miscalibration_area": 0.12,
+                    "oracle_sharpness": 0.22,
+                    "oracle_dispersion": 0.32,
+                    "oracle_method": "probe_gnn",
                 },
             ],
         )
@@ -2863,6 +2933,78 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(rows, [])
+
+    def test_load_zero_shot_stage_rows_for_dataset_uses_dataset_specific_artifact_path(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            plot=SimpleNamespace(output_dir=Path("unused")),
+            datasets={"khlohc": SimpleNamespace()},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result_file = tmp_path / "mlip_result.json"
+            result_file.write_text("{}")
+            expected_rows = [
+                {
+                    "dataset": "khlohc",
+                    "dataset_label": "Tol-KHLOHC",
+                    "stage": "Full / all MLIPs",
+                    "rmse": 0.5,
+                    "n_samples": 12,
+                }
+            ]
+            expected_artifact_path = tmp_path / "khlohc_zero_shot.json"
+            expected_artifact_path.write_text("{}")
+            expected_signature = {"result_files": ["dummy"]}
+            dataset_cfg = SimpleNamespace(
+                dataset_profile=SimpleNamespace(tag="khlohc"),
+                datasets=cfg.datasets,
+                experiment=cfg.experiment,
+            )
+
+            with patch(
+                "oasis.experiment_runner.derive_dataset_profile_paths",
+                return_value=SimpleNamespace(analysis_base_dir=tmp_path),
+            ), patch(
+                "oasis.experiment_runner._dataset_cfg_for_tag",
+                return_value=dataset_cfg,
+            ) as mock_dataset_cfg, patch(
+                "oasis.experiment_runner._zero_shot_stage_artifact_path",
+                return_value=expected_artifact_path,
+            ) as mock_artifact_path, patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[result_file],
+            ), patch(
+                "oasis.experiment_runner._zero_shot_stage_cache_signature",
+                return_value=expected_signature,
+            ), patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_artifact",
+                return_value=expected_rows,
+            ) as mock_load_artifact:
+                rows = _load_zero_shot_stage_rows_for_dataset(
+                    cfg,
+                    dataset_tag="khlohc",
+                    cache_only=True,
+                )
+
+        self.assertEqual(rows, expected_rows)
+        mock_dataset_cfg.assert_called_once_with(cfg, dataset_tag="khlohc")
+        mock_artifact_path.assert_called_once_with(dataset_cfg)
+        mock_load_artifact.assert_called_once_with(
+            expected_artifact_path,
+            expected_cache_signature=expected_signature,
+        )
 
     def test_zero_shot_stage_artifact_path_uses_zero_shot_bundle_root(self) -> None:
         cfg = SimpleNamespace(
