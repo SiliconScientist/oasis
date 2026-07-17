@@ -68,6 +68,93 @@ class LoadSampleAtomsForWideDfTests(unittest.TestCase):
 
         self.assertEqual([atoms.get_chemical_formula() for atoms in sample_atoms], ["H", "He"])
 
+    def test_loads_atoms_from_metadata_structure_fallback(self) -> None:
+        atoms = Atoms("OH", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        dataset = {
+            "rxn-a": {
+                "raw": {"OHstar": {"energy_ref": 0.0}},
+                "metadata": {
+                    "structures": {
+                        "adslab": {"atoms_json": _row_wrapped_atoms_json(atoms)}
+                    }
+                },
+            }
+        }
+        wide_df = pl.DataFrame({"reaction": ["rxn-a"]})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_path = Path(tmp_dir) / "dataset.json"
+            dataset_path.write_text(json.dumps(dataset), encoding="utf-8")
+            cfg = Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "dataset": str(dataset_path),
+                        "models": {"enabled": []},
+                        "rootstock": {"root": tmp_dir, "models": {}},
+                    },
+                }
+            )
+
+            sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
+
+        self.assertEqual([atoms.get_chemical_formula() for atoms in sample_atoms], ["HO"])
+
+    def test_loads_atoms_from_top_level_structure_refs(self) -> None:
+        atoms = Atoms("H", positions=[[0.0, 0.0, 0.0]])
+        atoms_json = _row_wrapped_atoms_json(atoms)
+        dataset = {
+            "rxn-a": {
+                "raw": {
+                    "star": {"ref": "slab-1"},
+                    "Hstar": {"ref": "adslab-1"},
+                }
+            },
+            "_structures": {
+                "slab-1": atoms_json,
+                "adslab-1": atoms_json,
+            },
+        }
+        wide_df = pl.DataFrame({"reaction": ["rxn-a"]})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_path = Path(tmp_dir) / "dataset.json"
+            dataset_path.write_text(json.dumps(dataset), encoding="utf-8")
+            cfg = Config(
+                **{
+                    "ingest": {
+                        "source": "data/raw_vasp/systems",
+                        "dataset_name": "test",
+                        "stoich": {
+                            "elements": ["H"],
+                            "basis_species": ["H2"],
+                            "basis_composition": {"H2": {"H": 2}},
+                        },
+                    },
+                    "mlip": {
+                        "dev_n": 1,
+                        "dev_run": False,
+                        "dataset": str(dataset_path),
+                        "models": {"enabled": []},
+                        "rootstock": {"root": tmp_dir, "models": {}},
+                    },
+                }
+            )
+
+            sample_atoms = load_sample_atoms_for_wide_df(wide_df, cfg)
+
+        self.assertEqual([atoms.get_chemical_formula() for atoms in sample_atoms], ["H"])
+
     def test_raises_for_missing_reaction(self) -> None:
         dataset = {
             "rxn-a": {"raw": {"OHstar": {"atoms_json": _row_wrapped_atoms_json(Atoms("H"))}}}

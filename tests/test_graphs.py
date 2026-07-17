@@ -1058,6 +1058,28 @@ class LoadProbeGraphDatasetViewTests(unittest.TestCase):
 
         np.testing.assert_array_equal(view["rxn-a"].node_features[1, 1:], [7.5])
 
+    def test_loads_probe_graph_from_metadata_structure_fallback(self) -> None:
+        atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dataset = {
+            "rxn-a": {
+                "raw": {"Tolstar": {"stoi": 1, "energy_ref": 0.0}},
+                "metadata": {
+                    "structures": {
+                        "adslab": {"atoms_json": _atoms_to_probe_json(atoms)}
+                    }
+                },
+                "bound_surface_indices": [1],
+                "unique_probe_ids": [],
+                "mlip_feature_matrix": {"mlip_names": [], "matrix": [[]]},
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "probe_dataset.json"
+            path.write_text(json.dumps(dataset), encoding="utf-8")
+            view = load_probe_graph_dataset_view(path)
+
+        self.assertEqual(view["rxn-a"].node_features.shape, (2, 1))
+
     def test_raises_on_missing_mlip_feature_matrix_without_results_dir(self) -> None:
         atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
         dataset = {

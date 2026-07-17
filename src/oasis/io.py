@@ -43,4 +43,7 @@ def load_sample_atoms_for_wide_df(
             f"{len(missing)} reactions from wide_df were not found in {path}: {preview}"
         )
 
-    return [extract_adsorbed_atom(dataset[reaction], reaction) for reaction in reactions]
+    return [
+        extract_adsorbed_atom(dataset[reaction], reaction, dataset=dataset)
+        for reaction in reactions
+    ]

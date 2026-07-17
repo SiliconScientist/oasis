@@ -13,6 +13,7 @@ from ase.io import jsonio
 from ase.neighborlist import natural_cutoffs, neighbor_list
 
 from oasis.exp import column_to_numpy, mlip_columns, mlip_feature_names
+from oasis.ingest.site_constraints import extract_adsorbed_atom
 from oasis.probe_features import build_sample_mlip_feature_matrices
 from oasis.sweep import (
     GraphDatasetView,
@@ -395,9 +396,10 @@ def load_probe_graph_dataset_view(
 
     Each entry must have been produced by ``build_probe_dataset`` and include
     ``bound_surface_indices`` and ``unique_probe_ids``. The graph for each
-    sample is built from the adsorbed ``raw.*star`` structure (excluding bare
-    ``raw.star``); bound-atom node features are augmented with probe MLIP
-    energies resolved either from an embedded legacy
+    sample is built from the adsorbed structure resolved from either
+    ``raw.*star.atoms_json`` or a metadata fallback such as
+    ``metadata.structures.adslab.atoms_json``; bound-atom node features are
+    augmented with probe MLIP energies resolved either from an embedded legacy
     ``mlip_feature_matrix`` payload or from ``mlip_results_dir``.
 
     Args:
@@ -429,22 +431,7 @@ def load_probe_graph_dataset_view(
 
     records: list[GraphRecord] = []
     for reaction, entry in dataset.items():
-        raw = entry.get("raw", {})
-        if not isinstance(raw, dict):
-            raise TypeError(f"Entry {reaction!r} has non-dict raw payload.")
-        adsorbed_keys = [key for key in raw if key.endswith("star") and key != "star"]
-        if not adsorbed_keys:
-            raise ValueError(
-                f"Entry {reaction!r} is missing 'raw.Tolstar' or another adsorbed "
-                "'raw.*star' structure."
-            )
-        adsorbed = raw[adsorbed_keys[0]]
-        if not isinstance(adsorbed, dict) or "atoms_json" not in adsorbed:
-            raise ValueError(
-                f"Entry {reaction!r} key {adsorbed_keys[0]!r} is missing 'atoms_json'."
-            )
-
-        atoms = atoms_from_ase_db_json(adsorbed["atoms_json"])
+        atoms = extract_adsorbed_atom(entry, reaction, dataset=dataset)
         base_record = atoms_to_graph_record(atoms, sample_id=reaction, policy=policy)
 
         bound_surface_indices: list[int] = list(entry.get("bound_surface_indices", []))

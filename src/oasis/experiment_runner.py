@@ -2534,7 +2534,14 @@ def run_experiment(cfg: object):
     wide_df, auxiliary_views = build_auxiliary_views(cfg, wide_df, probe_gnn_enabled)
     _apply_persistent_output_suffixes(cfg, dataset_size=_frame_height(wide_df))
     _apply_dev_run_curve_overrides(cfg, n_samples=_frame_height(wide_df))
-    generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
+    try:
+        generation_timing_by_method = _method_generation_timing_overrides(cfg, wide_df)
+    except (FileNotFoundError, KeyError, TypeError, ValueError) as exc:
+        print(
+            "Skipping method generation-timing overrides: "
+            f"{exc}"
+        )
+        generation_timing_by_method = None
     write_parity_plot(
         cfg,
         wide_df,

@@ -90,7 +90,11 @@ def atoms_from_atoms_json(atoms_json: str) -> Atoms:
     return atoms
 
 
-def extract_adsorbed_atom(entry: dict[str, Any], reaction: str) -> Atoms:
+def extract_adsorbed_atom(
+    entry: dict[str, Any],
+    reaction: str,
+    dataset: dict[str, Any] | None = None,
+) -> Atoms:
     """
     Extract adsorbed ASE Atoms objects from reaction entries.
 
@@ -98,22 +102,78 @@ def extract_adsorbed_atom(entry: dict[str, Any], reaction: str) -> Atoms:
       entry["raw"] contains a key like "Nstar", "OHstar", etc.
       The bare slab key "star" is ignored.
     """
+    return atoms_from_atoms_json(
+        extract_adsorbed_atoms_json(entry, reaction, dataset=dataset)
+    )
+
+
+def extract_adsorbed_atoms_json(
+    entry: dict[str, Any],
+    reaction: str,
+    *,
+    dataset: dict[str, Any] | None = None,
+) -> str:
+    """Resolve the adsorbed-structure ``atoms_json`` payload for one entry.
+
+    Preferred source is ``raw.*star.atoms_json``. Also supports BM-style raw
+    structure indirection via ``raw.*star.ref`` and top-level ``_structures``.
+    As a fallback for datasets that store structures in metadata rather than
+    inline raw blocks, also accepts ``metadata.structures.adslab.atoms_json``
+    and ``metadata.structures.<key>.atoms_json``.
+    """
     raw = entry.get("raw", {})
     if not isinstance(raw, dict):
         raise TypeError(f"Entry '{reaction}' has non-dict raw payload")
 
     adsorbed_keys = [k for k in raw.keys() if k.endswith("star") and k != "star"]
-    if not adsorbed_keys:
-        raise ValueError(f"No adsorbed '*star' key found in entry '{reaction}'")
+    adsorbed_key = adsorbed_keys[0] if adsorbed_keys else None
+    if adsorbed_key is not None:
+        adsorbed_block = raw[adsorbed_key]
+        if isinstance(adsorbed_block, dict) and isinstance(
+            adsorbed_block.get("atoms_json"), str
+        ):
+            return adsorbed_block["atoms_json"]
+        if isinstance(adsorbed_block, dict):
+            ref = adsorbed_block.get("ref")
+            if isinstance(ref, str) and ref:
+                dataset_payload = dataset or entry
+                structure_index = dataset_payload.get("_structures")
+                if not isinstance(structure_index, dict):
+                    raise ValueError(
+                        f"Entry '{reaction}' key '{adsorbed_key}' references '{ref}' "
+                        "but dataset is missing top-level '_structures'"
+                    )
+                resolved = structure_index.get(ref)
+                if not isinstance(resolved, str):
+                    raise ValueError(
+                        f"Entry '{reaction}' key '{adsorbed_key}' references "
+                        f"unknown structure '{ref}'"
+                    )
+                return resolved
 
-    adsorbed_key = adsorbed_keys[0]
-    adsorbed_block = raw[adsorbed_key]
-    if not isinstance(adsorbed_block, dict) or "atoms_json" not in adsorbed_block:
+    metadata = entry.get("metadata", {})
+    structures = metadata.get("structures", {}) if isinstance(metadata, dict) else {}
+    if isinstance(structures, dict):
+        metadata_candidates: list[str] = []
+        if adsorbed_key is not None:
+            metadata_candidates.append(adsorbed_key)
+        metadata_candidates.append("adslab")
+        for candidate_key in metadata_candidates:
+            structure_block = structures.get(candidate_key)
+            if isinstance(structure_block, dict) and isinstance(
+                structure_block.get("atoms_json"), str
+            ):
+                return structure_block["atoms_json"]
+
+    if adsorbed_key is None:
         raise ValueError(
-            f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json'"
+            f"No adsorbed '*star' key found in entry '{reaction}', and no "
+            "'metadata.structures.adslab.atoms_json' fallback was available"
         )
-
-    return atoms_from_atoms_json(adsorbed_block["atoms_json"])
+    raise ValueError(
+        f"Entry '{reaction}' key '{adsorbed_key}' is missing 'atoms_json', and no "
+        "'metadata.structures.adslab.atoms_json' fallback was available"
+    )
 
 
 def extract_adsorbate_indices(entry: dict[str, Any], reaction: str) -> list[int]:
