@@ -9,6 +9,8 @@ import pandas as pd
 
 from oasis.experiment.policy_diagnostic import (
     _build_policy_selection_frames,
+    build_policy_selection_detail_from_primitive_rows,
+    build_policy_selection_diagnostic_results_from_primitive_rows,
     OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
@@ -560,6 +562,60 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(
             checkpoints[1]["method"].tolist(),
             ["ridge", "weighted_linear"],
+        )
+
+    def test_build_policy_selection_results_from_primitive_rows(self) -> None:
+        outer_metrics_df = pd.DataFrame(
+            [
+                {"budget": 4, "repeat": 0, "method": "ridge", "outer_test_rmse": 0.2},
+                {
+                    "budget": 4,
+                    "repeat": 0,
+                    "method": "weighted_linear",
+                    "outer_test_rmse": 0.24,
+                },
+            ]
+        )
+        screening_rows_df = pd.DataFrame(
+            [
+                {
+                    "method": "ridge",
+                    "budget": 4,
+                    "repeat": 0,
+                    "split_fingerprint": "ridge-fp",
+                    "screening_cv_rmse": 0.1,
+                    "screening_miscalibration_area": 0.3,
+                },
+                {
+                    "method": "weighted_linear",
+                    "budget": 4,
+                    "repeat": 0,
+                    "split_fingerprint": "weighted-fp",
+                    "screening_cv_rmse": 0.2,
+                    "screening_miscalibration_area": 0.05,
+                },
+            ]
+        )
+
+        detail_df = build_policy_selection_detail_from_primitive_rows(
+            outer_metrics_df=outer_metrics_df,
+            screening_rows_df=screening_rows_df,
+            policy_names=["min_screening_rmse", "min_screening_miscalibration_area"],
+        )
+        results = build_policy_selection_diagnostic_results_from_primitive_rows(
+            outer_metrics_df=outer_metrics_df,
+            screening_rows_df=screening_rows_df,
+            policy_names=["min_screening_rmse", "min_screening_miscalibration_area"],
+        )
+
+        self.assertEqual(
+            detail_df["screening_selected_method"].tolist(),
+            ["weighted_linear", "ridge"],
+        )
+        pd.testing.assert_frame_equal(results.detail_df, detail_df)
+        self.assertEqual(
+            results.summary_df["policy_name"].tolist(),
+            ["min_screening_miscalibration_area", "min_screening_rmse"],
         )
 
     def test_screening_split_fingerprint_changes_when_split_indices_change(self) -> None:

@@ -25,6 +25,7 @@ from oasis.experiment.policy_diagnostic import (
     PolicySelectionDiagnosticResults,
     ScreeningDiagnosticRowsArtifact,
     _build_policy_selection_frames,
+    build_policy_selection_diagnostic_results_from_primitive_rows,
     load_outer_repeat_metrics_rows_artifact,
     load_policy_selection_diagnostic_artifact,
     load_screening_diagnostic_rows_artifact,
@@ -1067,6 +1068,39 @@ def _write_policy_selection_diagnostic(
             diagnostic_results = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
     if diagnostic_results is None:
+        if cached_outer_repeat_metrics_df is not None and screening_rows_df is not None:
+            diagnostic_results = build_policy_selection_diagnostic_results_from_primitive_rows(
+                outer_metrics_df=cached_outer_repeat_metrics_df,
+                screening_rows_df=screening_rows_df,
+                policy_names=getattr(
+                    getattr(getattr(cfg, "experiment", None), "screening", None),
+                    "policy_names",
+                    ["min_screening_rmse"],
+                ),
+                combined_miscalibration_lambda=getattr(
+                    getattr(getattr(cfg, "experiment", None), "screening", None),
+                    "combined_miscalibration_lambda",
+                    1.0,
+                ),
+            )
+            print("Policy diagnostic rebuild: deriving from cached primitive rows")
+            return _write_policy_selection_diagnostic_outputs(
+                cfg=cfg,
+                wide_df=wide_df,
+                diagnostic_results=diagnostic_results,
+                screening_rows_df=screening_rows_df,
+                metadata=persistence.metadata,
+                diagnostic_cache_signature=persistence.diagnostic_cache_signature,
+                screening_rows_cache_signature=persistence.screening_rows_cache_signature,
+                artifact_path=persistence.artifact_path,
+                outer_metrics_artifact_path=persistence.outer_metrics_artifact_path,
+                screening_rows_artifact_path=persistence.screening_rows_artifact_path,
+                output_dir=output_dir,
+                run_suffix=run_suffix,
+                min_x=min_x,
+                max_x=max_x,
+                include_x=include_x,
+            )
         print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
             cfg=cfg,

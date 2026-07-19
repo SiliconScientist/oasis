@@ -372,7 +372,7 @@ def build_policy_selection_diagnostic_results(
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
-    detail_df, outer_metrics_df, _ = _build_policy_selection_frames(
+    detail_df, outer_metrics_df, screening_rows_df = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -403,11 +403,88 @@ def build_policy_selection_diagnostic_results(
         policy_names=policy_names,
         combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
+    return build_policy_selection_diagnostic_results_from_primitive_rows(
+        outer_metrics_df=outer_metrics_df,
+        screening_rows_df=screening_rows_df,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
+    )
+
+
+def build_policy_selection_diagnostic_results_from_primitive_rows(
+    *,
+    outer_metrics_df: pd.DataFrame,
+    screening_rows_df: pd.DataFrame,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
+) -> PolicySelectionDiagnosticResults:
+    detail_df = build_policy_selection_detail_from_primitive_rows(
+        outer_metrics_df=outer_metrics_df,
+        screening_rows_df=screening_rows_df,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
+    )
     return PolicySelectionDiagnosticResults(
         detail_df=detail_df,
         outer_metrics_df=outer_metrics_df,
         summary_df=summarize_policy_detail_frame(detail_df),
     )
+
+
+def build_policy_selection_detail_from_primitive_rows(
+    *,
+    outer_metrics_df: pd.DataFrame,
+    screening_rows_df: pd.DataFrame,
+    policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
+    combined_miscalibration_lambda: float = 1.0,
+) -> pd.DataFrame:
+    outer_frame = normalize_outer_metrics_frame(outer_metrics_df)
+    screening_frame = normalize_screening_diagnostic_rows_frame(screening_rows_df)
+    detail_rows: list[dict[str, Any]] = []
+    if not outer_frame.empty and not screening_frame.empty:
+        for (budget, repeat), screening_group in screening_frame.groupby(["budget", "repeat"]):
+            outer_group = outer_frame.loc[
+                (outer_frame["budget"] == budget) & (outer_frame["repeat"] == repeat)
+            ]
+            if outer_group.empty:
+                continue
+            oracle_row = outer_group.sort_values(["outer_test_rmse", "method"]).iloc[0]
+            for policy_name in policy_names:
+                selected_row = _select_screening_policy_row(
+                    screening_group,
+                    policy_name=policy_name,
+                    budget=int(budget),
+                    repeat=int(repeat),
+                    combined_miscalibration_lambda=combined_miscalibration_lambda,
+                )
+                selected_outer = outer_group.loc[
+                    outer_group["method"] == selected_row["method"],
+                    "outer_test_rmse",
+                ]
+                if selected_outer.empty:
+                    continue
+                selected_outer_rmse = float(selected_outer.iloc[0])
+                oracle_outer_rmse = float(oracle_row["outer_test_rmse"])
+                detail_rows.append(
+                    {
+                        "policy_name": str(policy_name),
+                        "budget": int(budget),
+                        "repeat": int(repeat),
+                        "oracle_method": str(oracle_row["method"]),
+                        "screening_selected_method": str(selected_row["method"]),
+                        "oracle_outer_rmse": oracle_outer_rmse,
+                        "screening_selected_outer_rmse": selected_outer_rmse,
+                        "regret": selected_outer_rmse - oracle_outer_rmse,
+                        "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
+                        "screening_miscalibration_area": float(
+                            selected_row["screening_miscalibration_area"]
+                        )
+                        if pd.notna(selected_row["screening_miscalibration_area"])
+                        else np.nan,
+                        "agreement": bool(oracle_row["method"] == selected_row["method"]),
+                    }
+                )
+    return normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS))
 
 
 def dump_policy_selection_diagnostic_results(
@@ -977,52 +1054,14 @@ def _build_policy_selection_frames(
                 )
             )
 
-    outer_frame = pd.DataFrame(outer_rows)
-    screening_frame = pd.DataFrame(screening_rows)
-    detail_rows: list[dict[str, Any]] = []
-    if not outer_frame.empty and not screening_frame.empty:
-        for (budget, repeat), screening_group in screening_frame.groupby(["budget", "repeat"]):
-            outer_group = outer_frame.loc[
-                (outer_frame["budget"] == budget) & (outer_frame["repeat"] == repeat)
-            ]
-            if outer_group.empty:
-                continue
-            oracle_row = outer_group.sort_values(["outer_test_rmse", "method"]).iloc[0]
-            for policy_name in policy_names:
-                selected_row = _select_screening_policy_row(
-                    screening_group,
-                    policy_name=policy_name,
-                    budget=int(budget),
-                    repeat=int(repeat),
-                    combined_miscalibration_lambda=combined_miscalibration_lambda,
-                )
-                selected_outer = outer_group.loc[
-                    outer_group["method"] == selected_row["method"],
-                    "outer_test_rmse",
-                ]
-                if selected_outer.empty:
-                    continue
-                selected_outer_rmse = float(selected_outer.iloc[0])
-                oracle_outer_rmse = float(oracle_row["outer_test_rmse"])
-                detail_rows.append(
-                    {
-                        "policy_name": str(policy_name),
-                        "budget": int(budget),
-                        "repeat": int(repeat),
-                        "oracle_method": str(oracle_row["method"]),
-                        "screening_selected_method": str(selected_row["method"]),
-                        "oracle_outer_rmse": oracle_outer_rmse,
-                        "screening_selected_outer_rmse": selected_outer_rmse,
-                        "regret": selected_outer_rmse - oracle_outer_rmse,
-                        "screening_cv_rmse": float(selected_row["screening_cv_rmse"]),
-                        "screening_miscalibration_area": float(
-                            selected_row["screening_miscalibration_area"]
-                        )
-                        if pd.notna(selected_row["screening_miscalibration_area"])
-                        else np.nan,
-                        "agreement": bool(oracle_row["method"] == selected_row["method"]),
-                    }
-                )
+    outer_frame = pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)
+    screening_frame = pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
+    detail_df = build_policy_selection_detail_from_primitive_rows(
+        outer_metrics_df=outer_frame,
+        screening_rows_df=screening_frame,
+        policy_names=policy_names,
+        combined_miscalibration_lambda=combined_miscalibration_lambda,
+    )
     if any(
         count > 0
         for count in (
@@ -1038,7 +1077,7 @@ def _build_policy_selection_frames(
             f" screening reused={reused_screening_rows}, screening recomputed={recomputed_screening_rows}"
         )
     return (
-        normalize_policy_detail_frame(pd.DataFrame(detail_rows, columns=_DETAIL_COLUMNS)),
+        detail_df,
         normalize_outer_metrics_frame(pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)),
         normalize_screening_diagnostic_rows_frame(
             pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
