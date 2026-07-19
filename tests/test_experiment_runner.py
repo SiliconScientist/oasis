@@ -3676,6 +3676,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             persistence.screening_rows_cache_signature,
             updated_persistence.screening_rows_cache_signature,
         )
+        self.assertEqual(
+            persistence.outer_metrics_cache_signature,
+            updated_persistence.outer_metrics_cache_signature,
+        )
 
     def test_policy_diagnostic_reuses_screening_rows_when_policy_artifact_misses(
         self,
@@ -3750,6 +3754,10 @@ class ExperimentRunnerTests(unittest.TestCase):
                 screening_rows_cache_signature={
                     "learning_curve": {"min_train": 5},
                     "screening": {"screen_fraction": 0.2},
+                },
+                outer_metrics_cache_signature={
+                    "learning_curve": {"min_train": 5},
+                    "screening": {"screen_fraction": 2e-1},
                 },
                 artifact_path=artifact_path,
                 outer_metrics_artifact_path=outer_metrics_path,
@@ -3863,6 +3871,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                     },
                 },
                 screening_rows_cache_signature={
+                    "learning_curve": {
+                        "min_train": 5,
+                        "enabled_model_names": ["ridge"],
+                    },
+                    "screening": {"screen_fraction": 0.2},
+                },
+                outer_metrics_cache_signature={
                     "learning_curve": {
                         "min_train": 5,
                         "enabled_model_names": ["ridge"],

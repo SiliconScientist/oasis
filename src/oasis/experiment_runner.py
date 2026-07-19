@@ -200,6 +200,7 @@ def _configured_policy_fixed_method_baselines(cfg: object) -> tuple[tuple[str, s
 class PolicyDiagnosticPersistenceContext:
     metadata: object | None
     diagnostic_cache_signature: dict[str, object]
+    outer_metrics_cache_signature: dict[str, object]
     screening_rows_cache_signature: dict[str, object]
     artifact_path: Path
     outer_metrics_artifact_path: Path
@@ -1026,7 +1027,7 @@ def _write_policy_selection_diagnostic(
         ),
         artifact_path=persistence.outer_metrics_artifact_path,
         metadata=persistence.metadata,
-        expected_cache_signature=persistence.diagnostic_cache_signature,
+        expected_cache_signature=persistence.outer_metrics_cache_signature,
         allowed_methods=current_enabled_methods,
     )
     outer_metrics_checkpoint = None
@@ -1036,7 +1037,7 @@ def _write_policy_selection_diagnostic(
                 OuterRepeatMetricsRowsArtifact(
                     metadata=persistence.metadata,
                     outer_metrics_df=outer_metrics_frame,
-                    cache_signature=persistence.diagnostic_cache_signature,
+                    cache_signature=persistence.outer_metrics_cache_signature,
                 ),
                 persistence.outer_metrics_checkpoint_path,
             )
@@ -1091,6 +1092,7 @@ def _write_policy_selection_diagnostic(
                 screening_rows_df=screening_rows_df,
                 metadata=persistence.metadata,
                 diagnostic_cache_signature=persistence.diagnostic_cache_signature,
+                outer_metrics_cache_signature=persistence.outer_metrics_cache_signature,
                 screening_rows_cache_signature=persistence.screening_rows_cache_signature,
                 artifact_path=persistence.artifact_path,
                 outer_metrics_artifact_path=persistence.outer_metrics_artifact_path,
@@ -1125,6 +1127,7 @@ def _write_policy_selection_diagnostic(
         screening_rows_df=screening_rows_df,
         metadata=persistence.metadata,
         diagnostic_cache_signature=persistence.diagnostic_cache_signature,
+        outer_metrics_cache_signature=persistence.outer_metrics_cache_signature,
         screening_rows_cache_signature=persistence.screening_rows_cache_signature,
         artifact_path=persistence.artifact_path,
         outer_metrics_artifact_path=persistence.outer_metrics_artifact_path,
@@ -1342,6 +1345,7 @@ def _policy_selection_diagnostic_persistence_context(
         diagnostic_cache_signature=_policy_selection_diagnostic_results_cache_signature(
             cfg
         ),
+        outer_metrics_cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
         screening_rows_cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
         artifact_path=policy_selection_diagnostic_bundle_path(screening_stem),
         outer_metrics_artifact_path=policy_selection_outer_repeat_metrics_bundle_path(
@@ -1503,6 +1507,7 @@ def _write_policy_selection_diagnostic_outputs(
     screening_rows_df: pd.DataFrame | None,
     metadata: object | None,
     diagnostic_cache_signature: dict[str, object],
+    outer_metrics_cache_signature: dict[str, object],
     screening_rows_cache_signature: dict[str, object],
     artifact_path: Path,
     outer_metrics_artifact_path: Path,
@@ -1535,7 +1540,7 @@ def _write_policy_selection_diagnostic_outputs(
             OuterRepeatMetricsRowsArtifact(
                 metadata=metadata,
                 outer_metrics_df=diagnostic_results.outer_metrics_df,
-                cache_signature=diagnostic_cache_signature,
+                cache_signature=outer_metrics_cache_signature,
             ),
             outer_metrics_artifact_path,
         )
