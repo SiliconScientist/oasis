@@ -450,6 +450,12 @@ def policy_selection_diagnostic_bundle_path(processed_basename: str) -> Path:
     )
 
 
+def policy_selection_outer_repeat_metrics_bundle_path(processed_basename: str) -> Path:
+    return Path("data/results/screening") / (
+        f"policy_selection_outer_repeat_metrics_{processed_basename}.json"
+    )
+
+
 def policy_selection_screening_rows_bundle_path(processed_basename: str) -> Path:
     return Path("data/results/screening") / (
         f"policy_selection_screening_rows_{processed_basename}.json"

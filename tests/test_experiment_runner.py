@@ -427,10 +427,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                 }
             )
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
             with patch(
                 "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
                 return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_outer_repeat_metrics_bundle_path",
+                return_value=outer_metrics_path,
             ), patch(
                 "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
                 return_value=screening_rows_path,
@@ -463,6 +467,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
                 regret_plot_path = output_dir / "policy_regret_anomalyaware_off_absolute.png"
                 artifact_exists = artifact_path is not None and artifact_path.is_file()
+                outer_metrics_exists = outer_metrics_path.is_file()
                 detail_exists = detail_path.is_file()
                 summary_exists = summary_path.is_file()
                 screening_rows_exists = screening_rows_path.is_file()
@@ -475,6 +480,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             "policy_selection_diagnostic.json",
         )
         self.assertTrue(artifact_exists)
+        self.assertTrue(outer_metrics_exists)
         self.assertTrue(detail_exists)
         self.assertTrue(summary_exists)
         self.assertTrue(screening_rows_exists)
@@ -643,11 +649,15 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ),
             )
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
 
             with patch(
                 "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
                 return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_outer_repeat_metrics_bundle_path",
+                return_value=outer_metrics_path,
             ), patch(
                 "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
                 return_value=screening_rows_path,
@@ -689,6 +699,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     )
 
             self.assertFalse(artifact_path.exists())
+            self.assertFalse(outer_metrics_path.exists())
             self.assertFalse(screening_rows_path.exists())
 
     def test_write_policy_selection_diagnostic_emits_dual_selected_vs_oracle_outputs(
@@ -954,11 +965,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
 
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             artifact_path.write_text("cached", encoding="utf-8")
 
             with patch(
                 "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
                 return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_outer_repeat_metrics_bundle_path",
+                return_value=outer_metrics_path,
             ), patch(
                 "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
                 return_value=tmp_path / "policy_selection_screening_rows.json",
@@ -1087,11 +1102,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
 
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             artifact_path.write_text("cached", encoding="utf-8")
 
             with patch(
                 "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
                 return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_outer_repeat_metrics_bundle_path",
+                return_value=outer_metrics_path,
             ), patch(
                 "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
                 return_value=tmp_path / "policy_selection_screening_rows.json",
@@ -1127,7 +1146,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(saved_path, artifact_path)
-        self.assertEqual(mock_load.call_count, 2)
+        self.assertEqual(mock_load.call_count, 1)
         mock_build.assert_called_once()
 
     def test_run_experiment_from_config_loads_config_then_runs(self) -> None:
@@ -3470,6 +3489,20 @@ class ExperimentRunnerTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
+            persistence.outer_metrics_artifact_path,
+            Path(
+                "data/results/screening/"
+                "policy_selection_outer_repeat_metrics_bio_mass_anomalyaware_off_latent_off_n6.json"
+            ),
+        )
+        self.assertEqual(
+            persistence.outer_metrics_checkpoint_path,
+            Path(
+                "data/results/screening/"
+                "policy_selection_outer_repeat_metrics_bio_mass_anomalyaware_off_latent_off_n6_partial.json"
+            ),
+        )
+        self.assertEqual(
             persistence.screening_rows_artifact_path,
             Path(
                 "data/results/screening/"
@@ -3522,8 +3555,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
             artifact_path.write_text("{}", encoding="utf-8")
+            outer_metrics_path.write_text("{}", encoding="utf-8")
             screening_rows_path.write_text("{}", encoding="utf-8")
 
             cached_screening_rows = pd.DataFrame(
@@ -3589,7 +3624,12 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "screening": {"screen_fraction": 0.2},
                 },
                 artifact_path=artifact_path,
+                outer_metrics_artifact_path=outer_metrics_path,
+                outer_metrics_checkpoint_path=tmp_path
+                / "policy_selection_outer_repeat_metrics_partial.json",
                 screening_rows_artifact_path=screening_rows_path,
+                screening_rows_checkpoint_path=tmp_path
+                / "policy_selection_screening_rows_partial.json",
             )
             captured: dict[str, pd.DataFrame | None] = {}
 
@@ -3606,18 +3646,16 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=persistence,
             ), patch(
                 "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
-                side_effect=[
-                    ValueError("policy mismatch"),
-                    SimpleNamespace(
-                        cache_signature={
-                            "learning_curve": {"min_train": 5},
-                            "screening": {"screen_fraction": 0.2},
-                        },
-                        results=SimpleNamespace(
-                            outer_metrics_df=dummy_results.outer_metrics_df
-                        ),
-                    ),
-                ],
+                side_effect=ValueError("policy mismatch"),
+            ), patch(
+                "oasis.experiment_runner.load_outer_repeat_metrics_rows_artifact",
+                return_value=SimpleNamespace(
+                    cache_signature={
+                        "learning_curve": {"min_train": 5},
+                        "screening": {"screen_fraction": 0.2},
+                    },
+                    outer_metrics_df=dummy_results.outer_metrics_df,
+                ),
             ), patch(
                 "oasis.experiment_runner.load_screening_diagnostic_rows_artifact",
                 return_value=SimpleNamespace(screening_rows_df=cached_screening_rows),
@@ -3656,8 +3694,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
             screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
             artifact_path.write_text("{}", encoding="utf-8")
+            outer_metrics_path.write_text("{}", encoding="utf-8")
             screening_rows_path.write_text("{}", encoding="utf-8")
 
             prior_outer_metrics_df = pd.DataFrame(
@@ -3712,7 +3752,12 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "screening": {"screen_fraction": 0.2},
                 },
                 artifact_path=artifact_path,
+                outer_metrics_artifact_path=outer_metrics_path,
+                outer_metrics_checkpoint_path=tmp_path
+                / "policy_selection_outer_repeat_metrics_partial.json",
                 screening_rows_artifact_path=screening_rows_path,
+                screening_rows_checkpoint_path=tmp_path
+                / "policy_selection_screening_rows_partial.json",
             )
             captured: dict[str, pd.DataFrame | None] = {}
 
@@ -3764,6 +3809,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=persistence,
             ), patch(
                 "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                side_effect=ValueError("method mismatch"),
+            ), patch(
+                "oasis.experiment_runner.load_outer_repeat_metrics_rows_artifact",
                 side_effect=[
                     ValueError("method mismatch"),
                     SimpleNamespace(
@@ -3774,9 +3822,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                             },
                             "screening": {"screen_fraction": 0.2},
                         },
-                        results=SimpleNamespace(
-                            outer_metrics_df=prior_outer_metrics_df
-                        ),
+                        outer_metrics_df=prior_outer_metrics_df,
                     ),
                 ],
             ), patch(

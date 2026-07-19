@@ -835,6 +835,7 @@ def _build_policy_selection_frames(
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    outer_metrics_checkpoint: Callable[[pd.DataFrame], None] | None = None,
     screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
@@ -869,6 +870,7 @@ def _build_policy_selection_frames(
         )
         if method_name is None:
             continue
+        outer_rows_before_family = len(outer_rows)
         screening_rows_before_family = len(screening_rows)
         split_collection = derive_family_split_collection_from_shared_outer_splits(
             shared_splits,
@@ -962,6 +964,12 @@ def _build_policy_selection_frames(
             else:
                 screening_rows.append(cached_screening_row)
                 reused_screening_rows += 1
+        if outer_metrics_checkpoint is not None and len(outer_rows) > outer_rows_before_family:
+            outer_metrics_checkpoint(
+                normalize_outer_metrics_frame(
+                    pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)
+                )
+            )
         if screening_rows_checkpoint is not None and len(screening_rows) > screening_rows_before_family:
             screening_rows_checkpoint(
                 normalize_screening_diagnostic_rows_frame(

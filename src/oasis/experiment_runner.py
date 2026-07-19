@@ -20,12 +20,15 @@ from oasis.exp import (
 )
 from oasis.experiment.dataset import build_sweep_dataset_from_config, mlip_feature_names
 from oasis.experiment.policy_diagnostic import (
+    OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
     ScreeningDiagnosticRowsArtifact,
     _build_policy_selection_frames,
+    load_outer_repeat_metrics_rows_artifact,
     load_policy_selection_diagnostic_artifact,
     load_screening_diagnostic_rows_artifact,
+    save_outer_repeat_metrics_rows_artifact,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
     summarize_fixed_method_baseline_frame,
@@ -59,6 +62,7 @@ from oasis.learning_curve.results_io import (
 from oasis.experiment_config import (
     derive_dataset_profile_paths,
     policy_selection_diagnostic_bundle_path,
+    policy_selection_outer_repeat_metrics_bundle_path,
     policy_selection_screening_rows_bundle_path,
     zero_shot_bundle_path,
 )
@@ -197,6 +201,8 @@ class PolicyDiagnosticPersistenceContext:
     diagnostic_cache_signature: dict[str, object]
     screening_rows_cache_signature: dict[str, object]
     artifact_path: Path
+    outer_metrics_artifact_path: Path
+    outer_metrics_checkpoint_path: Path
     screening_rows_artifact_path: Path
     screening_rows_checkpoint_path: Path
 
@@ -1011,6 +1017,30 @@ def _write_policy_selection_diagnostic(
         expected_cache_signature=persistence.screening_rows_cache_signature,
         allowed_methods=current_enabled_methods,
     )
+    cached_outer_repeat_metrics_df = _load_policy_selection_primitive_frame(
+        cache_io=PolicyDiagnosticPrimitiveCacheIO(
+            load_artifact=load_outer_repeat_metrics_rows_artifact,
+            artifact_frame=lambda artifact: artifact.outer_metrics_df,
+            artifact_cache_signature=lambda artifact: artifact.cache_signature,
+        ),
+        artifact_path=persistence.outer_metrics_artifact_path,
+        metadata=persistence.metadata,
+        expected_cache_signature=persistence.diagnostic_cache_signature,
+        allowed_methods=current_enabled_methods,
+    )
+    outer_metrics_checkpoint = None
+    if persistence.metadata is not None:
+        def _persist_outer_metrics_checkpoint(outer_metrics_frame: pd.DataFrame) -> None:
+            save_outer_repeat_metrics_rows_artifact(
+                OuterRepeatMetricsRowsArtifact(
+                    metadata=persistence.metadata,
+                    outer_metrics_df=outer_metrics_frame,
+                    cache_signature=persistence.diagnostic_cache_signature,
+                ),
+                persistence.outer_metrics_checkpoint_path,
+            )
+
+        outer_metrics_checkpoint = _persist_outer_metrics_checkpoint
     screening_rows_checkpoint = None
     if persistence.metadata is not None:
         def _persist_screening_rows_checkpoint(screening_rows_frame: pd.DataFrame) -> None:
@@ -1036,18 +1066,6 @@ def _write_policy_selection_diagnostic(
         except ValueError:
             diagnostic_results = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
-            cached_outer_repeat_metrics_df = _load_policy_selection_primitive_frame(
-                cache_io=PolicyDiagnosticPrimitiveCacheIO(
-                    load_artifact=load_policy_selection_diagnostic_artifact,
-                    artifact_frame=lambda artifact: artifact.results.outer_metrics_df,
-                    artifact_cache_signature=lambda artifact: artifact.cache_signature,
-                ),
-                artifact_path=persistence.artifact_path,
-                metadata=persistence.metadata,
-                expected_cache_signature=persistence.diagnostic_cache_signature,
-                allowed_methods=current_enabled_methods,
-                allow_exact_match=False,
-            )
     if diagnostic_results is None:
         print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
@@ -1057,6 +1075,7 @@ def _write_policy_selection_diagnostic(
             auxiliary_views=auxiliary_views,
             cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
             cached_screening_rows_df=screening_rows_df,
+            outer_metrics_checkpoint=outer_metrics_checkpoint,
             screening_rows_checkpoint=screening_rows_checkpoint,
         )
         if build_outputs is None:
@@ -1074,6 +1093,7 @@ def _write_policy_selection_diagnostic(
         diagnostic_cache_signature=persistence.diagnostic_cache_signature,
         screening_rows_cache_signature=persistence.screening_rows_cache_signature,
         artifact_path=persistence.artifact_path,
+        outer_metrics_artifact_path=persistence.outer_metrics_artifact_path,
         screening_rows_artifact_path=persistence.screening_rows_artifact_path,
         output_dir=output_dir,
         run_suffix=run_suffix,
@@ -1290,6 +1310,12 @@ def _policy_selection_diagnostic_persistence_context(
         ),
         screening_rows_cache_signature=_policy_selection_diagnostic_cache_signature(cfg),
         artifact_path=policy_selection_diagnostic_bundle_path(screening_stem),
+        outer_metrics_artifact_path=policy_selection_outer_repeat_metrics_bundle_path(
+            screening_stem
+        ),
+        outer_metrics_checkpoint_path=_policy_selection_checkpoint_artifact_path(
+            policy_selection_outer_repeat_metrics_bundle_path(screening_stem)
+        ),
         screening_rows_artifact_path=policy_selection_screening_rows_bundle_path(
             screening_stem
         ),
@@ -1307,6 +1333,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     auxiliary_views: dict[str, object] | None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    outer_metrics_checkpoint: Callable[[pd.DataFrame], None] | None = None,
     screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
 ) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
@@ -1409,6 +1436,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=resolved_cached_outer_repeat_metrics_df,
         cached_screening_rows_df=cached_screening_rows_df,
+        outer_metrics_checkpoint=outer_metrics_checkpoint,
         screening_rows_checkpoint=screening_rows_checkpoint,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
@@ -1443,6 +1471,7 @@ def _write_policy_selection_diagnostic_outputs(
     diagnostic_cache_signature: dict[str, object],
     screening_rows_cache_signature: dict[str, object],
     artifact_path: Path,
+    outer_metrics_artifact_path: Path,
     screening_rows_artifact_path: Path,
     output_dir: Path,
     run_suffix: str,
@@ -1467,6 +1496,14 @@ def _write_policy_selection_diagnostic_outputs(
                 cache_signature=diagnostic_cache_signature,
             ),
             artifact_path,
+        )
+        save_outer_repeat_metrics_rows_artifact(
+            OuterRepeatMetricsRowsArtifact(
+                metadata=metadata,
+                outer_metrics_df=diagnostic_results.outer_metrics_df,
+                cache_signature=diagnostic_cache_signature,
+            ),
+            outer_metrics_artifact_path,
         )
         if screening_rows_df is not None:
             save_screening_diagnostic_rows_artifact(
