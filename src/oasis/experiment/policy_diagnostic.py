@@ -28,8 +28,8 @@ from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCol
 
 
 _POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 4
-_OUTER_REPEAT_METRICS_ROWS_ARTIFACT_VERSION = 1
-_SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 1
+_OUTER_REPEAT_METRICS_ROWS_ARTIFACT_VERSION = 2
+_SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 2
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
     "policy_name",
@@ -129,13 +129,17 @@ class OuterRepeatMetricsRowsArtifact:
     metadata: LearningCurveSweepMetadata
     outer_metrics_df: pd.DataFrame
     cache_signature: dict[str, Any] | None = None
+    completeness: PrimitiveRowCompleteness | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "outer_metrics_df",
-            normalize_outer_metrics_frame(self.outer_metrics_df),
-        )
+        normalized = normalize_outer_metrics_frame(self.outer_metrics_df)
+        object.__setattr__(self, "outer_metrics_df", normalized)
+        if self.completeness is None:
+            object.__setattr__(
+                self,
+                "completeness",
+                primitive_row_completeness_from_frame(normalized),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,13 +147,95 @@ class ScreeningDiagnosticRowsArtifact:
     metadata: LearningCurveSweepMetadata
     screening_rows_df: pd.DataFrame
     cache_signature: dict[str, Any] | None = None
+    completeness: PrimitiveRowCompleteness | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "screening_rows_df",
-            normalize_screening_diagnostic_rows_frame(self.screening_rows_df),
+        normalized = normalize_screening_diagnostic_rows_frame(self.screening_rows_df)
+        object.__setattr__(self, "screening_rows_df", normalized)
+        if self.completeness is None:
+            object.__setattr__(
+                self,
+                "completeness",
+                primitive_row_completeness_from_frame(normalized),
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PrimitiveRowCompleteness:
+    methods: tuple[str, ...]
+    budgets: tuple[int, ...]
+    repeats: tuple[int, ...]
+    point_keys: tuple[str, ...]
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "methods": list(self.methods),
+            "budgets": list(self.budgets),
+            "repeats": list(self.repeats),
+            "point_keys": list(self.point_keys),
+        }
+
+    def covers(self, expected_point_keys: Collection[str]) -> bool:
+        return set(expected_point_keys).issubset(set(self.point_keys))
+
+
+def primitive_row_point_key(*, method: str, budget: int, repeat: int) -> str:
+    return f"{method}|{budget}|{repeat}"
+
+
+def primitive_row_completeness_from_frame(frame: pd.DataFrame) -> PrimitiveRowCompleteness:
+    if frame.empty:
+        return PrimitiveRowCompleteness(
+            methods=(),
+            budgets=(),
+            repeats=(),
+            point_keys=(),
         )
+    methods = tuple(sorted(frame["method"].astype(str).unique().tolist()))
+    budgets = tuple(sorted(int(value) for value in frame["budget"].dropna().unique().tolist()))
+    repeats = tuple(sorted(int(value) for value in frame["repeat"].dropna().unique().tolist()))
+    point_keys = tuple(
+        sorted(
+            {
+                primitive_row_point_key(
+                    method=str(row.method),
+                    budget=int(row.budget),
+                    repeat=int(row.repeat),
+                )
+                for row in frame.loc[:, ["method", "budget", "repeat"]].itertuples(index=False)
+            }
+        )
+    )
+    return PrimitiveRowCompleteness(
+        methods=methods,
+        budgets=budgets,
+        repeats=repeats,
+        point_keys=point_keys,
+    )
+
+
+def load_primitive_row_completeness_mapping(payload: object) -> PrimitiveRowCompleteness:
+    if not isinstance(payload, dict):
+        raise TypeError("primitive row completeness must be a mapping.")
+
+    def _load_str_tuple(field_name: str) -> tuple[str, ...]:
+        raw_values = payload.get(field_name)
+        if not isinstance(raw_values, list):
+            raise TypeError(f"primitive row completeness {field_name} must be a list.")
+        return tuple(str(value) for value in raw_values)
+
+    def _load_int_tuple(field_name: str) -> tuple[int, ...]:
+        raw_values = payload.get(field_name)
+        if not isinstance(raw_values, list):
+            raise TypeError(f"primitive row completeness {field_name} must be a list.")
+        return tuple(int(value) for value in raw_values)
+
+    return PrimitiveRowCompleteness(
+        methods=_load_str_tuple("methods"),
+        budgets=_load_int_tuple("budgets"),
+        repeats=_load_int_tuple("repeats"),
+        point_keys=_load_str_tuple("point_keys"),
+    )
 
 
 def normalize_policy_detail_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -595,6 +681,7 @@ def dump_outer_repeat_metrics_rows_artifact(
         "metadata": artifact.metadata.to_bundle_mapping(),
         "outer_metrics_df": artifact.outer_metrics_df.to_json(orient="table"),
         "cache_signature": artifact.cache_signature,
+        "completeness": None if artifact.completeness is None else artifact.completeness.to_mapping(),
     }
 
 
@@ -628,10 +715,16 @@ def load_outer_repeat_metrics_rows_artifact_mapping(
         raise TypeError("outer repeat metrics rows artifact cache_signature must be a mapping.")
     if expected_cache_signature is not None and cache_signature != expected_cache_signature:
         raise ValueError("outer repeat metrics rows artifact cache signature is incompatible.")
+    completeness_payload = payload.get("completeness")
     return OuterRepeatMetricsRowsArtifact(
         metadata=metadata,
         outer_metrics_df=pd.read_json(StringIO(rows_payload), orient="table"),
         cache_signature=cache_signature,
+        completeness=(
+            None
+            if completeness_payload is None
+            else load_primitive_row_completeness_mapping(completeness_payload)
+        ),
     )
 
 
@@ -670,6 +763,7 @@ def dump_screening_diagnostic_rows_artifact(
         "metadata": artifact.metadata.to_bundle_mapping(),
         "screening_rows_df": artifact.screening_rows_df.to_json(orient="table"),
         "cache_signature": artifact.cache_signature,
+        "completeness": None if artifact.completeness is None else artifact.completeness.to_mapping(),
     }
 
 
@@ -703,10 +797,16 @@ def load_screening_diagnostic_rows_artifact_mapping(
         raise TypeError("screening diagnostic rows artifact cache_signature must be a mapping.")
     if expected_cache_signature is not None and cache_signature != expected_cache_signature:
         raise ValueError("screening diagnostic rows artifact cache signature is incompatible.")
+    completeness_payload = payload.get("completeness")
     return ScreeningDiagnosticRowsArtifact(
         metadata=metadata,
         screening_rows_df=pd.read_json(StringIO(rows_payload), orient="table"),
         cache_signature=cache_signature,
+        completeness=(
+            None
+            if completeness_payload is None
+            else load_primitive_row_completeness_mapping(completeness_payload)
+        ),
     )
 
 

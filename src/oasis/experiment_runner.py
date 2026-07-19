@@ -23,12 +23,15 @@ from oasis.experiment.policy_diagnostic import (
     OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
+    PrimitiveRowCompleteness,
     ScreeningDiagnosticRowsArtifact,
     _build_policy_selection_frames,
     build_policy_selection_diagnostic_results_from_primitive_rows,
     load_outer_repeat_metrics_rows_artifact,
     load_policy_selection_diagnostic_artifact,
     load_screening_diagnostic_rows_artifact,
+    primitive_row_completeness_from_frame,
+    primitive_row_point_key,
     save_outer_repeat_metrics_rows_artifact,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
@@ -214,12 +217,14 @@ class PolicyDiagnosticPrimitiveCacheIO:
     load_artifact: Callable[..., object]
     artifact_frame: Callable[[object], pd.DataFrame]
     artifact_cache_signature: Callable[[object], dict[str, object] | None]
+    artifact_completeness: Callable[[object], PrimitiveRowCompleteness | None]
 
 
 @dataclass(frozen=True, slots=True)
 class LoadedPolicyDiagnosticPrimitiveFrame:
     frame: pd.DataFrame
     cache_signature: dict[str, object] | None
+    completeness: PrimitiveRowCompleteness | None
 
 
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
@@ -1019,6 +1024,7 @@ def _write_policy_selection_diagnostic(
             load_artifact=load_screening_diagnostic_rows_artifact,
             artifact_frame=lambda artifact: artifact.screening_rows_df,
             artifact_cache_signature=lambda artifact: artifact.cache_signature,
+            artifact_completeness=lambda artifact: getattr(artifact, "completeness", None),
         ),
         artifact_path=persistence.screening_rows_artifact_path,
         metadata=persistence.metadata,
@@ -1031,6 +1037,7 @@ def _write_policy_selection_diagnostic(
             load_artifact=load_outer_repeat_metrics_rows_artifact,
             artifact_frame=lambda artifact: artifact.outer_metrics_df,
             artifact_cache_signature=lambda artifact: artifact.cache_signature,
+            artifact_completeness=lambda artifact: getattr(artifact, "completeness", None),
         ),
         artifact_path=persistence.outer_metrics_artifact_path,
         metadata=persistence.metadata,
@@ -1079,19 +1086,16 @@ def _write_policy_selection_diagnostic(
             diagnostic_results = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
     if diagnostic_results is None:
+        expected_point_keys = _policy_selection_expected_point_keys(cfg, wide_df=wide_df)
         outer_cache_complete = (
             outer_metrics_cache is not None
-            and _policy_selection_cache_covers_enabled_methods(
-                outer_metrics_cache.cache_signature,
-                persistence.outer_metrics_cache_signature,
-            )
+            and outer_metrics_cache.completeness is not None
+            and outer_metrics_cache.completeness.covers(expected_point_keys)
         )
         screening_cache_complete = (
             screening_rows_cache is not None
-            and _policy_selection_cache_covers_enabled_methods(
-                screening_rows_cache.cache_signature,
-                persistence.screening_rows_cache_signature,
-            )
+            and screening_rows_cache.completeness is not None
+            and screening_rows_cache.completeness.covers(expected_point_keys)
         )
         if (
             cached_outer_repeat_metrics_df is not None
@@ -1276,18 +1280,33 @@ def _policy_selection_cache_has_compatible_method_base(
     return True
 
 
-def _policy_selection_cache_covers_enabled_methods(
-    prior_cache_signature: dict[str, object] | None,
-    current_cache_signature: dict[str, object] | None,
-) -> bool:
-    if not _policy_selection_cache_has_compatible_method_base(
-        prior_cache_signature,
-        current_cache_signature,
-    ):
-        return False
-    prior_methods = _policy_selection_enabled_method_names(prior_cache_signature)
-    current_methods = _policy_selection_enabled_method_names(current_cache_signature)
-    return current_methods.issubset(prior_methods)
+def _policy_selection_expected_point_keys(
+    cfg: object,
+    *,
+    wide_df: object,
+) -> set[str]:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+    if learning_curve_cfg is None:
+        return set()
+    enabled_methods = _policy_diagnostic_enabled_model_names(learning_curve_cfg)
+    if not enabled_methods:
+        return set()
+    requested_sweep_sizes = resolve_configured_sweep_sizes(
+        int(len(wide_df)),
+        min_train=getattr(learning_curve_cfg, "min_train", None),
+        max_train=getattr(learning_curve_cfg, "max_train", None),
+        step=getattr(learning_curve_cfg, "step", 1),
+        sweep_sizes=getattr(learning_curve_cfg, "sweep_sizes", ()),
+        sweep_fractions=getattr(learning_curve_cfg, "sweep_fractions", ()),
+    )
+    n_repeats = int(getattr(learning_curve_cfg, "n_repeats", 1))
+    return {
+        primitive_row_point_key(method=method, budget=int(budget), repeat=repeat)
+        for method in enabled_methods
+        for budget in requested_sweep_sizes
+        for repeat in range(n_repeats)
+    }
 
 
 def _filter_cached_policy_frame_to_methods(
@@ -1327,6 +1346,10 @@ def _load_policy_selection_primitive_frame(
             return LoadedPolicyDiagnosticPrimitiveFrame(
                 frame=cache_io.artifact_frame(artifact),
                 cache_signature=cache_io.artifact_cache_signature(artifact),
+                completeness=(
+                    cache_io.artifact_completeness(artifact)
+                    or primitive_row_completeness_from_frame(cache_io.artifact_frame(artifact))
+                ),
             )
         except ValueError:
             pass
@@ -1349,6 +1372,10 @@ def _load_policy_selection_primitive_frame(
             allowed_methods=allowed_methods,
         ),
         cache_signature=prior_cache_signature,
+        completeness=(
+            cache_io.artifact_completeness(prior_artifact)
+            or primitive_row_completeness_from_frame(cache_io.artifact_frame(prior_artifact))
+        ),
     )
 
 

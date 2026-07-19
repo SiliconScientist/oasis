@@ -419,6 +419,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(saved_path, path)
         self.assertEqual(restored.metadata, artifact.metadata)
         self.assertEqual(restored.cache_signature, artifact.cache_signature)
+        self.assertEqual(restored.completeness, artifact.completeness)
         pd.testing.assert_frame_equal(
             restored.screening_rows_df,
             normalize_screening_diagnostic_rows_frame(artifact.screening_rows_df),
@@ -450,6 +451,7 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         self.assertEqual(saved_path, path)
         self.assertEqual(restored.metadata, artifact.metadata)
         self.assertEqual(restored.cache_signature, artifact.cache_signature)
+        self.assertEqual(restored.completeness, artifact.completeness)
         pd.testing.assert_frame_equal(
             restored.outer_metrics_df,
             normalize_outer_metrics_frame(artifact.outer_metrics_df),

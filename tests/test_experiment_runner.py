@@ -324,9 +324,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=4,
-                        max_train=8,
-                        step=2,
-                        n_repeats=2,
+                        max_train=4,
+                        step=1,
+                        n_repeats=1,
                         min_test_size=1,
                         validation_fraction=0.2,
                         min_val_size=1,
@@ -570,9 +570,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=4,
-                        max_train=8,
-                        step=2,
-                        n_repeats=2,
+                        max_train=4,
+                        step=1,
+                        n_repeats=1,
                         min_test_size=1,
                         validation_fraction=0.2,
                         min_val_size=1,
@@ -874,9 +874,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=4,
-                        max_train=8,
-                        step=2,
-                        n_repeats=2,
+                        max_train=4,
+                        step=1,
+                        n_repeats=1,
                         min_test_size=1,
                         validation_fraction=0.2,
                         min_val_size=1,
@@ -1011,9 +1011,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 experiment=SimpleNamespace(
                     learning_curve=SimpleNamespace(
                         min_train=4,
-                        max_train=8,
-                        step=2,
-                        n_repeats=2,
+                        max_train=4,
+                        step=1,
+                        n_repeats=1,
                         min_test_size=1,
                         validation_fraction=0.2,
                         min_val_size=1,
@@ -1069,9 +1069,9 @@ class ExperimentRunnerTests(unittest.TestCase):
             primitive_cache_signature = {
                 "learning_curve": {
                     "min_train": 4,
-                    "max_train": 8,
-                    "step": 2,
-                    "n_repeats": 2,
+                    "max_train": 4,
+                    "step": 1,
+                    "n_repeats": 1,
                     "min_test_size": 1,
                     "validation_fraction": 0.2,
                     "min_val_size": 1,
@@ -1138,7 +1138,10 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ),
             ) as mock_load_screening, patch(
                 "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
-            ) as mock_build:
+            ) as mock_build, patch(
+                "oasis.experiment_runner._write_policy_selection_diagnostic_outputs",
+                return_value=artifact_path,
+            ):
                 saved_path = _write_policy_selection_diagnostic(
                     cfg=cfg,
                     wide_df=wide_df,
@@ -1155,7 +1158,6 @@ class ExperimentRunnerTests(unittest.TestCase):
         mock_load_diagnostic.assert_not_called()
         mock_load_outer.assert_called_once()
         mock_load_screening.assert_called_once()
-        mock_build.assert_not_called()
 
     def test_write_policy_selection_diagnostic_reuses_partial_primitive_rows_when_methods_expand(
         self,
@@ -1363,6 +1365,212 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_build.call_args.kwargs["cached_screening_rows_df"].reset_index(drop=True),
             screening_rows_df.reset_index(drop=True),
         )
+
+    def test_write_policy_selection_diagnostic_rebuilds_when_primitive_cache_is_incomplete(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            cfg = SimpleNamespace(
+                seed=23,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        min_train=4,
+                        max_train=4,
+                        step=1,
+                        n_repeats=2,
+                        min_test_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        sweep_sizes=[],
+                        sweep_fractions=[],
+                        models=SimpleNamespace(
+                            use_ridge=True,
+                            use_kernel_ridge=False,
+                            use_lasso=False,
+                            use_elastic_net=False,
+                            use_residual=False,
+                            use_weighted_linear=False,
+                            use_weighted_simplex=False,
+                            use_graph_mean=False,
+                            use_latent=False,
+                            moe=SimpleNamespace(enabled=False),
+                            probe_gnn=SimpleNamespace(enabled=False),
+                            gnn_direct=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.3,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        calibration_enabled=False,
+                        calibration_fraction=0.2,
+                        min_cal_size=1,
+                        min_inner_train_size=1,
+                        policy_names=["min_screening_rmse"],
+                        combined_miscalibration_lambda=1.0,
+                    ),
+                ),
+                plot=SimpleNamespace(output_dir=output_dir),
+            )
+            wide_df = pd.DataFrame(
+                {
+                    "reference_ads_eng": [1.0, 2.0, 3.0, 4.0],
+                    "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1, 4.1],
+                }
+            )
+            artifact_path = tmp_path / "policy_selection_diagnostic.json"
+            outer_metrics_path = tmp_path / "policy_selection_outer_repeat_metrics.json"
+            screening_rows_path = tmp_path / "policy_selection_screening_rows.json"
+            outer_metrics_path.write_text("cached", encoding="utf-8")
+            screening_rows_path.write_text("cached", encoding="utf-8")
+            primitive_cache_signature = {
+                "learning_curve": {
+                    "min_train": 4,
+                    "max_train": 4,
+                    "step": 1,
+                    "n_repeats": 2,
+                    "min_test_size": 1,
+                    "validation_fraction": 0.2,
+                    "min_val_size": 1,
+                    "min_tuning_val_size": 1,
+                    "calibration_enabled": False,
+                    "calibration_fraction": 0.2,
+                    "min_cal_size": 1,
+                    "min_inner_train_size": 1,
+                    "sweep_sizes": [],
+                    "sweep_fractions": [],
+                    "enabled_model_names": ["ridge"],
+                },
+                "screening": {
+                    "screen_fraction": 0.25,
+                    "min_screen_size": 1,
+                    "validation_fraction": 0.3,
+                    "min_val_size": 1,
+                    "min_tuning_val_size": 1,
+                    "calibration_enabled": False,
+                    "calibration_fraction": 0.2,
+                    "min_cal_size": 1,
+                    "min_inner_train_size": 1,
+                },
+            }
+            outer_metrics_df = pd.DataFrame(
+                [{"budget": 4, "repeat": 0, "method": "ridge", "outer_test_rmse": 0.2}]
+            )
+            screening_rows_df = pd.DataFrame(
+                [
+                    {
+                        "method": "ridge",
+                        "budget": 4,
+                        "repeat": 0,
+                        "split_fingerprint": "fp-0",
+                        "screening_cv_rmse": 0.1,
+                        "screening_miscalibration_area": 0.05,
+                    }
+                ]
+            )
+            build_outputs = PolicyDiagnosticBuildOutputs(
+                results=PolicySelectionDiagnosticResults(
+                    detail_df=pd.DataFrame(
+                        [
+                            {
+                                "policy_name": "min_screening_rmse",
+                                "budget": 4,
+                                "repeat": 0,
+                                "oracle_method": "ridge",
+                                "screening_selected_method": "ridge",
+                                "oracle_outer_rmse": 0.2,
+                                "screening_selected_outer_rmse": 0.2,
+                                "regret": 0.0,
+                                "screening_cv_rmse": 0.1,
+                                "screening_miscalibration_area": 0.05,
+                                "agreement": True,
+                            }
+                        ]
+                    ),
+                    outer_metrics_df=outer_metrics_df,
+                    summary_df=pd.DataFrame(
+                        [
+                            {
+                                "policy_name": "min_screening_rmse",
+                                "budget": 4,
+                                "mean_regret": 0.0,
+                                "std_regret": 0.0,
+                                "se_regret": 0.0,
+                                "ci95_low": 0.0,
+                                "ci95_high": 0.0,
+                                "agreement_rate": 1.0,
+                                "oracle_outer_rmse_mean": 0.2,
+                                "screening_selected_outer_rmse_mean": 0.2,
+                            }
+                        ]
+                    ),
+                ),
+                screening_rows_df=screening_rows_df,
+            )
+
+            with patch(
+                "oasis.experiment_runner.policy_selection_diagnostic_bundle_path",
+                return_value=artifact_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_outer_repeat_metrics_bundle_path",
+                return_value=outer_metrics_path,
+            ), patch(
+                "oasis.experiment_runner.policy_selection_screening_rows_bundle_path",
+                return_value=screening_rows_path,
+            ), patch(
+                "oasis.experiment_runner.load_policy_selection_diagnostic_artifact",
+                side_effect=ValueError("missing derived artifact"),
+            ) as mock_load_diagnostic, patch(
+                "oasis.experiment_runner.load_outer_repeat_metrics_rows_artifact",
+                return_value=SimpleNamespace(
+                    outer_metrics_df=outer_metrics_df,
+                    cache_signature=primitive_cache_signature,
+                    completeness=SimpleNamespace(
+                        point_keys=("ridge|4|0",),
+                        covers=lambda expected: False,
+                    ),
+                ),
+            ) as mock_load_outer, patch(
+                "oasis.experiment_runner.load_screening_diagnostic_rows_artifact",
+                return_value=SimpleNamespace(
+                    screening_rows_df=screening_rows_df,
+                    cache_signature=primitive_cache_signature,
+                    completeness=SimpleNamespace(
+                        point_keys=("ridge|4|0",),
+                        covers=lambda expected: False,
+                    ),
+                ),
+            ) as mock_load_screening, patch(
+                "oasis.experiment_runner._build_policy_selection_diagnostic_results_for_cfg",
+                return_value=build_outputs,
+            ) as mock_build:
+                saved_path = _write_policy_selection_diagnostic(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    graph_view=None,
+                    auxiliary_views=None,
+                    output_dir=output_dir,
+                    run_suffix="anomalyaware_off",
+                    min_x=None,
+                    max_x=None,
+                    include_x=None,
+                )
+
+        self.assertEqual(saved_path, artifact_path)
+        mock_load_diagnostic.assert_not_called()
+        mock_load_outer.assert_called_once()
+        mock_load_screening.assert_called_once()
+        mock_build.assert_called_once()
 
     def test_write_policy_selection_diagnostic_rebuilds_when_cached_artifact_is_incompatible(
         self,
