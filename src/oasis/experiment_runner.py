@@ -198,6 +198,7 @@ class PolicyDiagnosticPersistenceContext:
     screening_rows_cache_signature: dict[str, object]
     artifact_path: Path
     screening_rows_artifact_path: Path
+    screening_rows_checkpoint_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -1010,6 +1011,19 @@ def _write_policy_selection_diagnostic(
         expected_cache_signature=persistence.screening_rows_cache_signature,
         allowed_methods=current_enabled_methods,
     )
+    screening_rows_checkpoint = None
+    if persistence.metadata is not None:
+        def _persist_screening_rows_checkpoint(screening_rows_frame: pd.DataFrame) -> None:
+            save_screening_diagnostic_rows_artifact(
+                ScreeningDiagnosticRowsArtifact(
+                    metadata=persistence.metadata,
+                    screening_rows_df=screening_rows_frame,
+                    cache_signature=persistence.screening_rows_cache_signature,
+                ),
+                persistence.screening_rows_checkpoint_path,
+            )
+
+        screening_rows_checkpoint = _persist_screening_rows_checkpoint
     if persistence.metadata is not None and persistence.artifact_path.is_file():
         try:
             cached_artifact = load_policy_selection_diagnostic_artifact(
@@ -1043,6 +1057,7 @@ def _write_policy_selection_diagnostic(
             auxiliary_views=auxiliary_views,
             cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
             cached_screening_rows_df=screening_rows_df,
+            screening_rows_checkpoint=screening_rows_checkpoint,
         )
         if build_outputs is None:
             return None
@@ -1232,6 +1247,10 @@ def _load_policy_selection_primitive_frame(
     )
 
 
+def _policy_selection_checkpoint_artifact_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_partial{path.suffix}")
+
+
 def _policy_selection_diagnostic_persistence_context(
     cfg: object,
     *,
@@ -1274,6 +1293,9 @@ def _policy_selection_diagnostic_persistence_context(
         screening_rows_artifact_path=policy_selection_screening_rows_bundle_path(
             screening_stem
         ),
+        screening_rows_checkpoint_path=_policy_selection_checkpoint_artifact_path(
+            policy_selection_screening_rows_bundle_path(screening_stem)
+        ),
     )
 
 
@@ -1285,6 +1307,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     auxiliary_views: dict[str, object] | None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
 ) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
@@ -1386,6 +1409,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=resolved_cached_outer_repeat_metrics_df,
         cached_screening_rows_df=cached_screening_rows_df,
+        screening_rows_checkpoint=screening_rows_checkpoint,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
         combined_miscalibration_lambda=getattr(
             screening_cfg,

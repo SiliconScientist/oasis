@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from oasis.experiment.policy_diagnostic import (
+    _build_policy_selection_frames,
     OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
@@ -450,6 +451,115 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.outer_metrics_df,
             normalize_outer_metrics_frame(artifact.outer_metrics_df),
+        )
+
+    def test_build_policy_selection_detail_frame_checkpoints_screening_rows_per_method(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+        checkpoints: list[pd.DataFrame] = []
+
+        class StubFamily:
+            def __init__(self, *, method_name: str, outer_rmse: float, screening_rmse: float) -> None:
+                self.method_name = method_name
+                self.outer_rmse = outer_rmse
+                self.screening_rmse = screening_rmse
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                uq_field = learning_curve_uq_field_for_method_name(self.method_name)
+                frames = {
+                    result_field: pd.DataFrame(
+                        {
+                            "n_train": [payload.split_collection.splits[0].sweep_size],
+                            "rmse_mean": [self.screening_rmse],
+                            "rmse_std": [0.0],
+                        }
+                    )
+                }
+                if uq_field is not None:
+                    frames[uq_field] = pd.DataFrame(
+                        {
+                            "n_train": [payload.split_collection.splits[0].sweep_size],
+                            "miscalibration_area": [0.05],
+                            "miscalibration_area_std": [0.0],
+                            "sharpness": [0.0],
+                            "sharpness_std": [0.0],
+                            "dispersion": [0.0],
+                            "dispersion_std": [0.0],
+                            "uncertainty_kind": ["spread_only"],
+                        }
+                    )
+                return LearningCurveResults.from_mapping(frames)
+
+            def run_with_artifacts(self, payload):
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return SweepFamilyRunArtifacts(
+                    results=LearningCurveResults.from_mapping(
+                        {
+                            result_field: pd.DataFrame(
+                                {
+                                    "n_train": [payload.split_collection.splits[0].sweep_size],
+                                    "rmse_mean": [self.outer_rmse],
+                                    "rmse_std": [0.0],
+                                }
+                            )
+                        }
+                    ),
+                    repeat_metrics=pd.DataFrame(
+                        [{"n_train": 4, "repeat": 0, "outer_test_rmse": self.outer_rmse}]
+                    ),
+                )
+
+        _build_policy_selection_frames(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=31,
+            model_families=[
+                StubFamily(method_name="ridge", outer_rmse=0.2, screening_rmse=0.1),
+                StubFamily(
+                    method_name="weighted_linear",
+                    outer_rmse=0.24,
+                    screening_rmse=0.2,
+                ),
+            ],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            screening_rows_checkpoint=lambda frame: checkpoints.append(frame.copy()),
+        )
+
+        self.assertEqual(len(checkpoints), 2)
+        self.assertEqual(checkpoints[0]["method"].tolist(), ["ridge"])
+        self.assertEqual(
+            checkpoints[1]["method"].tolist(),
+            ["ridge", "weighted_linear"],
         )
 
     def test_screening_split_fingerprint_changes_when_split_indices_change(self) -> None:

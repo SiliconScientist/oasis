@@ -6,7 +6,7 @@ import hashlib
 import json
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -835,6 +835,7 @@ def _build_policy_selection_frames(
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -868,6 +869,7 @@ def _build_policy_selection_frames(
         )
         if method_name is None:
             continue
+        screening_rows_before_family = len(screening_rows)
         split_collection = derive_family_split_collection_from_shared_outer_splits(
             shared_splits,
             family=family,
@@ -960,6 +962,12 @@ def _build_policy_selection_frames(
             else:
                 screening_rows.append(cached_screening_row)
                 reused_screening_rows += 1
+        if screening_rows_checkpoint is not None and len(screening_rows) > screening_rows_before_family:
+            screening_rows_checkpoint(
+                normalize_screening_diagnostic_rows_frame(
+                    pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
+                )
+            )
 
     outer_frame = pd.DataFrame(outer_rows)
     screening_frame = pd.DataFrame(screening_rows)

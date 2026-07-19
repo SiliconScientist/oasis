@@ -3477,6 +3477,13 @@ class ExperimentRunnerTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
+            persistence.screening_rows_checkpoint_path,
+            Path(
+                "data/results/screening/"
+                "policy_selection_screening_rows_bio_mass_anomalyaware_off_latent_off_n6_partial.json"
+            ),
+        )
+        self.assertEqual(
             persistence.diagnostic_cache_signature["screening"]["policy_names"],
             ["min_screening_rmse"],
         )
