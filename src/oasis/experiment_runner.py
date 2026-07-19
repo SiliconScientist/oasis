@@ -141,6 +141,14 @@ class PolicyDiagnosticBuildOutputs:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ComparativeLearningStageOutputs:
+    learning_curve_results: object | None
+    screening_results: object | None
+    learning_curve_plot_path: Path | None
+    screening_plot_path: Path | None
+
+
 def _validate_policy_selection_diagnostic_outputs(
     diagnostic_results: PolicySelectionDiagnosticResults,
     *,
@@ -2825,9 +2833,223 @@ def write_fixed_split_time_accuracy_plots(
     return training_path, total_path
 
 
-def run_experiment(cfg: object):
+def _run_comparative_learning_stages(
+    *,
+    cfg: object,
+    wide_df: object,
+    result_files: list[Path],
+    graph_view: object,
+    auxiliary_views: dict[str, object] | None,
+    output_dir: Path,
+    run_suffix: str,
+    plot_kwargs: dict[str, object],
+    configured_include_x: list[int] | None,
+    fixed_split_train_fraction: float,
+    generation_timing_by_method: dict[str, GenerationTimingAggregate] | None,
+    zero_shot_rmse: float | None,
+    zero_shot_uq: dict[str, float],
+) -> ComparativeLearningStageOutputs:
     from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
 
+    learning_curve_results = None
+    learning_curve_plot_path = None
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+
+    # Stage 1: load or run learning results.
+    if learning_curve_cfg is not None:
+        enabled_learning_curve_method_names = enabled_learning_curve_model_names_from_config(
+            getattr(learning_curve_cfg, "models", None)
+        )
+        learning_curve_results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+
+        # Stage 5: render learning-derived plots.
+        def _render_learning_curve_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path:
+            variant_include_x = plot_kwargs["include_x"]
+            if span_variant is not None:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+            return learning_curve_plot(
+                results=learning_curve_results,
+                output_path=output_path,
+                zero_shot_rmse=zero_shot_rmse,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
+            )
+
+        learning_curve_plot_path = render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"learning_curve_{run_suffix}.png",
+            render_variant=_render_learning_curve_variant,
+        )
+        write_all_datasets_oracle_learning_curve_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        write_all_datasets_uq_oracle_plots(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        write_time_accuracy_plots(
+            learning_curve_results=learning_curve_results,
+            result_files=result_files,
+            wide_df=wide_df,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            generation_timing_by_method=generation_timing_by_method,
+        )
+        write_fixed_split_time_accuracy_plots(
+            learning_curve_results=learning_curve_results,
+            result_files=result_files,
+            wide_df=wide_df,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            train_fraction=fixed_split_train_fraction,
+            generation_timing_by_method=generation_timing_by_method,
+        )
+
+        def _render_learning_curve_uq_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path | None:
+            variant_include_x = plot_kwargs["include_x"]
+            artifact_suffix = ""
+            if span_variant is not None:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                artifact_suffix = span_variant.output_suffix
+            return write_uq_summary_figure(
+                results=learning_curve_results,
+                output_path=output_path,
+                run_suffix=run_suffix,
+                zero_shot_uq=zero_shot_uq,
+                artifact_suffix=artifact_suffix,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
+            )
+
+        render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
+            render_variant=_render_learning_curve_uq_variant,
+        )
+
+    # Stage 2: load or run screening results.
+    screening_run_cfg = _screening_run_cfg(cfg)
+    screening_results = None
+    screening_plot_path = None
+    if screening_run_cfg is not None:
+        screening_results = load_or_run_learning_curve_results_from_config(
+            wide_df,
+            screening_run_cfg,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+        )
+        screening_plot_path = screening_budget_plot(
+            results=screening_results,
+            output_path=output_dir / f"screening_budget_{run_suffix}.png",
+            **plot_kwargs,
+        )
+
+        def _render_screening_uq_variant(
+            span_variant: BudgetSpanVariant | None,
+            output_path: Path,
+        ) -> Path | None:
+            variant_include_x = plot_kwargs["include_x"]
+            artifact_suffix = ""
+            if span_variant is not None:
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                artifact_suffix = span_variant.output_suffix
+            return write_uq_summary_figure(
+                results=screening_results,
+                output_path=output_path,
+                run_suffix=run_suffix,
+                zero_shot_uq=zero_shot_uq,
+                panel_prefix="screening",
+                artifact_suffix=artifact_suffix,
+                min_x=plot_kwargs["min_x"],
+                max_x=plot_kwargs["max_x"],
+                include_x=variant_include_x,
+            )
+
+        render_budget_span_variants(
+            cfg,
+            base_output_path=output_dir / f"screening_uq_summary_figure_{run_suffix}.png",
+            render_variant=_render_screening_uq_variant,
+        )
+
+    # Stage 3 and 4: load/build primitive comparison rows, then derive policy summaries.
+    if learning_curve_cfg is not None and screening_run_cfg is not None:
+        _write_policy_selection_diagnostic(
+            cfg=cfg,
+            wide_df=wide_df,
+            graph_view=graph_view,
+            auxiliary_views=auxiliary_views,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=plot_kwargs["include_x"],
+        )
+        write_all_datasets_policy_regret_plot(
+            cfg=cfg,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+
+    # Stage 5: render comparative learning figure.
+    if learning_curve_plot_path is not None and screening_plot_path is not None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            screening_panel_path = screening_budget_plot(
+                results=screening_results,
+                output_path=Path(tmpdir) / f"screening_budget_panel_{run_suffix}.png",
+                show_legend=False,
+                **plot_kwargs,
+            )
+            learning_screening_figure(
+                learning_curve_path=learning_curve_plot_path,
+                screening_curve_path=screening_panel_path,
+                output_path=output_dir / f"learning_screening_figure_{run_suffix}.png",
+            )
+
+    return ComparativeLearningStageOutputs(
+        learning_curve_results=learning_curve_results,
+        screening_results=screening_results,
+        learning_curve_plot_path=learning_curve_plot_path,
+        screening_plot_path=screening_plot_path,
+    )
+
+
+def run_experiment(cfg: object):
     run_suffix = _plot_output_suffix(cfg)
     _apply_run_output_suffixes(cfg, plot_suffix=run_suffix)
     probe_gnn_enabled = ensure_probe_artifacts(cfg)
@@ -2903,184 +3125,26 @@ def run_experiment(cfg: object):
     parity_plot_data = prepare_parity_plot_data(wide_df)
     zero_shot_rmse = _learning_curve_zero_shot_rmse_from_frame(cfg, wide_df)
     zero_shot_uq = _zero_shot_uq_baselines(parity_plot_data)
-    learning_curve_results = None
-    learning_curve_plot_path = None
-    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
-    if learning_curve_cfg is not None:
-        enabled_learning_curve_method_names = enabled_learning_curve_model_names_from_config(
-            getattr(learning_curve_cfg, "models", None)
-        )
-        learning_curve_results = load_or_run_learning_curve_results_from_config(
-            wide_df,
-            cfg,
-            graph_view=graph_view,
-            auxiliary_views=auxiliary_views,
-        )
-        def _render_learning_curve_variant(
-            span_variant: BudgetSpanVariant | None,
-            output_path: Path,
-        ) -> Path:
-            variant_include_x = plot_kwargs["include_x"]
-            if span_variant is not None:
-                variant_include_x = _merged_include_x(
-                    plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
-                )
-            return learning_curve_plot(
-                results=learning_curve_results,
-                output_path=output_path,
-                zero_shot_rmse=zero_shot_rmse,
-                min_x=plot_kwargs["min_x"],
-                max_x=plot_kwargs["max_x"],
-                include_x=variant_include_x,
-            )
-        learning_curve_plot_path = render_budget_span_variants(
-            cfg,
-            base_output_path=output_dir / f"learning_curve_{run_suffix}.png",
-            render_variant=_render_learning_curve_variant,
-        )
-        write_all_datasets_oracle_learning_curve_plot(
-            cfg=cfg,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            enabled_method_names=list(enabled_learning_curve_method_names),
-            min_x=plot_kwargs["min_x"],
-            max_x=plot_kwargs["max_x"],
-            include_x=configured_include_x,
-        )
-        write_all_datasets_uq_oracle_plots(
-            cfg=cfg,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            enabled_method_names=list(enabled_learning_curve_method_names),
-            min_x=plot_kwargs["min_x"],
-            max_x=plot_kwargs["max_x"],
-            include_x=configured_include_x,
-        )
-        write_time_accuracy_plots(
-            learning_curve_results=learning_curve_results,
-            result_files=result_files,
-            wide_df=wide_df,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            generation_timing_by_method=generation_timing_by_method,
-        )
-        write_fixed_split_time_accuracy_plots(
-            learning_curve_results=learning_curve_results,
-            result_files=result_files,
-            wide_df=wide_df,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            train_fraction=fixed_split_train_fraction,
-            generation_timing_by_method=generation_timing_by_method,
-        )
-        def _render_learning_curve_uq_variant(
-            span_variant: BudgetSpanVariant | None,
-            output_path: Path,
-        ) -> Path | None:
-            variant_include_x = plot_kwargs["include_x"]
-            artifact_suffix = ""
-            if span_variant is not None:
-                variant_include_x = _merged_include_x(
-                    plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
-                )
-                artifact_suffix = span_variant.output_suffix
-            return write_uq_summary_figure(
-                results=learning_curve_results,
-                output_path=output_path,
-                run_suffix=run_suffix,
-                zero_shot_uq=zero_shot_uq,
-                artifact_suffix=artifact_suffix,
-                min_x=plot_kwargs["min_x"],
-                max_x=plot_kwargs["max_x"],
-                include_x=variant_include_x,
-            )
-
-        render_budget_span_variants(
-            cfg,
-            base_output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
-            render_variant=_render_learning_curve_uq_variant,
-        )
-
-    screening_run_cfg = _screening_run_cfg(cfg)
-    screening_results = None
-    screening_plot_path = None
-    if screening_run_cfg is not None:
-        screening_results = load_or_run_learning_curve_results_from_config(
-            wide_df,
-            screening_run_cfg,
-            graph_view=graph_view,
-            auxiliary_views=auxiliary_views,
-        )
-        screening_plot_path = screening_budget_plot(
-            results=screening_results,
-            output_path=output_dir / f"screening_budget_{run_suffix}.png",
-            **plot_kwargs,
-        )
-        def _render_screening_uq_variant(
-            span_variant: BudgetSpanVariant | None,
-            output_path: Path,
-        ) -> Path | None:
-            variant_include_x = plot_kwargs["include_x"]
-            artifact_suffix = ""
-            if span_variant is not None:
-                variant_include_x = _merged_include_x(
-                    plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
-                )
-                artifact_suffix = span_variant.output_suffix
-            return write_uq_summary_figure(
-                results=screening_results,
-                output_path=output_path,
-                run_suffix=run_suffix,
-                zero_shot_uq=zero_shot_uq,
-                panel_prefix="screening",
-                artifact_suffix=artifact_suffix,
-                min_x=plot_kwargs["min_x"],
-                max_x=plot_kwargs["max_x"],
-                include_x=variant_include_x,
-            )
-
-        render_budget_span_variants(
-            cfg,
-            base_output_path=output_dir / f"screening_uq_summary_figure_{run_suffix}.png",
-            render_variant=_render_screening_uq_variant,
-        )
-    if learning_curve_cfg is not None and screening_run_cfg is not None:
-        _write_policy_selection_diagnostic(
-            cfg=cfg,
-            wide_df=wide_df,
-            graph_view=graph_view,
-            auxiliary_views=auxiliary_views,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            min_x=plot_kwargs["min_x"],
-            max_x=plot_kwargs["max_x"],
-            include_x=plot_kwargs["include_x"],
-        )
-        write_all_datasets_policy_regret_plot(
-            cfg=cfg,
-            output_dir=output_dir,
-            run_suffix=run_suffix,
-            min_x=plot_kwargs["min_x"],
-            max_x=plot_kwargs["max_x"],
-            include_x=configured_include_x,
-        )
-    if learning_curve_plot_path is not None and screening_plot_path is not None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            screening_panel_path = screening_budget_plot(
-                results=screening_results,
-                output_path=Path(tmpdir) / f"screening_budget_panel_{run_suffix}.png",
-                show_legend=False,
-                **plot_kwargs,
-            )
-            learning_screening_figure(
-                learning_curve_path=learning_curve_plot_path,
-                screening_curve_path=screening_panel_path,
-                output_path=output_dir / f"learning_screening_figure_{run_suffix}.png",
-            )
-    return learning_curve_results if learning_curve_results is not None else screening_results
+    stage_outputs = _run_comparative_learning_stages(
+        cfg=cfg,
+        wide_df=wide_df,
+        result_files=result_files,
+        graph_view=graph_view,
+        auxiliary_views=auxiliary_views,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+        plot_kwargs=plot_kwargs,
+        configured_include_x=configured_include_x,
+        fixed_split_train_fraction=fixed_split_train_fraction,
+        generation_timing_by_method=generation_timing_by_method,
+        zero_shot_rmse=zero_shot_rmse,
+        zero_shot_uq=zero_shot_uq,
+    )
+    return (
+        stage_outputs.learning_curve_results
+        if stage_outputs.learning_curve_results is not None
+        else stage_outputs.screening_results
+    )
 
 
 def run_experiment_from_config(config_paths=None):
