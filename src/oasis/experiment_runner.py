@@ -127,6 +127,52 @@ class PolicyDiagnosticBuildOutputs:
     screening_rows_df: pd.DataFrame
 
 
+def _validate_policy_selection_diagnostic_outputs(
+    diagnostic_results: PolicySelectionDiagnosticResults,
+    *,
+    screening_rows_df: pd.DataFrame | None,
+    require_screening_rows: bool,
+) -> None:
+    if diagnostic_results.outer_metrics_df.empty:
+        raise ValueError(
+            "Policy diagnostic produced no outer metrics rows; check enabled method families."
+        )
+    if require_screening_rows and (screening_rows_df is None or screening_rows_df.empty):
+        raise ValueError(
+            "Policy diagnostic produced no screening rows; check enabled method families."
+        )
+    if diagnostic_results.detail_df.empty or diagnostic_results.summary_df.empty:
+        raise ValueError(
+            "Policy diagnostic produced no policy rows; check enabled method families and screening outputs."
+        )
+
+
+def _policy_diagnostic_has_explicit_core_family_selection(models_cfg: object | None) -> bool:
+    if models_cfg is None:
+        return False
+    core_flag_names = (
+        "use_ridge",
+        "use_kernel_ridge",
+        "use_lasso",
+        "use_elastic_net",
+        "use_residual",
+        "use_weighted_linear",
+        "use_weighted_simplex",
+        "use_graph_mean",
+    )
+    return any(hasattr(models_cfg, flag_name) for flag_name in core_flag_names)
+
+
+def _policy_diagnostic_enabled_model_names(learning_curve_cfg: object) -> tuple[str, ...]:
+    from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
+
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    enabled_model_names = tuple(enabled_learning_curve_model_names_from_config(models_cfg))
+    if enabled_model_names:
+        return enabled_model_names
+    return enabled_model_names
+
+
 def _configured_policy_fixed_method_baselines(cfg: object) -> tuple[tuple[str, str], ...]:
     screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
     plot_baselines_cfg = getattr(screening_cfg, "plot_baselines", None)
@@ -1036,12 +1082,9 @@ def _policy_selection_diagnostic_cache_signature(cfg: object) -> dict[str, objec
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
     screening_cfg = getattr(experiment_cfg, "screening", None)
-    models_cfg = getattr(learning_curve_cfg, "models", None)
     enabled_model_names = ()
-    if models_cfg is not None:
-        from oasis.learning_curve.registry import enabled_learning_curve_model_names_from_config
-
-        enabled_model_names = tuple(enabled_learning_curve_model_names_from_config(models_cfg))
+    if learning_curve_cfg is not None:
+        enabled_model_names = _policy_diagnostic_enabled_model_names(learning_curve_cfg)
     return {
         "learning_curve": {
             "min_train": getattr(learning_curve_cfg, "min_train", None),
@@ -1235,13 +1278,20 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         graph_view=graph_view,
         auxiliary_views=auxiliary_views,
     )
-    enabled_model_names = enabled_learning_curve_model_names_from_config(
-        getattr(learning_curve_cfg, "models", None)
-    )
+    models_cfg = getattr(learning_curve_cfg, "models", None)
+    enabled_model_names = _policy_diagnostic_enabled_model_names(learning_curve_cfg)
+    if not enabled_model_names and not _policy_diagnostic_has_explicit_core_family_selection(
+        models_cfg
+    ):
+        return None
     model_families = default_sweep_model_families(
         enabled_model_names,
-        config=getattr(learning_curve_cfg, "models", None),
+        config=models_cfg,
     )
+    if not model_families:
+        raise ValueError(
+            "Policy diagnostic requires at least one enabled learning-curve method family."
+        )
     requested_sweep_sizes = resolve_configured_sweep_sizes(
         dataset.n_samples,
         min_train=getattr(learning_curve_cfg, "min_train", None),
@@ -1314,12 +1364,18 @@ def _build_policy_selection_diagnostic_results_for_cfg(
             1.0,
         ),
     )
+    diagnostic_results = PolicySelectionDiagnosticResults(
+        detail_df=detail_df,
+        outer_metrics_df=outer_metrics_df,
+        summary_df=summarize_policy_detail_frame(detail_df),
+    )
+    _validate_policy_selection_diagnostic_outputs(
+        diagnostic_results=diagnostic_results,
+        screening_rows_df=screening_rows_df,
+        require_screening_rows=True,
+    )
     return PolicyDiagnosticBuildOutputs(
-        results=PolicySelectionDiagnosticResults(
-            detail_df=detail_df,
-            outer_metrics_df=outer_metrics_df,
-            summary_df=summarize_policy_detail_frame(detail_df),
-        ),
+        results=diagnostic_results,
         screening_rows_df=screening_rows_df,
     )
 
@@ -1344,6 +1400,11 @@ def _write_policy_selection_diagnostic_outputs(
     fixed_method_summary_df = summarize_fixed_method_baseline_frame(
         diagnostic_results.outer_metrics_df,
         baselines=_configured_policy_fixed_method_baselines(cfg),
+    )
+    _validate_policy_selection_diagnostic_outputs(
+        diagnostic_results=diagnostic_results,
+        screening_rows_df=screening_rows_df,
+        require_screening_rows=False,
     )
     if metadata is not None:
         save_policy_selection_diagnostic_artifact(
