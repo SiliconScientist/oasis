@@ -479,6 +479,7 @@ def parity_plot(
     *,
     title: str | None = None,
     validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
+    show_legend: bool = True,
 ) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
@@ -530,7 +531,8 @@ def parity_plot(
     ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
-    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    if show_legend:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     plt.tight_layout()
 

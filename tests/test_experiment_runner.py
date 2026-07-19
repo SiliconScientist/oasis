@@ -36,7 +36,9 @@ from oasis.experiment_runner import (
     write_all_datasets_policy_regret_plot,
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
+    write_parity_plot,
     write_zero_shot_rmse_stage_plot,
+    write_zero_shot_overview_figure,
     write_zero_shot_stage_parity_plots,
 )
 from oasis.experiment.policy_diagnostic import PolicySelectionDiagnosticResults
@@ -2396,6 +2398,11 @@ class ExperimentRunnerTests(unittest.TestCase):
                     / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png"
                 ),
             ) as mock_all_datasets_zero_shot_plot, patch(
+                "oasis.experiment_runner.write_zero_shot_overview_figure",
+                return_value=(
+                    tmp_path / "plots" / "figure_1_oh_bma_anomalyaware_on.png"
+                ),
+            ) as mock_overview_figure, patch(
                 "oasis.experiment_runner.write_all_datasets_oracle_learning_curve_plot",
                 return_value=(
                     tmp_path
@@ -2448,6 +2455,86 @@ class ExperimentRunnerTests(unittest.TestCase):
             cfg.analysis.comparison_plot_path,
             tmp_path / "comparison_anomalyaware_on.png",
         )
+
+    def test_run_experiment_supports_zero_shot_only_experiment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg = SimpleNamespace(
+                dataset_profile=SimpleNamespace(tag="mamun_oh"),
+                datasets={
+                    "mamun_oh": SimpleNamespace(),
+                    "khlohc": SimpleNamespace(),
+                },
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    zero_shot=SimpleNamespace(
+                        mlip_selection=SimpleNamespace(
+                            exclude_anomalous_mlips=True,
+                            minimum_quorum=2,
+                        )
+                    ),
+                    learning_curve=None,
+                    screening=None,
+                ),
+                analysis=SimpleNamespace(
+                    base_dir=tmp_path / "mlips",
+                    comparison_plot_path=tmp_path / "comparison.png",
+                ),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.write_zero_shot_rmse_stage_plot",
+                return_value=tmp_path / "plots" / "zero_shot_rmse_stage_anomalyaware_on.png",
+            ) as mock_zero_shot_plot, patch(
+                "oasis.experiment_runner.write_zero_shot_stage_parity_plots",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.write_all_datasets_zero_shot_rmse_stage_plot",
+                return_value=(
+                    tmp_path
+                    / "plots"
+                    / "zero_shot_rmse_stage_all_datasets_anomalyaware_on.png"
+                ),
+            ) as mock_all_datasets_zero_shot_plot, patch(
+                "oasis.experiment_runner.write_zero_shot_overview_figure",
+                return_value=(
+                    tmp_path / "plots" / "figure_1_oh_bma_anomalyaware_on.png"
+                ),
+            ) as mock_overview_figure, patch(
+                "oasis.experiment_runner._run_comparative_learning_stages",
+            ) as mock_comparative:
+                run_experiment(cfg)
+
+        self.assertEqual(
+            mock_zero_shot_plot.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_all_datasets_zero_shot_plot.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_overview_figure.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        mock_comparative.assert_not_called()
 
     def test_load_oracle_learning_curve_rows_for_dataset_filters_to_enabled_methods(
         self,
@@ -3666,6 +3753,8 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_parity_plot.call_args_list[1].kwargs["output_path"],
             tmp_path / "mlips_vs_dft_parity_anomaly_aware_anomalyaware_on.png",
         )
+        self.assertNotIn("show_legend", mock_parity_plot.call_args_list[0].kwargs)
+        self.assertNotIn("show_legend", mock_parity_plot.call_args_list[1].kwargs)
         self.assertTrue(
             mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"][
                 "mace"
@@ -3677,6 +3766,90 @@ class ExperimentRunnerTests(unittest.TestCase):
             ],
             np.array([True, False, True]),
         )
+
+    def test_write_parity_plot_hides_legend(self) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(output_dir=None),
+            output_dir=Path("/tmp/unused"),
+        )
+        wide_df = _FakeWideFrame()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg.plot.output_dir = tmp_path
+            with patch(
+                "oasis.experiment_runner.parity_plot",
+                side_effect=lambda *args, **kwargs: kwargs["output_path"],
+            ) as mock_parity_plot:
+                saved_path = write_parity_plot(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    result_files=[tmp_path / "model_a.csv"],
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "mlips_vs_dft_parity_anomalyaware_on.png")
+        self.assertEqual(
+            mock_parity_plot.call_args.kwargs["output_path"],
+            tmp_path / "mlips_vs_dft_parity_anomalyaware_on.png",
+        )
+        self.assertFalse(mock_parity_plot.call_args.kwargs["show_legend"])
+
+    def test_write_zero_shot_overview_figure_renders_dataset_specific_figure(self) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(output_dir=None, zero_shot_stage_show_lone_mlip_swarm=False),
+            output_dir=Path("/tmp/unused"),
+            dataset_profile=SimpleNamespace(tag="mamun_oh"),
+            datasets={
+                "mamun_oh": SimpleNamespace(mlip_run_dirname="OH-BMA"),
+                "khlohc": SimpleNamespace(mlip_run_dirname="Tol-KHLOHC"),
+            },
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+        wide_df = _FakeWideFrame()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cfg.plot.output_dir = tmp_path
+            with (
+                patch(
+                    "oasis.experiment_runner._load_zero_shot_stage_rows_for_dataset",
+                    side_effect=[
+                        [{"dataset": "mamun_oh", "stage": "Full / all MLIPs", "rmse": 0.5, "n_samples": 2}],
+                        [{"dataset": "khlohc", "stage": "Full / all MLIPs", "rmse": 0.6, "n_samples": 2}],
+                    ],
+                ),
+                patch(
+                    "oasis.experiment_runner.zero_shot_overview_figure",
+                    side_effect=lambda **kwargs: kwargs["output_path"],
+                ) as mock_figure,
+                patch(
+                    "oasis.experiment_runner._strict_validity_masks_by_mlip",
+                    return_value={"model_a": np.array([True, True])},
+                ),
+            ):
+                saved_path = write_zero_shot_overview_figure(
+                    cfg=cfg,
+                    wide_df=wide_df,
+                    selected_wide_df=wide_df,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_on",
+                )
+
+        self.assertEqual(saved_path, tmp_path / "figure_1_oh_bma_anomalyaware_on.png")
+        self.assertEqual(
+            mock_figure.call_args.kwargs["output_path"],
+            tmp_path / "figure_1_oh_bma_anomalyaware_on.png",
+        )
+        self.assertFalse(mock_figure.call_args.kwargs["show_lone_mlip_swarm"])
+        self.assertIsNone(mock_figure.call_args.kwargs["max_rmse"])
 
     def test_write_zero_shot_rmse_stage_plot_forwards_swarm_toggle_from_config(
         self,

@@ -731,6 +731,50 @@ class ConfigParsingTests(unittest.TestCase):
             Path("data/results/plots/mamun_oh_mae_comparison.png"),
         )
 
+    def test_dataset_profile_derives_zero_shot_bundle_path(self) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "dataset_profile": {
+                    "tag": "mamun_oh",
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "zero_shot": {
+                        "mlip_selection": {
+                            "exclude_anomalous_mlips": True,
+                            "minimum_quorum": 2,
+                        }
+                    }
+                },
+                "analysis": {
+                    "run_adsorption_analysis": False,
+                    "out_dir": "data/mlips_by_prefix",
+                    "prefixes": ["ol"],
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.zero_shot is not None
+        self.assertEqual(
+            cfg.experiment.zero_shot.results_bundle_path,
+            Path("data/results/zero_shot/mamun_oh.json"),
+        )
+
     def test_named_dataset_profile_derives_real_mamun_oh_paths(self) -> None:
         cfg = Config(
             **{
@@ -1892,6 +1936,55 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertTrue(cfg.experiment.learning_curve.mlip_selection.exclude_anomalous_mlips)
         self.assertEqual(cfg.experiment.learning_curve.mlip_selection.minimum_quorum, 2)
+
+    def test_experiment_defaults_mlip_selection_applies_to_zero_shot_and_learning_curve(
+        self,
+    ) -> None:
+        cfg = Config(
+            **{
+                "ingest": {
+                    "source": "data/raw_vasp/systems",
+                    "dataset_name": "test",
+                    "stoich": {
+                        "elements": ["H"],
+                        "basis_species": ["H2"],
+                        "basis_composition": {"H2": {"H": 2}},
+                    },
+                },
+                "mlip": {
+                    "dev_n": 1,
+                    "dev_run": False,
+                    "models": {"enabled": []},
+                    "rootstock": {"root": ".", "models": {}},
+                },
+                "experiment": {
+                    "defaults": {
+                        "mlip_selection": {
+                            "enabled": ["mace", "uma"],
+                            "exclude_anomalous_mlips": True,
+                            "minimum_quorum": 3,
+                        }
+                    },
+                    "zero_shot": {},
+                    "learning_curve": {
+                        "min_train": 2,
+                        "max_train": 4,
+                        "n_repeats": 3,
+                    },
+                },
+            }
+        )
+
+        assert cfg.experiment is not None
+        assert cfg.experiment.zero_shot is not None
+        assert cfg.experiment.learning_curve is not None
+        self.assertEqual(cfg.experiment.zero_shot.mlip_selection.enabled, ["mace", "uma"])
+        self.assertEqual(
+            cfg.experiment.learning_curve.mlip_selection.enabled,
+            ["mace", "uma"],
+        )
+        self.assertTrue(cfg.experiment.zero_shot.mlip_selection.exclude_anomalous_mlips)
+        self.assertEqual(cfg.experiment.zero_shot.mlip_selection.minimum_quorum, 3)
 
     def test_learning_curve_split_sizing_defaults_parse(self) -> None:
         cfg = Config(

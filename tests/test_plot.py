@@ -719,6 +719,29 @@ class PlotTests(unittest.TestCase):
             point_counts = [len(collection.get_offsets()) for collection in ax.collections]
             self.assertEqual(point_counts, [2, 2])
 
+    def test_parity_plot_can_hide_legend(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "parity_no_legend.png"
+            with patch("oasis.plot.plt.close"):
+                parity_plot(
+                    df,
+                    output_path=output_path,
+                    show_legend=False,
+                )
+                fig = parity_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertTrue(output_path.exists())
+            self.assertIsNone(ax.get_legend())
+
     def test_zero_shot_rmse_stage_plot_renders_three_stage_bars(self) -> None:
         stage_df = pd.DataFrame(
             {

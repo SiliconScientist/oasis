@@ -195,6 +195,7 @@ class MlipSelectionConfig(BaseModel):
 
 
 class LearningCurveExperimentConfig(BaseModel):
+    enabled: bool = True
     min_train: int | None = None
     max_train: int | None = None
     step: int = 1
@@ -222,6 +223,12 @@ class LearningCurveExperimentConfig(BaseModel):
     models: Optional[LearningCurveModelsConfig] = None
 
 
+class ZeroShotExperimentConfig(BaseModel):
+    enabled: bool = True
+    mlip_selection: MlipSelectionConfig = Field(default_factory=MlipSelectionConfig)
+    results_bundle_path: Optional[Path] = None
+
+
 class ScreeningPlotBaselineConfig(BaseModel):
     enabled: bool = True
     method_name: str
@@ -244,6 +251,7 @@ class ScreeningPlotBaselinesConfig(BaseModel):
 
 
 class ScreeningExperimentConfig(BaseModel):
+    enabled: bool = True
     budget_mode: LearningCurveBudgetMode = "screening_fraction"
     screen_fraction: float | None = None
     min_screen_size: int = 1
@@ -269,6 +277,7 @@ class ScreeningExperimentConfig(BaseModel):
 
 
 class ExperimentDefaultsConfig(BaseModel):
+    mlip_selection: MlipSelectionConfig | None = None
     validation_fraction: float | None = None
     min_val_size: int | None = None
     min_tuning_val_size: int | None = None
@@ -283,6 +292,7 @@ class ExperimentDefaultsConfig(BaseModel):
 
 class ExperimentConfig(BaseModel):
     defaults: Optional[ExperimentDefaultsConfig] = None
+    zero_shot: Optional[ZeroShotExperimentConfig] = None
     learning_curve: Optional[LearningCurveExperimentConfig] = None
     screening: Optional[ScreeningExperimentConfig] = None
 
@@ -296,7 +306,7 @@ class ExperimentConfig(BaseModel):
             return data
 
         merged = dict(data)
-        for section_name in ("learning_curve", "screening"):
+        for section_name in ("zero_shot", "learning_curve", "screening"):
             section_cfg = merged.get(section_name)
             if not isinstance(section_cfg, dict):
                 continue
@@ -307,7 +317,11 @@ class ExperimentConfig(BaseModel):
         return merged
 
     def validate_screening_dependency(self) -> None:
-        if self.screening is not None and self.learning_curve is None:
+        if (
+            self.screening is not None
+            and self.screening.enabled
+            and (self.learning_curve is None or not self.learning_curve.enabled)
+        ):
             raise ValueError(
                 "experiment.screening requires experiment.learning_curve to define "
                 "the training grid and model families."
@@ -316,7 +330,7 @@ class ExperimentConfig(BaseModel):
     def derived_screening_learning_curve(
         self,
     ) -> Optional[LearningCurveExperimentConfig]:
-        if self.screening is None:
+        if self.screening is None or not self.screening.enabled:
             return None
         self.validate_screening_dependency()
         assert self.learning_curve is not None

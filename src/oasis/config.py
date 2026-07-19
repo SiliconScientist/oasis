@@ -61,7 +61,7 @@ def _normalize_experiment_layout(raw_cfg: dict) -> dict:
 
     shared_experiment_cfg = experiment_cfg.pop("defaults", None)
     if isinstance(shared_experiment_cfg, dict):
-        for section_name in ("learning_curve", "screening"):
+        for section_name in ("zero_shot", "learning_curve", "screening"):
             section_cfg = experiment_cfg.get(section_name)
             if not isinstance(section_cfg, dict):
                 continue

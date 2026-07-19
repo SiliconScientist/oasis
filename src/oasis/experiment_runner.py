@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 import json
+import re
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -43,7 +44,7 @@ from oasis.experiment.repeat_metrics import (
     repeat_metrics_artifact_path,
 )
 from oasis.experiment.splits import resolve_configured_sweep_sizes
-from oasis.figure import learning_screening_figure, uq_summary_figure
+from oasis.figure import learning_screening_figure, uq_summary_figure, zero_shot_overview_figure
 from oasis.learning_curve.time_accuracy import (
     GenerationTimingAggregate,
     aggregate_generation_timing,
@@ -485,6 +486,15 @@ def _zero_shot_stage_cache_signature(
 def _zero_shot_stage_artifact_path(
     cfg: object,
 ) -> Path:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    zero_shot_cfg = getattr(experiment_cfg, "zero_shot", None)
+    explicit_results_bundle_path = getattr(zero_shot_cfg, "results_bundle_path", None)
+    if explicit_results_bundle_path is not None:
+        return _append_output_suffix(
+            zero_shot_bundle_path(Path(explicit_results_bundle_path).stem),
+            _plot_output_suffix(cfg),
+        )
+
     dataset_profile = getattr(cfg, "dataset_profile", None)
     dataset_tag = getattr(dataset_profile, "tag", None)
     if dataset_tag is not None:
@@ -494,8 +504,7 @@ def _zero_shot_stage_artifact_path(
             zero_shot_bundle_path(profile_paths.results_bundle_path.stem),
             _plot_output_suffix(cfg),
         )
-
-    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
     results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
     if results_bundle_path is not None:
         return _append_output_suffix(
@@ -686,6 +695,10 @@ def _resolved_plot_output_dir(cfg: object) -> Path:
     return Path("data/results/plots")
 
 
+def _slugify_filename_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
 def _load_oracle_learning_curve_rows_for_dataset(
     cfg: object,
     *,
@@ -771,12 +784,41 @@ def _preview_values(values: list[object], *, limit: int = 5) -> str:
 
 
 def _mlip_selection_cfg(cfg: object):
+    zero_shot_cfg = (
+        cfg.experiment.zero_shot
+        if getattr(cfg, "experiment", None)
+        and getattr(cfg.experiment, "zero_shot", None)
+        and getattr(cfg.experiment.zero_shot, "enabled", True)
+        else None
+    )
+    if zero_shot_cfg is not None:
+        return getattr(zero_shot_cfg, "mlip_selection", None)
     learning_curve_cfg = (
         cfg.experiment.learning_curve
-        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        if getattr(cfg, "experiment", None)
+        and cfg.experiment.learning_curve
+        and getattr(cfg.experiment.learning_curve, "enabled", True)
         else None
     )
     return getattr(learning_curve_cfg, "mlip_selection", None)
+
+
+def _zero_shot_experiment_enabled(cfg: object) -> bool:
+    experiment_cfg = getattr(cfg, "experiment", None)
+    zero_shot_cfg = getattr(experiment_cfg, "zero_shot", None)
+    if zero_shot_cfg is not None:
+        return bool(getattr(zero_shot_cfg, "enabled", True))
+    return _mlip_selection_cfg(cfg) is not None
+
+
+def _learning_curve_experiment_enabled(cfg: object) -> bool:
+    learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
+    return bool(learning_curve_cfg is not None and getattr(learning_curve_cfg, "enabled", True))
+
+
+def _screening_experiment_enabled(cfg: object) -> bool:
+    screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
+    return bool(screening_cfg is not None and getattr(screening_cfg, "enabled", True))
 
 
 def _exclude_anomalous_mlips_enabled(cfg: object) -> bool:
@@ -976,9 +1018,9 @@ def _derived_screening_learning_curve_cfg(cfg: object):
 
     screening_cfg = getattr(experiment_cfg, "screening", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
-    if screening_cfg is None:
+    if screening_cfg is None or not getattr(screening_cfg, "enabled", True):
         return None
-    if learning_curve_cfg is None:
+    if learning_curve_cfg is None or not getattr(learning_curve_cfg, "enabled", True):
         raise ValueError(
             "experiment.screening requires experiment.learning_curve to define "
             "the training grid and model families."
@@ -1934,7 +1976,7 @@ def ensure_probe_artifacts(cfg: object) -> bool:
     probe_cfg = cfg.probe_features
     models_cfg = (
         cfg.experiment.learning_curve.models
-        if cfg.experiment and cfg.experiment.learning_curve
+        if cfg.experiment and _learning_curve_experiment_enabled(cfg)
         else None
     )
     probe_gnn_cfg = getattr(models_cfg, "probe_gnn", None)
@@ -1990,6 +2032,8 @@ def write_zero_shot_rmse_stage_plot(
     output_dir: Path,
     run_suffix: str,
 ) -> Path | None:
+    if not _zero_shot_experiment_enabled(cfg):
+        return None
     if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
         return None
 
@@ -2051,6 +2095,8 @@ def write_zero_shot_stage_parity_plots(
     output_dir: Path,
     run_suffix: str,
 ) -> list[Path]:
+    if not _zero_shot_experiment_enabled(cfg):
+        return []
     if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
         return []
 
@@ -2086,6 +2132,8 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
     output_dir: Path,
     run_suffix: str,
 ) -> Path | None:
+    if not _zero_shot_experiment_enabled(cfg):
+        return None
     if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
         return None
 
@@ -2114,6 +2162,61 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
         output_path=output_path,
         show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
         max_rmse=_zero_shot_stage_max_rmse(cfg),
+    )
+
+
+def write_zero_shot_overview_figure(
+    *,
+    cfg: object,
+    wide_df: object,
+    selected_wide_df: object,
+    output_dir: Path,
+    run_suffix: str,
+) -> Path | None:
+    if not _zero_shot_experiment_enabled(cfg):
+        return None
+    if not bool(_exclude_anomalous_mlips_enabled(cfg) or _minimum_quorum(cfg) > 0):
+        return None
+    if _frame_height(wide_df) == 0 or _frame_height(selected_wide_df) == 0:
+        return None
+
+    configured_tags = list(getattr(cfg, "datasets", {}))
+    current_tag = getattr(getattr(cfg, "dataset_profile", None), "tag", None)
+    if current_tag and current_tag not in configured_tags:
+        configured_tags.insert(0, current_tag)
+    if len(configured_tags) <= 1 or current_tag is None:
+        return None
+
+    stage_rows: list[dict[str, object]] = []
+    for dataset_tag in configured_tags:
+        stage_rows.extend(
+            _load_zero_shot_stage_rows_for_dataset(
+                cfg,
+                dataset_tag=dataset_tag,
+                cache_only=True,
+            )
+        )
+    if not stage_rows:
+        return None
+
+    dataset_label = _dataset_label_for_tag(cfg, dataset_tag=current_tag)
+    output_path = output_dir / (
+        f"figure_1_{_slugify_filename_token(dataset_label)}_{run_suffix}.png"
+    )
+    validity_mask_by_prediction = (
+        _strict_validity_masks_by_mlip(selected_wide_df)
+        if _exclude_anomalous_mlips_enabled(cfg)
+        else None
+    )
+    return zero_shot_overview_figure(
+        all_mlips_df=wide_df,
+        matched_subset_df=selected_wide_df,
+        all_datasets_stage_df=pd.DataFrame(stage_rows),
+        output_path=output_path,
+        anomaly_aware_validity_mask_by_prediction=validity_mask_by_prediction,
+        show_lone_mlip_swarm=_show_lone_mlip_swarm(cfg),
+        max_rmse=_zero_shot_stage_max_rmse(cfg),
+        label_fontsize=18,
     )
 
 
@@ -2399,7 +2502,7 @@ def build_auxiliary_views(
     auxiliary_views: dict = {}
     models_cfg = (
         cfg.experiment.learning_curve.models
-        if cfg.experiment and cfg.experiment.learning_curve
+        if cfg.experiment and _learning_curve_experiment_enabled(cfg)
         else None
     )
     if models_cfg is not None and getattr(models_cfg, "use_latent", False):
@@ -2466,7 +2569,7 @@ def _method_generation_timing_overrides(
     probe_cfg = getattr(cfg, "probe_features", None)
     learning_curve_cfg = (
         cfg.experiment.learning_curve
-        if getattr(cfg, "experiment", None) and cfg.experiment.learning_curve
+        if getattr(cfg, "experiment", None) and _learning_curve_experiment_enabled(cfg)
         else None
     )
     models_cfg = getattr(learning_curve_cfg, "models", None)
@@ -2559,7 +2662,7 @@ def write_parity_plot(
     suffix_parts: list[str] = [run_suffix]
     suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
     output_path = output_dir / f"mlips_vs_dft_parity{suffix}.png"
-    saved_path = parity_plot(wide_df, output_path=output_path)
+    saved_path = parity_plot(wide_df, output_path=output_path, show_legend=False)
     print(
         f"Processed {len(result_files)} MLIP files"
         f" -> parity plot: {saved_path}"
@@ -2571,7 +2674,7 @@ def write_parity_plot(
 def prepare_graph_view(cfg: object, wide_df: object):
     graph_dataset_cfg = (
         cfg.experiment.learning_curve.graph_dataset
-        if cfg.experiment and cfg.experiment.learning_curve
+        if cfg.experiment and _learning_curve_experiment_enabled(cfg)
         else None
     )
     reaction_ids = wide_df.get_column("reaction").to_list()
@@ -3105,6 +3208,15 @@ def run_experiment(cfg: object):
         output_dir=output_dir,
         run_suffix=run_suffix,
     )
+    write_zero_shot_overview_figure(
+        cfg=cfg,
+        wide_df=wide_df,
+        selected_wide_df=zero_shot_stage_selected_wide_df,
+        output_dir=output_dir,
+        run_suffix=run_suffix,
+    )
+    if not _learning_curve_experiment_enabled(cfg) and not _screening_experiment_enabled(cfg):
+        return None
     curve_window_cfg = getattr(cfg.plot, "curve_window", None) if cfg.plot else None
     fixed_split_cfg = getattr(cfg.plot, "fixed_split", None) if cfg.plot else None
     fixed_split_train_fraction = float(

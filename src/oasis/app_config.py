@@ -14,6 +14,7 @@ from oasis.experiment_config import (
     derive_dataset_profile_paths,
     plot_output_dir,
     screening_bundle_path,
+    zero_shot_bundle_path,
 )
 from oasis.mlip_config import (
     IngestConfig,
@@ -120,6 +121,16 @@ class Config(BaseModel):
             ):
                 learning_curve.graph_dataset.path = profile_paths.graph_dataset_path
 
+        zero_shot = self.experiment.zero_shot if self.experiment is not None else None
+        if (
+            zero_shot is not None
+            and zero_shot.results_bundle_path is None
+            and profile_paths.results_bundle_path is not None
+        ):
+            zero_shot.results_bundle_path = zero_shot_bundle_path(
+                profile_paths.results_bundle_path.stem
+            )
+
         screening = self.experiment.screening if self.experiment is not None else None
         if (
             screening is not None
@@ -219,7 +230,11 @@ class Config(BaseModel):
             if self.experiment is not None
             else None
         )
-        if learning_curve is not None and learning_curve.graph_dataset is not None:
+        if (
+            learning_curve is not None
+            and getattr(learning_curve, "enabled", True)
+            and learning_curve.graph_dataset is not None
+        ):
             if learning_curve.graph_dataset.path is None:
                 raise ValueError(
                     "experiment.learning_curve.graph_dataset.path must be provided "

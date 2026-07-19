@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
-from oasis.plot import plt
+import pandas as pd
+
+from oasis.plot import parity_plot, plt, zero_shot_rmse_stage_plot
 
 
 def vertical_panel_figure(
@@ -161,6 +164,53 @@ def two_top_one_bottom_figure(
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     return output_path
+
+
+def zero_shot_overview_figure(
+    *,
+    all_mlips_df: Any,
+    matched_subset_df: Any,
+    all_datasets_stage_df: pd.DataFrame,
+    output_path: str | Path,
+    anomaly_aware_validity_mask_by_prediction: dict[str, object] | None = None,
+    show_lone_mlip_swarm: bool = True,
+    max_rmse: float | None = None,
+    panel_labels: Sequence[str] = ("a)", "b)", "c)"),
+    panel_label_positions: Sequence[tuple[float, float]] = (
+        (0.02, 0.98),
+        (0.02, 0.98),
+        (0.02, 0.98),
+    ),
+    label_fontsize: int = 16,
+) -> Path:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        top_left_path = parity_plot(
+            all_mlips_df,
+            output_path=tmp_path / "panel_a.png",
+            show_legend=False,
+        )
+        top_right_path = parity_plot(
+            matched_subset_df,
+            output_path=tmp_path / "panel_b.png",
+            validity_mask_by_prediction=anomaly_aware_validity_mask_by_prediction,
+            show_legend=True,
+        )
+        bottom_path = zero_shot_rmse_stage_plot(
+            all_datasets_stage_df,
+            output_path=tmp_path / "panel_c.png",
+            show_lone_mlip_swarm=show_lone_mlip_swarm,
+            max_rmse=max_rmse,
+        )
+        return two_top_one_bottom_figure(
+            top_left_path=top_left_path,
+            top_right_path=top_right_path,
+            bottom_path=bottom_path,
+            output_path=output_path,
+            panel_labels=panel_labels,
+            panel_label_positions=panel_label_positions,
+            label_fontsize=label_fontsize,
+        )
 
 
 def uq_summary_figure(

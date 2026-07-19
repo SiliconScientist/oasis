@@ -13,6 +13,7 @@ from oasis.figure import (
     two_top_one_bottom_figure,
     uq_summary_figure,
     vertical_panel_figure,
+    zero_shot_overview_figure,
 )
 from oasis.plot import (
     dispersion_plot,
@@ -49,6 +50,41 @@ class FigureTests(unittest.TestCase):
 
             self.assertEqual(output_path, tmp_path / "figure.png")
             self.assertTrue(output_path.exists())
+
+    def test_zero_shot_overview_figure_renders_panel_a_without_legend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            output_path = tmp_path / "figure.png"
+
+            def _write_panel(*args, output_path: Path, **kwargs):
+                fig, ax = plt.subplots(figsize=(4, 4))
+                ax.plot([0, 1], [0, 1])
+                fig.savefig(output_path, dpi=100)
+                plt.close(fig)
+                return output_path
+
+            with (
+                patch("oasis.figure.parity_plot", side_effect=_write_panel) as mock_parity_plot,
+                patch(
+                    "oasis.figure.zero_shot_rmse_stage_plot",
+                    side_effect=_write_panel,
+                ) as mock_stage_plot,
+            ):
+                saved_path = zero_shot_overview_figure(
+                    all_mlips_df=pd.DataFrame(),
+                    matched_subset_df=pd.DataFrame(),
+                    all_datasets_stage_df=pd.DataFrame(),
+                    output_path=output_path,
+                )
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertFalse(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
+            self.assertTrue(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
+            self.assertIsNone(
+                mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"]
+            )
+            self.assertTrue(mock_stage_plot.called)
 
     def test_vertical_panel_figure_requires_matching_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

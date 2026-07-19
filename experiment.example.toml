@@ -44,6 +44,7 @@ zero_shot_stage_show_lone_mlip_swarm = true
 # once for the absolute span and once for the fraction span.
 
 [experiment.defaults]
+mlip_selection = { exclude_anomalous_mlips = false, minimum_quorum = 0 }
 validation_fraction = 0.2
 min_val_size = 1
 min_tuning_val_size = 1
@@ -55,7 +56,11 @@ min_inner_train_size = 1
 reuse_results = false
 # force_refresh_methods = ["ridge"]
 
+[experiment.zero_shot]
+enabled = true
+
 [experiment.learning_curve]
+enabled = true
 # Learning-curve sweep sizes refer to the outer training budget.
 # Models that require validation spend part of that budget on inner validation.
 # The test split is always an outer holdout used only for final evaluation.
@@ -111,31 +116,24 @@ min_test_size = 1
 n_repeats = 10
 # force_refresh_train_sizes = { ridge = [5, 10], probe_gnn = [20] }
 
-# Anomaly-aware MLIP selection. Leave this off for the baseline comparison.
-[experiment.learning_curve.mlip_selection]
-# enabled = ["mace", "mattersim", "orb_v3", "sevennet", "uma"]
-exclude_anomalous_mlips = false
-minimum_quorum = 0
-
 # OH-BMA comparison presets:
 #
 # Baseline:
 # [dataset_profile]
 # tag = "mamun_oh"
 #
-# [experiment.learning_curve.mlip_selection]
-# exclude_anomalous_mlips = false
-# minimum_quorum = 0
+# [experiment.defaults]
+# mlip_selection = { exclude_anomalous_mlips = false, minimum_quorum = 0 }
 #
 # Filtered:
 # [dataset_profile]
 # tag = "mamun_oh"
 #
-# [experiment.learning_curve.mlip_selection]
-# exclude_anomalous_mlips = true
-# minimum_quorum = 2
+# [experiment.defaults]
+# mlip_selection = { exclude_anomalous_mlips = true, minimum_quorum = 2 }
 
 [experiment.screening]
+enabled = true
 # Screening mode overlays the screening-specific knobs onto
 # `[experiment.learning_curve]`.
 # `budget_mode = "full_remainder_test"` keeps the current behavior, where the
@@ -169,6 +167,13 @@ combined_miscalibration_lambda = 1.0
 # results_bundle_path defaults to `data/results/screening/<dataset>.json`
 # results_bundle_path = "data/results/screening/example_oh.json"
 # force_refresh_train_sizes = { ridge = [10], weighted_simplex = [15] }
+# To run only zero-shot while keeping the other settings in the file:
+# [experiment.zero_shot]
+# enabled = true
+# [experiment.learning_curve]
+# enabled = false
+# [experiment.screening]
+# enabled = false
 # When both learning-curve and screening sections are present, Oasis also
 # writes a shared-outer-split policy diagnostic to `plot.output_dir`.
 # That derived diagnostic uses screening CV only for method selection, then
