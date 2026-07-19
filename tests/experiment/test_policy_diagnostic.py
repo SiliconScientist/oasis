@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from oasis.experiment.policy_diagnostic import (
+    OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
     ScreeningDiagnosticRowsArtifact,
@@ -15,12 +16,14 @@ from oasis.experiment.policy_diagnostic import (
     build_policy_selection_detail_frame,
     derive_family_split_collection_from_shared_outer_splits,
     generate_shared_outer_splits,
+    load_outer_repeat_metrics_rows_artifact,
     load_policy_selection_diagnostic_artifact,
     load_screening_diagnostic_rows_artifact,
     normalize_policy_detail_frame,
     normalize_outer_metrics_frame,
     normalize_policy_summary_frame,
     normalize_screening_diagnostic_rows_frame,
+    save_outer_repeat_metrics_rows_artifact,
     save_policy_selection_diagnostic_artifact,
     save_screening_diagnostic_rows_artifact,
     screening_split_fingerprint,
@@ -416,6 +419,37 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
         pd.testing.assert_frame_equal(
             restored.screening_rows_df,
             normalize_screening_diagnostic_rows_frame(artifact.screening_rows_df),
+        )
+
+    def test_outer_repeat_metrics_rows_artifact_round_trip(self) -> None:
+        artifact = OuterRepeatMetricsRowsArtifact(
+            metadata=self._metadata(),
+            outer_metrics_df=pd.DataFrame(
+                {
+                    "budget": [8, 4],
+                    "repeat": [1, 0],
+                    "method": ["weighted_linear", "ridge"],
+                    "outer_test_rmse": [0.21, 0.31],
+                }
+            ),
+            cache_signature=self._cache_signature(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "outer_repeat_metrics_rows.json"
+            saved_path = save_outer_repeat_metrics_rows_artifact(artifact, path)
+            restored = load_outer_repeat_metrics_rows_artifact(
+                saved_path,
+                expected_metadata=self._metadata(),
+                expected_cache_signature=self._cache_signature(),
+            )
+
+        self.assertEqual(saved_path, path)
+        self.assertEqual(restored.metadata, artifact.metadata)
+        self.assertEqual(restored.cache_signature, artifact.cache_signature)
+        pd.testing.assert_frame_equal(
+            restored.outer_metrics_df,
+            normalize_outer_metrics_frame(artifact.outer_metrics_df),
         )
 
     def test_screening_split_fingerprint_changes_when_split_indices_change(self) -> None:

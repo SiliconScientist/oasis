@@ -28,6 +28,7 @@ from oasis.sweep import SweepDataset, SweepRunPayload, SweepSplit, SweepSplitCol
 
 
 _POLICY_DIAGNOSTIC_ARTIFACT_VERSION = 4
+_OUTER_REPEAT_METRICS_ROWS_ARTIFACT_VERSION = 1
 _SCREENING_DIAGNOSTIC_ROWS_ARTIFACT_VERSION = 1
 _DEFAULT_POLICY_NAMES = ("min_screening_rmse",)
 _DETAIL_COLUMNS = [
@@ -121,6 +122,20 @@ class SharedOuterSplit:
 class ScreeningDiagnosticMetrics:
     cv_rmse: float
     miscalibration_area: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class OuterRepeatMetricsRowsArtifact:
+    metadata: LearningCurveSweepMetadata
+    outer_metrics_df: pd.DataFrame
+    cache_signature: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "outer_metrics_df",
+            normalize_outer_metrics_frame(self.outer_metrics_df),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +504,81 @@ def load_policy_selection_diagnostic_artifact(
 ) -> PolicySelectionDiagnosticArtifact:
     resolved_path = Path(path)
     return load_policy_selection_diagnostic_artifact_mapping(
+        json.loads(resolved_path.read_text(encoding="utf-8")),
+        expected_metadata=expected_metadata,
+        expected_cache_signature=expected_cache_signature,
+    )
+
+
+def dump_outer_repeat_metrics_rows_artifact(
+    artifact: OuterRepeatMetricsRowsArtifact,
+) -> dict[str, Any]:
+    return {
+        "version": _OUTER_REPEAT_METRICS_ROWS_ARTIFACT_VERSION,
+        "metadata": artifact.metadata.to_bundle_mapping(),
+        "outer_metrics_df": artifact.outer_metrics_df.to_json(orient="table"),
+        "cache_signature": artifact.cache_signature,
+    }
+
+
+def load_outer_repeat_metrics_rows_artifact_mapping(
+    payload: dict[str, Any],
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> OuterRepeatMetricsRowsArtifact:
+    version = payload.get("version")
+    if version != _OUTER_REPEAT_METRICS_ROWS_ARTIFACT_VERSION:
+        raise ValueError(
+            f"unsupported outer repeat metrics rows artifact version: {version!r}."
+        )
+    metadata_payload = payload.get("metadata")
+    if not isinstance(metadata_payload, dict):
+        raise TypeError("outer repeat metrics rows artifact must contain metadata.")
+    metadata = LearningCurveSweepMetadata.from_bundle_mapping(
+        metadata_payload,
+        fallback=expected_metadata,
+    )
+    if expected_metadata is not None:
+        expected_metadata.assert_compatible(metadata)
+    rows_payload = payload.get("outer_metrics_df")
+    if not isinstance(rows_payload, str):
+        raise TypeError(
+            "outer repeat metrics rows artifact must contain an outer_metrics_df JSON string."
+        )
+    cache_signature = payload.get("cache_signature")
+    if cache_signature is not None and not isinstance(cache_signature, dict):
+        raise TypeError("outer repeat metrics rows artifact cache_signature must be a mapping.")
+    if expected_cache_signature is not None and cache_signature != expected_cache_signature:
+        raise ValueError("outer repeat metrics rows artifact cache signature is incompatible.")
+    return OuterRepeatMetricsRowsArtifact(
+        metadata=metadata,
+        outer_metrics_df=pd.read_json(StringIO(rows_payload), orient="table"),
+        cache_signature=cache_signature,
+    )
+
+
+def save_outer_repeat_metrics_rows_artifact(
+    artifact: OuterRepeatMetricsRowsArtifact,
+    path: str | Path,
+) -> Path:
+    resolved_path = Path(path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
+        json.dumps(dump_outer_repeat_metrics_rows_artifact(artifact), indent=2),
+        encoding="utf-8",
+    )
+    return resolved_path
+
+
+def load_outer_repeat_metrics_rows_artifact(
+    path: str | Path,
+    *,
+    expected_metadata: LearningCurveSweepMetadata | None = None,
+    expected_cache_signature: dict[str, Any] | None = None,
+) -> OuterRepeatMetricsRowsArtifact:
+    resolved_path = Path(path)
+    return load_outer_repeat_metrics_rows_artifact_mapping(
         json.loads(resolved_path.read_text(encoding="utf-8")),
         expected_metadata=expected_metadata,
         expected_cache_signature=expected_cache_signature,
