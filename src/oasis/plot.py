@@ -477,7 +477,7 @@ def parity_plot(
     df: Any,
     output_path: str | Path,
     *,
-    title: str = "Parity plot (all MLIPs)",
+    title: str | None = None,
     validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
 ) -> Path:
     """
@@ -528,7 +528,6 @@ def parity_plot(
 
     ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
-    ax.set_title(title, fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
@@ -550,6 +549,7 @@ def zero_shot_rmse_stage_plot(
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_lone_mlip_swarm: bool = True,
     max_rmse: float | None = None,
+    title: str | None = None,
 ) -> Path:
     required_columns = {"dataset", "stage", "rmse", "n_samples"}
     missing_columns = required_columns.difference(stage_df.columns)
@@ -724,10 +724,10 @@ def zero_shot_rmse_stage_plot(
 
     ax.set_xticks(x, dataset_labels)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
-    ax.set_title("Zero-shot mean-MLIP RMSE by filtering stage", fontsize=fontsize)
     if max_rmse is not None:
         ax.set_ylim(top=max_rmse)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=fontsize)
+    ax.tick_params(axis="y", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, axis="y", linestyle="--", alpha=0.3)
     stage_legend = ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE, loc="upper left")
     if show_lone_mlip_swarm and not swarm_rows.empty:

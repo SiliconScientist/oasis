@@ -715,7 +715,7 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
-            self.assertEqual(ax.get_title(), "Parity plot (filtered)")
+            self.assertEqual(ax.get_title(), "")
             point_counts = [len(collection.get_offsets()) for collection in ax.collections]
             self.assertEqual(point_counts, [2, 2])
 
@@ -749,6 +749,7 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(ax.get_ylabel(), "Zero-shot RMSE (eV)")
             self.assertEqual(len(ax.patches), 3)
             self.assertEqual([tick.get_text() for tick in ax.get_xticklabels()], ["OH-BMA"])
+            self.assertEqual(ax.get_xticklabels()[0].get_fontsize(), 16)
 
     def test_zero_shot_rmse_stage_plot_overlays_lone_mlip_points(self) -> None:
         stage_df = pd.DataFrame(

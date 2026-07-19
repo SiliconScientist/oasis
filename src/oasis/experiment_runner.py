@@ -2064,7 +2064,6 @@ def write_zero_shot_stage_parity_plots(
             selected_wide_df,
             output_path=output_dir
             / f"mlips_vs_dft_parity_matched_subset_{run_suffix}.png",
-            title="Parity plot (matched subset / all MLIPs)",
         )
     ]
     if _exclude_anomalous_mlips_enabled(cfg):
@@ -2073,7 +2072,6 @@ def write_zero_shot_stage_parity_plots(
                 selected_wide_df,
                 output_path=output_dir
                 / f"mlips_vs_dft_parity_anomaly_aware_{run_suffix}.png",
-                title="Parity plot (matched subset / anomaly-aware selection)",
                 validity_mask_by_prediction=_strict_validity_masks_by_mlip(
                     selected_wide_df
                 ),

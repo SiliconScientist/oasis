@@ -3663,16 +3663,8 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "mlips_vs_dft_parity_matched_subset_anomalyaware_on.png",
         )
         self.assertEqual(
-            mock_parity_plot.call_args_list[0].kwargs["title"],
-            "Parity plot (matched subset / all MLIPs)",
-        )
-        self.assertEqual(
             mock_parity_plot.call_args_list[1].kwargs["output_path"],
             tmp_path / "mlips_vs_dft_parity_anomaly_aware_anomalyaware_on.png",
-        )
-        self.assertEqual(
-            mock_parity_plot.call_args_list[1].kwargs["title"],
-            "Parity plot (matched subset / anomaly-aware selection)",
         )
         self.assertTrue(
             mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"][

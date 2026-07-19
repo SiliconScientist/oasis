@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from unittest.mock import patch
 
-from oasis.figure import learning_screening_figure, uq_summary_figure, vertical_panel_figure
+from oasis.figure import (
+    learning_screening_figure,
+    two_top_one_bottom_figure,
+    uq_summary_figure,
+    vertical_panel_figure,
+)
 from oasis.plot import (
     dispersion_plot,
     learning_curve_plot,
@@ -20,6 +25,31 @@ from oasis.sweep import LearningCurveResults
 
 
 class FigureTests(unittest.TestCase):
+    def test_two_top_one_bottom_figure_stitches_three_panels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            panel_paths = []
+            for name, figsize in (
+                ("top_left.png", (4, 4)),
+                ("top_right.png", (4, 4)),
+                ("bottom.png", (8, 2)),
+            ):
+                fig, ax = plt.subplots(figsize=figsize)
+                ax.plot([0, 1], [0, 1])
+                fig.savefig(tmp_path / name, dpi=100)
+                plt.close(fig)
+                panel_paths.append(tmp_path / name)
+
+            output_path = two_top_one_bottom_figure(
+                top_left_path=panel_paths[0],
+                top_right_path=panel_paths[1],
+                bottom_path=panel_paths[2],
+                output_path=tmp_path / "figure.png",
+            )
+
+            self.assertEqual(output_path, tmp_path / "figure.png")
+            self.assertTrue(output_path.exists())
+
     def test_vertical_panel_figure_requires_matching_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
