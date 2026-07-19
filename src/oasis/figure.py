@@ -202,6 +202,7 @@ def zero_shot_overview_figure(
             output_path=tmp_path / "panel_c.png",
             show_lone_mlip_swarm=show_lone_mlip_swarm,
             show_lone_mlip_legend=False,
+            stage_legend_loc="upper right",
             max_rmse=max_rmse,
         )
         return two_top_one_bottom_figure(

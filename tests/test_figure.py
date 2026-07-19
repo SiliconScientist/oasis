@@ -87,6 +87,7 @@ class FigureTests(unittest.TestCase):
             )
             self.assertTrue(mock_stage_plot.called)
             self.assertFalse(mock_stage_plot.call_args.kwargs["show_lone_mlip_legend"])
+            self.assertEqual(mock_stage_plot.call_args.kwargs["stage_legend_loc"], "upper right")
 
     def test_vertical_panel_figure_requires_matching_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

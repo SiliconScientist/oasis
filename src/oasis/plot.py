@@ -562,6 +562,7 @@ def zero_shot_rmse_stage_plot(
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_lone_mlip_swarm: bool = True,
     show_lone_mlip_legend: bool = True,
+    stage_legend_loc: str = "upper left",
     max_rmse: float | None = None,
     title: str | None = None,
 ) -> Path:
@@ -833,7 +834,7 @@ def zero_shot_rmse_stage_plot(
     stage_legend = ax.legend(
         handles=stage_handles,
         fontsize=_DEFAULT_LEGEND_FONTSIZE,
-        loc="upper left",
+        loc=stage_legend_loc,
     )
     if show_lone_mlip_swarm and show_lone_mlip_legend and not swarm_rows.empty:
         mlip_handles = [
