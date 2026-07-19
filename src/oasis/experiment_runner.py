@@ -200,6 +200,13 @@ class PolicyDiagnosticPersistenceContext:
     screening_rows_artifact_path: Path
 
 
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticPrimitiveCacheIO:
+    load_artifact: Callable[..., object]
+    artifact_frame: Callable[[object], pd.DataFrame]
+    artifact_cache_signature: Callable[[object], dict[str, object] | None]
+
+
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
@@ -992,31 +999,17 @@ def _write_policy_selection_diagnostic(
     current_enabled_methods = _policy_selection_enabled_method_names(
         persistence.diagnostic_cache_signature
     )
-    screening_rows_df = None
-    if persistence.metadata is not None and persistence.screening_rows_artifact_path.is_file():
-        try:
-            screening_rows_df = load_screening_diagnostic_rows_artifact(
-                persistence.screening_rows_artifact_path,
-                expected_metadata=persistence.metadata,
-                expected_cache_signature=persistence.screening_rows_cache_signature,
-            ).screening_rows_df
-        except ValueError:
-            screening_rows_df = None
-            try:
-                prior_screening_rows_artifact = load_screening_diagnostic_rows_artifact(
-                    persistence.screening_rows_artifact_path,
-                    expected_metadata=persistence.metadata,
-                )
-            except ValueError:
-                prior_screening_rows_artifact = None
-            if prior_screening_rows_artifact is not None and _policy_selection_cache_can_reuse_method_subset(
-                prior_screening_rows_artifact.cache_signature,
-                persistence.screening_rows_cache_signature,
-            ):
-                screening_rows_df = _filter_cached_policy_frame_to_methods(
-                    prior_screening_rows_artifact.screening_rows_df,
-                    allowed_methods=current_enabled_methods,
-                )
+    screening_rows_df = _load_policy_selection_primitive_frame(
+        cache_io=PolicyDiagnosticPrimitiveCacheIO(
+            load_artifact=load_screening_diagnostic_rows_artifact,
+            artifact_frame=lambda artifact: artifact.screening_rows_df,
+            artifact_cache_signature=lambda artifact: artifact.cache_signature,
+        ),
+        artifact_path=persistence.screening_rows_artifact_path,
+        metadata=persistence.metadata,
+        expected_cache_signature=persistence.screening_rows_cache_signature,
+        allowed_methods=current_enabled_methods,
+    )
     if persistence.metadata is not None and persistence.artifact_path.is_file():
         try:
             cached_artifact = load_policy_selection_diagnostic_artifact(
@@ -1029,21 +1022,18 @@ def _write_policy_selection_diagnostic(
         except ValueError:
             diagnostic_results = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
-            try:
-                prior_artifact = load_policy_selection_diagnostic_artifact(
-                    persistence.artifact_path,
-                    expected_metadata=persistence.metadata,
-                )
-            except ValueError:
-                prior_artifact = None
-            if prior_artifact is not None and _policy_selection_cache_can_reuse_method_subset(
-                prior_artifact.cache_signature,
-                persistence.diagnostic_cache_signature,
-            ):
-                cached_outer_repeat_metrics_df = _filter_cached_policy_frame_to_methods(
-                    prior_artifact.results.outer_metrics_df,
-                    allowed_methods=current_enabled_methods,
-                )
+            cached_outer_repeat_metrics_df = _load_policy_selection_primitive_frame(
+                cache_io=PolicyDiagnosticPrimitiveCacheIO(
+                    load_artifact=load_policy_selection_diagnostic_artifact,
+                    artifact_frame=lambda artifact: artifact.results.outer_metrics_df,
+                    artifact_cache_signature=lambda artifact: artifact.cache_signature,
+                ),
+                artifact_path=persistence.artifact_path,
+                metadata=persistence.metadata,
+                expected_cache_signature=persistence.diagnostic_cache_signature,
+                allowed_methods=current_enabled_methods,
+                allow_exact_match=False,
+            )
     if diagnostic_results is None:
         print("Policy diagnostic rebuild: computing fresh results")
         build_outputs = _build_policy_selection_diagnostic_results_for_cfg(
@@ -1201,6 +1191,45 @@ def _filter_cached_policy_frame_to_methods(
     if "method" not in frame.columns:
         return frame
     return frame.loc[frame["method"].astype(str).isin(allowed_methods)].reset_index(drop=True)
+
+
+def _load_policy_selection_primitive_frame(
+    *,
+    cache_io: PolicyDiagnosticPrimitiveCacheIO,
+    artifact_path: Path,
+    metadata: object | None,
+    expected_cache_signature: dict[str, object],
+    allowed_methods: set[str],
+    allow_exact_match: bool = True,
+) -> pd.DataFrame | None:
+    if metadata is None or not artifact_path.is_file():
+        return None
+    if allow_exact_match:
+        try:
+            artifact = cache_io.load_artifact(
+                artifact_path,
+                expected_metadata=metadata,
+                expected_cache_signature=expected_cache_signature,
+            )
+            return cache_io.artifact_frame(artifact)
+        except ValueError:
+            pass
+    try:
+        prior_artifact = cache_io.load_artifact(
+            artifact_path,
+            expected_metadata=metadata,
+        )
+    except ValueError:
+        return None
+    if not _policy_selection_cache_can_reuse_method_subset(
+        cache_io.artifact_cache_signature(prior_artifact),
+        expected_cache_signature,
+    ):
+        return None
+    return _filter_cached_policy_frame_to_methods(
+        cache_io.artifact_frame(prior_artifact),
+        allowed_methods=allowed_methods,
+    )
 
 
 def _policy_selection_diagnostic_persistence_context(
