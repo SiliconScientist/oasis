@@ -15,6 +15,7 @@ import matplotlib
 if "MPLBACKEND" not in os.environ:
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 import numpy as np
@@ -602,12 +603,18 @@ def zero_shot_rmse_stage_plot(
         )
     else:
         dataset_labels = dataset_order
-    x = np.arange(len(dataset_order))
+    x = np.arange(len(dataset_order), dtype=float) * 0.52
     width = 0.24
-    offsets = np.linspace(-width, width, num=len(stage_order))
+    offsets = np.array([-width / 2, width / 2, -width / 2], dtype=float)
     clipped_any = False
 
-    fig, ax = plt.subplots(figsize=(max(7, 2 + 2.2 * len(dataset_order)), 4.5))
+    fig, ax = plt.subplots(figsize=(max(4.4, 0.82 + 1.05 * len(dataset_order)), 4.8))
+    anomaly_stage_rows = (
+        bar_rows.loc[bar_rows["stage"] == "Matched subset / anomaly-aware selection"]
+        .set_index("dataset")
+        .reindex(dataset_order)
+    )
+    full_stage_offset = offsets[stage_order.index("Full / all MLIPs")]
     for offset, stage_name in zip(offsets, stage_order, strict=True):
         stage_rows = (
             bar_rows.loc[bar_rows["stage"] == stage_name]
@@ -621,21 +628,76 @@ def zero_shot_rmse_stage_plot(
         if max_rmse is not None:
             clipped_mask = plotted_rmse > max_rmse
             plotted_rmse = plotted_rmse.clip(upper=max_rmse)
-        bars = ax.bar(
-            x + offset,
-            plotted_rmse,
-            width,
-            label=stage_name,
-            color=stage_colors[stage_name],
-        )
-        for bar_index, (bar, n_samples) in enumerate(
-            zip(bars, stage_rows["n_samples"], strict=True)
+        if stage_name == "Matched subset / anomaly-aware selection":
+            valid_mask = plotted_rmse.notna().to_numpy()
+            line_x = x[valid_mask] + full_stage_offset
+            for x_center, y_value in zip(
+                line_x.tolist(),
+                plotted_rmse.loc[plotted_rmse.notna()].to_numpy().tolist(),
+                strict=True,
+            ):
+                ax.plot(
+                    [x_center - width * 0.46, x_center, x_center + width * 0.46],
+                    [y_value, y_value, y_value],
+                    color="black",
+                    linewidth=2.8,
+                    marker="D",
+                    markerfacecolor="black",
+                    markeredgecolor="black",
+                    markersize=5.5,
+                    markevery=[1],
+                    zorder=5,
+                )
+            plotted_artists: list[tuple[float, float]] = list(
+                zip(
+                    line_x.tolist(),
+                    plotted_rmse.loc[plotted_rmse.notna()].to_numpy().tolist(),
+                    strict=True,
+                )
+            )
+        else:
+            bars = ax.bar(
+                x + offset,
+                plotted_rmse,
+                width,
+                label=stage_name,
+                color=stage_colors[stage_name],
+                zorder=3,
+            )
+            plotted_artists = [
+                (bar.get_x() + bar.get_width() / 2, float(bar.get_height()))
+                for bar in bars
+            ]
+        for bar_index, ((x_center, height), n_samples) in enumerate(
+            zip(plotted_artists, stage_rows["n_samples"], strict=True)
         ):
-            if pd.isna(n_samples) or pd.isna(bar.get_height()):
+            if stage_name == "Matched subset / anomaly-aware selection":
+                if bool(clipped_mask.iloc[bar_index]):
+                    clipped_any = True
+                    ax.text(
+                        x_center,
+                        max_rmse,
+                        "↑",
+                        ha="center",
+                        va="bottom",
+                        fontsize=_DEFAULT_TICK_FONTSIZE + 4,
+                        color="black",
+                        clip_on=False,
+                        zorder=7,
+                    )
                 continue
+            if pd.isna(n_samples) or pd.isna(height):
+                continue
+            label_y = max(height * 0.03, 0.02)
+            if stage_name == "Matched subset / all MLIPs":
+                anomaly_value = anomaly_stage_rows["rmse"].iloc[bar_index]
+                if not pd.isna(anomaly_value):
+                    label_y = float(anomaly_value)
+                    if max_rmse is not None:
+                        label_y = min(label_y, max_rmse)
             ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                max(bar.get_height() * 0.03, 0.02),
+                x_center,
+                label_y,
                 f"n={int(n_samples)}",
                 ha="center",
                 va="bottom",
@@ -652,7 +714,7 @@ def zero_shot_rmse_stage_plot(
             if bool(clipped_mask.iloc[bar_index]):
                 clipped_any = True
                 ax.text(
-                    bar.get_x() + bar.get_width() / 2,
+                    x_center,
                     max_rmse,
                     "↑",
                     ha="center",
@@ -725,13 +787,52 @@ def zero_shot_rmse_stage_plot(
                     )
 
     ax.set_xticks(x, dataset_labels)
+    ax.margins(x=0.015)
     ax.set_ylabel("Zero-shot RMSE (eV)", fontsize=fontsize)
     if max_rmse is not None:
         ax.set_ylim(top=max_rmse)
     ax.tick_params(axis="x", labelsize=fontsize)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    tick_label_offset = mtransforms.ScaledTranslation(4 / 72, 0, fig.dpi_scale_trans)
+    for label in ax.get_xticklabels():
+        label.set_transform(label.get_transform() + tick_label_offset)
     ax.tick_params(axis="y", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, axis="y", linestyle="--", alpha=0.3)
-    stage_legend = ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE, loc="upper left")
+    stage_handles = [
+        Line2D(
+            [],
+            [],
+            color=stage_colors["Full / all MLIPs"],
+            linewidth=8,
+            solid_capstyle="butt",
+            label="Full / all MLIPs",
+        ),
+        Line2D(
+            [],
+            [],
+            color=stage_colors["Matched subset / all MLIPs"],
+            linewidth=8,
+            solid_capstyle="butt",
+            label="Matched subset / all MLIPs",
+        ),
+        Line2D(
+            [],
+            [],
+            color="black",
+            linewidth=2.8,
+            marker="D",
+            markerfacecolor="black",
+            markeredgecolor="black",
+            markersize=6,
+            solid_capstyle="butt",
+            label="Matched subset / anomaly-aware selection",
+        ),
+    ]
+    stage_legend = ax.legend(
+        handles=stage_handles,
+        fontsize=_DEFAULT_LEGEND_FONTSIZE,
+        loc="upper left",
+    )
     if show_lone_mlip_swarm and not swarm_rows.empty:
         mlip_handles = [
             Line2D(

@@ -742,7 +742,7 @@ class PlotTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertIsNone(ax.get_legend())
 
-    def test_zero_shot_rmse_stage_plot_renders_three_stage_bars(self) -> None:
+    def test_zero_shot_rmse_stage_plot_renders_two_bars_and_one_line(self) -> None:
         stage_df = pd.DataFrame(
             {
                 "dataset": ["mamun_oh", "mamun_oh", "mamun_oh"],
@@ -770,7 +770,9 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
             self.assertEqual(ax.get_ylabel(), "Zero-shot RMSE (eV)")
-            self.assertEqual(len(ax.patches), 3)
+            self.assertEqual(len(ax.patches), 2)
+            self.assertEqual(len(ax.collections), 0)
+            self.assertEqual(len(ax.lines), 1)
             self.assertEqual([tick.get_text() for tick in ax.get_xticklabels()], ["OH-BMA"])
             self.assertEqual(ax.get_xticklabels()[0].get_fontsize(), 16)
 
@@ -803,17 +805,26 @@ class PlotTests(unittest.TestCase):
                 ]
 
             self.assertTrue(output_path.exists())
-            self.assertEqual(len(ax.patches), 3)
+            self.assertEqual(len(ax.patches), 2)
             self.assertEqual(len(ax.collections), 2)
+            self.assertEqual(len(ax.lines), 1)
+            scatter_collections = [
+                collection
+                for collection in ax.collections
+                if collection.__class__.__name__ == "PathCollection"
+            ]
             self.assertEqual(
-                sum(len(collection.get_offsets()) for collection in ax.collections),
+                sum(
+                    len(collection.get_offsets())
+                    for collection in scatter_collections
+                ),
                 2,
             )
             self.assertEqual(
                 len(
                     {
                         tuple(round(float(channel), 6) for channel in collection.get_facecolors()[0])
-                        for collection in ax.collections
+                        for collection in scatter_collections
                     }
                 ),
                 2,
@@ -854,8 +865,9 @@ class PlotTests(unittest.TestCase):
                 ax = fig.axes[0]
 
             self.assertTrue(output_path.exists())
-            self.assertEqual(len(ax.patches), 3)
+            self.assertEqual(len(ax.patches), 2)
             self.assertEqual(len(ax.collections), 0)
+            self.assertEqual(len(ax.lines), 1)
 
     def test_zero_shot_rmse_stage_plot_renders_multiple_datasets(self) -> None:
         stage_df = pd.DataFrame(
@@ -900,7 +912,9 @@ class PlotTests(unittest.TestCase):
                 ]
 
             self.assertTrue(output_path.exists())
-            self.assertEqual(len(ax.patches), 6)
+            self.assertEqual(len(ax.patches), 4)
+            self.assertEqual(len(ax.collections), 0)
+            self.assertEqual(len(ax.lines), 2)
             self.assertEqual(
                 [tick.get_text() for tick in ax.get_xticklabels()],
                 ["OH-BMA", "KHLOHC-TOL"],
@@ -955,6 +969,31 @@ class PlotTests(unittest.TestCase):
                 max(float(offset[1]) for collection in ax.collections for offset in collection.get_offsets()),
                 3.0,
             )
+
+    def test_zero_shot_rmse_stage_plot_places_matched_subset_label_at_anomaly_height(self) -> None:
+        stage_df = pd.DataFrame(
+            {
+                "dataset": ["mamun_oh", "mamun_oh", "mamun_oh"],
+                "dataset_label": ["OH-BMA", "OH-BMA", "OH-BMA"],
+                "stage": [
+                    "Full / all MLIPs",
+                    "Matched subset / all MLIPs",
+                    "Matched subset / anomaly-aware selection",
+                ],
+                "rmse": [0.9, 0.8, 0.6],
+                "n_samples": [1235, 1094, 1094],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "zero_shot_stage_label_height.png"
+            with patch("oasis.plot.plt.close"):
+                zero_shot_rmse_stage_plot(stage_df, output_path=output_path)
+                fig = zero_shot_rmse_stage_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            orange_label = next(text for text in ax.texts if text.get_text() == "n=1094")
+            self.assertAlmostEqual(orange_label.get_position()[1], 0.6)
 
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(
