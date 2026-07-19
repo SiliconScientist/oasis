@@ -615,10 +615,12 @@ def _load_zero_shot_stage_rows_for_dataset(
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     profile_paths = derive_dataset_profile_paths(dataset_tag, named_profile)
     dataset_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
-    dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     base_dir = profile_paths.analysis_base_dir
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
-    artifact_path = _zero_shot_stage_artifact_path(dataset_cfg)
+    artifact_path = _append_output_suffix(
+        zero_shot_bundle_path(profile_paths.results_bundle_path.stem),
+        _plot_output_suffix(cfg),
+    )
     cache_signature = _zero_shot_stage_cache_signature(
         cfg,
         result_files=result_files,
@@ -2150,7 +2152,7 @@ def write_all_datasets_zero_shot_rmse_stage_plot(
             _load_zero_shot_stage_rows_for_dataset(
                 cfg,
                 dataset_tag=dataset_tag,
-                cache_only=True,
+                cache_only=False,
             )
         )
     if not stage_rows:
@@ -2193,7 +2195,7 @@ def write_zero_shot_overview_figure(
             _load_zero_shot_stage_rows_for_dataset(
                 cfg,
                 dataset_tag=dataset_tag,
-                cache_only=True,
+                cache_only=False,
             )
         )
     if not stage_rows:

@@ -4153,7 +4153,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "zero_shot_stage_all.png")
         self.assertEqual(mock_plot.call_args.kwargs["max_rmse"], 3.0)
 
-    def test_write_all_datasets_zero_shot_rmse_stage_plot_uses_cache_only_loads(
+    def test_write_all_datasets_zero_shot_rmse_stage_plot_rebuilds_dataset_rows_on_demand(
         self,
     ) -> None:
         cfg = SimpleNamespace(
@@ -4209,7 +4209,7 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(mock_load_rows.call_count, 2)
         self.assertTrue(
-            all(call.kwargs["cache_only"] for call in mock_load_rows.call_args_list)
+            all(not call.kwargs["cache_only"] for call in mock_load_rows.call_args_list)
         )
 
     def test_load_zero_shot_stage_rows_for_dataset_skips_cache_miss_when_cache_only(
@@ -4233,11 +4233,11 @@ class ExperimentRunnerTests(unittest.TestCase):
             result_file = tmp_path / "mlip.json"
             result_file.write_text("{}")
             with patch(
-                "oasis.experiment_runner._zero_shot_stage_artifact_path",
-                return_value=tmp_path / "zero_shot_cache.json",
-            ), patch(
                 "oasis.experiment_runner.derive_dataset_profile_paths",
-                return_value=SimpleNamespace(analysis_base_dir=tmp_path),
+                return_value=SimpleNamespace(
+                    analysis_base_dir=tmp_path,
+                    results_bundle_path=tmp_path / "example.json",
+                ),
             ), patch(
                 "oasis.experiment_runner.load_wide_predictions",
                 side_effect=AssertionError("cache-only zero-shot load should not rebuild"),
@@ -4283,25 +4283,18 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_samples": 12,
                 }
             ]
-            expected_artifact_path = tmp_path / "khlohc_zero_shot.json"
-            expected_artifact_path.write_text("{}")
-            expected_signature = {"result_files": ["dummy"]}
-            dataset_cfg = SimpleNamespace(
-                dataset_profile=SimpleNamespace(tag="khlohc"),
-                datasets=cfg.datasets,
-                experiment=cfg.experiment,
+            expected_artifact_path = Path(
+                "data/results/zero_shot/khlohc_anomalyaware_on.json"
             )
+            expected_signature = {"result_files": ["dummy"]}
 
             with patch(
                 "oasis.experiment_runner.derive_dataset_profile_paths",
-                return_value=SimpleNamespace(analysis_base_dir=tmp_path),
+                return_value=SimpleNamespace(
+                    analysis_base_dir=tmp_path,
+                    results_bundle_path=tmp_path / "khlohc.json",
+                ),
             ), patch(
-                "oasis.experiment_runner._dataset_cfg_for_tag",
-                return_value=dataset_cfg,
-            ) as mock_dataset_cfg, patch(
-                "oasis.experiment_runner._zero_shot_stage_artifact_path",
-                return_value=expected_artifact_path,
-            ) as mock_artifact_path, patch(
                 "oasis.experiment_runner.find_result_files",
                 return_value=[result_file],
             ), patch(
@@ -4318,12 +4311,59 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(rows, expected_rows)
-        mock_dataset_cfg.assert_called_once_with(cfg, dataset_tag="khlohc")
-        mock_artifact_path.assert_called_once_with(dataset_cfg)
         mock_load_artifact.assert_called_once_with(
             expected_artifact_path,
             expected_cache_signature=expected_signature,
         )
+
+    def test_load_zero_shot_stage_rows_for_dataset_ignores_active_dataset_zero_shot_bundle(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="mamun_oh"),
+            datasets={"khlohc": SimpleNamespace()},
+            experiment=SimpleNamespace(
+                zero_shot=SimpleNamespace(
+                    results_bundle_path=Path("data/results/zero_shot/mamun_oh.json")
+                ),
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                ),
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result_file = tmp_path / "mlip_result.json"
+            result_file.write_text("{}")
+            with patch(
+                "oasis.experiment_runner.derive_dataset_profile_paths",
+                return_value=SimpleNamespace(
+                    analysis_base_dir=tmp_path,
+                    results_bundle_path=Path("data/results/learning_curve/khlohc.json"),
+                ),
+            ), patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[result_file],
+            ), patch(
+                "oasis.experiment_runner.Path.is_file",
+                return_value=True,
+            ), patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_artifact",
+                return_value=[],
+            ) as mock_load_artifact:
+                _load_zero_shot_stage_rows_for_dataset(
+                    cfg,
+                    dataset_tag="khlohc",
+                    cache_only=True,
+                )
+
+        resolved_artifact_path = mock_load_artifact.call_args.args[0]
+        self.assertIn("khlohc", resolved_artifact_path.name)
+        self.assertNotIn("mamun_oh", resolved_artifact_path.name)
 
     def test_zero_shot_stage_artifact_path_uses_zero_shot_bundle_root(self) -> None:
         cfg = SimpleNamespace(
