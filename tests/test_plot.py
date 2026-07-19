@@ -1001,7 +1001,7 @@ class PlotTests(unittest.TestCase):
                 3.0,
             )
 
-    def test_zero_shot_rmse_stage_plot_places_matched_subset_label_at_anomaly_height(self) -> None:
+    def test_zero_shot_rmse_stage_plot_places_matched_subset_label_at_bar_base(self) -> None:
         stage_df = pd.DataFrame(
             {
                 "dataset": ["mamun_oh", "mamun_oh", "mamun_oh"],
@@ -1024,7 +1024,7 @@ class PlotTests(unittest.TestCase):
                 ax = fig.axes[0]
 
             orange_label = next(text for text in ax.texts if text.get_text() == "n=1094")
-            self.assertAlmostEqual(orange_label.get_position()[1], 0.6)
+            self.assertAlmostEqual(orange_label.get_position()[1], 0.024)
 
     def test_learning_curve_plot_filters_to_requested_x_window(self) -> None:
         result_df = pd.DataFrame(

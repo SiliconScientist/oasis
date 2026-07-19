@@ -625,7 +625,7 @@ def zero_shot_rmse_stage_plot(
         .set_index("dataset")
         .reindex(dataset_order)
     )
-    full_stage_offset = offsets[stage_order.index("Full / all MLIPs")]
+    anomaly_overlay_offset = offsets[stage_order.index("Matched subset / all MLIPs")]
     for offset, stage_name in zip(offsets, stage_order, strict=True):
         stage_rows = (
             bar_rows.loc[bar_rows["stage"] == stage_name]
@@ -641,7 +641,7 @@ def zero_shot_rmse_stage_plot(
             plotted_rmse = plotted_rmse.clip(upper=max_rmse)
         if stage_name == "Matched subset / anomaly-aware selection":
             valid_mask = plotted_rmse.notna().to_numpy()
-            line_x = x[valid_mask] + full_stage_offset
+            line_x = x[valid_mask] + anomaly_overlay_offset
             for x_center, y_value in zip(
                 line_x.tolist(),
                 plotted_rmse.loc[plotted_rmse.notna()].to_numpy().tolist(),
@@ -700,19 +700,13 @@ def zero_shot_rmse_stage_plot(
             if pd.isna(n_samples) or pd.isna(height):
                 continue
             label_y = max(height * 0.03, 0.02)
-            if stage_name == "Matched subset / all MLIPs":
-                anomaly_value = anomaly_stage_rows["rmse"].iloc[bar_index]
-                if not pd.isna(anomaly_value):
-                    label_y = float(anomaly_value)
-                    if max_rmse is not None:
-                        label_y = min(label_y, max_rmse)
             ax.text(
                 x_center,
                 label_y,
                 f"n={int(n_samples)}",
                 ha="center",
-                va="center",
-                fontsize=_DEFAULT_TICK_FONTSIZE,
+                va="bottom",
+                fontsize=max(_DEFAULT_TICK_FONTSIZE - 1, 6),
                 zorder=6,
                 bbox={
                     "boxstyle": "round,pad=0.15",
