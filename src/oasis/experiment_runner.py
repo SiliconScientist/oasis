@@ -1035,6 +1035,7 @@ def _write_policy_selection_diagnostic(
         persistence.diagnostic_cache_signature
     )
     screening_rows_cache = _load_policy_selection_primitive_frame(
+        cache_label="Primitive screening rows",
         cache_io=PolicyDiagnosticPrimitiveCacheIO(
             load_artifact=load_screening_diagnostic_rows_artifact,
             artifact_frame=lambda artifact: artifact.screening_rows_df,
@@ -1051,6 +1052,7 @@ def _write_policy_selection_diagnostic(
         None if screening_rows_cache is None else screening_rows_cache.completeness
     )
     outer_metrics_cache = _load_policy_selection_primitive_frame(
+        cache_label="Primitive outer metrics",
         cache_io=PolicyDiagnosticPrimitiveCacheIO(
             load_artifact=load_outer_repeat_metrics_rows_artifact,
             artifact_frame=lambda artifact: artifact.outer_metrics_df,
@@ -1353,6 +1355,7 @@ def _filter_cached_policy_frame_to_methods(
 
 def _load_policy_selection_primitive_frame(
     *,
+    cache_label: str,
     cache_io: PolicyDiagnosticPrimitiveCacheIO,
     artifact_path: Path,
     metadata: object | None,
@@ -1361,6 +1364,7 @@ def _load_policy_selection_primitive_frame(
     allow_exact_match: bool = True,
 ) -> LoadedPolicyDiagnosticPrimitiveFrame | None:
     if metadata is None or not artifact_path.is_file():
+        print(f"{cache_label} cache miss: {artifact_path}")
         return None
     if allow_exact_match:
         try:
@@ -1369,6 +1373,7 @@ def _load_policy_selection_primitive_frame(
                 expected_metadata=metadata,
                 expected_cache_signature=expected_cache_signature,
             )
+            print(f"{cache_label} cache hit: {artifact_path}")
             return LoadedPolicyDiagnosticPrimitiveFrame(
                 frame=cache_io.artifact_frame(artifact),
                 cache_signature=cache_io.artifact_cache_signature(artifact),
@@ -1385,13 +1390,16 @@ def _load_policy_selection_primitive_frame(
             expected_metadata=metadata,
         )
     except ValueError:
+        print(f"{cache_label} cache miss: {artifact_path}")
         return None
     prior_cache_signature = cache_io.artifact_cache_signature(prior_artifact)
     if not _policy_selection_cache_has_compatible_method_base(
         prior_cache_signature,
         expected_cache_signature,
     ):
+        print(f"{cache_label} cache miss: {artifact_path}")
         return None
+    print(f"{cache_label} cache hit: {artifact_path} (filtered)")
     return LoadedPolicyDiagnosticPrimitiveFrame(
         frame=_filter_cached_policy_frame_to_methods(
             cache_io.artifact_frame(prior_artifact),
