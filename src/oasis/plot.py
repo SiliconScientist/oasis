@@ -100,6 +100,13 @@ def _mlip_display_name(mlip: str) -> str:
     return _MLIP_DISPLAY_NAMES.get(mlip, mlip)
 
 
+def _mlip_marker_map(mlips: list[str] | tuple[str, ...]) -> dict[str, str]:
+    return {
+        mlip: _MLIP_SWARM_MARKERS[index % len(_MLIP_SWARM_MARKERS)]
+        for index, mlip in enumerate(sorted(dict.fromkeys(mlips)))
+    }
+
+
 def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
     if frame is None or frame.empty:
         return frame
@@ -481,6 +488,7 @@ def parity_plot(
     title: str | None = None,
     validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
     show_legend: bool = True,
+    legend_fontsize: int = _DEFAULT_LEGEND_FONTSIZE,
 ) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
@@ -491,9 +499,10 @@ def parity_plot(
     ref = plot_data.reference
 
     fig, ax = plt.subplots(figsize=(7, 7))
-    cmap = plt.cm.get_cmap("tab10", len(plot_data.predictions))
+    cmap = matplotlib.colormaps.get_cmap("tab10").resampled(len(plot_data.predictions))
     plotted_ref_values: list[np.ndarray] = []
     plotted_prediction_values: list[np.ndarray] = []
+    parity_markers = _mlip_marker_map(list(plot_data.predictions))
 
     for idx, (label, preds) in enumerate(plot_data.predictions.items()):
         mask = None
@@ -516,6 +525,7 @@ def parity_plot(
             color=cmap(idx),
             edgecolor="black",
             linewidth=0.5,
+            marker=parity_markers[label],
         )
         plotted_ref_values.append(np.asarray(ref_values, dtype=float))
         plotted_prediction_values.append(np.asarray(pred_values, dtype=float))
@@ -533,7 +543,7 @@ def parity_plot(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
     if show_legend:
-        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+        ax.legend(fontsize=legend_fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
     plt.tight_layout()
 
@@ -551,6 +561,7 @@ def zero_shot_rmse_stage_plot(
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_lone_mlip_swarm: bool = True,
+    show_lone_mlip_legend: bool = True,
     max_rmse: float | None = None,
     title: str | None = None,
 ) -> Path:
@@ -729,10 +740,7 @@ def zero_shot_rmse_stage_plot(
         swarm_stage = "Full / all MLIPs"
         swarm_offset = offsets[stage_order.index(swarm_stage)]
         swarm_mlips = sorted(swarm_rows["mlip"].dropna().unique().tolist())
-        swarm_markers = {
-            mlip: _MLIP_SWARM_MARKERS[index % len(_MLIP_SWARM_MARKERS)]
-            for index, mlip in enumerate(swarm_mlips)
-        }
+        swarm_markers = _mlip_marker_map(swarm_mlips)
         swarm_colors = {
             mlip: _MLIP_SWARM_COLORS[index % len(_MLIP_SWARM_COLORS)]
             for index, mlip in enumerate(swarm_mlips)
@@ -833,7 +841,7 @@ def zero_shot_rmse_stage_plot(
         fontsize=_DEFAULT_LEGEND_FONTSIZE,
         loc="upper left",
     )
-    if show_lone_mlip_swarm and not swarm_rows.empty:
+    if show_lone_mlip_swarm and show_lone_mlip_legend and not swarm_rows.empty:
         mlip_handles = [
             Line2D(
                 [],

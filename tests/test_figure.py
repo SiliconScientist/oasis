@@ -81,10 +81,12 @@ class FigureTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertFalse(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
             self.assertTrue(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_fontsize"], 14)
             self.assertIsNone(
                 mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"]
             )
             self.assertTrue(mock_stage_plot.called)
+            self.assertFalse(mock_stage_plot.call_args.kwargs["show_lone_mlip_legend"])
 
     def test_vertical_panel_figure_requires_matching_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

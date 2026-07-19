@@ -195,11 +195,13 @@ def zero_shot_overview_figure(
             output_path=tmp_path / "panel_b.png",
             validity_mask_by_prediction=anomaly_aware_validity_mask_by_prediction,
             show_legend=True,
+            legend_fontsize=14,
         )
         bottom_path = zero_shot_rmse_stage_plot(
             all_datasets_stage_df,
             output_path=tmp_path / "panel_c.png",
             show_lone_mlip_swarm=show_lone_mlip_swarm,
+            show_lone_mlip_legend=False,
             max_rmse=max_rmse,
         )
         return two_top_one_bottom_figure(

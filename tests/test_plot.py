@@ -742,6 +742,37 @@ class PlotTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertIsNone(ax.get_legend())
 
+    def test_parity_plot_uses_same_mlip_markers_as_zero_shot_plot(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "parity_markers.png"
+            with patch("oasis.plot.plt.close"):
+                parity_plot(
+                    df,
+                    output_path=output_path,
+                    show_legend=False,
+                )
+                fig = parity_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertTrue(output_path.exists())
+            marker_vertices = [
+                collection.get_paths()[0].vertices.shape[0]
+                for collection in ax.collections
+            ]
+            self.assertEqual(sorted(marker_vertices), [5, 26])
+            self.assertNotEqual(
+                ax.collections[0].get_paths()[0].vertices.tolist(),
+                ax.collections[1].get_paths()[0].vertices.tolist(),
+            )
+
     def test_zero_shot_rmse_stage_plot_renders_two_bars_and_one_line(self) -> None:
         stage_df = pd.DataFrame(
             {
