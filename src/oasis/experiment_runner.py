@@ -216,6 +216,12 @@ class PolicyDiagnosticPrimitiveCacheIO:
     artifact_cache_signature: Callable[[object], dict[str, object] | None]
 
 
+@dataclass(frozen=True, slots=True)
+class LoadedPolicyDiagnosticPrimitiveFrame:
+    frame: pd.DataFrame
+    cache_signature: dict[str, object] | None
+
+
 def configured_budget_span_variants(cfg: object) -> tuple[BudgetSpanVariant, ...]:
     learning_curve_cfg = getattr(getattr(cfg, "experiment", None), "learning_curve", None)
     if learning_curve_cfg is None:
@@ -1008,7 +1014,7 @@ def _write_policy_selection_diagnostic(
     current_enabled_methods = _policy_selection_enabled_method_names(
         persistence.diagnostic_cache_signature
     )
-    screening_rows_df = _load_policy_selection_primitive_frame(
+    screening_rows_cache = _load_policy_selection_primitive_frame(
         cache_io=PolicyDiagnosticPrimitiveCacheIO(
             load_artifact=load_screening_diagnostic_rows_artifact,
             artifact_frame=lambda artifact: artifact.screening_rows_df,
@@ -1019,7 +1025,8 @@ def _write_policy_selection_diagnostic(
         expected_cache_signature=persistence.screening_rows_cache_signature,
         allowed_methods=current_enabled_methods,
     )
-    cached_outer_repeat_metrics_df = _load_policy_selection_primitive_frame(
+    screening_rows_df = None if screening_rows_cache is None else screening_rows_cache.frame
+    outer_metrics_cache = _load_policy_selection_primitive_frame(
         cache_io=PolicyDiagnosticPrimitiveCacheIO(
             load_artifact=load_outer_repeat_metrics_rows_artifact,
             artifact_frame=lambda artifact: artifact.outer_metrics_df,
@@ -1029,6 +1036,9 @@ def _write_policy_selection_diagnostic(
         metadata=persistence.metadata,
         expected_cache_signature=persistence.outer_metrics_cache_signature,
         allowed_methods=current_enabled_methods,
+    )
+    cached_outer_repeat_metrics_df = (
+        None if outer_metrics_cache is None else outer_metrics_cache.frame
     )
     outer_metrics_checkpoint = None
     if persistence.metadata is not None:
@@ -1069,7 +1079,26 @@ def _write_policy_selection_diagnostic(
             diagnostic_results = None
             print(f"Policy diagnostic artifact cache miss: {persistence.artifact_path}")
     if diagnostic_results is None:
-        if cached_outer_repeat_metrics_df is not None and screening_rows_df is not None:
+        outer_cache_complete = (
+            outer_metrics_cache is not None
+            and _policy_selection_cache_covers_enabled_methods(
+                outer_metrics_cache.cache_signature,
+                persistence.outer_metrics_cache_signature,
+            )
+        )
+        screening_cache_complete = (
+            screening_rows_cache is not None
+            and _policy_selection_cache_covers_enabled_methods(
+                screening_rows_cache.cache_signature,
+                persistence.screening_rows_cache_signature,
+            )
+        )
+        if (
+            cached_outer_repeat_metrics_df is not None
+            and screening_rows_df is not None
+            and outer_cache_complete
+            and screening_cache_complete
+        ):
             diagnostic_results = build_policy_selection_diagnostic_results_from_primitive_rows(
                 outer_metrics_df=cached_outer_repeat_metrics_df,
                 screening_rows_df=screening_rows_df,
@@ -1232,7 +1261,7 @@ def _policy_selection_enabled_method_names(
     return {str(value) for value in raw_names}
 
 
-def _policy_selection_cache_can_reuse_method_subset(
+def _policy_selection_cache_has_compatible_method_base(
     prior_cache_signature: dict[str, object] | None,
     current_cache_signature: dict[str, object] | None,
 ) -> bool:
@@ -1243,6 +1272,18 @@ def _policy_selection_cache_can_reuse_method_subset(
         current_cache_signature
     )
     if prior_signature != current_signature:
+        return False
+    return True
+
+
+def _policy_selection_cache_covers_enabled_methods(
+    prior_cache_signature: dict[str, object] | None,
+    current_cache_signature: dict[str, object] | None,
+) -> bool:
+    if not _policy_selection_cache_has_compatible_method_base(
+        prior_cache_signature,
+        current_cache_signature,
+    ):
         return False
     prior_methods = _policy_selection_enabled_method_names(prior_cache_signature)
     current_methods = _policy_selection_enabled_method_names(current_cache_signature)
@@ -1273,7 +1314,7 @@ def _load_policy_selection_primitive_frame(
     expected_cache_signature: dict[str, object],
     allowed_methods: set[str],
     allow_exact_match: bool = True,
-) -> pd.DataFrame | None:
+) -> LoadedPolicyDiagnosticPrimitiveFrame | None:
     if metadata is None or not artifact_path.is_file():
         return None
     if allow_exact_match:
@@ -1283,7 +1324,10 @@ def _load_policy_selection_primitive_frame(
                 expected_metadata=metadata,
                 expected_cache_signature=expected_cache_signature,
             )
-            return cache_io.artifact_frame(artifact)
+            return LoadedPolicyDiagnosticPrimitiveFrame(
+                frame=cache_io.artifact_frame(artifact),
+                cache_signature=cache_io.artifact_cache_signature(artifact),
+            )
         except ValueError:
             pass
     try:
@@ -1293,14 +1337,18 @@ def _load_policy_selection_primitive_frame(
         )
     except ValueError:
         return None
-    if not _policy_selection_cache_can_reuse_method_subset(
-        cache_io.artifact_cache_signature(prior_artifact),
+    prior_cache_signature = cache_io.artifact_cache_signature(prior_artifact)
+    if not _policy_selection_cache_has_compatible_method_base(
+        prior_cache_signature,
         expected_cache_signature,
     ):
         return None
-    return _filter_cached_policy_frame_to_methods(
-        cache_io.artifact_frame(prior_artifact),
-        allowed_methods=allowed_methods,
+    return LoadedPolicyDiagnosticPrimitiveFrame(
+        frame=_filter_cached_policy_frame_to_methods(
+            cache_io.artifact_frame(prior_artifact),
+            allowed_methods=allowed_methods,
+        ),
+        cache_signature=prior_cache_signature,
     )
 
 
