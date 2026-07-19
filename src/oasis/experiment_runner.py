@@ -133,6 +133,12 @@ class BudgetSpanVariant:
 class PolicyDiagnosticBuildOutputs:
     results: PolicySelectionDiagnosticResults
     screening_rows_df: pd.DataFrame
+    screening_rows_completeness: PrimitiveRowCompleteness = PrimitiveRowCompleteness(
+        (),
+        (),
+        (),
+        (),
+    )
 
 
 def _validate_policy_selection_diagnostic_outputs(
@@ -1016,6 +1022,7 @@ def _write_policy_selection_diagnostic(
     )
     diagnostic_results = None
     cached_outer_repeat_metrics_df = None
+    screening_rows_completeness = None
     current_enabled_methods = _policy_selection_enabled_method_names(
         persistence.diagnostic_cache_signature
     )
@@ -1032,6 +1039,9 @@ def _write_policy_selection_diagnostic(
         allowed_methods=current_enabled_methods,
     )
     screening_rows_df = None if screening_rows_cache is None else screening_rows_cache.frame
+    screening_rows_completeness = (
+        None if screening_rows_cache is None else screening_rows_cache.completeness
+    )
     outer_metrics_cache = _load_policy_selection_primitive_frame(
         cache_io=PolicyDiagnosticPrimitiveCacheIO(
             load_artifact=load_outer_repeat_metrics_rows_artifact,
@@ -1062,12 +1072,16 @@ def _write_policy_selection_diagnostic(
         outer_metrics_checkpoint = _persist_outer_metrics_checkpoint
     screening_rows_checkpoint = None
     if persistence.metadata is not None:
-        def _persist_screening_rows_checkpoint(screening_rows_frame: pd.DataFrame) -> None:
+        def _persist_screening_rows_checkpoint(
+            screening_rows_frame: pd.DataFrame,
+            screening_rows_completeness_value: PrimitiveRowCompleteness,
+        ) -> None:
             save_screening_diagnostic_rows_artifact(
                 ScreeningDiagnosticRowsArtifact(
                     metadata=persistence.metadata,
                     screening_rows_df=screening_rows_frame,
                     cache_signature=persistence.screening_rows_cache_signature,
+                    completeness=screening_rows_completeness_value,
                 ),
                 persistence.screening_rows_checkpoint_path,
             )
@@ -1123,6 +1137,7 @@ def _write_policy_selection_diagnostic(
                 wide_df=wide_df,
                 diagnostic_results=diagnostic_results,
                 screening_rows_df=screening_rows_df,
+                screening_rows_completeness=screening_rows_completeness,
                 metadata=persistence.metadata,
                 diagnostic_cache_signature=persistence.diagnostic_cache_signature,
                 outer_metrics_cache_signature=persistence.outer_metrics_cache_signature,
@@ -1144,6 +1159,7 @@ def _write_policy_selection_diagnostic(
             auxiliary_views=auxiliary_views,
             cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
             cached_screening_rows_df=screening_rows_df,
+            cached_screening_rows_completeness=screening_rows_completeness,
             outer_metrics_checkpoint=outer_metrics_checkpoint,
             screening_rows_checkpoint=screening_rows_checkpoint,
         )
@@ -1151,6 +1167,7 @@ def _write_policy_selection_diagnostic(
             return None
         diagnostic_results = build_outputs.results
         screening_rows_df = build_outputs.screening_rows_df
+        screening_rows_completeness = build_outputs.screening_rows_completeness
     if diagnostic_results is None:
         return None
     return _write_policy_selection_diagnostic_outputs(
@@ -1158,6 +1175,7 @@ def _write_policy_selection_diagnostic(
         wide_df=wide_df,
         diagnostic_results=diagnostic_results,
         screening_rows_df=screening_rows_df,
+        screening_rows_completeness=screening_rows_completeness,
         metadata=persistence.metadata,
         diagnostic_cache_signature=persistence.diagnostic_cache_signature,
         outer_metrics_cache_signature=persistence.outer_metrics_cache_signature,
@@ -1446,8 +1464,9 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     auxiliary_views: dict[str, object] | None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    cached_screening_rows_completeness: PrimitiveRowCompleteness | None = None,
     outer_metrics_checkpoint: Callable[[pd.DataFrame], None] | None = None,
-    screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
+    screening_rows_checkpoint: Callable[[pd.DataFrame, PrimitiveRowCompleteness], None] | None = None,
 ) -> PolicyDiagnosticBuildOutputs | None:
     experiment_cfg = getattr(cfg, "experiment", None)
     learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
@@ -1521,7 +1540,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
                     ).repeat_metrics_df
                 except ValueError:
                     resolved_cached_outer_repeat_metrics_df = None
-    detail_df, outer_metrics_df, screening_rows_df = _build_policy_selection_frames(
+    detail_df, outer_metrics_df, screening_rows_df, screening_rows_completeness = _build_policy_selection_frames(
         dataset,
         min_train=diagnostic_min_train,
         max_train=diagnostic_max_train,
@@ -1549,6 +1568,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=resolved_cached_outer_repeat_metrics_df,
         cached_screening_rows_df=cached_screening_rows_df,
+        cached_screening_rows_completeness=cached_screening_rows_completeness,
         outer_metrics_checkpoint=outer_metrics_checkpoint,
         screening_rows_checkpoint=screening_rows_checkpoint,
         policy_names=getattr(screening_cfg, "policy_names", ["min_screening_rmse"]),
@@ -1571,6 +1591,7 @@ def _build_policy_selection_diagnostic_results_for_cfg(
     return PolicyDiagnosticBuildOutputs(
         results=diagnostic_results,
         screening_rows_df=screening_rows_df,
+        screening_rows_completeness=screening_rows_completeness,
     )
 
 
@@ -1580,6 +1601,7 @@ def _write_policy_selection_diagnostic_outputs(
     wide_df: object,
     diagnostic_results: PolicySelectionDiagnosticResults,
     screening_rows_df: pd.DataFrame | None,
+    screening_rows_completeness: PrimitiveRowCompleteness | None,
     metadata: object | None,
     diagnostic_cache_signature: dict[str, object],
     outer_metrics_cache_signature: dict[str, object],
@@ -1625,6 +1647,7 @@ def _write_policy_selection_diagnostic_outputs(
                     metadata=metadata,
                     screening_rows_df=screening_rows_df,
                     cache_signature=screening_rows_cache_signature,
+                    completeness=screening_rows_completeness,
                 ),
                 screening_rows_artifact_path,
             )

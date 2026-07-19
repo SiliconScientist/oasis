@@ -125,6 +125,12 @@ class ScreeningDiagnosticMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class ScreeningDiagnosticOutcome:
+    metrics: ScreeningDiagnosticMetrics | None = None
+    infeasible: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class OuterRepeatMetricsRowsArtifact:
     metadata: LearningCurveSweepMetadata
     outer_metrics_df: pd.DataFrame
@@ -166,6 +172,7 @@ class PrimitiveRowCompleteness:
     budgets: tuple[int, ...]
     repeats: tuple[int, ...]
     point_keys: tuple[str, ...]
+    infeasible_point_keys: tuple[str, ...] = ()
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -173,10 +180,12 @@ class PrimitiveRowCompleteness:
             "budgets": list(self.budgets),
             "repeats": list(self.repeats),
             "point_keys": list(self.point_keys),
+            "infeasible_point_keys": list(self.infeasible_point_keys),
         }
 
     def covers(self, expected_point_keys: Collection[str]) -> bool:
-        return set(expected_point_keys).issubset(set(self.point_keys))
+        covered = set(self.point_keys) | set(self.infeasible_point_keys)
+        return set(expected_point_keys).issubset(covered)
 
 
 def primitive_row_point_key(*, method: str, budget: int, repeat: int) -> str:
@@ -214,6 +223,21 @@ def primitive_row_completeness_from_frame(frame: pd.DataFrame) -> PrimitiveRowCo
     )
 
 
+def screening_row_completeness_from_frame(
+    frame: pd.DataFrame,
+    *,
+    infeasible_point_keys: Collection[str] = (),
+) -> PrimitiveRowCompleteness:
+    base = primitive_row_completeness_from_frame(frame)
+    return PrimitiveRowCompleteness(
+        methods=base.methods,
+        budgets=base.budgets,
+        repeats=base.repeats,
+        point_keys=base.point_keys,
+        infeasible_point_keys=tuple(sorted(str(value) for value in infeasible_point_keys)),
+    )
+
+
 def load_primitive_row_completeness_mapping(payload: object) -> PrimitiveRowCompleteness:
     if not isinstance(payload, dict):
         raise TypeError("primitive row completeness must be a mapping.")
@@ -230,11 +254,16 @@ def load_primitive_row_completeness_mapping(payload: object) -> PrimitiveRowComp
             raise TypeError(f"primitive row completeness {field_name} must be a list.")
         return tuple(int(value) for value in raw_values)
 
+    raw_infeasible_point_keys = payload.get("infeasible_point_keys", [])
+    if not isinstance(raw_infeasible_point_keys, list):
+        raise TypeError("primitive row completeness infeasible_point_keys must be a list.")
+
     return PrimitiveRowCompleteness(
         methods=_load_str_tuple("methods"),
         budgets=_load_int_tuple("budgets"),
         repeats=_load_int_tuple("repeats"),
         point_keys=_load_str_tuple("point_keys"),
+        infeasible_point_keys=tuple(str(value) for value in raw_infeasible_point_keys),
     )
 
 
@@ -458,7 +487,7 @@ def build_policy_selection_diagnostic_results(
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> PolicySelectionDiagnosticResults:
-    detail_df, outer_metrics_df, screening_rows_df = _build_policy_selection_frames(
+    detail_df, outer_metrics_df, screening_rows_df, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -946,10 +975,11 @@ def build_policy_selection_detail_frame(
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    cached_screening_rows_completeness: PrimitiveRowCompleteness | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
 ) -> pd.DataFrame:
-    detail_df, _, _ = _build_policy_selection_frames(
+    detail_df, _, _, _ = _build_policy_selection_frames(
         dataset,
         min_train=min_train,
         max_train=max_train,
@@ -977,6 +1007,7 @@ def build_policy_selection_detail_frame(
         requested_sweep_sizes=requested_sweep_sizes,
         cached_outer_repeat_metrics_df=cached_outer_repeat_metrics_df,
         cached_screening_rows_df=cached_screening_rows_df,
+        cached_screening_rows_completeness=cached_screening_rows_completeness,
         policy_names=policy_names,
         combined_miscalibration_lambda=combined_miscalibration_lambda,
     )
@@ -1012,11 +1043,12 @@ def _build_policy_selection_frames(
     requested_sweep_sizes: Collection[int] | None = None,
     cached_outer_repeat_metrics_df: pd.DataFrame | None = None,
     cached_screening_rows_df: pd.DataFrame | None = None,
+    cached_screening_rows_completeness: PrimitiveRowCompleteness | None = None,
     outer_metrics_checkpoint: Callable[[pd.DataFrame], None] | None = None,
-    screening_rows_checkpoint: Callable[[pd.DataFrame], None] | None = None,
+    screening_rows_checkpoint: Callable[[pd.DataFrame, PrimitiveRowCompleteness], None] | None = None,
     policy_names: Collection[str] = _DEFAULT_POLICY_NAMES,
     combined_miscalibration_lambda: float = 1.0,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, PrimitiveRowCompleteness]:
     shared_splits = generate_shared_outer_splits(
         dataset.n_samples,
         min_train=min_train,
@@ -1032,14 +1064,22 @@ def _build_policy_selection_frames(
             normalize_policy_detail_frame(pd.DataFrame(columns=_DETAIL_COLUMNS)),
             normalize_outer_metrics_frame(pd.DataFrame(columns=_OUTER_METRICS_COLUMNS)),
             normalize_screening_diagnostic_rows_frame(pd.DataFrame(columns=_SCREENING_ROWS_COLUMNS)),
+            PrimitiveRowCompleteness((), (), (), ()),
         )
 
     outer_rows: list[dict[str, Any]] = []
     screening_rows: list[dict[str, Any]] = []
+    infeasible_screening_point_keys = set()
+    if cached_screening_rows_completeness is not None:
+        infeasible_screening_point_keys.update(
+            cached_screening_rows_completeness.infeasible_point_keys
+        )
     reused_outer_metrics = 0
     recomputed_outer_metrics = 0
     reused_screening_rows = 0
     recomputed_screening_rows = 0
+    reused_infeasible_screening_points = 0
+    recorded_infeasible_screening_points = 0
     for family in model_families:
         method_name = _family_method_name(
             family,
@@ -1109,7 +1149,14 @@ def _build_policy_selection_frames(
                 method_name=method_name,
                 shared_split=split,
             )
+            screening_point_key = _screening_point_key(
+                method_name=method_name,
+                shared_split=split,
+            )
             if cached_screening_row is None:
+                if screening_point_key in infeasible_screening_point_keys:
+                    reused_infeasible_screening_points += 1
+                    continue
                 screening_result = _run_family_screening_diagnostic(
                     family,
                     dataset=dataset.subset(split.train_idx),
@@ -1127,14 +1174,19 @@ def _build_policy_selection_frames(
                 )
                 if screening_result is None:
                     continue
+                if screening_result.infeasible:
+                    infeasible_screening_point_keys.add(screening_point_key)
+                    recorded_infeasible_screening_points += 1
+                    continue
+                assert screening_result.metrics is not None
                 screening_rows.append(
                     {
                         "budget": split.budget,
                         "repeat": split.repeat,
                         "method": method_name,
                         "split_fingerprint": screening_split_fingerprint(split),
-                        "screening_cv_rmse": screening_result.cv_rmse,
-                        "screening_miscalibration_area": screening_result.miscalibration_area,
+                        "screening_cv_rmse": screening_result.metrics.cv_rmse,
+                        "screening_miscalibration_area": screening_result.metrics.miscalibration_area,
                     }
                 )
                 recomputed_screening_rows += 1
@@ -1147,15 +1199,31 @@ def _build_policy_selection_frames(
                     pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)
                 )
             )
-        if screening_rows_checkpoint is not None and len(screening_rows) > screening_rows_before_family:
-            screening_rows_checkpoint(
-                normalize_screening_diagnostic_rows_frame(
-                    pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
-                )
+        screening_completeness = screening_row_completeness_from_frame(
+            pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS),
+            infeasible_point_keys=infeasible_screening_point_keys,
+        )
+        if screening_rows_checkpoint is not None and (
+            len(screening_rows) > screening_rows_before_family
+            or len(infeasible_screening_point_keys) > 0
+        ):
+            checkpoint_frame = normalize_screening_diagnostic_rows_frame(
+                pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
             )
+            try:
+                screening_rows_checkpoint(
+                    checkpoint_frame,
+                    screening_completeness,
+                )
+            except TypeError:
+                screening_rows_checkpoint(checkpoint_frame)
 
     outer_frame = pd.DataFrame(outer_rows, columns=_OUTER_METRICS_COLUMNS)
     screening_frame = pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
+    screening_completeness = screening_row_completeness_from_frame(
+        screening_frame,
+        infeasible_point_keys=infeasible_screening_point_keys,
+    )
     detail_df = build_policy_selection_detail_from_primitive_rows(
         outer_metrics_df=outer_frame,
         screening_rows_df=screening_frame,
@@ -1169,12 +1237,16 @@ def _build_policy_selection_frames(
             recomputed_outer_metrics,
             reused_screening_rows,
             recomputed_screening_rows,
+            reused_infeasible_screening_points,
+            recorded_infeasible_screening_points,
         )
     ):
         print(
             "Policy diagnostic reuse:"
             f" outer reused={reused_outer_metrics}, outer recomputed={recomputed_outer_metrics},"
-            f" screening reused={reused_screening_rows}, screening recomputed={recomputed_screening_rows}"
+            f" screening reused={reused_screening_rows}, screening recomputed={recomputed_screening_rows},"
+            f" screening infeasible reused={reused_infeasible_screening_points},"
+            f" screening infeasible recorded={recorded_infeasible_screening_points}"
         )
     return (
         detail_df,
@@ -1182,6 +1254,7 @@ def _build_policy_selection_frames(
         normalize_screening_diagnostic_rows_frame(
             pd.DataFrame(screening_rows, columns=_SCREENING_ROWS_COLUMNS)
         ),
+        screening_completeness,
     )
 
 
@@ -1368,7 +1441,7 @@ def _run_family_screening_diagnostic(
     calibration_fraction: float,
     min_cal_size: int,
     min_inner_train_size: int,
-) -> ScreeningDiagnosticMetrics | None:
+) -> ScreeningDiagnosticOutcome | None:
     from oasis.experiment.core import (
         _annotate_screening_results,
         _build_family_split_collection,
@@ -1396,7 +1469,7 @@ def _run_family_screening_diagnostic(
         min_test_size=1,
     )
     if not split_collection.splits:
-        return None
+        return ScreeningDiagnosticOutcome(infeasible=True)
     results = family.run(
         SweepRunPayload(
             dataset=dataset,
@@ -1425,9 +1498,11 @@ def _run_family_screening_diagnostic(
         and "miscalibration_area" in uq_frame.columns
     ):
         miscalibration_area = float(uq_frame["miscalibration_area"].iloc[0])
-    return ScreeningDiagnosticMetrics(
-        cv_rmse=float(result_frame["cv_rmse_mean"].iloc[0]),
-        miscalibration_area=miscalibration_area,
+    return ScreeningDiagnosticOutcome(
+        metrics=ScreeningDiagnosticMetrics(
+            cv_rmse=float(result_frame["cv_rmse_mean"].iloc[0]),
+            miscalibration_area=miscalibration_area,
+        )
     )
 
 
@@ -1485,6 +1560,18 @@ def _cached_screening_row_for_method(
             else float(row["screening_miscalibration_area"])
         ),
     }
+
+
+def _screening_point_key(
+    *,
+    method_name: str,
+    shared_split: SharedOuterSplit,
+) -> str:
+    return primitive_row_point_key(
+        method=method_name,
+        budget=int(shared_split.budget),
+        repeat=int(shared_split.repeat),
+    )
 
 
 def screening_split_fingerprint(shared_split: SharedOuterSplit) -> str:

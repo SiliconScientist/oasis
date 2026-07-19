@@ -14,6 +14,7 @@ from oasis.experiment.policy_diagnostic import (
     OuterRepeatMetricsRowsArtifact,
     PolicySelectionDiagnosticArtifact,
     PolicySelectionDiagnosticResults,
+    PrimitiveRowCompleteness,
     ScreeningDiagnosticRowsArtifact,
     build_policy_selection_diagnostic_results,
     build_policy_selection_detail_frame,
@@ -405,6 +406,13 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
                 }
             ),
             cache_signature=self._cache_signature(),
+            completeness=PrimitiveRowCompleteness(
+                methods=("ridge", "weighted_linear"),
+                budgets=(4, 8),
+                repeats=(0, 1),
+                point_keys=("ridge|4|0", "weighted_linear|8|1"),
+                infeasible_point_keys=("moe|2|0",),
+            ),
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1412,6 +1420,100 @@ class PolicySelectionDiagnosticTests(unittest.TestCase):
 
         self.assertEqual(detail["screening_selected_method"].tolist(), ["ridge"])
         self.assertEqual(detail["screening_cv_rmse"].tolist(), [0.1])
+
+    def test_build_policy_selection_detail_frame_reuses_cached_infeasible_screening_points(
+        self,
+    ) -> None:
+        dataset = SweepDataset(
+            mlip_features=np.arange(8, dtype=float).reshape(-1, 1),
+            targets=np.linspace(0.0, 0.7, 8),
+            sample_ids=np.arange(8, dtype=int),
+        )
+
+        class StubFamily:
+            method_name = "ridge"
+
+            def requirements(self):
+                return SweepFamilyRequirements()
+
+            def run(self, payload):
+                del payload
+                raise AssertionError("infeasible screening points should not be rerun")
+
+            def run_with_artifacts(self, payload):
+                del payload
+                result_field = learning_curve_result_field_for_method_name(self.method_name)
+                assert result_field is not None
+                return SweepFamilyRunArtifacts(
+                    results=LearningCurveResults.from_mapping(
+                        {
+                            result_field: pd.DataFrame(
+                                {
+                                    "n_train": [4],
+                                    "rmse_mean": [0.2],
+                                    "rmse_std": [0.0],
+                                }
+                            )
+                        }
+                    ),
+                    repeat_metrics=pd.DataFrame(
+                        [{"n_train": 4, "repeat": 0, "outer_test_rmse": 0.2}]
+                    ),
+                )
+
+        detail = build_policy_selection_detail_frame(
+            dataset,
+            min_train=4,
+            max_train=4,
+            step=1,
+            n_repeats=1,
+            seed=19,
+            model_families=[StubFamily()],
+            outer_validation_fraction=0.25,
+            outer_min_val_size=1,
+            outer_min_tuning_val_size=1,
+            outer_calibration_enabled=False,
+            outer_calibration_fraction=0.2,
+            outer_min_cal_size=1,
+            outer_min_inner_train_size=1,
+            min_test_size=1,
+            screening_fraction=0.25,
+            min_screen_size=1,
+            screening_validation_fraction=0.25,
+            screening_min_val_size=1,
+            screening_min_tuning_val_size=1,
+            screening_calibration_enabled=False,
+            screening_calibration_fraction=0.2,
+            screening_min_cal_size=1,
+            screening_min_inner_train_size=1,
+            cached_outer_repeat_metrics_df=pd.DataFrame(
+                {
+                    "method": ["ridge"],
+                    "budget": [4],
+                    "repeat": [0],
+                    "outer_test_rmse": [0.2],
+                }
+            ),
+            cached_screening_rows_df=normalize_screening_diagnostic_rows_frame(
+                pd.DataFrame(columns=[
+                    "method",
+                    "budget",
+                    "repeat",
+                    "split_fingerprint",
+                    "screening_cv_rmse",
+                    "screening_miscalibration_area",
+                ])
+            ),
+            cached_screening_rows_completeness=PrimitiveRowCompleteness(
+                methods=(),
+                budgets=(),
+                repeats=(),
+                point_keys=(),
+                infeasible_point_keys=("ridge|4|0",),
+            ),
+        )
+
+        self.assertTrue(detail.empty)
 
     def test_policy_regret_uses_paired_outer_test_rmse_not_screening_metrics(self) -> None:
         detail = normalize_policy_detail_frame(
