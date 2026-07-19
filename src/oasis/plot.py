@@ -700,7 +700,7 @@ def zero_shot_rmse_stage_plot(
                 label_y,
                 f"n={int(n_samples)}",
                 ha="center",
-                va="bottom",
+                va="center",
                 fontsize=_DEFAULT_TICK_FONTSIZE,
                 zorder=6,
                 bbox={
