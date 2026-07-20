@@ -718,6 +718,10 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(ax.get_title(), "")
             point_counts = [len(collection.get_offsets()) for collection in ax.collections]
             self.assertEqual(point_counts, [2, 2])
+            metrics_text = next(
+                text.get_text() for text in ax.texts if text.get_text().startswith("RMSE = ")
+            )
+            self.assertEqual(metrics_text, "RMSE = 0.100 eV\n$R^2$ = 0.985")
 
     def test_parity_plot_can_hide_legend(self) -> None:
         df = pd.DataFrame(
@@ -741,6 +745,32 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(output_path.exists())
             self.assertIsNone(ax.get_legend())
+
+    def test_parity_plot_adds_rmse_and_r2_annotation(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [1.0, 2.0, 3.0],
+                "ridge_mlip_ads_eng_median": [1.1, 2.1, 3.1],
+                "lasso_mlip_ads_eng_median": [0.9, 1.9, 2.9],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "parity_metrics.png"
+            with patch("oasis.plot.plt.close"):
+                parity_plot(
+                    df,
+                    output_path=output_path,
+                    show_legend=False,
+                )
+                fig = parity_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertTrue(output_path.exists())
+            metrics_text = next(
+                text.get_text() for text in ax.texts if text.get_text().startswith("RMSE = ")
+            )
+            self.assertEqual(metrics_text, "RMSE = 0.100 eV\n$R^2$ = 0.985")
 
     def test_parity_plot_uses_same_mlip_markers_as_zero_shot_plot(self) -> None:
         df = pd.DataFrame(

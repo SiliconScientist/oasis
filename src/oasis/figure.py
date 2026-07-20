@@ -101,7 +101,7 @@ def two_top_one_bottom_figure(
     panel_label_positions: Sequence[tuple[float, float]] = (
         (0.02, 0.98),
         (0.02, 0.98),
-        (0.02, 0.98),
+        (0.02, 1.055),
     ),
     label_fontsize: int = 16,
 ) -> Path:
@@ -189,6 +189,8 @@ def zero_shot_overview_figure(
             all_mlips_df,
             output_path=tmp_path / "panel_a.png",
             show_legend=False,
+            metrics_position=(0.5, 0.91),
+            metrics_fontsize=18,
         )
         top_right_path = parity_plot(
             matched_subset_df,
@@ -196,6 +198,8 @@ def zero_shot_overview_figure(
             validity_mask_by_prediction=anomaly_aware_validity_mask_by_prediction,
             show_legend=True,
             legend_fontsize=14,
+            metrics_position=(0.5, 0.91),
+            metrics_fontsize=18,
         )
         bottom_path = zero_shot_rmse_stage_plot(
             all_datasets_stage_df,

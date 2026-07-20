@@ -489,6 +489,8 @@ def parity_plot(
     validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
     show_legend: bool = True,
     legend_fontsize: int = _DEFAULT_LEGEND_FONTSIZE,
+    metrics_position: tuple[float, float] = (0.03, 0.97),
+    metrics_fontsize: int = _DEFAULT_TICK_FONTSIZE + 1,
 ) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
@@ -534,9 +536,30 @@ def parity_plot(
         raise ValueError("No valid MLIP predictions remain to plot.")
     plotted_ref = np.concatenate(plotted_ref_values)
     mlip_vals = np.concatenate(plotted_prediction_values)
+    rmse = float(np.sqrt(np.mean((mlip_vals - plotted_ref) ** 2)))
+    ref_mean = float(np.mean(plotted_ref))
+    ss_tot = float(np.sum((plotted_ref - ref_mean) ** 2))
+    ss_res = float(np.sum((mlip_vals - plotted_ref) ** 2))
+    r2_text = "nan" if ss_tot == 0.0 else f"{1.0 - ss_res / ss_tot:.3f}"
     min_val = min(plotted_ref.min(), mlip_vals.min())
     max_val = max(plotted_ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
+    ax.text(
+        metrics_position[0],
+        metrics_position[1],
+        f"RMSE = {rmse:.3f} eV\n$R^2$ = {r2_text}",
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=metrics_fontsize,
+        bbox={
+            "boxstyle": "round,pad=0.2",
+            "facecolor": "white",
+            "edgecolor": "black",
+            "linewidth": 0.6,
+            "alpha": 0.95,
+        },
+    )
 
     ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
