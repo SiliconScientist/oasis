@@ -31,6 +31,7 @@ def filter_structures_with_insufficient_valid_mlips(
     label_allowlist: list[str] | None = None,
     strict_inference_anomaly: bool = False,
     min_valid_mlips: int = 2,
+    verbose: bool = True,
 ) -> pl.DataFrame:
     if not enabled:
         return wide_df
@@ -76,14 +77,15 @@ def filter_structures_with_insufficient_valid_mlips(
 
     dropped_rows = wide_df.height - filtered_df.height
     mode = "details" if strict_inference_anomaly else "labels"
-    print(
-        "Applied anomaly-aware structure filtering"
-        f" mode={mode}"
-        f" allowlist={sorted(allowlist)!r}"
-        f" min_valid_mlips={min_valid_mlips}"
-        f": {wide_df.height} -> {filtered_df.height} rows"
-        f" (dropped {dropped_rows})"
-    )
+    if verbose:
+        print(
+            "Applied anomaly-aware structure filtering"
+            f" mode={mode}"
+            f" allowlist={sorted(allowlist)!r}"
+            f" min_valid_mlips={min_valid_mlips}"
+            f": {wide_df.height} -> {filtered_df.height} rows"
+            f" (dropped {dropped_rows})"
+        )
     return filtered_df
 
 
@@ -157,4 +159,3 @@ def filter_anomalous_mlip_columns(
         f" removed {len(removed_prefixes)} {removed_prefixes!r}"
     )
     return filtered_df
-

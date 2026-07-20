@@ -19,6 +19,17 @@ def configured_dataset_tags(config_path: str | Path) -> list[str]:
     return list(datasets.keys())
 
 
+def configured_dataset_profile_tag(config_path: str | Path) -> str | None:
+    path = Path(config_path)
+    with path.open("rb") as handle:
+        raw_cfg = tomllib.load(handle)
+    dataset_profile = raw_cfg.get("dataset_profile")
+    if not isinstance(dataset_profile, dict):
+        return None
+    tag = dataset_profile.get("tag")
+    return tag if isinstance(tag, str) and tag else None
+
+
 def render_dataset_override(tag: str) -> str:
     return f'[dataset_profile]\ntag = "{tag}"\n'
 

@@ -69,6 +69,7 @@ from oasis.experiment_config import (
     policy_selection_diagnostic_bundle_path,
     policy_selection_outer_repeat_metrics_bundle_path,
     policy_selection_screening_rows_bundle_path,
+    screening_bundle_path,
     zero_shot_bundle_path,
 )
 from oasis.io import load_sample_atoms_for_wide_df
@@ -660,11 +661,114 @@ def _load_zero_shot_stage_rows_for_dataset(
 
 def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
     dataset_cfg = copy.deepcopy(cfg)
+    current_tag = getattr(getattr(dataset_cfg, "dataset_profile", None), "tag", None)
+    current_named_profile = getattr(dataset_cfg, "datasets", {}).get(current_tag)
+    target_named_profile = getattr(dataset_cfg, "datasets", {}).get(dataset_tag)
+
+    def _safe_derive_paths(tag: str | None, named_profile: object):
+        if tag is None:
+            return None
+        try:
+            return derive_dataset_profile_paths(tag, named_profile)
+        except AttributeError:
+            return None
+
+    current_paths = _safe_derive_paths(current_tag, current_named_profile)
+    target_paths = _safe_derive_paths(dataset_tag, target_named_profile)
+
+    def _matches_current_derived_path(
+        value: object,
+        current_base: Path | None,
+    ) -> bool:
+        if value is None or current_base is None:
+            return False
+        candidate = Path(value)
+        return candidate == current_base or candidate.stem.startswith(
+            f"{current_base.stem}_"
+        )
+
     dataset_profile = getattr(dataset_cfg, "dataset_profile", None)
     if dataset_profile is None:
         dataset_cfg.dataset_profile = SimpleNamespace(tag=dataset_tag)
     else:
         dataset_profile.tag = dataset_tag
+
+    analysis_cfg = getattr(dataset_cfg, "analysis", None)
+    if analysis_cfg is not None and current_paths is not None and target_paths is not None:
+        replacements = {
+            "base_dir": (
+                current_paths.analysis_base_dir,
+                target_paths.analysis_base_dir,
+            ),
+            "calculating_path": (
+                current_paths.calculating_path,
+                target_paths.calculating_path,
+            ),
+            "summary_workbook_path": (
+                current_paths.summary_workbook_path,
+                target_paths.summary_workbook_path,
+            ),
+            "comparison_workbook_path": (
+                current_paths.comparison_workbook_path,
+                target_paths.comparison_workbook_path,
+            ),
+            "comparison_plot_path": (
+                current_paths.comparison_plot_path,
+                target_paths.comparison_plot_path,
+            ),
+        }
+        for field_name, (current_value, target_value) in replacements.items():
+            if getattr(analysis_cfg, field_name, None) == current_value:
+                setattr(analysis_cfg, field_name, target_value)
+
+    mlip_cfg = getattr(dataset_cfg, "mlip", None)
+    if mlip_cfg is not None and current_paths is not None and target_paths is not None:
+        if getattr(mlip_cfg, "dataset", None) == current_paths.dataset:
+            mlip_cfg.dataset = target_paths.dataset
+
+    experiment_cfg = getattr(dataset_cfg, "experiment", None)
+    if experiment_cfg is not None and current_paths is not None and target_paths is not None:
+        learning_curve_cfg = getattr(experiment_cfg, "learning_curve", None)
+        if (
+            learning_curve_cfg is not None
+            and _matches_current_derived_path(
+                getattr(learning_curve_cfg, "results_bundle_path", None),
+                current_paths.results_bundle_path,
+            )
+        ):
+            learning_curve_cfg.results_bundle_path = target_paths.results_bundle_path
+        screening_cfg = getattr(experiment_cfg, "screening", None)
+        current_screening_bundle = screening_bundle_path(current_paths.results_bundle_path.stem)
+        target_screening_bundle = screening_bundle_path(target_paths.results_bundle_path.stem)
+        if (
+            screening_cfg is not None
+            and _matches_current_derived_path(
+                getattr(screening_cfg, "results_bundle_path", None),
+                current_screening_bundle,
+            )
+        ):
+            screening_cfg.results_bundle_path = target_screening_bundle
+        zero_shot_cfg = getattr(experiment_cfg, "zero_shot", None)
+        current_zero_shot_bundle = zero_shot_bundle_path(current_paths.results_bundle_path.stem)
+        target_zero_shot_bundle = zero_shot_bundle_path(target_paths.results_bundle_path.stem)
+        if (
+            zero_shot_cfg is not None
+            and _matches_current_derived_path(
+                getattr(zero_shot_cfg, "results_bundle_path", None),
+                current_zero_shot_bundle,
+            )
+        ):
+            zero_shot_cfg.results_bundle_path = target_zero_shot_bundle
+
+    plot_cfg = getattr(dataset_cfg, "plot", None)
+    if plot_cfg is not None and current_tag is not None:
+        current_label = _dataset_label_for_tag(cfg, dataset_tag=current_tag)
+        target_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
+        current_output_dir = Path("data/results/plots") / current_label
+        target_output_dir = Path("data/results/plots") / target_label
+        if getattr(plot_cfg, "output_dir", None) == current_output_dir:
+            plot_cfg.output_dir = target_output_dir
+
     init_paths = getattr(dataset_cfg, "init_paths", None)
     if callable(init_paths):
         init_paths()
@@ -724,8 +828,35 @@ def _load_oracle_learning_curve_rows_for_dataset(
         return []
 
     dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
+    if cache_only:
+        artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
+        if artifact is not None:
+            dataset_size = getattr(artifact.metadata, "dataset_size", None)
+            dataset_include_x = _merged_include_x(
+                include_x,
+                None
+                if span_variant is None or dataset_size is None
+                else span_variant.resolved_include_x(n_samples=int(dataset_size)),
+            )
+            oracle_df = oracle_learning_curve_frame(
+                artifact.results,
+                enabled_method_names=list(enabled_method_names),
+                dataset=dataset_tag,
+                dataset_label=dataset_label,
+            )
+            filtered_oracle_df = _filter_curve_frame(
+                oracle_df,
+                x_column="n_train",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=dataset_include_x,
+            )
+            if filtered_oracle_df is None or filtered_oracle_df.empty:
+                return []
+            return filtered_oracle_df.to_dict(orient="records")
+
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
-    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=not cache_only)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(
         dataset_cfg,
@@ -743,7 +874,6 @@ def _load_oracle_learning_curve_rows_for_dataset(
     )
     if results is None:
         if cache_only:
-            print(f"All-datasets oracle cache miss for {dataset_tag}: skipping")
             return []
         graph_view = prepare_graph_view(dataset_cfg, wide_df)
         results = load_or_run_learning_curve_results_from_config(
@@ -753,7 +883,8 @@ def _load_oracle_learning_curve_rows_for_dataset(
             auxiliary_views=auxiliary_views,
         )
     else:
-        print(f"All-datasets oracle cache hit for {dataset_tag}")
+        if not cache_only:
+            print(f"All-datasets oracle cache hit for {dataset_tag}")
     oracle_df = oracle_learning_curve_frame(
         results,
         enabled_method_names=list(enabled_method_names),
@@ -1781,7 +1912,7 @@ def _load_policy_regret_rows_for_dataset(
     dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=dataset_tag)
     dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
-    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=not cache_only)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(
         dataset_cfg,
@@ -1800,7 +1931,6 @@ def _load_policy_regret_rows_for_dataset(
     diagnostic_results = cached_results
     if diagnostic_results is None:
         if cache_only:
-            print(f"All-datasets policy diagnostic miss for {dataset_tag}: skipping")
             return []
         print(f"All-datasets policy diagnostic miss for {dataset_tag}: rebuilding")
         graph_view = prepare_graph_view(dataset_cfg, wide_df)
@@ -1812,7 +1942,8 @@ def _load_policy_regret_rows_for_dataset(
         )
         diagnostic_results = None if build_outputs is None else build_outputs.results
     else:
-        print(f"All-datasets policy diagnostic hit for {dataset_tag}")
+        if not cache_only:
+            print(f"All-datasets policy diagnostic hit for {dataset_tag}")
     if diagnostic_results is None:
         return []
     dataset_include_x = _merged_include_x(
@@ -1889,6 +2020,50 @@ def _load_cached_learning_curve_results_for_dataset_cfg(
         ).results
     except ValueError:
         return None
+
+
+def _cached_learning_curve_bundle_candidate_paths(dataset_cfg: object) -> list[Path]:
+    learning_curve_cfg = getattr(getattr(dataset_cfg, "experiment", None), "learning_curve", None)
+    if learning_curve_cfg is None:
+        return []
+    results_bundle_path = getattr(learning_curve_cfg, "results_bundle_path", None)
+    if results_bundle_path is None:
+        return []
+    base_path = Path(results_bundle_path)
+    suffix = f"{_anomaly_aware_run_suffix(dataset_cfg)}_{_latent_run_suffix(dataset_cfg)}"
+    pattern = f"{base_path.stem}_{suffix}_n*"
+    if bool(getattr(dataset_cfg, "dev_run", False)):
+        pattern = f"{pattern}_devrun_on"
+    pattern = f"{pattern}{base_path.suffix}"
+    return sorted(
+        path
+        for path in base_path.parent.glob(pattern)
+        if not path.stem.endswith("_repeat_metrics")
+    )
+
+
+def _load_cached_learning_curve_artifact_for_dataset_cfg(
+    dataset_cfg: object,
+):
+    dataset_tag = getattr(getattr(dataset_cfg, "dataset_profile", None), "tag", None)
+    candidate_paths = _cached_learning_curve_bundle_candidate_paths(dataset_cfg)
+    if not candidate_paths:
+        return None
+
+    valid_candidates = []
+    for candidate_path in candidate_paths:
+        try:
+            artifact = load_learning_curve_results_artifact(candidate_path)
+        except (TypeError, ValueError):
+            continue
+        artifact_dataset_tag = getattr(artifact.metadata, "dataset_tag", None)
+        if dataset_tag is not None and artifact_dataset_tag not in {None, dataset_tag}:
+            continue
+        valid_candidates.append((candidate_path, artifact))
+
+    if len(valid_candidates) != 1:
+        return None
+    return valid_candidates[0][1]
 
 
 def load_all_datasets_policy_regret_rows(
@@ -2010,17 +2185,19 @@ def ensure_probe_artifacts(cfg: object) -> bool:
     return True
 
 
-def load_filtered_wide_predictions(cfg: object):
+def load_filtered_wide_predictions(cfg: object, *, verbose: bool = True):
     base_dir = getattr(cfg, "resolved_mlip_results_dir", None)
     if base_dir is None:
         base_dir = cfg.analysis.base_dir if cfg.analysis else Path("data/mlips")
     result_files = find_result_files(base_dir, enabled_models=_enabled_mlips(cfg))
     raw_wide_df = load_wide_predictions(result_files)
-    print(f"Loaded combined wide_df with {_frame_height(raw_wide_df)} rows")
+    if verbose:
+        print(f"Loaded combined wide_df with {_frame_height(raw_wide_df)} rows")
     filter_kwargs = _stage_filter_kwargs(cfg)
     wide_df = filter_structures_with_insufficient_valid_mlips(
         raw_wide_df,
         **filter_kwargs,
+        verbose=verbose,
     )
     return wide_df, result_files, raw_wide_df
 
@@ -2280,8 +2457,35 @@ def _load_all_datasets_oracle_uq_rows(
         return []
 
     dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
+    if cache_only:
+        artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
+        if artifact is not None:
+            dataset_size = getattr(artifact.metadata, "dataset_size", None)
+            dataset_include_x = _merged_include_x(
+                include_x,
+                None
+                if span_variant is None or dataset_size is None
+                else span_variant.resolved_include_x(n_samples=int(dataset_size)),
+            )
+            oracle_df = oracle_uq_curve_frame(
+                artifact.results,
+                enabled_method_names=list(enabled_method_names),
+                dataset=dataset_tag,
+                dataset_label=dataset_label,
+            )
+            filtered_oracle_df = _filter_curve_frame(
+                oracle_df,
+                x_column="n_train",
+                min_x=min_x,
+                max_x=max_x,
+                include_x=dataset_include_x,
+            )
+            if filtered_oracle_df is None or filtered_oracle_df.empty:
+                return []
+            return filtered_oracle_df.to_dict(orient="records")
+
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
-    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg)
+    wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=not cache_only)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(
         dataset_cfg,
@@ -2299,7 +2503,6 @@ def _load_all_datasets_oracle_uq_rows(
     )
     if results is None:
         if cache_only:
-            print(f"All-datasets UQ oracle cache miss for {dataset_tag}: skipping")
             return []
         graph_view = prepare_graph_view(dataset_cfg, wide_df)
         results = load_or_run_learning_curve_results_from_config(
@@ -2309,7 +2512,8 @@ def _load_all_datasets_oracle_uq_rows(
             auxiliary_views=auxiliary_views,
         )
     else:
-        print(f"All-datasets UQ oracle cache hit for {dataset_tag}")
+        if not cache_only:
+            print(f"All-datasets UQ oracle cache hit for {dataset_tag}")
 
     oracle_df = oracle_uq_curve_frame(
         results,

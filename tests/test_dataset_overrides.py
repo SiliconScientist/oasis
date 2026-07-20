@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from oasis.dataset_overrides import (
+    configured_dataset_profile_tag,
     configured_dataset_tags,
     render_dataset_override,
     write_dataset_overrides,
@@ -44,6 +45,27 @@ class DatasetOverrideTests(unittest.TestCase):
             render_dataset_override("bio_mass"),
             '[dataset_profile]\ntag = "bio_mass"\n',
         )
+
+    def test_configured_dataset_profile_tag_reads_selected_tag(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "experiment.toml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        '[dataset_profile]',
+                        'tag = "mamun_oh"',
+                        '',
+                        '[datasets.mamun_oh]',
+                        'raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                configured_dataset_profile_tag(config_path),
+                "mamun_oh",
+            )
 
     def test_write_dataset_overrides_creates_one_file_per_tag(self) -> None:
         with TemporaryDirectory() as tmp_dir:

@@ -2193,7 +2193,41 @@ class ExperimentRunnerTests(unittest.TestCase):
             label_allowlist=None,
             strict_inference_anomaly=True,
             min_valid_mlips=3,
+            verbose=True,
         )
+
+    def test_load_filtered_wide_predictions_can_suppress_progress_output(self) -> None:
+        cfg = SimpleNamespace(
+            analysis=SimpleNamespace(base_dir=Path("data/mlips/OH-BMA")),
+            experiment=SimpleNamespace(learning_curve=SimpleNamespace(mlip_selection=None)),
+        )
+        fake_wide_df = _FakeWideFrame()
+
+        with patch(
+            "oasis.experiment_runner.find_result_files",
+            return_value=[],
+        ):
+            with patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ):
+                with patch(
+                    "oasis.experiment_runner.filter_structures_with_insufficient_valid_mlips",
+                    return_value=fake_wide_df,
+                ) as mock_filter_structures:
+                    with patch("builtins.print") as mock_print:
+                        wide_df, *_ = load_filtered_wide_predictions(cfg, verbose=False)
+
+        self.assertIs(wide_df, fake_wide_df)
+        mock_filter_structures.assert_called_once_with(
+            fake_wide_df,
+            enabled=False,
+            label_allowlist=None,
+            strict_inference_anomaly=True,
+            min_valid_mlips=0,
+            verbose=False,
+        )
+        mock_print.assert_not_called()
 
     def test_apply_dev_run_frame_cap_truncates_rows_when_enabled(self) -> None:
         cfg = SimpleNamespace(dev_run=True)
@@ -2662,7 +2696,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
         )
 
-        def _wide_df_for_cfg(dataset_cfg):
+        def _wide_df_for_cfg(dataset_cfg, **kwargs):
             tag = dataset_cfg.dataset_profile.tag
             wide_df = small_wide_df if tag == "bio_mass" else large_wide_df
             return (wide_df, [], wide_df)
@@ -2982,6 +3016,152 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oracle_sharpness": 0.22,
                     "oracle_dispersion": 0.32,
                     "oracle_method": "probe_gnn",
+                },
+            ],
+        )
+
+    def test_load_oracle_learning_curve_rows_for_dataset_uses_cached_artifact_without_rebuilding(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                )
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+        )
+        cached_artifact = SimpleNamespace(
+            metadata=SimpleNamespace(dataset_size=4),
+            results=LearningCurveResults(
+                ridge_df=pd.DataFrame(
+                    {
+                        "n_train": [2, 4],
+                        "rmse_mean": [0.35, 0.30],
+                        "rmse_std": [0.02, 0.02],
+                    }
+                )
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner._load_cached_learning_curve_artifact_for_dataset_cfg",
+            return_value=cached_artifact,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            side_effect=AssertionError("cache-only oracle load should not rebuild"),
+        ):
+            rows = _load_oracle_learning_curve_rows_for_dataset(
+                cfg,
+                dataset_tag="bio_mass",
+                enabled_method_names=["ridge"],
+                cache_only=True,
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
+            )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 2,
+                    "oracle_rmse": 0.35,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 4,
+                    "oracle_rmse": 0.30,
+                    "oracle_method": "ridge",
+                },
+            ],
+        )
+
+    def test_load_all_datasets_oracle_uq_rows_uses_cached_artifact_without_rebuilding(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass"
+                )
+            },
+            probe_features=None,
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(models=SimpleNamespace())
+            ),
+        )
+        cached_artifact = SimpleNamespace(
+            metadata=SimpleNamespace(dataset_size=4),
+            results=LearningCurveResults(
+                ridge_df=pd.DataFrame(
+                    {
+                        "n_train": [2, 4],
+                        "rmse_mean": [0.10, 0.12],
+                        "rmse_std": [0.0, 0.0],
+                    }
+                ),
+                ridge_uq_df=pd.DataFrame(
+                    {
+                        "n_train": [2, 4],
+                        "miscalibration_area": [0.20, 0.10],
+                        "sharpness": [0.30, 0.25],
+                        "dispersion": [0.40, 0.35],
+                    }
+                ),
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner._load_cached_learning_curve_artifact_for_dataset_cfg",
+            return_value=cached_artifact,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            side_effect=AssertionError("cache-only UQ oracle load should not rebuild"),
+        ):
+            rows = _load_all_datasets_oracle_uq_rows(
+                cfg,
+                dataset_tag="bio_mass",
+                enabled_method_names=["ridge"],
+                cache_only=True,
+                span_variant=BudgetSpanVariant(
+                    key="fraction",
+                    output_suffix="fraction",
+                    sweep_fractions=(0.5, 1.0),
+                ),
+            )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 2,
+                    "oracle_miscalibration_area": 0.20,
+                    "oracle_sharpness": 0.30,
+                    "oracle_dispersion": 0.40,
+                    "oracle_method": "ridge",
+                },
+                {
+                    "dataset": "bio_mass",
+                    "dataset_label": "Bio-Mass",
+                    "n_train": 4,
+                    "oracle_miscalibration_area": 0.10,
+                    "oracle_sharpness": 0.25,
+                    "oracle_dispersion": 0.35,
+                    "oracle_method": "ridge",
                 },
             ],
         )
