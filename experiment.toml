@@ -109,10 +109,10 @@ reuse_results = true
 
 [experiment.zero_shot]
 # Zero-shot settings live alongside learning-curve/screening settings.
-enabled = true
+enabled = false
 
 [experiment.learning_curve]
-enabled = false
+enabled = true
 # Learning-curve sweep sizes refer to the outer training budget.
 # Models that require validation spend part of that budget on inner validation.
 # Models that require calibration also reserve a held-out calibration subset
@@ -188,7 +188,7 @@ n_repeats = 30
 # Screening overlay. These settings replace the screening-related knobs on
 # `[experiment.learning_curve]`.
 [experiment.screening]
-enabled = false
+enabled = true
 budget_mode = "screening_fraction"
 screen_fraction = 0.2
 min_screen_size = 1
@@ -232,7 +232,7 @@ use_kernel_ridge = false
 use_lasso = false
 use_elastic_net = false
 use_residual = false
-use_weighted_linear = false
+use_weighted_linear = true
 use_weighted_simplex = false
 use_graph_mean = false
 use_gnn_direct = false

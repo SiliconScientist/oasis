@@ -26,7 +26,7 @@ trap cleanup EXIT
 
 for tag in "${DATASET_TAGS[@]}"; do
   printf '[dataset_profile]\ntag = "%s"\n' "$tag" >"$OVERRIDE_FILE"
-  echo "==> Building zero-shot cache for $tag"
+  echo "==> Running configured experiments for $tag"
   python -m oasis "$BASE_CONFIG" "$OVERRIDE_FILE"
 done
 
