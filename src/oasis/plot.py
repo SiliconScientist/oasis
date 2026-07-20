@@ -914,6 +914,7 @@ def oracle_learning_curve_plot(
     output_path: str | Path,
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    title: str | None = "Oracle learning curve by dataset",
     show_legend: bool = True,
     legend_outside_right: bool = False,
     legend_source_df: pd.DataFrame | None = None,
@@ -980,7 +981,8 @@ def oracle_learning_curve_plot(
 
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("Oracle RMSE (eV)", fontsize=fontsize)
-    ax.set_title("Oracle learning curve by dataset", fontsize=fontsize)
+    if title is not None:
+        ax.set_title(title, fontsize=fontsize)
     if log_x:
         ax.set_xscale("log")
     else:
@@ -1011,6 +1013,7 @@ def learning_curve_plot(
     results: LearningCurveResults,
     output_path: str | Path,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    title: str | None = "Learning curve (ensemble vs sample size)",
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
@@ -1241,7 +1244,8 @@ def learning_curve_plot(
         ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("RMSE (eV)", fontsize=fontsize)
-    ax.set_title("Learning curve (ensemble vs sample size)", fontsize=fontsize)
+    if title is not None:
+        ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)

@@ -2776,6 +2776,7 @@ def write_learning_curve_figure_2(
         panel_a_path = learning_curve_plot(
             results=panel_a_results,
             output_path=tmp_path / "panel_a.png",
+            title="",
             min_x=min_x,
             max_x=max_x,
             include_x=absolute_include_x,
@@ -2785,6 +2786,7 @@ def write_learning_curve_figure_2(
         panel_b_path = learning_curve_plot(
             results=learning_curve_results,
             output_path=tmp_path / "panel_b.png",
+            title="",
             min_x=min_x,
             max_x=max_x,
             include_x=fraction_include_x,
@@ -2795,12 +2797,14 @@ def write_learning_curve_figure_2(
         panel_c_path = oracle_learning_curve_plot(
             pd.DataFrame(absolute_oracle_rows),
             output_path=tmp_path / "panel_c.png",
+            title="",
             show_legend=False,
             log_x=False,
         )
         panel_d_path = oracle_learning_curve_plot(
             pd.DataFrame(fraction_oracle_rows),
             output_path=tmp_path / "panel_d.png",
+            title="",
             show_legend=True,
             legend_outside_right=True,
             legend_source_df=pd.DataFrame(fraction_oracle_legend_rows),
