@@ -3886,7 +3886,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
         )
         results = LearningCurveResults.empty()
-        oracle_rows = [
+        absolute_rows = [
             {
                 "dataset": "bio_mass",
                 "dataset_label": "Bio-Mass",
@@ -3894,6 +3894,22 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "oracle_rmse": 0.35,
                 "oracle_method": "ridge",
             }
+        ]
+        fraction_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 16,
+                "oracle_rmse": 0.5,
+                "oracle_method": "ridge",
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-KHLOHC",
+                "n_train": 100,
+                "oracle_rmse": 0.25,
+                "oracle_method": "ridge",
+            },
         ]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3906,7 +3922,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ],
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
-                side_effect=[oracle_rows, oracle_rows],
+                side_effect=[absolute_rows, fraction_rows],
             ), patch(
                 "oasis.experiment_runner.oracle_learning_curve_plot",
                 side_effect=[
@@ -3929,12 +3945,95 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "figure_2.png")
         self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
         self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertTrue(
+            mock_learning_curve_plot.call_args_list[1].kwargs["legend_outside_right"]
+        )
         self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
         self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertTrue(
+            mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"]
+        )
+        self.assertEqual(
+            mock_oracle_plot.call_args_list[1].kwargs["legend_source_df"]["dataset"].tolist(),
+            ["bio_mass", "khlohc"],
+        )
         self.assertEqual(
             mock_two_by_two.call_args.kwargs["output_path"],
             tmp_path / "figure_2_anomalyaware_off.png",
         )
+
+    def test_write_learning_curve_figure_2_excludes_bio_mass_from_panel_d(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                )
+            )
+        )
+        results = LearningCurveResults.empty()
+        absolute_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 2,
+                "oracle_rmse": 0.35,
+                "oracle_method": "ridge",
+            }
+        ]
+        fraction_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 16,
+                "oracle_rmse": 0.5,
+                "oracle_method": "ridge",
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-KHLOHC",
+                "n_train": 100,
+                "oracle_rmse": 0.25,
+                "oracle_method": "ridge",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                side_effect=[
+                    tmp_path / "panel_a.png",
+                    tmp_path / "panel_b.png",
+                ],
+            ), patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
+                side_effect=[absolute_rows, fraction_rows],
+            ), patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot",
+                side_effect=[
+                    tmp_path / "panel_c.png",
+                    tmp_path / "panel_d.png",
+                ],
+            ) as mock_oracle_plot, patch(
+                "oasis.experiment_runner.two_by_two_figure",
+                return_value=tmp_path / "figure_2.png",
+            ):
+                write_learning_curve_figure_2(
+                    cfg=cfg,
+                    learning_curve_results=results,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                    dataset_size=4,
+                )
+
+        panel_d_df = mock_oracle_plot.call_args_list[1].args[0]
+        self.assertEqual(panel_d_df["dataset"].tolist(), ["khlohc"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,

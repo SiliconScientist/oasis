@@ -2752,6 +2752,12 @@ def write_learning_curve_figure_2(
         include_x=include_x,
         span_variant=fraction_variant,
     )
+    fraction_oracle_legend_rows = list(fraction_oracle_rows)
+    # Paper Figure 2 panel d excludes Bio-Mass because its low-data span dominates
+    # the log-scale fraction panel and obscures the cross-dataset comparison.
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
+    ]
     if not absolute_oracle_rows or not fraction_oracle_rows:
         return None
 
@@ -2772,6 +2778,7 @@ def write_learning_curve_figure_2(
             max_x=max_x,
             include_x=fraction_include_x,
             show_legend=True,
+            legend_outside_right=True,
         )
         panel_c_path = oracle_learning_curve_plot(
             pd.DataFrame(absolute_oracle_rows),
@@ -2783,6 +2790,8 @@ def write_learning_curve_figure_2(
             pd.DataFrame(fraction_oracle_rows),
             output_path=tmp_path / "panel_d.png",
             show_legend=True,
+            legend_outside_right=True,
+            legend_source_df=pd.DataFrame(fraction_oracle_legend_rows),
             log_x=True,
         )
         return two_by_two_figure(

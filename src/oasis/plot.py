@@ -915,6 +915,8 @@ def oracle_learning_curve_plot(
     *,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
+    legend_source_df: pd.DataFrame | None = None,
     log_x: bool = False,
     min_x: int | None = None,
     max_x: int | None = None,
@@ -939,8 +941,10 @@ def oracle_learning_curve_plot(
     if filtered is None or filtered.empty:
         raise ValueError("oracle_df does not contain any rows after x-axis filtering.")
 
-    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
-    label_rows = oracle_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+    legend_source = oracle_df if legend_source_df is None else legend_source_df
+    dataset_order = list(dict.fromkeys(legend_source["dataset"].tolist()))
+    plot_dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
+    label_rows = legend_source.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
         subset=["dataset"],
         keep="first",
     )
@@ -956,13 +960,23 @@ def oracle_learning_curve_plot(
     cmap = plt.cm.get_cmap("tab10", len(dataset_order))
     for idx, dataset in enumerate(dataset_order):
         dataset_rows = filtered.loc[filtered["dataset"] == dataset]
-        ax.plot(
-            dataset_rows["n_train"],
-            dataset_rows["oracle_rmse"],
-            marker="o",
-            color=cmap(idx),
-            label=dataset_labels[dataset],
-        )
+        color = cmap(idx)
+        if dataset in plot_dataset_order:
+            ax.plot(
+                dataset_rows["n_train"],
+                dataset_rows["oracle_rmse"],
+                marker="o",
+                color=color,
+                label=dataset_labels[dataset],
+            )
+        elif show_legend:
+            ax.plot(
+                [],
+                [],
+                marker="o",
+                color=color,
+                label=dataset_labels[dataset],
+            )
 
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("Oracle RMSE (eV)", fontsize=fontsize)
@@ -974,7 +988,15 @@ def oracle_learning_curve_plot(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+        if legend_outside_right:
+            ax.legend(
+                fontsize=_DEFAULT_LEGEND_FONTSIZE,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+            )
+        else:
+            ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)
@@ -994,6 +1016,7 @@ def learning_curve_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     zero_shot_rmse: float | None = None,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -1223,7 +1246,15 @@ def learning_curve_plot(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+        if legend_outside_right:
+            ax.legend(
+                fontsize=_DEFAULT_LEGEND_FONTSIZE,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+            )
+        else:
+            ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)
