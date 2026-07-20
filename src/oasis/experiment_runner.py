@@ -2713,6 +2713,7 @@ def write_learning_curve_figure_2(
     run_suffix: str,
     enabled_method_names: list[str] | tuple[str, ...],
     dataset_size: int,
+    zero_shot_rmse: float | None = None,
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
@@ -2769,6 +2770,7 @@ def write_learning_curve_figure_2(
             min_x=min_x,
             max_x=max_x,
             include_x=absolute_include_x,
+            zero_shot_rmse=zero_shot_rmse,
             show_legend=False,
         )
         panel_b_path = learning_curve_plot(
@@ -2777,6 +2779,7 @@ def write_learning_curve_figure_2(
             min_x=min_x,
             max_x=max_x,
             include_x=fraction_include_x,
+            zero_shot_rmse=zero_shot_rmse,
             show_legend=True,
             legend_outside_right=True,
         )
@@ -3335,6 +3338,7 @@ def _run_comparative_learning_stages(
             run_suffix=run_suffix,
             enabled_method_names=list(enabled_learning_curve_method_names),
             dataset_size=_frame_height(wide_df),
+            zero_shot_rmse=zero_shot_rmse,
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=configured_include_x,

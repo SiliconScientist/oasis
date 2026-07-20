@@ -3940,11 +3940,14 @@ class ExperimentRunnerTests(unittest.TestCase):
                     run_suffix="anomalyaware_off",
                     enabled_method_names=["ridge"],
                     dataset_size=4,
+                    zero_shot_rmse=0.42,
                 )
 
         self.assertEqual(saved_path, tmp_path / "figure_2.png")
         self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertEqual(mock_learning_curve_plot.call_args_list[0].kwargs["zero_shot_rmse"], 0.42)
         self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertEqual(mock_learning_curve_plot.call_args_list[1].kwargs["zero_shot_rmse"], 0.42)
         self.assertTrue(
             mock_learning_curve_plot.call_args_list[1].kwargs["legend_outside_right"]
         )
@@ -4030,6 +4033,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     run_suffix="anomalyaware_off",
                     enabled_method_names=["ridge"],
                     dataset_size=4,
+                    zero_shot_rmse=0.42,
                 )
 
         panel_d_df = mock_oracle_plot.call_args_list[1].args[0]
