@@ -166,6 +166,76 @@ def two_top_one_bottom_figure(
     return output_path
 
 
+def two_by_two_figure(
+    *,
+    top_left_path: str | Path,
+    top_right_path: str | Path,
+    bottom_left_path: str | Path,
+    bottom_right_path: str | Path,
+    output_path: str | Path,
+    panel_labels: Sequence[str] = ("a)", "b)", "c)", "d)"),
+    panel_label_positions: Sequence[tuple[float, float]] = (
+        (0.02, 0.98),
+        (0.02, 0.98),
+        (0.02, 0.98),
+        (0.02, 0.98),
+    ),
+    label_fontsize: int = 16,
+) -> Path:
+    panel_paths = [
+        Path(top_left_path),
+        Path(top_right_path),
+        Path(bottom_left_path),
+        Path(bottom_right_path),
+    ]
+    for panel_path in panel_paths:
+        if not panel_path.is_file():
+            raise FileNotFoundError(f"panel image not found: {panel_path}")
+
+    if len(panel_labels) != 4:
+        raise ValueError("panel_labels must match the number of panels.")
+    if len(panel_label_positions) != 4:
+        raise ValueError("panel_label_positions must match the number of panels.")
+
+    images = [plt.imread(path) for path in panel_paths]
+    fig = plt.figure(figsize=(12, 8), constrained_layout=True)
+    grid = fig.add_gridspec(2, 2)
+    axes = [
+        fig.add_subplot(grid[0, 0]),
+        fig.add_subplot(grid[0, 1]),
+        fig.add_subplot(grid[1, 0]),
+        fig.add_subplot(grid[1, 1]),
+    ]
+
+    for ax, image, label, (label_x, label_y) in zip(
+        axes,
+        images,
+        panel_labels,
+        panel_label_positions,
+        strict=True,
+    ):
+        ax.imshow(image)
+        ax.axis("off")
+        ax.text(
+            label_x,
+            label_y,
+            label,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=label_fontsize,
+            fontweight="bold",
+            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 2},
+            clip_on=False,
+        )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def zero_shot_overview_figure(
     *,
     all_mlips_df: Any,

@@ -36,6 +36,7 @@ from oasis.experiment_runner import (
     write_all_datasets_policy_regret_plot,
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
+    write_learning_curve_figure_2,
     write_parity_plot,
     write_zero_shot_rmse_stage_plot,
     write_zero_shot_overview_figure,
@@ -3869,6 +3870,70 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_plot.call_args_list[1].kwargs["output_path"],
             tmp_path / "uq_oracle_all_datasets_miscalibration_area_anomalyaware_off_fraction.png",
+        )
+
+    def test_write_learning_curve_figure_2_uses_requested_legend_layout(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[1, 2],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                    models=SimpleNamespace(),
+                )
+            )
+        )
+        results = LearningCurveResults.empty()
+        oracle_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 2,
+                "oracle_rmse": 0.35,
+                "oracle_method": "ridge",
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                side_effect=[
+                    tmp_path / "panel_a.png",
+                    tmp_path / "panel_b.png",
+                ],
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_learning_curve_rows",
+                side_effect=[oracle_rows, oracle_rows],
+            ), patch(
+                "oasis.experiment_runner.oracle_learning_curve_plot",
+                side_effect=[
+                    tmp_path / "panel_c.png",
+                    tmp_path / "panel_d.png",
+                ],
+            ) as mock_oracle_plot, patch(
+                "oasis.experiment_runner.two_by_two_figure",
+                return_value=tmp_path / "figure_2.png",
+            ) as mock_two_by_two:
+                saved_path = write_learning_curve_figure_2(
+                    cfg=cfg,
+                    learning_curve_results=results,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                    dataset_size=4,
+                )
+
+        self.assertEqual(saved_path, tmp_path / "figure_2.png")
+        self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertEqual(
+            mock_two_by_two.call_args.kwargs["output_path"],
+            tmp_path / "figure_2_anomalyaware_off.png",
         )
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(

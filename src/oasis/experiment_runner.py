@@ -44,7 +44,12 @@ from oasis.experiment.repeat_metrics import (
     repeat_metrics_artifact_path,
 )
 from oasis.experiment.splits import resolve_configured_sweep_sizes
-from oasis.figure import learning_screening_figure, uq_summary_figure, zero_shot_overview_figure
+from oasis.figure import (
+    learning_screening_figure,
+    two_by_two_figure,
+    uq_summary_figure,
+    zero_shot_overview_figure,
+)
 from oasis.learning_curve.time_accuracy import (
     GenerationTimingAggregate,
     aggregate_generation_timing,
@@ -2700,6 +2705,95 @@ def write_all_datasets_uq_oracle_plots(
     return saved_paths or None
 
 
+def write_learning_curve_figure_2(
+    *,
+    cfg: object,
+    learning_curve_results: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    dataset_size: int,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    if learning_curve_results is None or not enabled_method_names:
+        return None
+
+    span_variants = {
+        variant.key: variant for variant in configured_budget_span_variants(cfg)
+    }
+    absolute_variant = span_variants.get("absolute")
+    fraction_variant = span_variants.get("fraction")
+    if absolute_variant is None or fraction_variant is None:
+        return None
+
+    absolute_include_x = _merged_include_x(
+        include_x,
+        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    fraction_include_x = _merged_include_x(
+        include_x,
+        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    absolute_oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=absolute_variant,
+    )
+    fraction_oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=fraction_variant,
+    )
+    if not absolute_oracle_rows or not fraction_oracle_rows:
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        panel_a_path = learning_curve_plot(
+            results=learning_curve_results,
+            output_path=tmp_path / "panel_a.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=absolute_include_x,
+            show_legend=False,
+        )
+        panel_b_path = learning_curve_plot(
+            results=learning_curve_results,
+            output_path=tmp_path / "panel_b.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=fraction_include_x,
+            show_legend=True,
+        )
+        panel_c_path = oracle_learning_curve_plot(
+            pd.DataFrame(absolute_oracle_rows),
+            output_path=tmp_path / "panel_c.png",
+            show_legend=False,
+            log_x=False,
+        )
+        panel_d_path = oracle_learning_curve_plot(
+            pd.DataFrame(fraction_oracle_rows),
+            output_path=tmp_path / "panel_d.png",
+            show_legend=True,
+            log_x=True,
+        )
+        return two_by_two_figure(
+            top_left_path=panel_a_path,
+            top_right_path=panel_b_path,
+            bottom_left_path=panel_c_path,
+            bottom_right_path=panel_d_path,
+            output_path=output_dir / f"figure_2_{run_suffix}.png",
+        )
+
+
 def build_auxiliary_views(
     cfg: object,
     wide_df: object,
@@ -3221,6 +3315,17 @@ def _run_comparative_learning_stages(
             output_dir=output_dir,
             run_suffix=run_suffix,
             enabled_method_names=list(enabled_learning_curve_method_names),
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        write_learning_curve_figure_2(
+            cfg=cfg,
+            learning_curve_results=learning_curve_results,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            dataset_size=_frame_height(wide_df),
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=configured_include_x,

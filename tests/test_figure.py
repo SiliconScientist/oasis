@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from oasis.figure import (
     learning_screening_figure,
+    two_by_two_figure,
     two_top_one_bottom_figure,
     uq_summary_figure,
     vertical_panel_figure,
@@ -45,6 +46,28 @@ class FigureTests(unittest.TestCase):
                 top_left_path=panel_paths[0],
                 top_right_path=panel_paths[1],
                 bottom_path=panel_paths[2],
+                output_path=tmp_path / "figure.png",
+            )
+
+            self.assertEqual(output_path, tmp_path / "figure.png")
+            self.assertTrue(output_path.exists())
+
+    def test_two_by_two_figure_stitches_four_panels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            panel_paths = []
+            for name in ("a.png", "b.png", "c.png", "d.png"):
+                fig, ax = plt.subplots(figsize=(4, 4))
+                ax.plot([0, 1], [0, 1])
+                fig.savefig(tmp_path / name, dpi=100)
+                plt.close(fig)
+                panel_paths.append(tmp_path / name)
+
+            output_path = two_by_two_figure(
+                top_left_path=panel_paths[0],
+                top_right_path=panel_paths[1],
+                bottom_left_path=panel_paths[2],
+                bottom_right_path=panel_paths[3],
                 output_path=tmp_path / "figure.png",
             )
 
