@@ -56,8 +56,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--run-tag-prefix",
         default="",
         help=(
-            "Optional prefix inserted before the dataset tag when printing or "
-            "running submit commands."
+            "Optional prefix shown alongside each dataset tag in script output. "
+            "This does not change submit.sh arguments."
         ),
     )
     return parser
@@ -86,9 +86,8 @@ def main() -> None:
     for tag, override_path in zip(tags, override_paths, strict=True):
         run_tag = f"{args.run_tag_prefix}{tag}"
         cmd = [args.submit_script, str(base_config), str(override_path)]
-        if run_tag:
-            cmd.append(run_tag)
-        print(" ".join(cmd))
+        label = f" [{run_tag}]" if run_tag else ""
+        print(f"{' '.join(cmd)}{label}")
         if args.submit:
             subprocess.run(cmd, check=True)
 

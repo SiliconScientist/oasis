@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from oasis.dataset_overrides import (
     configured_dataset_tags,
     render_dataset_override,
     write_dataset_overrides,
 )
+import scripts.submit_configured_datasets as submit_configured_datasets
 
 
 class DatasetOverrideTests(unittest.TestCase):
@@ -57,6 +59,44 @@ class DatasetOverrideTests(unittest.TestCase):
             self.assertEqual(
                 written[1].read_text(encoding="utf-8"),
                 '[dataset_profile]\ntag = "rodrigo"\n',
+            )
+
+    def test_submit_helper_passes_only_base_and_override_configs(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "demo.toml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        '[datasets.mamun_oh]',
+                        'raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"',
+                        '',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            out_dir = root / "overrides"
+
+            with patch.object(submit_configured_datasets.subprocess, "run") as run_mock:
+                with patch(
+                    "sys.argv",
+                    [
+                        "submit_configured_datasets.py",
+                        str(config_path),
+                        "--out-dir",
+                        str(out_dir),
+                        "--submit",
+                    ],
+                ):
+                    submit_configured_datasets.main()
+
+            run_mock.assert_called_once_with(
+                [
+                    "./submit.sh",
+                    str(config_path),
+                    str(out_dir / "mamun_oh.override.toml"),
+                ],
+                check=True,
             )
 
 
