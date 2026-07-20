@@ -491,6 +491,8 @@ def parity_plot(
     legend_fontsize: int = _DEFAULT_LEGEND_FONTSIZE,
     metrics_position: tuple[float, float] = (0.03, 0.97),
     metrics_fontsize: int = _DEFAULT_TICK_FONTSIZE + 1,
+    y_label: str = "MLIP adsorption energy (eV)",
+    y_label_fontsize: int = _DEFAULT_PLOT_FONTSIZE,
 ) -> Path:
     """
     Create a parity plot comparing reference adsorption energies to each MLIP prediction.
@@ -562,7 +564,7 @@ def parity_plot(
     )
 
     ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
-    ax.set_ylabel("MLIP adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.set_ylabel(y_label, fontsize=y_label_fontsize)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
     if show_legend:

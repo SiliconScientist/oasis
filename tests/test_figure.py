@@ -82,10 +82,12 @@ class FigureTests(unittest.TestCase):
             self.assertFalse(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_position"], (0.5, 0.91))
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_fontsize"], 18)
+            self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["y_label_fontsize"], 24)
             self.assertTrue(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_fontsize"], 14)
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_position"], (0.5, 0.91))
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_fontsize"], 18)
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["y_label"], "")
             self.assertIsNone(
                 mock_parity_plot.call_args_list[1].kwargs["validity_mask_by_prediction"]
             )

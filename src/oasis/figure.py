@@ -191,6 +191,7 @@ def zero_shot_overview_figure(
             show_legend=False,
             metrics_position=(0.5, 0.91),
             metrics_fontsize=18,
+            y_label_fontsize=24,
         )
         top_right_path = parity_plot(
             matched_subset_df,
@@ -200,6 +201,7 @@ def zero_shot_overview_figure(
             legend_fontsize=14,
             metrics_position=(0.5, 0.91),
             metrics_fontsize=18,
+            y_label="",
         )
         bottom_path = zero_shot_rmse_stage_plot(
             all_datasets_stage_df,

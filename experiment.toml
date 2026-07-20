@@ -25,6 +25,16 @@ raw_dataset_filename = "BM_dataset_adsorption.json"
 mlip_run_dirname = "Bio-Mass"
 analysis_base_dir = "data/mlips/backup_copy/Bio-Mass"
 
+[datasets.oc20_dense_ocxhx]
+raw_dataset_filename = "OC20-Dense_ocxhx_adsorption.json"
+mlip_run_dirname = "OC20-Dense-OCxHx"
+analysis_base_dir = "data/mlips/backup_copy/OC20-Dense-OCxHx"
+
+[datasets.oc20_dense_nhx]
+raw_dataset_filename = "OC20-Dense_nhx_adsorption.json"
+mlip_run_dirname = "OC20-Dense-NHx"
+analysis_base_dir = "data/mlips/backup_copy/OC20-Dense-NHx"
+
 [datasets.game_net]
 raw_dataset_filename = "GameNetOx_oxide_adsorption.json"
 mlip_run_dirname = "Game-Net"
@@ -39,16 +49,6 @@ analysis_base_dir = "data/mlips/backup_copy/Func-Group"
 raw_dataset_filename = "ComerGeneralized2024_adsorption.json"
 mlip_run_dirname = "Comer"
 analysis_base_dir = "data/mlips/backup_copy/Comer"
-
-[datasets.oc20_dense_ocxhx]
-raw_dataset_filename = "OC20-Dense_ocxhx_adsorption.json"
-mlip_run_dirname = "OC20-Dense-OCxHx"
-analysis_base_dir = "data/mlips/backup_copy/OC20-Dense-OCxHx"
-
-[datasets.oc20_dense_nhx]
-raw_dataset_filename = "OC20-Dense_nhx_adsorption.json"
-mlip_run_dirname = "OC20-Dense-NHx"
-analysis_base_dir = "data/mlips/backup_copy/OC20-Dense-NHx"
 
 [plot]
 zero_shot_stage_show_lone_mlip_swarm = true
