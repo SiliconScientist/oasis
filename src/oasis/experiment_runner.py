@@ -2762,10 +2762,19 @@ def write_learning_curve_figure_2(
     if not absolute_oracle_rows or not fraction_oracle_rows:
         return None
 
+    panel_a_results = learning_curve_results
+    if getattr(learning_curve_results, "weighted_linear_df", None) is not None:
+        panel_a_results = learning_curve_results.from_mapping(
+            {
+                **learning_curve_results.to_mapping(),
+                "weighted_linear_df": None,
+            }
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         panel_a_path = learning_curve_plot(
-            results=learning_curve_results,
+            results=panel_a_results,
             output_path=tmp_path / "panel_a.png",
             min_x=min_x,
             max_x=max_x,

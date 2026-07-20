@@ -3885,7 +3885,15 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
             )
         )
-        results = LearningCurveResults.empty()
+        results = LearningCurveResults(
+            weighted_linear_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [8.0, 0.5],
+                    "rmse_std": [1.0, 0.1],
+                }
+            )
+        )
         absolute_rows = [
             {
                 "dataset": "bio_mass",
@@ -3944,6 +3952,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 )
 
         self.assertEqual(saved_path, tmp_path / "figure_2.png")
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["results"].weighted_linear_df)
         self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
         self.assertEqual(mock_learning_curve_plot.call_args_list[0].kwargs["zero_shot_rmse"], 0.42)
         self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_legend"])
