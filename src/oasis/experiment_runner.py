@@ -86,6 +86,8 @@ from oasis.mlip.artifacts import (
 from oasis.mlip.timing import load_generation_timing_summaries
 from oasis.mlip.timing import load_probe_generation_timing_summaries
 from oasis.plot import (
+    _draw_all_datasets_uq_oracle,
+    _draw_uq_metric_curve,
     _filter_curve_frame,
     all_datasets_policy_regret_plot,
     all_datasets_uq_oracle_plot,
@@ -101,6 +103,7 @@ from oasis.plot import (
     parity_plot,
     policy_regret_plot,
     policy_selected_vs_oracle_plot,
+    plt,
     screening_budget_plot,
     sharpness_plot,
     zero_shot_rmse_stage_plot,
@@ -2819,6 +2822,133 @@ def write_learning_curve_figure_2(
         )
 
 
+def write_learning_curve_figure_3(
+    *,
+    cfg: object,
+    learning_curve_results: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    dataset_size: int,
+    zero_shot_uq: dict[str, float],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    if learning_curve_results is None or not enabled_method_names:
+        return None
+
+    span_variants = {
+        variant.key: variant for variant in configured_budget_span_variants(cfg)
+    }
+    absolute_variant = span_variants.get("absolute")
+    fraction_variant = span_variants.get("fraction")
+    if absolute_variant is None or fraction_variant is None:
+        return None
+
+    absolute_include_x = _merged_include_x(
+        include_x,
+        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    fraction_include_x = _merged_include_x(
+        include_x,
+        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=absolute_variant,
+    )
+    fraction_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=fraction_variant,
+    )
+    if not absolute_oracle_rows or not fraction_oracle_rows:
+        return None
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+    ax_a, ax_b, ax_c, ax_d = axes.flatten()
+
+    _draw_uq_metric_curve(
+        ax_a,
+        learning_curve_results,
+        metric_column="miscalibration_area",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=absolute_include_x,
+        show_legend=False,
+        show_xlabel=True,
+        zero_shot_value=zero_shot_uq["miscalibration_area"],
+        title_prefix="Miscalibration area",
+        ylabel="Miscalibration area",
+    )
+    _draw_uq_metric_curve(
+        ax_b,
+        learning_curve_results,
+        metric_column="miscalibration_area",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=fraction_include_x,
+        show_legend=True,
+        legend_outside_right=True,
+        show_xlabel=True,
+        zero_shot_value=zero_shot_uq["miscalibration_area"],
+        title_prefix="Miscalibration area",
+        ylabel="Miscalibration area",
+    )
+    _draw_all_datasets_uq_oracle(
+        ax_c,
+        pd.DataFrame(absolute_oracle_rows),
+        metric_column="oracle_miscalibration_area",
+        ylabel="Oracle miscalibration area",
+        title="",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=absolute_include_x,
+        show_legend=False,
+        log_x=False,
+    )
+    _draw_all_datasets_uq_oracle(
+        ax_d,
+        pd.DataFrame(fraction_oracle_rows),
+        metric_column="oracle_miscalibration_area",
+        ylabel="Oracle miscalibration area",
+        title="",
+        min_x=min_x,
+        max_x=max_x,
+        include_x=fraction_include_x,
+        show_legend=True,
+        legend_outside_right=True,
+        log_x=True,
+    )
+
+    for ax, label in zip((ax_a, ax_b, ax_c, ax_d), ("a)", "b)", "c)", "d)"), strict=True):
+        ax.text(
+            0.02,
+            0.98,
+            label,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=16,
+            fontweight="bold",
+            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 2},
+        )
+
+    output_path = output_dir / f"figure_3_{run_suffix}.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def build_auxiliary_views(
     cfg: object,
     wide_df: object,
@@ -3401,6 +3531,18 @@ def _run_comparative_learning_stages(
             cfg,
             base_output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
             render_variant=_render_learning_curve_uq_variant,
+        )
+        write_learning_curve_figure_3(
+            cfg=cfg,
+            learning_curve_results=learning_curve_results,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            dataset_size=_frame_height(wide_df),
+            zero_shot_uq=zero_shot_uq,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
         )
 
     # Stage 2: load or run screening results.

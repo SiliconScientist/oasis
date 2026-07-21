@@ -351,6 +351,47 @@ def _plot_uq_metric_curve(
     title_prefix: str,
     ylabel: str,
 ) -> Path:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    _draw_uq_metric_curve(
+        ax,
+        results,
+        metric_column=metric_column,
+        fontsize=fontsize,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        show_legend=show_legend,
+        show_xlabel=show_xlabel,
+        zero_shot_value=zero_shot_value,
+        title_prefix=title_prefix,
+        ylabel=ylabel,
+    )
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    return output_path
+
+
+def _draw_uq_metric_curve(
+    ax: Any,
+    results: LearningCurveResults,
+    *,
+    metric_column: str,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    show_legend: bool = True,
+    legend_outside_right: bool = False,
+    show_xlabel: bool = True,
+    zero_shot_value: float | None = None,
+    title_prefix: str,
+    ylabel: str,
+) -> None:
     x_column, title_axis_label, xlabel = _uq_x_axis_config(results)
     order_frame = (
         _ordered_screening_frame
@@ -369,7 +410,6 @@ def _plot_uq_metric_curve(
             for field_name, frame in results.to_mapping().items()
         }
     )
-    fig, ax = plt.subplots(figsize=(7, 4))
     for _, _, uq_field, display_name, marker, color in _METHOD_PLOT_STYLES:
         frame = getattr(results, uq_field)
         if frame is None or frame.empty or metric_column not in frame.columns:
@@ -412,15 +452,15 @@ def _plot_uq_metric_curve(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
-        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
-    plt.tight_layout()
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
-
-    return output_path
+        if legend_outside_right:
+            ax.legend(
+                fontsize=_DEFAULT_LEGEND_FONTSIZE,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+            )
+        else:
+            ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
 
 
 def mae_comparison_plot(
@@ -2143,6 +2183,44 @@ def all_datasets_uq_oracle_plot(
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     log_x: bool = False,
 ) -> Path:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    _draw_all_datasets_uq_oracle(
+        ax,
+        oracle_df,
+        metric_column=metric_column,
+        ylabel=ylabel,
+        title=title,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        fontsize=fontsize,
+        log_x=log_x,
+    )
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def _draw_all_datasets_uq_oracle(
+    ax: Any,
+    oracle_df: pd.DataFrame,
+    *,
+    metric_column: str,
+    ylabel: str,
+    title: str,
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    log_x: bool = False,
+    show_legend: bool = True,
+    legend_outside_right: bool = False,
+    legend_source_df: pd.DataFrame | None = None,
+) -> None:
     required_columns = {"dataset", "dataset_label", "n_train", metric_column}
     missing_columns = required_columns.difference(oracle_df.columns)
     if missing_columns:
@@ -2162,8 +2240,10 @@ def all_datasets_uq_oracle_plot(
     if filtered is None or filtered.empty:
         raise ValueError("oracle_df does not contain any rows after x-axis filtering.")
 
-    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
-    label_rows = oracle_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+    legend_source = oracle_df if legend_source_df is None else legend_source_df
+    dataset_order = list(dict.fromkeys(legend_source["dataset"].tolist()))
+    plot_dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
+    label_rows = legend_source.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
         subset=["dataset"],
         keep="first",
     )
@@ -2174,17 +2254,25 @@ def all_datasets_uq_oracle_plot(
         .to_dict()
     )
 
-    fig, ax = plt.subplots(figsize=(7, 4))
     cmap = plt.cm.get_cmap("tab10", max(1, len(dataset_order)))
     for idx, dataset in enumerate(dataset_order):
         dataset_rows = filtered.loc[filtered["dataset"] == dataset]
-        ax.plot(
-            dataset_rows["n_train"],
-            dataset_rows[metric_column],
-            marker="o",
-            color=cmap(idx),
-            label=dataset_labels[dataset],
-        )
+        if dataset in plot_dataset_order:
+            ax.plot(
+                dataset_rows["n_train"],
+                dataset_rows[metric_column],
+                marker="o",
+                color=cmap(idx),
+                label=dataset_labels[dataset],
+            )
+        elif show_legend:
+            ax.plot(
+                [],
+                [],
+                marker="o",
+                color=cmap(idx),
+                label=dataset_labels[dataset],
+            )
 
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel(ylabel, fontsize=fontsize)
@@ -2195,14 +2283,16 @@ def all_datasets_uq_oracle_plot(
         _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
-    plt.tight_layout()
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    return output_path
+    if show_legend:
+        if legend_outside_right:
+            ax.legend(
+                fontsize=_DEFAULT_LEGEND_FONTSIZE,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+            )
+        else:
+            ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
 
 
 def fixed_split_training_time_accuracy_plot(

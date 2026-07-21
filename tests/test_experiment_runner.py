@@ -37,6 +37,7 @@ from oasis.experiment_runner import (
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
     write_learning_curve_figure_2,
+    write_learning_curve_figure_3,
     write_parity_plot,
     write_zero_shot_rmse_stage_plot,
     write_zero_shot_overview_figure,
@@ -3194,7 +3195,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         small_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])
         large_wide_df = _FakeWideFrame(reactions=["r0", "r1", "r2", "r3", "r4", "r5"])
-        def _wide_df_for_cfg(dataset_cfg):
+        def _wide_df_for_cfg(dataset_cfg, **kwargs):
             return (
                 (small_wide_df, [], small_wide_df)
                 if dataset_cfg.dataset_profile.tag == "bio_mass"
@@ -4051,6 +4052,70 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         panel_d_df = mock_oracle_plot.call_args_list[1].args[0]
         self.assertEqual(panel_d_df["dataset"].tolist(), ["khlohc"])
+
+    def test_write_learning_curve_figure_3_renders_runtime_panels_with_variant_axes(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[2, 4],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+        results = LearningCurveResults(
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "miscalibration_area": [0.2, 0.1],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            )
+        )
+        absolute_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 2,
+                "oracle_miscalibration_area": 0.3,
+            }
+        ]
+        fraction_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 10,
+                "oracle_miscalibration_area": 0.25,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner._draw_uq_metric_curve",
+            ) as mock_draw_uq, patch(
+                "oasis.experiment_runner._draw_all_datasets_uq_oracle",
+            ) as mock_draw_oracle, patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_uq_rows",
+                side_effect=[absolute_rows, fraction_rows],
+            ):
+                saved_path = write_learning_curve_figure_3(
+                    cfg=cfg,
+                    learning_curve_results=results,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                    dataset_size=10,
+                    zero_shot_uq={"miscalibration_area": 0.42},
+                )
+
+        self.assertEqual(saved_path, tmp_path / "figure_3_anomalyaware_off.png")
+        self.assertEqual(mock_draw_uq.call_args_list[0].kwargs["include_x"], [2, 4])
+        self.assertEqual(mock_draw_uq.call_args_list[1].kwargs["include_x"], [5, 10])
+        self.assertEqual(mock_draw_oracle.call_args_list[0].kwargs["include_x"], [2, 4])
+        self.assertEqual(mock_draw_oracle.call_args_list[1].kwargs["include_x"], [5, 10])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
