@@ -2911,7 +2911,7 @@ def write_learning_curve_figure_3(
         title="",
         min_x=min_x,
         max_x=max_x,
-        include_x=absolute_include_x,
+        include_x=None,
         show_legend=False,
         log_x=False,
     )
@@ -2923,7 +2923,7 @@ def write_learning_curve_figure_3(
         title="",
         min_x=min_x,
         max_x=max_x,
-        include_x=fraction_include_x,
+        include_x=None,
         show_legend=True,
         legend_outside_right=True,
         log_x=True,

@@ -4114,8 +4114,8 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "figure_3_anomalyaware_off.png")
         self.assertEqual(mock_draw_uq.call_args_list[0].kwargs["include_x"], [2, 4])
         self.assertEqual(mock_draw_uq.call_args_list[1].kwargs["include_x"], [5, 10])
-        self.assertEqual(mock_draw_oracle.call_args_list[0].kwargs["include_x"], [2, 4])
-        self.assertEqual(mock_draw_oracle.call_args_list[1].kwargs["include_x"], [5, 10])
+        self.assertIsNone(mock_draw_oracle.call_args_list[0].kwargs["include_x"])
+        self.assertIsNone(mock_draw_oracle.call_args_list[1].kwargs["include_x"])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
