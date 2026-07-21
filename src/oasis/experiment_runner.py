@@ -2931,8 +2931,8 @@ def write_learning_curve_figure_3(
 
     for ax, label in zip((ax_a, ax_b, ax_c, ax_d), ("a)", "b)", "c)", "d)"), strict=True):
         ax.text(
-            0.02,
-            0.98,
+            -0.08,
+            1.04,
             label,
             transform=ax.transAxes,
             ha="left",
@@ -2940,6 +2940,7 @@ def write_learning_curve_figure_3(
             fontsize=16,
             fontweight="bold",
             bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 2},
+            clip_on=False,
         )
 
     output_path = output_dir / f"figure_3_{run_suffix}.png"
