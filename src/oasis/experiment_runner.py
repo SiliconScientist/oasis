@@ -1927,15 +1927,15 @@ def _load_policy_regret_rows_for_dataset(
         wide_df,
         probe_gnn_enabled,
     )
-    cached_results = _load_cached_policy_selection_results_for_dataset_cfg(
-        dataset_cfg,
-        wide_df=wide_df,
-    )
     _apply_persistent_output_suffixes(
         dataset_cfg,
         dataset_size=_frame_height(wide_df),
     )
     _apply_dev_run_curve_overrides(dataset_cfg, n_samples=_frame_height(wide_df))
+    cached_results = _load_cached_policy_selection_results_for_dataset_cfg(
+        dataset_cfg,
+        wide_df=wide_df,
+    )
     diagnostic_results = cached_results
     if diagnostic_results is None:
         if cache_only:
