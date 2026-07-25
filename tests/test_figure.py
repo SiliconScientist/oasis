@@ -74,7 +74,9 @@ class FigureTests(unittest.TestCase):
             self.assertEqual(output_path, tmp_path / "figure.png")
             self.assertTrue(output_path.exists())
 
-    def test_zero_shot_overview_figure_renders_panel_a_without_legend(self) -> None:
+    def test_zero_shot_overview_figure_places_panel_a_legend_and_hides_panel_b_legend(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             output_path = tmp_path / "figure.png"
@@ -102,13 +104,30 @@ class FigureTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
-            self.assertFalse(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
-            self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_position"], (0.5, 0.91))
+            self.assertTrue(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
+            self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["legend_fontsize"], 14)
+            self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["legend_loc"], "lower right")
+            self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_position"], (0.97, 0.97))
+            self.assertEqual(
+                mock_parity_plot.call_args_list[0].kwargs["metrics_horizontalalignment"],
+                "right",
+            )
+            self.assertEqual(
+                mock_parity_plot.call_args_list[0].kwargs["metrics_verticalalignment"],
+                "top",
+            )
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_fontsize"], 18)
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["y_label_fontsize"], 24)
-            self.assertTrue(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
-            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_fontsize"], 14)
-            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_position"], (0.5, 0.91))
+            self.assertFalse(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_position"], (0.97, 0.97))
+            self.assertEqual(
+                mock_parity_plot.call_args_list[1].kwargs["metrics_horizontalalignment"],
+                "right",
+            )
+            self.assertEqual(
+                mock_parity_plot.call_args_list[1].kwargs["metrics_verticalalignment"],
+                "top",
+            )
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_fontsize"], 18)
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["y_label"], "")
             self.assertIsNone(

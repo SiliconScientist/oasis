@@ -529,7 +529,10 @@ def parity_plot(
     validity_mask_by_prediction: dict[str, np.ndarray] | None = None,
     show_legend: bool = True,
     legend_fontsize: int = _DEFAULT_LEGEND_FONTSIZE,
+    legend_loc: str | None = None,
     metrics_position: tuple[float, float] = (0.03, 0.97),
+    metrics_horizontalalignment: str = "center",
+    metrics_verticalalignment: str = "center",
     metrics_fontsize: int = _DEFAULT_TICK_FONTSIZE + 1,
     y_label: str = "MLIP adsorption energy (eV)",
     y_label_fontsize: int = _DEFAULT_PLOT_FONTSIZE,
@@ -591,8 +594,8 @@ def parity_plot(
         metrics_position[1],
         f"RMSE = {rmse:.3f} eV\n$R^2$ = {r2_text}",
         transform=ax.transAxes,
-        ha="center",
-        va="center",
+        ha=metrics_horizontalalignment,
+        va=metrics_verticalalignment,
         fontsize=metrics_fontsize,
         bbox={
             "boxstyle": "round,pad=0.2",
@@ -608,7 +611,10 @@ def parity_plot(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.set_aspect("equal", adjustable="box")
     if show_legend:
-        ax.legend(fontsize=legend_fontsize)
+        legend_kwargs = {"fontsize": legend_fontsize}
+        if legend_loc is not None:
+            legend_kwargs["loc"] = legend_loc
+        ax.legend(**legend_kwargs)
     ax.grid(True, linestyle="--", alpha=0.3)
     plt.tight_layout()
 

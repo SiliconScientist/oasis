@@ -258,8 +258,12 @@ def zero_shot_overview_figure(
         top_left_path = parity_plot(
             all_mlips_df,
             output_path=tmp_path / "panel_a.png",
-            show_legend=False,
-            metrics_position=(0.5, 0.91),
+            show_legend=True,
+            legend_fontsize=14,
+            legend_loc="lower right",
+            metrics_position=(0.97, 0.97),
+            metrics_horizontalalignment="right",
+            metrics_verticalalignment="top",
             metrics_fontsize=18,
             y_label_fontsize=24,
         )
@@ -267,9 +271,10 @@ def zero_shot_overview_figure(
             matched_subset_df,
             output_path=tmp_path / "panel_b.png",
             validity_mask_by_prediction=anomaly_aware_validity_mask_by_prediction,
-            show_legend=True,
-            legend_fontsize=14,
-            metrics_position=(0.5, 0.91),
+            show_legend=False,
+            metrics_position=(0.97, 0.97),
+            metrics_horizontalalignment="right",
+            metrics_verticalalignment="top",
             metrics_fontsize=18,
             y_label="",
         )
