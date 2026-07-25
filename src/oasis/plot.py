@@ -654,7 +654,7 @@ def zero_shot_rmse_stage_plot(
     stage_colors = {
         "Full / all MLIPs": "tab:blue",
         "Matched subset / all MLIPs": "tab:orange",
-        "Matched subset / anomaly-aware selection": "tab:green",
+        "Matched subset / anomaly-aware selection": "tab:orange",
     }
     filtered = stage_df.loc[stage_df["stage"].isin(stage_order)].copy()
     if filtered.empty:
@@ -688,17 +688,16 @@ def zero_shot_rmse_stage_plot(
         dataset_labels = dataset_order
     x = np.arange(len(dataset_order), dtype=float) * 0.52
     width = 0.24
-    offsets = np.array([-width / 2, width / 2, -width / 2], dtype=float)
+    plot_offsets = {
+        "Full / all MLIPs": -width / 2,
+        "Matched subset / all MLIPs": width / 2,
+        "Matched subset / anomaly-aware selection": width / 2,
+    }
+    line_stage_name = "Matched subset / all MLIPs"
     clipped_any = False
 
     fig, ax = plt.subplots(figsize=(max(4.4, 0.82 + 1.05 * len(dataset_order)), 4.8))
-    anomaly_stage_rows = (
-        bar_rows.loc[bar_rows["stage"] == "Matched subset / anomaly-aware selection"]
-        .set_index("dataset")
-        .reindex(dataset_order)
-    )
-    anomaly_overlay_offset = offsets[stage_order.index("Matched subset / all MLIPs")]
-    for offset, stage_name in zip(offsets, stage_order, strict=True):
+    for stage_name in stage_order:
         stage_rows = (
             bar_rows.loc[bar_rows["stage"] == stage_name]
             .set_index("dataset")
@@ -711,9 +710,9 @@ def zero_shot_rmse_stage_plot(
         if max_rmse is not None:
             clipped_mask = plotted_rmse > max_rmse
             plotted_rmse = plotted_rmse.clip(upper=max_rmse)
-        if stage_name == "Matched subset / anomaly-aware selection":
+        if stage_name == line_stage_name:
             valid_mask = plotted_rmse.notna().to_numpy()
-            line_x = x[valid_mask] + anomaly_overlay_offset
+            line_x = x[valid_mask] + plot_offsets[stage_name]
             for x_center, y_value in zip(
                 line_x.tolist(),
                 plotted_rmse.loc[plotted_rmse.notna()].to_numpy().tolist(),
@@ -724,11 +723,6 @@ def zero_shot_rmse_stage_plot(
                     [y_value, y_value, y_value],
                     color="black",
                     linewidth=2.8,
-                    marker="D",
-                    markerfacecolor="black",
-                    markeredgecolor="black",
-                    markersize=5.5,
-                    markevery=[1],
                     zorder=5,
                 )
             plotted_artists: list[tuple[float, float]] = list(
@@ -740,7 +734,7 @@ def zero_shot_rmse_stage_plot(
             )
         else:
             bars = ax.bar(
-                x + offset,
+                x + plot_offsets[stage_name],
                 plotted_rmse,
                 width,
                 label=stage_name,
@@ -804,7 +798,7 @@ def zero_shot_rmse_stage_plot(
 
     if show_lone_mlip_swarm and not swarm_rows.empty:
         swarm_stage = "Full / all MLIPs"
-        swarm_offset = offsets[stage_order.index(swarm_stage)]
+        swarm_offset = plot_offsets[swarm_stage]
         swarm_mlips = sorted(swarm_rows["mlip"].dropna().unique().tolist())
         swarm_markers = _mlip_marker_map(swarm_mlips)
         swarm_colors = {
@@ -884,20 +878,16 @@ def zero_shot_rmse_stage_plot(
         Line2D(
             [],
             [],
-            color=stage_colors["Matched subset / all MLIPs"],
-            linewidth=8,
+            color="black",
+            linewidth=2.8,
             solid_capstyle="butt",
             label="Matched subset / all MLIPs",
         ),
         Line2D(
             [],
             [],
-            color="black",
-            linewidth=2.8,
-            marker="D",
-            markerfacecolor="black",
-            markeredgecolor="black",
-            markersize=6,
+            color=stage_colors["Matched subset / anomaly-aware selection"],
+            linewidth=8,
             solid_capstyle="butt",
             label="Matched subset / anomaly-aware selection",
         ),
