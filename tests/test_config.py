@@ -1408,6 +1408,64 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.analysis is not None
         self.assertEqual(cfg.analysis.base_dir, Path("data/mlips/oh_mamun"))
 
+    def test_get_config_loads_dataset_alias_from_toml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            experiment_path = tmp / "experiment.toml"
+            experiment_path.write_text(
+                "\n".join(
+                    [
+                        "[dataset_profile]",
+                        'tag = "example"',
+                        "",
+                        "[datasets.example]",
+                        'alias = "Example Alias"',
+                        'raw_dataset_filename = "example.json"',
+                        "",
+                        "[ingest]",
+                        'source = "data/raw_vasp/systems"',
+                        'dataset_name = "test"',
+                        "",
+                        "[ingest.stoich]",
+                        'elements = ["H"]',
+                        'basis_species = ["H2"]',
+                        "",
+                        "[ingest.stoich.basis_composition]",
+                        'H2 = { H = 2 }',
+                        "",
+                        "[mlip]",
+                        "dev_n = 1",
+                        "dev_run = false",
+                        "",
+                        "[mlip.models]",
+                        'enabled = ["mace"]',
+                        "",
+                        "[mlip.rootstock]",
+                        'root = "."',
+                        "",
+                        "[mlip.rootstock.models.mace]",
+                        'model = "mace"',
+                        'mlip_name = "mace-test"',
+                        "",
+                        "[experiment.learning_curve]",
+                        "min_train = 2",
+                        "max_train = 4",
+                        "n_repeats = 3",
+                        "",
+                        "[analysis]",
+                        "run_adsorption_analysis = false",
+                        'out_dir = "data/mlips_by_prefix"',
+                        'prefixes = ["ol"]',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = get_config(experiment_path)
+
+        self.assertEqual(cfg.datasets["example"].alias, "Example Alias")
+
     def test_get_config_derives_graph_dataset_path_from_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

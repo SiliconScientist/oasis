@@ -15,10 +15,12 @@ from oasis.experiment_runner import (
     _apply_dev_run_frame_cap,
     _build_policy_selection_diagnostic_results_for_cfg,
     _configured_policy_fixed_method_baselines,
+    _dataset_label_for_tag,
     _load_all_datasets_oracle_uq_rows,
     _load_oracle_learning_curve_rows_for_dataset,
     _load_policy_regret_rows_for_dataset,
     _policy_selection_diagnostic_persistence_context,
+    _resolved_plot_output_dir,
     _load_zero_shot_stage_rows_for_dataset,
     _zero_shot_stage_artifact_path,
     _build_zero_shot_stage_rows,
@@ -196,6 +198,38 @@ class ExperimentRunnerTests(unittest.TestCase):
             }
         )
         return LearningCurveResults(ridge_df=ridge_frame)
+
+    def test_dataset_alias_controls_plot_label(self) -> None:
+        cfg = SimpleNamespace(
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    alias="Biomass Custom",
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass",
+                )
+            }
+        )
+
+        self.assertEqual(
+            _dataset_label_for_tag(cfg, dataset_tag="bio_mass"),
+            "Biomass Custom",
+        )
+
+    def test_resolved_plot_output_dir_uses_run_dirname_not_alias(self) -> None:
+        cfg = SimpleNamespace(
+            plot=SimpleNamespace(output_dir=None),
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            datasets={
+                "bio_mass": SimpleNamespace(
+                    alias="Biomass Custom",
+                    mlip_run_dirname_or_default=lambda tag: "Bio-Mass",
+                )
+            },
+        )
+
+        self.assertEqual(
+            _resolved_plot_output_dir(cfg),
+            Path("data/results/plots/Bio-Mass"),
+        )
 
     def test_configured_policy_fixed_method_baselines_honors_toggles_and_labels(self) -> None:
         cfg = SimpleNamespace(
@@ -4685,7 +4719,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         cfg = SimpleNamespace(
             dataset_profile=SimpleNamespace(tag="bio_mass"),
             plot=SimpleNamespace(output_dir=Path("unused")),
-            datasets={"khlohc": SimpleNamespace()},
+            datasets={"khlohc": SimpleNamespace(alias="Tol-KHLOHC")},
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
                     mlip_selection=SimpleNamespace(
@@ -4741,6 +4775,61 @@ class ExperimentRunnerTests(unittest.TestCase):
             expected_artifact_path,
             expected_cache_signature=expected_signature,
         )
+
+    def test_load_zero_shot_stage_rows_for_dataset_overrides_cached_dataset_label_with_alias(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+            plot=SimpleNamespace(output_dir=Path("unused")),
+            datasets={"khlohc": SimpleNamespace(alias="Tol-KHLOHC")},
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    mlip_selection=SimpleNamespace(
+                        exclude_anomalous_mlips=True,
+                        minimum_quorum=2,
+                    )
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            result_file = tmp_path / "mlip_result.json"
+            result_file.write_text("{}")
+            cached_rows = [
+                {
+                    "dataset": "khlohc",
+                    "dataset_label": "Old Label",
+                    "stage": "Full / all MLIPs",
+                    "rmse": 0.5,
+                    "n_samples": 12,
+                }
+            ]
+
+            with patch(
+                "oasis.experiment_runner.derive_dataset_profile_paths",
+                return_value=SimpleNamespace(
+                    analysis_base_dir=tmp_path,
+                    results_bundle_path=tmp_path / "khlohc.json",
+                ),
+            ), patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[result_file],
+            ), patch(
+                "oasis.experiment_runner._zero_shot_stage_cache_signature",
+                return_value={"result_files": ["dummy"]},
+            ), patch(
+                "oasis.experiment_runner._load_zero_shot_stage_rows_artifact",
+                return_value=cached_rows,
+            ):
+                rows = _load_zero_shot_stage_rows_for_dataset(
+                    cfg,
+                    dataset_tag="khlohc",
+                    cache_only=True,
+                )
+
+        self.assertEqual(rows[0]["dataset_label"], "Tol-KHLOHC")
 
     def test_load_zero_shot_stage_rows_for_dataset_ignores_active_dataset_zero_shot_bundle(
         self,

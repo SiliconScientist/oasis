@@ -31,6 +31,7 @@ class DatasetProfilePathsConfig(BaseModel):
 
 
 class NamedDatasetConfig(BaseModel):
+    alias: Optional[str] = None
     raw_dataset_filename: Optional[str] = None
     processed_basename: Optional[str] = None
     probe_dataset_filename: Optional[str] = None
@@ -71,6 +72,9 @@ class NamedDatasetConfig(BaseModel):
 
     def summary_run_dirname_or_default(self, tag: str) -> str:
         return self.summary_run_dirname or self.analysis_run_dirname_or_default(tag)
+
+    def alias_or_default(self, tag: str) -> str:
+        return self.alias or self.mlip_run_dirname_or_default(tag)
 
 
 class DatasetProfileConfig(BaseModel):

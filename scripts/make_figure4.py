@@ -47,10 +47,23 @@ def _dataset_aliases(value: str) -> set[str]:
     return {raw, _normalize_dataset_token(raw)}
 
 
+def _dataset_label_by_tag() -> dict[str, str]:
+    from oasis.config import get_config
+
+    cfg = get_config()
+    labels: dict[str, str] = {}
+    for dataset_tag, profile in getattr(cfg, "datasets", {}).items():
+        alias = getattr(profile, "alias", None)
+        mlip_run_dirname = getattr(profile, "mlip_run_dirname", None)
+        labels[str(dataset_tag)] = str(alias or mlip_run_dirname or dataset_tag)
+    return labels
+
+
 def _load_cached_policy_artifacts(plot_root: Path, suffix: str) -> tuple[list[dict], list[str]]:
     import pandas as pd
     import numpy as np
 
+    dataset_labels = _dataset_label_by_tag()
     summary_paths = sorted(
         plot_root.glob(f"*/policy_selection_diagnostic_summary_{suffix}.csv")
     )
@@ -126,7 +139,7 @@ def _load_cached_policy_artifacts(plot_root: Path, suffix: str) -> tuple[list[di
         dataset_entries.append(
             {
                 "dataset": dataset_tag,
-                "dataset_label": summary_path.parent.name,
+                "dataset_label": dataset_labels.get(dataset_tag, summary_path.parent.name),
                 "dataset_size": int(metadata["dataset_size"]),
                 "summary_df": summary_df.copy(),
                 "sweep_sizes": tuple(
@@ -286,18 +299,6 @@ def main(argv: list[str] | None = None) -> int:
 
     panel_a_path = plot_dir / f"policy_selected_vs_oracle_{suffix}_absolute.png"
     panel_b_path = plot_dir / f"policy_selected_vs_oracle_{suffix}_fraction.png"
-
-    if not excluded:
-        output_path = two_by_two_figure(
-            top_left_path=panel_a_path,
-            top_right_path=panel_b_path,
-            bottom_left_path=plot_dir / f"policy_regret_all_datasets_{suffix}_absolute.png",
-            bottom_right_path=plot_dir / f"policy_regret_all_datasets_{suffix}_fraction.png",
-            output_path=plot_dir / args.output_name,
-            panel_labels=("a)", "b)", "c)", "d)"),
-        )
-        print(output_path)
-        return 0
 
     dataset_entries, dataset_order = _load_cached_policy_artifacts(plot_dir.parent, suffix)
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -540,6 +540,24 @@ def _load_zero_shot_stage_rows_artifact(
     return stage_rows
 
 
+def _with_dataset_label(
+    stage_rows: list[dict[str, object]],
+    *,
+    dataset_label_by_tag: dict[str, str],
+) -> list[dict[str, object]]:
+    normalized_rows: list[dict[str, object]] = []
+    for row in stage_rows:
+        normalized_row = dict(row)
+        dataset_tag = normalized_row.get("dataset")
+        if isinstance(dataset_tag, str):
+            normalized_row["dataset_label"] = dataset_label_by_tag.get(
+                dataset_tag,
+                dataset_tag,
+            )
+        normalized_rows.append(normalized_row)
+    return normalized_rows
+
+
 def _save_zero_shot_stage_rows_artifact(
     artifact_path: Path,
     *,
@@ -636,9 +654,12 @@ def _load_zero_shot_stage_rows_for_dataset(
     )
     if artifact_path.is_file():
         try:
-            return _load_zero_shot_stage_rows_artifact(
-                artifact_path,
-                expected_cache_signature=cache_signature,
+            return _with_dataset_label(
+                _load_zero_shot_stage_rows_artifact(
+                    artifact_path,
+                    expected_cache_signature=cache_signature,
+                ),
+                dataset_label_by_tag={dataset_tag: dataset_label},
             )
         except (TypeError, ValueError):
             pass
@@ -770,8 +791,8 @@ def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
 
     plot_cfg = getattr(dataset_cfg, "plot", None)
     if plot_cfg is not None and current_tag is not None:
-        current_label = _dataset_label_for_tag(cfg, dataset_tag=current_tag)
-        target_label = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
+        current_label = _dataset_run_dirname_for_tag(cfg, dataset_tag=current_tag)
+        target_label = _dataset_run_dirname_for_tag(cfg, dataset_tag=dataset_tag)
         current_output_dir = Path("data/results/plots") / current_label
         target_output_dir = Path("data/results/plots") / target_label
         if getattr(plot_cfg, "output_dir", None) == current_output_dir:
@@ -784,6 +805,25 @@ def _dataset_cfg_for_tag(cfg: object, *, dataset_tag: str) -> object:
 
 
 def _dataset_label_for_tag(cfg: object, *, dataset_tag: str) -> str:
+    named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
+    if named_profile is None:
+        return dataset_tag
+    resolver = getattr(named_profile, "alias_or_default", None)
+    if callable(resolver):
+        return str(resolver(dataset_tag))
+    configured_alias = getattr(named_profile, "alias", None)
+    if configured_alias is not None:
+        return str(configured_alias)
+    resolver = getattr(named_profile, "mlip_run_dirname_or_default", None)
+    if callable(resolver):
+        return str(resolver(dataset_tag))
+    configured_name = getattr(named_profile, "mlip_run_dirname", None)
+    if configured_name is not None:
+        return str(configured_name)
+    return dataset_tag
+
+
+def _dataset_run_dirname_for_tag(cfg: object, *, dataset_tag: str) -> str:
     named_profile = getattr(cfg, "datasets", {}).get(dataset_tag)
     if named_profile is None:
         return dataset_tag
@@ -804,7 +844,7 @@ def _resolved_plot_output_dir(cfg: object) -> Path:
     dataset_profile = getattr(cfg, "dataset_profile", None)
     dataset_tag = getattr(dataset_profile, "tag", None)
     if dataset_tag is not None:
-        run_dirname = _dataset_label_for_tag(cfg, dataset_tag=dataset_tag)
+        run_dirname = _dataset_run_dirname_for_tag(cfg, dataset_tag=dataset_tag)
         return Path("data/results/plots") / run_dirname
     return Path("data/results/plots")
 
