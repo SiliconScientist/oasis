@@ -92,6 +92,7 @@ from oasis.plot import (
     all_datasets_policy_regret_plot,
     all_datasets_uq_oracle_plot,
     dispersion_plot,
+    compose_screening_curve_figure,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
     generation_time_accuracy_plot,
@@ -2426,10 +2427,7 @@ def write_zero_shot_overview_figure(
     if not stage_rows:
         return None
 
-    dataset_label = _dataset_label_for_tag(cfg, dataset_tag=current_tag)
-    output_path = output_dir / (
-        f"figure_1_{_slugify_filename_token(dataset_label)}_{run_suffix}.png"
-    )
+    output_path = output_dir / "figure_zero_shot.png"
     validity_mask_by_prediction = (
         _strict_validity_masks_by_mlip(selected_wide_df)
         if _exclude_anomalous_mlips_enabled(cfg)
@@ -2748,7 +2746,7 @@ def write_all_datasets_uq_oracle_plots(
     return saved_paths or None
 
 
-def write_learning_curve_figure_2(
+def compose_accuracy_curve_figure(
     *,
     cfg: object,
     learning_curve_results: object,
@@ -2797,7 +2795,7 @@ def write_learning_curve_figure_2(
         span_variant=fraction_variant,
     )
     fraction_oracle_legend_rows = list(fraction_oracle_rows)
-    # Paper Figure 2 panel d excludes Bio-Mass because its low-data span dominates
+    # Accuracy-curve panel d excludes Bio-Mass because its low-data span dominates
     # the log-scale fraction panel and obscures the cross-dataset comparison.
     fraction_oracle_rows = [
         row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
@@ -2806,11 +2804,11 @@ def write_learning_curve_figure_2(
         return None
 
     panel_a_results = learning_curve_results
-    if getattr(learning_curve_results, "weighted_linear_df", None) is not None:
+    if getattr(learning_curve_results, "weighted_linear_uq_df", None) is not None:
         panel_a_results = learning_curve_results.from_mapping(
             {
                 **learning_curve_results.to_mapping(),
-                "weighted_linear_df": None,
+                "weighted_linear_uq_df": None,
             }
         )
 
@@ -2858,11 +2856,11 @@ def write_learning_curve_figure_2(
             top_right_path=panel_b_path,
             bottom_left_path=panel_c_path,
             bottom_right_path=panel_d_path,
-            output_path=output_dir / f"figure_2_{run_suffix}.png",
+            output_path=output_dir / "figure_accuracy_curve.png",
         )
 
 
-def write_learning_curve_figure_3(
+def compose_sharpness_curve_figure(
     *,
     cfg: object,
     learning_curve_results: object,
@@ -2910,84 +2908,81 @@ def write_learning_curve_figure_3(
         include_x=include_x,
         span_variant=fraction_variant,
     )
+    fraction_oracle_legend_rows = list(fraction_oracle_rows)
+    # Sharpness-curve panel d excludes Bio-Mass because its low-data span dominates
+    # the log-scale fraction panel and obscures the cross-dataset comparison.
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
+    ]
     if not absolute_oracle_rows or not fraction_oracle_rows:
         return None
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-    ax_a, ax_b, ax_c, ax_d = axes.flatten()
-
-    _draw_uq_metric_curve(
-        ax_a,
-        learning_curve_results,
-        metric_column="miscalibration_area",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=absolute_include_x,
-        show_legend=False,
-        show_xlabel=True,
-        zero_shot_value=zero_shot_uq["miscalibration_area"],
-        title_prefix="Miscalibration area",
-        ylabel="Miscalibration area",
-    )
-    _draw_uq_metric_curve(
-        ax_b,
-        learning_curve_results,
-        metric_column="miscalibration_area",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=fraction_include_x,
-        show_legend=True,
-        legend_outside_right=True,
-        show_xlabel=True,
-        zero_shot_value=zero_shot_uq["miscalibration_area"],
-        title_prefix="Miscalibration area",
-        ylabel="Miscalibration area",
-    )
-    _draw_all_datasets_uq_oracle(
-        ax_c,
-        pd.DataFrame(absolute_oracle_rows),
-        metric_column="oracle_miscalibration_area",
-        ylabel="Oracle miscalibration area",
-        title="",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=None,
-        show_legend=False,
-        log_x=False,
-    )
-    _draw_all_datasets_uq_oracle(
-        ax_d,
-        pd.DataFrame(fraction_oracle_rows),
-        metric_column="oracle_miscalibration_area",
-        ylabel="Oracle miscalibration area",
-        title="",
-        min_x=min_x,
-        max_x=max_x,
-        include_x=None,
-        show_legend=True,
-        legend_outside_right=True,
-        log_x=True,
-    )
-
-    for ax, label in zip((ax_a, ax_b, ax_c, ax_d), ("a)", "b)", "c)", "d)"), strict=True):
-        ax.text(
-            -0.08,
-            1.04,
-            label,
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=16,
-            fontweight="bold",
-            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 2},
-            clip_on=False,
+    output_path = output_dir / "figure_sharpness_curve.png"
+    panel_a_results = learning_curve_results
+    if getattr(learning_curve_results, "weighted_linear_uq_df", None) is not None:
+        panel_a_results = learning_curve_results.from_mapping(
+            {
+                **learning_curve_results.to_mapping(),
+                "weighted_linear_uq_df": None,
+            }
         )
-
-    output_path = output_dir / f"figure_3_{run_suffix}.png"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    return output_path
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        panel_a_path = sharpness_plot(
+            panel_a_results,
+            output_path=tmp_path / "panel_a_absolute.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=absolute_include_x,
+            show_legend=False,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["sharpness"],
+        )
+        panel_b_path = sharpness_plot(
+            learning_curve_results,
+            output_path=tmp_path / "panel_b_fraction.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=fraction_include_x,
+            show_legend=True,
+            legend_outside_right=True,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["sharpness"],
+        )
+        panel_c_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(absolute_oracle_rows),
+            output_path=tmp_path / "panel_c_absolute.png",
+            metric_column="oracle_sharpness",
+            ylabel="Oracle sharpness",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=False,
+            show_legend=False,
+        )
+        panel_d_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(fraction_oracle_rows),
+            output_path=tmp_path / "panel_d_fraction.png",
+            metric_column="oracle_sharpness",
+            ylabel="Oracle sharpness",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=True,
+            show_legend=True,
+            legend_outside_right=True,
+            legend_source_df=pd.DataFrame(fraction_oracle_legend_rows),
+        )
+        return two_by_two_figure(
+            top_left_path=panel_a_path,
+            top_right_path=panel_b_path,
+            bottom_left_path=panel_c_path,
+            bottom_right_path=panel_d_path,
+            output_path=output_path,
+            panel_labels=("a)", "b)", "c)", "d)"),
+        )
 
 
 def build_auxiliary_views(
@@ -3515,7 +3510,7 @@ def _run_comparative_learning_stages(
             max_x=plot_kwargs["max_x"],
             include_x=configured_include_x,
         )
-        write_learning_curve_figure_2(
+        compose_accuracy_curve_figure(
             cfg=cfg,
             learning_curve_results=learning_curve_results,
             output_dir=output_dir,
@@ -3573,7 +3568,7 @@ def _run_comparative_learning_stages(
             base_output_path=output_dir / f"uq_summary_figure_{run_suffix}.png",
             render_variant=_render_learning_curve_uq_variant,
         )
-        write_learning_curve_figure_3(
+        compose_sharpness_curve_figure(
             cfg=cfg,
             learning_curve_results=learning_curve_results,
             output_dir=output_dir,
@@ -3653,6 +3648,10 @@ def _run_comparative_learning_stages(
             min_x=plot_kwargs["min_x"],
             max_x=plot_kwargs["max_x"],
             include_x=configured_include_x,
+        )
+        compose_screening_curve_figure(
+            output_dir,
+            suffix=run_suffix,
         )
 
     # Stage 5: render comparative learning figure.

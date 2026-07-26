@@ -376,6 +376,7 @@ def _plot_uq_metric_curve(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
     title_prefix: str,
@@ -391,6 +392,7 @@ def _plot_uq_metric_curve(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
         title_prefix=title_prefix,
@@ -1346,6 +1348,7 @@ def miscalibration_area_plot(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
 ) -> Path:
@@ -1358,6 +1361,7 @@ def miscalibration_area_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
         title_prefix="Miscalibration area",
@@ -1373,6 +1377,7 @@ def sharpness_plot(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
 ) -> Path:
@@ -1385,6 +1390,7 @@ def sharpness_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
         title_prefix="Sharpness",
@@ -1400,6 +1406,7 @@ def dispersion_plot(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     show_legend: bool = True,
+    legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
 ) -> Path:
@@ -1412,6 +1419,7 @@ def dispersion_plot(
         max_x=max_x,
         include_x=include_x,
         show_legend=show_legend,
+        legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
         title_prefix="Dispersion",
@@ -2201,6 +2209,9 @@ def all_datasets_uq_oracle_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     log_x: bool = False,
+    show_legend: bool = True,
+    legend_outside_right: bool = False,
+    legend_source_df: pd.DataFrame | None = None,
 ) -> Path:
     fig, ax = plt.subplots(figsize=(7, 4))
     _draw_all_datasets_uq_oracle(
@@ -2214,6 +2225,9 @@ def all_datasets_uq_oracle_plot(
         include_x=include_x,
         fontsize=fontsize,
         log_x=log_x,
+        show_legend=show_legend,
+        legend_outside_right=legend_outside_right,
+        legend_source_df=legend_source_df,
     )
     plt.tight_layout()
 
@@ -2236,7 +2250,7 @@ def _dataset_label_by_tag_from_config() -> dict[str, str]:
     return labels
 
 
-def _load_cached_policy_artifacts_for_figure_4(
+def _load_cached_policy_artifacts_for_screening_curve(
     plot_root: Path,
     suffix: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -2334,7 +2348,7 @@ def _load_cached_policy_artifacts_for_figure_4(
     return dataset_entries, dataset_order
 
 
-def _load_policy_artifact_for_figure_4_plot_dir(
+def _load_policy_artifact_for_screening_curve_plot_dir(
     plot_dir: Path,
     suffix: str,
 ) -> dict[str, Any]:
@@ -2397,7 +2411,7 @@ def _load_policy_artifact_for_figure_4_plot_dir(
     raise ValueError(f"Could not match summary CSV to cached artifact: {summary_path}")
 
 
-def _configured_policy_fixed_method_baselines_for_figure_4() -> (
+def _configured_policy_fixed_method_baselines_for_screening_curve() -> (
     tuple[tuple[str, str], ...]
 ):
     from oasis.config import get_config
@@ -2420,7 +2434,7 @@ def _configured_policy_fixed_method_baselines_for_figure_4() -> (
     return tuple(baselines)
 
 
-def _build_figure_4_regret_frame(
+def _build_screening_curve_regret_frame(
     dataset_entries: list[dict[str, Any]],
     *,
     mode: str,
@@ -2460,7 +2474,7 @@ def _build_figure_4_regret_frame(
     return pd.concat(rows, ignore_index=True)
 
 
-def _render_figure_4_regret_panel(
+def _render_screening_curve_regret_panel(
     summary_df: pd.DataFrame,
     *,
     output_path: Path,
@@ -2480,11 +2494,11 @@ def _render_figure_4_regret_panel(
     )
 
 
-def figure_4_plot(
+def compose_screening_curve_figure(
     plot_dir: str | Path,
     *,
     suffix: str = "anomalyaware_on",
-    output_name: str = "figure4.png",
+    output_name: str = "figure_screening_curve.png",
     exclude_panel_d_datasets: list[str] | tuple[str, ...] = ("bio_mass",),
 ) -> Path:
     from oasis.figure import two_by_two_figure
@@ -2497,7 +2511,7 @@ def figure_4_plot(
         for value in exclude_panel_d_datasets
         for alias in _dataset_aliases(value)
     }
-    policy_artifact = _load_policy_artifact_for_figure_4_plot_dir(plot_dir, suffix)
+    policy_artifact = _load_policy_artifact_for_screening_curve_plot_dir(plot_dir, suffix)
     metadata = policy_artifact["metadata"]
     cache_signature = policy_artifact["cache_signature"]
     learning_curve_signature = cache_signature.get("learning_curve", {})
@@ -2519,9 +2533,9 @@ def figure_4_plot(
     )
     fixed_method_summary_df = summarize_fixed_method_baseline_frame(
         policy_artifact["outer_metrics_df"],
-        baselines=_configured_policy_fixed_method_baselines_for_figure_4(),
+        baselines=_configured_policy_fixed_method_baselines_for_screening_curve(),
     )
-    dataset_entries, dataset_order = _load_cached_policy_artifacts_for_figure_4(
+    dataset_entries, dataset_order = _load_cached_policy_artifacts_for_screening_curve(
         plot_dir.parent, suffix
     )
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -2538,8 +2552,8 @@ def figure_4_plot(
             output_path=tmp_path / "panel_b_fraction.png",
             include_x=fraction_include_x,
         )
-        panel_c_path = _render_figure_4_regret_panel(
-            _build_figure_4_regret_frame(
+        panel_c_path = _render_screening_curve_regret_panel(
+            _build_screening_curve_regret_frame(
                 dataset_entries,
                 mode="absolute",
                 excluded_datasets=set(),
@@ -2548,8 +2562,8 @@ def figure_4_plot(
             dataset_order=dataset_order,
             log_x=False,
         )
-        panel_d_path = _render_figure_4_regret_panel(
-            _build_figure_4_regret_frame(
+        panel_d_path = _render_screening_curve_regret_panel(
+            _build_screening_curve_regret_frame(
                 dataset_entries,
                 mode="fraction",
                 excluded_datasets=excluded,

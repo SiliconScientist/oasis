@@ -20,7 +20,7 @@ from oasis.plot import (
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
-    figure_4_plot,
+    compose_screening_curve_figure,
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
@@ -98,7 +98,7 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(exists)
 
-    def test_figure_4_plot_assembles_panels_via_shared_plot_module(self) -> None:
+    def test_compose_screening_curve_figure_assembles_panels_via_shared_plot_module(self) -> None:
         dataset_entries = [
             {
                 "dataset": "bio_mass",
@@ -132,7 +132,7 @@ class PlotTests(unittest.TestCase):
             plot_dir = Path(tmpdir) / "plots" / "dataset"
             plot_dir.mkdir(parents=True)
             with patch(
-                "oasis.plot._load_policy_artifact_for_figure_4_plot_dir",
+                "oasis.plot._load_policy_artifact_for_screening_curve_plot_dir",
                 return_value={
                     "summary_df": pd.DataFrame(
                         {
@@ -165,30 +165,30 @@ class PlotTests(unittest.TestCase):
                     },
                 },
             ), patch(
-                "oasis.plot._configured_policy_fixed_method_baselines_for_figure_4",
+                "oasis.plot._configured_policy_fixed_method_baselines_for_screening_curve",
                 return_value=(("residual", "Residual"), ("kernel_ridge", "Kernel ridge")),
             ), patch(
-                "oasis.plot._load_cached_policy_artifacts_for_figure_4",
+                "oasis.plot._load_cached_policy_artifacts_for_screening_curve",
                 return_value=(dataset_entries, ["bio_mass", "khlohc"]),
             ), patch(
                 "oasis.plot.policy_selected_vs_oracle_plot",
                 side_effect=[plot_dir / "panel_a.png", plot_dir / "panel_b.png"],
             ) as mock_selected_vs_oracle, patch(
-                "oasis.plot._render_figure_4_regret_panel",
+                "oasis.plot._render_screening_curve_regret_panel",
                 side_effect=[
                     plot_dir / "panel_c.png",
                     plot_dir / "panel_d.png",
                 ],
             ) as mock_render_regret, patch(
                 "oasis.figure.two_by_two_figure",
-                return_value=plot_dir / "figure4.png",
+                return_value=plot_dir / "figure_screening_curve.png",
             ) as mock_two_by_two:
-                saved_path = figure_4_plot(
+                saved_path = compose_screening_curve_figure(
                     plot_dir,
                     exclude_panel_d_datasets=("bio_mass",),
                 )
 
-        self.assertEqual(saved_path, plot_dir / "figure4.png")
+        self.assertEqual(saved_path, plot_dir / "figure_screening_curve.png")
         self.assertEqual(
             mock_render_regret.call_args_list[0].kwargs["dataset_order"],
             ["bio_mass", "khlohc"],

@@ -38,8 +38,8 @@ from oasis.experiment_runner import (
     write_all_datasets_policy_regret_plot,
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
-    write_learning_curve_figure_2,
-    write_learning_curve_figure_3,
+    compose_accuracy_curve_figure,
+    compose_sharpness_curve_figure,
     write_parity_plot,
     write_zero_shot_rmse_stage_plot,
     write_zero_shot_overview_figure,
@@ -2470,7 +2470,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_all_datasets_zero_shot_plot, patch(
                 "oasis.experiment_runner.write_zero_shot_overview_figure",
                 return_value=(
-                    tmp_path / "plots" / "figure_1_oh_bma_anomalyaware_on.png"
+                    tmp_path / "plots" / "figure_zero_shot.png"
                 ),
             ) as mock_overview_figure, patch(
                 "oasis.experiment_runner.write_all_datasets_oracle_learning_curve_plot",
@@ -2585,7 +2585,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_all_datasets_zero_shot_plot, patch(
                 "oasis.experiment_runner.write_zero_shot_overview_figure",
                 return_value=(
-                    tmp_path / "plots" / "figure_1_oh_bma_anomalyaware_on.png"
+                    tmp_path / "plots" / "figure_zero_shot.png"
                 ),
             ) as mock_overview_figure, patch(
                 "oasis.experiment_runner._run_comparative_learning_stages",
@@ -3907,7 +3907,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "uq_oracle_all_datasets_miscalibration_area_anomalyaware_off_fraction.png",
         )
 
-    def test_write_learning_curve_figure_2_uses_requested_legend_layout(self) -> None:
+    def test_compose_accuracy_curve_figure_uses_requested_legend_layout(self) -> None:
         cfg = SimpleNamespace(
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
@@ -3974,9 +3974,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ],
             ) as mock_oracle_plot, patch(
                 "oasis.experiment_runner.two_by_two_figure",
-                return_value=tmp_path / "figure_2.png",
+                return_value=tmp_path / "accuracy_curve.png",
             ) as mock_two_by_two:
-                saved_path = write_learning_curve_figure_2(
+                saved_path = compose_accuracy_curve_figure(
                     cfg=cfg,
                     learning_curve_results=results,
                     output_dir=tmp_path,
@@ -3986,7 +3986,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     zero_shot_rmse=0.42,
                 )
 
-        self.assertEqual(saved_path, tmp_path / "figure_2.png")
+        self.assertEqual(saved_path, tmp_path / "accuracy_curve.png")
         self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["results"].weighted_linear_df)
         self.assertEqual(mock_learning_curve_plot.call_args_list[0].kwargs["title"], "")
         self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
@@ -4010,10 +4010,10 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_two_by_two.call_args.kwargs["output_path"],
-            tmp_path / "figure_2_anomalyaware_off.png",
+            tmp_path / "figure_accuracy_curve.png",
         )
 
-    def test_write_learning_curve_figure_2_excludes_bio_mass_from_panel_d(self) -> None:
+    def test_compose_accuracy_curve_figure_excludes_bio_mass_from_panel_d(self) -> None:
         cfg = SimpleNamespace(
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
@@ -4072,9 +4072,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                 ],
             ) as mock_oracle_plot, patch(
                 "oasis.experiment_runner.two_by_two_figure",
-                return_value=tmp_path / "figure_2.png",
+                return_value=tmp_path / "accuracy_curve.png",
             ):
-                write_learning_curve_figure_2(
+                compose_accuracy_curve_figure(
                     cfg=cfg,
                     learning_curve_results=results,
                     output_dir=tmp_path,
@@ -4087,7 +4087,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         panel_d_df = mock_oracle_plot.call_args_list[1].args[0]
         self.assertEqual(panel_d_df["dataset"].tolist(), ["khlohc"])
 
-    def test_write_learning_curve_figure_3_renders_runtime_panels_with_variant_axes(self) -> None:
+    def test_compose_sharpness_curve_figure_renders_sharpness_panels_with_variant_axes(self) -> None:
         cfg = SimpleNamespace(
             experiment=SimpleNamespace(
                 learning_curve=SimpleNamespace(
@@ -4100,10 +4100,17 @@ class ExperimentRunnerTests(unittest.TestCase):
             )
         )
         results = LearningCurveResults(
+            weighted_linear_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "sharpness": [0.3, 0.2],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
             ridge_uq_df=pd.DataFrame(
                 {
                     "n_train": [2, 4],
-                    "miscalibration_area": [0.2, 0.1],
+                    "sharpness": [0.2, 0.1],
                     "uncertainty_kind": ["spread_only", "spread_only"],
                 }
             )
@@ -4113,7 +4120,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset": "bio_mass",
                 "dataset_label": "Bio-Mass",
                 "n_train": 2,
-                "oracle_miscalibration_area": 0.3,
+                "oracle_sharpness": 0.3,
             }
         ]
         fraction_rows = [
@@ -4121,35 +4128,73 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset": "bio_mass",
                 "dataset_label": "Bio-Mass",
                 "n_train": 10,
-                "oracle_miscalibration_area": 0.25,
+                "oracle_sharpness": 0.25,
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-KHLOHC",
+                "n_train": 100,
+                "oracle_sharpness": 0.2,
             }
         ]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "oasis.experiment_runner._draw_uq_metric_curve",
-            ) as mock_draw_uq, patch(
-                "oasis.experiment_runner._draw_all_datasets_uq_oracle",
-            ) as mock_draw_oracle, patch(
+                "oasis.experiment_runner.sharpness_plot",
+                side_effect=[
+                    tmp_path / "panel_a.png",
+                    tmp_path / "panel_b.png",
+                ],
+            ) as mock_sharpness_plot, patch(
+                "oasis.experiment_runner.all_datasets_uq_oracle_plot",
+                side_effect=[
+                    tmp_path / "panel_c.png",
+                    tmp_path / "panel_d.png",
+                ],
+            ) as mock_oracle_plot, patch(
                 "oasis.experiment_runner.load_all_datasets_oracle_uq_rows",
                 side_effect=[absolute_rows, fraction_rows],
-            ):
-                saved_path = write_learning_curve_figure_3(
+            ), patch(
+                "oasis.experiment_runner.two_by_two_figure",
+                return_value=tmp_path / "sharpness_curve.png",
+            ) as mock_two_by_two:
+                saved_path = compose_sharpness_curve_figure(
                     cfg=cfg,
                     learning_curve_results=results,
                     output_dir=tmp_path,
                     run_suffix="anomalyaware_off",
                     enabled_method_names=["ridge"],
                     dataset_size=10,
-                    zero_shot_uq={"miscalibration_area": 0.42},
+                    zero_shot_uq={"sharpness": 0.42},
                 )
 
-        self.assertEqual(saved_path, tmp_path / "figure_3_anomalyaware_off.png")
-        self.assertEqual(mock_draw_uq.call_args_list[0].kwargs["include_x"], [2, 4])
-        self.assertEqual(mock_draw_uq.call_args_list[1].kwargs["include_x"], [5, 10])
-        self.assertIsNone(mock_draw_oracle.call_args_list[0].kwargs["include_x"])
-        self.assertIsNone(mock_draw_oracle.call_args_list[1].kwargs["include_x"])
+        self.assertEqual(saved_path, tmp_path / "sharpness_curve.png")
+        self.assertIsNone(mock_sharpness_plot.call_args_list[0].args[0].weighted_linear_uq_df)
+        self.assertEqual(mock_sharpness_plot.call_args_list[0].kwargs["include_x"], [2, 4])
+        self.assertEqual(mock_sharpness_plot.call_args_list[1].kwargs["include_x"], [5, 10])
+        self.assertEqual(mock_sharpness_plot.call_args_list[0].kwargs["zero_shot_value"], 0.42)
+        self.assertEqual(mock_sharpness_plot.call_args_list[1].kwargs["zero_shot_value"], 0.42)
+        self.assertTrue(mock_sharpness_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(mock_oracle_plot.call_args_list[0].kwargs["metric_column"], "oracle_sharpness")
+        self.assertEqual(mock_oracle_plot.call_args_list[1].kwargs["metric_column"], "oracle_sharpness")
+        self.assertIsNone(mock_oracle_plot.call_args_list[0].kwargs["include_x"])
+        self.assertIsNone(mock_oracle_plot.call_args_list[1].kwargs["include_x"])
+        self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(
+            mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist(),
+            ["khlohc"],
+        )
+        self.assertEqual(
+            mock_oracle_plot.call_args_list[1].kwargs["legend_source_df"]["dataset"].tolist(),
+            ["bio_mass", "khlohc"],
+        )
+        self.assertEqual(
+            mock_two_by_two.call_args.kwargs["output_path"],
+            tmp_path / "figure_sharpness_curve.png",
+        )
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
@@ -4303,10 +4348,10 @@ class ExperimentRunnerTests(unittest.TestCase):
                     run_suffix="anomalyaware_on",
                 )
 
-        self.assertEqual(saved_path, tmp_path / "figure_1_oh_bma_anomalyaware_on.png")
+        self.assertEqual(saved_path, tmp_path / "figure_zero_shot.png")
         self.assertEqual(
             mock_figure.call_args.kwargs["output_path"],
-            tmp_path / "figure_1_oh_bma_anomalyaware_on.png",
+            tmp_path / "figure_zero_shot.png",
         )
         self.assertFalse(mock_figure.call_args.kwargs["show_lone_mlip_swarm"])
         self.assertIsNone(mock_figure.call_args.kwargs["max_rmse"])
@@ -5478,7 +5523,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_screening_plot, patch(
                 "oasis.experiment_runner.learning_screening_figure",
                 return_value=tmp_path / "plots" / "learning_screening_figure_anomalyaware_off.png",
-            ) as mock_learning_screening_figure:
+            ) as mock_learning_screening_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ) as mock_screening_curve_figure:
                 run_experiment(cfg)
 
         self.assertEqual(mock_results.call_count, 2)
@@ -5499,6 +5547,14 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_learning_screening_figure.call_args.kwargs["learning_curve_path"],
             tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+        )
+        self.assertEqual(
+            mock_screening_curve_figure.call_args.kwargs["suffix"],
+            "anomalyaware_off",
+        )
+        self.assertEqual(
+            mock_screening_curve_figure.call_args.args[0],
+            tmp_path / "plots",
         )
 
     def test_run_experiment_wires_time_accuracy_plots_from_saved_results(self) -> None:
