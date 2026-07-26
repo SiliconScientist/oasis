@@ -877,9 +877,15 @@ def _load_oracle_learning_curve_rows_for_dataset(
         return []
 
     dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
+    zero_shot_rmse: float | None = None
     if cache_only:
         artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
         if artifact is not None:
+            wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=False)
+            wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+            zero_shot_rmse = _learning_curve_zero_shot_rmse_from_frame(
+                dataset_cfg, wide_df
+            )
             dataset_size = getattr(artifact.metadata, "dataset_size", None)
             dataset_include_x = _merged_include_x(
                 include_x,
@@ -902,11 +908,13 @@ def _load_oracle_learning_curve_rows_for_dataset(
             )
             if filtered_oracle_df is None or filtered_oracle_df.empty:
                 return []
+            filtered_oracle_df = filtered_oracle_df.assign(zero_shot_rmse=zero_shot_rmse)
             return filtered_oracle_df.to_dict(orient="records")
 
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
     wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=not cache_only)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    zero_shot_rmse = _learning_curve_zero_shot_rmse_from_frame(dataset_cfg, wide_df)
     wide_df, auxiliary_views = build_auxiliary_views(
         dataset_cfg,
         wide_df,
@@ -955,6 +963,7 @@ def _load_oracle_learning_curve_rows_for_dataset(
     )
     if filtered_oracle_df is None or filtered_oracle_df.empty:
         return []
+    filtered_oracle_df = filtered_oracle_df.assign(zero_shot_rmse=zero_shot_rmse)
     return filtered_oracle_df.to_dict(orient="records")
 
 
@@ -2804,11 +2813,11 @@ def compose_accuracy_curve_figure(
         return None
 
     panel_a_results = learning_curve_results
-    if getattr(learning_curve_results, "weighted_linear_uq_df", None) is not None:
+    if getattr(learning_curve_results, "weighted_linear_df", None) is not None:
         panel_a_results = learning_curve_results.from_mapping(
             {
                 **learning_curve_results.to_mapping(),
-                "weighted_linear_uq_df": None,
+                "weighted_linear_df": None,
             }
         )
 
@@ -2966,6 +2975,252 @@ def compose_sharpness_curve_figure(
             output_path=tmp_path / "panel_d_fraction.png",
             metric_column="oracle_sharpness",
             ylabel="Oracle sharpness",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=True,
+            show_legend=True,
+            legend_outside_right=True,
+            legend_source_df=pd.DataFrame(fraction_oracle_legend_rows),
+        )
+        return two_by_two_figure(
+            top_left_path=panel_a_path,
+            top_right_path=panel_b_path,
+            bottom_left_path=panel_c_path,
+            bottom_right_path=panel_d_path,
+            output_path=output_path,
+            panel_labels=("a)", "b)", "c)", "d)"),
+        )
+
+
+def compose_miscalibration_area_curve_figure(
+    *,
+    cfg: object,
+    learning_curve_results: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    dataset_size: int,
+    zero_shot_uq: dict[str, float],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    if learning_curve_results is None or not enabled_method_names:
+        return None
+
+    span_variants = {
+        variant.key: variant for variant in configured_budget_span_variants(cfg)
+    }
+    absolute_variant = span_variants.get("absolute")
+    fraction_variant = span_variants.get("fraction")
+    if absolute_variant is None or fraction_variant is None:
+        return None
+
+    absolute_include_x = _merged_include_x(
+        include_x,
+        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    fraction_include_x = _merged_include_x(
+        include_x,
+        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=absolute_variant,
+    )
+    fraction_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=fraction_variant,
+    )
+    fraction_oracle_legend_rows = list(fraction_oracle_rows)
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
+    ]
+    if not absolute_oracle_rows or not fraction_oracle_rows:
+        return None
+
+    panel_a_results = learning_curve_results
+    if getattr(learning_curve_results, "weighted_linear_uq_df", None) is not None:
+        panel_a_results = learning_curve_results.from_mapping(
+            {
+                **learning_curve_results.to_mapping(),
+                "weighted_linear_uq_df": None,
+            }
+        )
+    output_path = output_dir / "figure_miscalibration_area_curve.png"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        panel_a_path = miscalibration_area_plot(
+            panel_a_results,
+            output_path=tmp_path / "panel_a_absolute.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=absolute_include_x,
+            show_legend=False,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["miscalibration_area"],
+        )
+        panel_b_path = miscalibration_area_plot(
+            learning_curve_results,
+            output_path=tmp_path / "panel_b_fraction.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=fraction_include_x,
+            show_legend=True,
+            legend_outside_right=True,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["miscalibration_area"],
+        )
+        panel_c_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(absolute_oracle_rows),
+            output_path=tmp_path / "panel_c_absolute.png",
+            metric_column="oracle_miscalibration_area",
+            ylabel="Oracle miscalibration area",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=False,
+            show_legend=False,
+        )
+        panel_d_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(fraction_oracle_rows),
+            output_path=tmp_path / "panel_d_fraction.png",
+            metric_column="oracle_miscalibration_area",
+            ylabel="Oracle miscalibration area",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=True,
+            show_legend=True,
+            legend_outside_right=True,
+            legend_source_df=pd.DataFrame(fraction_oracle_legend_rows),
+        )
+        return two_by_two_figure(
+            top_left_path=panel_a_path,
+            top_right_path=panel_b_path,
+            bottom_left_path=panel_c_path,
+            bottom_right_path=panel_d_path,
+            output_path=output_path,
+            panel_labels=("a)", "b)", "c)", "d)"),
+        )
+
+
+def compose_dispersion_curve_figure(
+    *,
+    cfg: object,
+    learning_curve_results: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    dataset_size: int,
+    zero_shot_uq: dict[str, float],
+    min_x: int | None = None,
+    max_x: int | None = None,
+    include_x: list[int] | tuple[int, ...] | None = None,
+) -> Path | None:
+    if learning_curve_results is None or not enabled_method_names:
+        return None
+
+    span_variants = {
+        variant.key: variant for variant in configured_budget_span_variants(cfg)
+    }
+    absolute_variant = span_variants.get("absolute")
+    fraction_variant = span_variants.get("fraction")
+    if absolute_variant is None or fraction_variant is None:
+        return None
+
+    absolute_include_x = _merged_include_x(
+        include_x,
+        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    fraction_include_x = _merged_include_x(
+        include_x,
+        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    )
+    absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=absolute_variant,
+    )
+    fraction_oracle_rows = load_all_datasets_oracle_uq_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=min_x,
+        max_x=max_x,
+        include_x=include_x,
+        span_variant=fraction_variant,
+    )
+    fraction_oracle_legend_rows = list(fraction_oracle_rows)
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
+    ]
+    if not absolute_oracle_rows or not fraction_oracle_rows:
+        return None
+
+    panel_a_results = learning_curve_results
+    if getattr(learning_curve_results, "weighted_linear_uq_df", None) is not None:
+        panel_a_results = learning_curve_results.from_mapping(
+            {
+                **learning_curve_results.to_mapping(),
+                "weighted_linear_uq_df": None,
+            }
+        )
+    output_path = output_dir / "figure_dispersion_curve.png"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        panel_a_path = dispersion_plot(
+            panel_a_results,
+            output_path=tmp_path / "panel_a_absolute.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=absolute_include_x,
+            show_legend=False,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["dispersion"],
+        )
+        panel_b_path = dispersion_plot(
+            learning_curve_results,
+            output_path=tmp_path / "panel_b_fraction.png",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=fraction_include_x,
+            show_legend=True,
+            legend_outside_right=True,
+            show_xlabel=True,
+            zero_shot_value=zero_shot_uq["dispersion"],
+        )
+        panel_c_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(absolute_oracle_rows),
+            output_path=tmp_path / "panel_c_absolute.png",
+            metric_column="oracle_dispersion",
+            ylabel="Oracle dispersion",
+            title="",
+            min_x=min_x,
+            max_x=max_x,
+            include_x=None,
+            log_x=False,
+            show_legend=False,
+        )
+        panel_d_path = all_datasets_uq_oracle_plot(
+            pd.DataFrame(fraction_oracle_rows),
+            output_path=tmp_path / "panel_d_fraction.png",
+            metric_column="oracle_dispersion",
+            ylabel="Oracle dispersion",
             title="",
             min_x=min_x,
             max_x=max_x,
@@ -3569,6 +3824,30 @@ def _run_comparative_learning_stages(
             render_variant=_render_learning_curve_uq_variant,
         )
         compose_sharpness_curve_figure(
+            cfg=cfg,
+            learning_curve_results=learning_curve_results,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            dataset_size=_frame_height(wide_df),
+            zero_shot_uq=zero_shot_uq,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        compose_miscalibration_area_curve_figure(
+            cfg=cfg,
+            learning_curve_results=learning_curve_results,
+            output_dir=output_dir,
+            run_suffix=run_suffix,
+            enabled_method_names=list(enabled_learning_curve_method_names),
+            dataset_size=_frame_height(wide_df),
+            zero_shot_uq=zero_shot_uq,
+            min_x=plot_kwargs["min_x"],
+            max_x=plot_kwargs["max_x"],
+            include_x=configured_include_x,
+        )
+        compose_dispersion_curve_figure(
             cfg=cfg,
             learning_curve_results=learning_curve_results,
             output_dir=output_dir,

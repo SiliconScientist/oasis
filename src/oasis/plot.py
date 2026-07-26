@@ -1037,6 +1037,63 @@ def oracle_learning_curve_plot(
                 color=color,
                 label=dataset_labels[dataset],
             )
+    zero_shot_rows = (
+        filtered.loc[:, ["dataset", "zero_shot_rmse"]]
+        .dropna(subset=["zero_shot_rmse"])
+        .drop_duplicates(subset=["dataset"], keep="first")
+        if "zero_shot_rmse" in filtered.columns
+        else pd.DataFrame(columns=["dataset", "zero_shot_rmse"])
+    )
+    if not zero_shot_rows.empty:
+        yaxis_transform = mtransforms.blended_transform_factory(
+            ax.transAxes, ax.transData
+        )
+        _, y_max = ax.get_ylim()
+        clipped_zero_shot_rows = zero_shot_rows.loc[
+            zero_shot_rows["zero_shot_rmse"].astype(float) > y_max
+        ].reset_index(drop=True)
+        clipped_x_positions = (
+            np.linspace(-0.015, 0.015, num=len(clipped_zero_shot_rows))
+            if len(clipped_zero_shot_rows) > 1
+            else np.array([0.0]) if len(clipped_zero_shot_rows) == 1 else np.array([])
+        )
+        clipped_x_by_dataset = {
+            str(row["dataset"]): float(x_pos)
+            for (_, row), x_pos in zip(
+                clipped_zero_shot_rows.iterrows(),
+                clipped_x_positions,
+                strict=True,
+            )
+        }
+        for _, row in zero_shot_rows.iterrows():
+            dataset = str(row["dataset"])
+            zero_shot_rmse = float(row["zero_shot_rmse"])
+            if zero_shot_rmse > y_max:
+                ax.text(
+                    clipped_x_by_dataset[dataset],
+                    y_max,
+                    "↑",
+                    transform=yaxis_transform,
+                    ha="center",
+                    va="bottom",
+                    fontsize=_DEFAULT_TICK_FONTSIZE + 4,
+                    color=_dataset_color(dataset),
+                    clip_on=False,
+                    zorder=7,
+                )
+            else:
+                ax.scatter(
+                    [0.0],
+                    [zero_shot_rmse],
+                    marker="s",
+                    s=36,
+                    color=_dataset_color(dataset),
+                    edgecolors="black",
+                    linewidths=0.6,
+                    transform=yaxis_transform,
+                    clip_on=False,
+                    zorder=5,
+                )
 
     ax.set_xlabel("Train size", fontsize=fontsize)
     ax.set_ylabel("Oracle RMSE (eV)", fontsize=fontsize)
@@ -1049,15 +1106,32 @@ def oracle_learning_curve_plot(
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        if not zero_shot_rows.empty:
+            handles.append(
+                Line2D(
+                    [],
+                    [],
+                    linestyle="None",
+                    marker="s",
+                    markerfacecolor="black",
+                    markeredgecolor="black",
+                    color="black",
+                    markersize=6,
+                )
+            )
+            labels.append("Zero-shot")
         if legend_outside_right:
             ax.legend(
+                handles,
+                labels,
                 fontsize=_DEFAULT_LEGEND_FONTSIZE,
                 loc="upper left",
                 bbox_to_anchor=(1.02, 1.0),
                 borderaxespad=0.0,
             )
         else:
-            ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+            ax.legend(handles, labels, fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)

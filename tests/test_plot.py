@@ -822,6 +822,66 @@ class PlotTests(unittest.TestCase):
             )
             self.assertTrue(getattr(locator, "_integer", False))
 
+    def test_oracle_learning_curve_plot_adds_zero_shot_markers_and_legend_entry(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "KHLOHC-TOL", "KHLOHC-TOL"],
+                "n_train": [2, 4, 2, 4],
+                "oracle_rmse": [0.33, 0.30, 0.41, 0.29],
+                "zero_shot_rmse": [0.32, 0.32, 0.35, 0.35],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve_zero_shot.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(
+                [text.get_text() for text in ax.get_legend().get_texts()],
+                ["Bio-Mass", "KHLOHC-TOL", "Zero-shot"],
+            )
+            self.assertEqual(len(ax.collections), 2)
+
+    def test_oracle_learning_curve_plot_clips_offscale_zero_shot_markers_with_arrows(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc", "mamun_oh", "mamun_oh"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "KHLOHC-TOL", "KHLOHC-TOL", "OH-BMA", "OH-BMA"],
+                "n_train": [2, 4, 2, 4, 2, 4],
+                "oracle_rmse": [0.33, 0.30, 0.41, 0.29, 0.36, 0.31],
+                "zero_shot_rmse": [0.32, 0.32, 5.0, 5.0, 6.0, 6.0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_learning_curve_zero_shot_clipped.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = oracle_learning_curve_plot(
+                    oracle_df,
+                    output_path=output_path,
+                )
+                fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(len(ax.collections), 1)
+            arrow_texts = [text for text in ax.texts if text.get_text() == "↑"]
+            self.assertEqual(len(arrow_texts), 2)
+            self.assertNotEqual(
+                arrow_texts[0].get_position()[0],
+                arrow_texts[1].get_position()[0],
+            )
+
     def test_oracle_learning_curve_plot_can_use_log_x_axis(self) -> None:
         oracle_df = pd.DataFrame(
             {

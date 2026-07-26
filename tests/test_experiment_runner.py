@@ -39,6 +39,8 @@ from oasis.experiment_runner import (
     write_all_datasets_zero_shot_rmse_stage_plot,
     write_all_datasets_oracle_learning_curve_plot,
     compose_accuracy_curve_figure,
+    compose_dispersion_curve_figure,
+    compose_miscalibration_area_curve_figure,
     compose_sharpness_curve_figure,
     write_parity_plot,
     write_zero_shot_rmse_stage_plot,
@@ -4196,6 +4198,186 @@ class ExperimentRunnerTests(unittest.TestCase):
             tmp_path / "figure_sharpness_curve.png",
         )
 
+    def test_compose_miscalibration_area_curve_figure_renders_expected_panels(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[2, 4],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+        results = LearningCurveResults(
+            weighted_linear_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "miscalibration_area": [0.3, 0.2],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "miscalibration_area": [0.2, 0.1],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
+        )
+        absolute_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 2,
+                "oracle_miscalibration_area": 0.3,
+            }
+        ]
+        fraction_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 10,
+                "oracle_miscalibration_area": 0.25,
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-KHLOHC",
+                "n_train": 100,
+                "oracle_miscalibration_area": 0.2,
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.miscalibration_area_plot",
+                side_effect=[tmp_path / "panel_a.png", tmp_path / "panel_b.png"],
+            ) as mock_metric_plot, patch(
+                "oasis.experiment_runner.all_datasets_uq_oracle_plot",
+                side_effect=[tmp_path / "panel_c.png", tmp_path / "panel_d.png"],
+            ) as mock_oracle_plot, patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_uq_rows",
+                side_effect=[absolute_rows, fraction_rows],
+            ), patch(
+                "oasis.experiment_runner.two_by_two_figure",
+                return_value=tmp_path / "miscal_curve.png",
+            ) as mock_two_by_two:
+                saved_path = compose_miscalibration_area_curve_figure(
+                    cfg=cfg,
+                    learning_curve_results=results,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                    dataset_size=10,
+                    zero_shot_uq={"miscalibration_area": 0.42},
+                )
+
+        self.assertEqual(saved_path, tmp_path / "miscal_curve.png")
+        self.assertIsNone(mock_metric_plot.call_args_list[0].args[0].weighted_linear_uq_df)
+        self.assertTrue(mock_metric_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(
+            mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist(),
+            ["khlohc"],
+        )
+        self.assertEqual(
+            mock_two_by_two.call_args.kwargs["output_path"],
+            tmp_path / "figure_miscalibration_area_curve.png",
+        )
+
+    def test_compose_dispersion_curve_figure_renders_expected_panels(self) -> None:
+        cfg = SimpleNamespace(
+            experiment=SimpleNamespace(
+                learning_curve=SimpleNamespace(
+                    sweep_sizes=[2, 4],
+                    sweep_fractions=[0.5, 1.0],
+                    min_train=None,
+                    max_train=None,
+                    step=1,
+                )
+            )
+        )
+        results = LearningCurveResults(
+            weighted_linear_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "dispersion": [0.3, 0.2],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
+            ridge_uq_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "dispersion": [0.2, 0.1],
+                    "uncertainty_kind": ["spread_only", "spread_only"],
+                }
+            ),
+        )
+        absolute_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 2,
+                "oracle_dispersion": 0.3,
+            }
+        ]
+        fraction_rows = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Bio-Mass",
+                "n_train": 10,
+                "oracle_dispersion": 0.25,
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-KHLOHC",
+                "n_train": 100,
+                "oracle_dispersion": 0.2,
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch(
+                "oasis.experiment_runner.dispersion_plot",
+                side_effect=[tmp_path / "panel_a.png", tmp_path / "panel_b.png"],
+            ) as mock_metric_plot, patch(
+                "oasis.experiment_runner.all_datasets_uq_oracle_plot",
+                side_effect=[tmp_path / "panel_c.png", tmp_path / "panel_d.png"],
+            ) as mock_oracle_plot, patch(
+                "oasis.experiment_runner.load_all_datasets_oracle_uq_rows",
+                side_effect=[absolute_rows, fraction_rows],
+            ), patch(
+                "oasis.experiment_runner.two_by_two_figure",
+                return_value=tmp_path / "dispersion_curve.png",
+            ) as mock_two_by_two:
+                saved_path = compose_dispersion_curve_figure(
+                    cfg=cfg,
+                    learning_curve_results=results,
+                    output_dir=tmp_path,
+                    run_suffix="anomalyaware_off",
+                    enabled_method_names=["ridge"],
+                    dataset_size=10,
+                    zero_shot_uq={"dispersion": 0.42},
+                )
+
+        self.assertEqual(saved_path, tmp_path / "dispersion_curve.png")
+        self.assertIsNone(mock_metric_plot.call_args_list[0].args[0].weighted_linear_uq_df)
+        self.assertTrue(mock_metric_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(
+            mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist(),
+            ["khlohc"],
+        )
+        self.assertEqual(
+            mock_two_by_two.call_args.kwargs["output_path"],
+            tmp_path / "figure_dispersion_curve.png",
+        )
+
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,
     ) -> None:
@@ -5526,7 +5708,16 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_screening_figure, patch(
                 "oasis.experiment_runner.compose_screening_curve_figure",
                 return_value=tmp_path / "plots" / "figure_screening_curve.png",
-            ) as mock_screening_curve_figure:
+            ) as mock_screening_curve_figure, patch(
+                "oasis.experiment_runner.compose_sharpness_curve_figure",
+                return_value=tmp_path / "plots" / "figure_sharpness_curve.png",
+            ) as mock_sharpness_curve_figure, patch(
+                "oasis.experiment_runner.compose_miscalibration_area_curve_figure",
+                return_value=tmp_path / "plots" / "figure_miscalibration_area_curve.png",
+            ) as mock_miscalibration_curve_figure, patch(
+                "oasis.experiment_runner.compose_dispersion_curve_figure",
+                return_value=tmp_path / "plots" / "figure_dispersion_curve.png",
+            ) as mock_dispersion_curve_figure:
                 run_experiment(cfg)
 
         self.assertEqual(mock_results.call_count, 2)
@@ -5554,6 +5745,18 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_screening_curve_figure.call_args.args[0],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_sharpness_curve_figure.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_miscalibration_curve_figure.call_args.kwargs["output_dir"],
+            tmp_path / "plots",
+        )
+        self.assertEqual(
+            mock_dispersion_curve_figure.call_args.kwargs["output_dir"],
             tmp_path / "plots",
         )
 
