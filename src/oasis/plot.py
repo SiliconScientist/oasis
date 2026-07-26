@@ -89,7 +89,8 @@ _METHOD_UQ_FIELDS = {
 
 
 def _mlip_display_name(mlip: str) -> str:
-    return _MLIP_DISPLAY_NAMES.get(mlip, mlip)
+    default_name = _MLIP_DISPLAY_NAMES.get(mlip, mlip)
+    return get_plot_style().mlip_alias(mlip, default_name)
 
 
 def _mlip_marker_map(mlips: list[str] | tuple[str, ...]) -> dict[str, str]:
@@ -597,7 +598,7 @@ def parity_plot(
             pred_values,
             s=35,
             alpha=0.85,
-            label=label,
+            label=_mlip_display_name(label),
             color=_mlip_color(label),
             edgecolor="black",
             linewidth=0.5,

@@ -12,8 +12,14 @@ weighted_linear = "tab:gray"
 weighted_simplex = "teal"
 
 [mlips]
-# mace-mh-1 = "#1f77b4"
-# orb-v3-conservative-inf-omat = "#d62728"
+
+[mlips.mace-mh-1]
+alias = "MACE"
+color = "#1f77b4"
+
+[mlips.orb-v3-conservative-inf-omat]
+alias = "ORB-V3"
+color = "#d62728"
 
 [policies]
 # min_screening_rmse = "#d62728"

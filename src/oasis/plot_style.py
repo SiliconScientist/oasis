@@ -93,6 +93,44 @@ def _validated_color_map(raw_section: Any, section_name: str) -> dict[str, str]:
     return validated
 
 
+def _validated_mlip_profiles(raw_section: Any) -> dict[str, dict[str, str]]:
+    if raw_section is None:
+        return {}
+    if not isinstance(raw_section, dict):
+        raise ValueError("[mlips] must be a table of MLIP profile subtables.")
+    validated: dict[str, dict[str, str]] = {}
+    for mlip_name, profile in raw_section.items():
+        if isinstance(profile, str):
+            validated[str(mlip_name)] = {"color": profile}
+            continue
+        if not isinstance(profile, dict):
+            raise ValueError(
+                f"[mlips.{mlip_name}] must be a table with alias/color fields."
+            )
+        normalized: dict[str, str] = {}
+        alias = profile.get("alias")
+        color = profile.get("color")
+        if alias is not None:
+            if not isinstance(alias, str):
+                raise ValueError(f"[mlips.{mlip_name}].alias must be a string.")
+            normalized["alias"] = alias
+        if color is not None:
+            if not isinstance(color, str):
+                raise ValueError(f"[mlips.{mlip_name}].color must be a string.")
+            normalized["color"] = color
+        unknown_fields = sorted(
+            str(field_name)
+            for field_name in profile.keys()
+            if field_name not in {"alias", "color"}
+        )
+        if unknown_fields:
+            raise ValueError(
+                f"[mlips.{mlip_name}] contains unsupported fields: {unknown_fields}"
+            )
+        validated[str(mlip_name)] = normalized
+    return validated
+
+
 class PlotStyle:
     def __init__(self, raw_config: dict[str, Any] | None = None) -> None:
         config = {} if raw_config is None else raw_config
@@ -101,7 +139,7 @@ class PlotStyle:
             **_DEFAULT_METHOD_COLORS,
             **_validated_color_map(config.get("methods"), "methods"),
         }
-        self.mlip_colors = _validated_color_map(config.get("mlips"), "mlips")
+        self.mlip_profiles = _validated_mlip_profiles(config.get("mlips"))
         self.policy_colors = _validated_color_map(config.get("policies"), "policies")
         self.baseline_colors = _validated_color_map(
             config.get("baselines"), "baselines"
@@ -122,7 +160,16 @@ class PlotStyle:
         return _stable_palette_color(method, _DEFAULT_DATASET_PALETTE)
 
     def mlip_color(self, mlip: str) -> str:
-        return self.mlip_colors.get(mlip, _stable_hex_color(mlip))
+        profile = self.mlip_profiles.get(mlip, {})
+        return profile.get("color", _stable_hex_color(mlip))
+
+    def mlip_alias(self, mlip: str, default: str | None = None) -> str:
+        profile = self.mlip_profiles.get(mlip, {})
+        if "alias" in profile:
+            return profile["alias"]
+        if default is not None:
+            return default
+        return mlip
 
     def policy_color(self, policy_name: str) -> str:
         return self.policy_colors.get(policy_name, _stable_hex_color(policy_name))

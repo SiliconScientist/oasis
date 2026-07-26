@@ -714,6 +714,44 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(colors[:2], ["#abcdef", "#fedcba"])
 
+    def test_parity_plot_uses_configured_mlip_alias_and_color(self) -> None:
+        df = pd.DataFrame(
+            {
+                "reference_ads_eng": [0.0, 1.0],
+                "mace-mh-1_mlip_ads_eng_median": [0.1, 0.9],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            style_path = tmp_path / "plot_style.toml"
+            style_path.write_text(
+                "\n".join(
+                    [
+                        "[mlips]",
+                        "",
+                        "[mlips.mace-mh-1]",
+                        "alias = 'MACE'",
+                        "color = '#123456'",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"OASIS_PLOT_STYLE_PATH": str(style_path)}):
+                reset_plot_style_cache()
+                with patch("oasis.plot.plt.close"):
+                    parity_plot(df, output_path=tmp_path / "parity.png")
+                    fig = parity_plot.__globals__["plt"].gcf()
+                    legend_labels = [text.get_text() for text in fig.axes[0].get_legend().get_texts()]
+                    scatter = fig.axes[0].collections[0]
+
+            self.assertIn("MACE", legend_labels)
+            self.assertEqual(
+                tuple(round(float(channel), 6) for channel in scatter.get_facecolors()[0][:3]),
+                (0.070588, 0.203922, 0.337255),
+            )
+
     def test_oracle_learning_curve_plot_renders_single_dataset_curve(self) -> None:
         oracle_df = pd.DataFrame(
             {
