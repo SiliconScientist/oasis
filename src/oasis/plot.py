@@ -2303,6 +2303,95 @@ def all_datasets_uq_oracle_plot(
         legend_outside_right=legend_outside_right,
         legend_source_df=legend_source_df,
     )
+    zero_shot_column = (
+        f"zero_shot_{metric_column.removeprefix('oracle_')}"
+        if metric_column.startswith("oracle_")
+        else None
+    )
+    zero_shot_rows = (
+        oracle_df.loc[:, ["dataset", zero_shot_column]]
+        .dropna(subset=[zero_shot_column])
+        .drop_duplicates(subset=["dataset"], keep="first")
+        if zero_shot_column is not None and zero_shot_column in oracle_df.columns
+        else pd.DataFrame(columns=["dataset", "zero_shot_value"])
+    )
+    if not zero_shot_rows.empty:
+        yaxis_transform = mtransforms.blended_transform_factory(
+            ax.transAxes, ax.transData
+        )
+        _, y_max = ax.get_ylim()
+        clipped_zero_shot_rows = zero_shot_rows.loc[
+            zero_shot_rows[zero_shot_column].astype(float) > y_max
+        ].reset_index(drop=True)
+        clipped_x_positions = (
+            np.linspace(-0.015, 0.015, num=len(clipped_zero_shot_rows))
+            if len(clipped_zero_shot_rows) > 1
+            else np.array([0.0]) if len(clipped_zero_shot_rows) == 1 else np.array([])
+        )
+        clipped_x_by_dataset = {
+            str(row["dataset"]): float(x_pos)
+            for (_, row), x_pos in zip(
+                clipped_zero_shot_rows.iterrows(),
+                clipped_x_positions,
+                strict=True,
+            )
+        }
+        for _, row in zero_shot_rows.iterrows():
+            dataset = str(row["dataset"])
+            zero_shot_value = float(row[zero_shot_column])
+            if zero_shot_value > y_max:
+                ax.text(
+                    clipped_x_by_dataset[dataset],
+                    y_max,
+                    "↑",
+                    transform=yaxis_transform,
+                    ha="center",
+                    va="bottom",
+                    fontsize=_DEFAULT_TICK_FONTSIZE + 4,
+                    color=_dataset_color(dataset),
+                    clip_on=False,
+                    zorder=7,
+                )
+            else:
+                ax.scatter(
+                    [0.0],
+                    [zero_shot_value],
+                    marker="s",
+                    s=36,
+                    color=_dataset_color(dataset),
+                    edgecolors="black",
+                    linewidths=0.6,
+                    transform=yaxis_transform,
+                    clip_on=False,
+                    zorder=5,
+                )
+    if show_legend and not zero_shot_rows.empty:
+        handles, labels = ax.get_legend_handles_labels()
+        handles.append(
+            Line2D(
+                [],
+                [],
+                linestyle="None",
+                marker="s",
+                markerfacecolor="black",
+                markeredgecolor="black",
+                color="black",
+                markersize=6,
+            )
+        )
+        labels.append("Zero-shot")
+        ax.legend_.remove()
+        if legend_outside_right:
+            ax.legend(
+                handles,
+                labels,
+                fontsize=_DEFAULT_LEGEND_FONTSIZE,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+            )
+        else:
+            ax.legend(handles, labels, fontsize=_DEFAULT_LEGEND_FONTSIZE)
     plt.tight_layout()
 
     output_path = Path(output_path)

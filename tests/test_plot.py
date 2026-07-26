@@ -665,6 +665,7 @@ class PlotTests(unittest.TestCase):
                 "oracle_miscalibration_area": [0.15, 0.10, 0.22, 0.18],
                 "oracle_sharpness": [0.45, 0.25, 0.50, 0.40],
                 "oracle_dispersion": [0.55, 0.35, 0.60, 0.48],
+                "zero_shot_sharpness": [0.20, 0.20, 0.30, 0.30],
                 "oracle_method": ["probe_gnn", "ridge", "ridge", "ridge"],
             }
         )
@@ -684,6 +685,45 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
+            self.assertEqual(
+                [text.get_text() for text in ax.get_legend().get_texts()],
+                ["Bio-Mass", "KHLOHC-TOL", "Zero-shot"],
+            )
+            self.assertEqual(len(ax.collections), 2)
+
+    def test_all_datasets_uq_oracle_plot_clips_multiple_zero_shot_markers_with_spread_arrows(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc", "mamun_oh", "mamun_oh"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "KHLOHC-TOL", "KHLOHC-TOL", "OH-BMA", "OH-BMA"],
+                "n_train": [2, 4, 2, 4, 2, 4],
+                "oracle_sharpness": [0.45, 0.25, 0.50, 0.40, 0.55, 0.42],
+                "zero_shot_sharpness": [0.2, 0.2, 5.0, 5.0, 6.0, 6.0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "oracle_uq_zero_shot_clipped.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = all_datasets_uq_oracle_plot(
+                    oracle_df,
+                    output_path=output_path,
+                    metric_column="oracle_sharpness",
+                    ylabel="Oracle sharpness",
+                    title="Oracle sharpness by dataset",
+                )
+                fig = all_datasets_uq_oracle_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(len(ax.collections), 1)
+            arrow_texts = [text for text in ax.texts if text.get_text() == "↑"]
+            self.assertEqual(len(arrow_texts), 2)
+            self.assertNotEqual(
+                arrow_texts[0].get_position()[0],
+                arrow_texts[1].get_position()[0],
+            )
 
     def test_oracle_learning_curve_plot_uses_configured_dataset_colors(self) -> None:
         oracle_df = pd.DataFrame(

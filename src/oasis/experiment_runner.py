@@ -2512,9 +2512,13 @@ def _load_all_datasets_oracle_uq_rows(
         return []
 
     dataset_label = _dataset_label_for_tag(dataset_cfg, dataset_tag=dataset_tag)
+    zero_shot_uq: dict[str, float] | None = None
     if cache_only:
         artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
         if artifact is not None:
+            wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=False)
+            wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+            zero_shot_uq = _zero_shot_uq_baselines(prepare_parity_plot_data(wide_df))
             dataset_size = getattr(artifact.metadata, "dataset_size", None)
             dataset_include_x = _merged_include_x(
                 include_x,
@@ -2537,11 +2541,17 @@ def _load_all_datasets_oracle_uq_rows(
             )
             if filtered_oracle_df is None or filtered_oracle_df.empty:
                 return []
+            filtered_oracle_df = filtered_oracle_df.assign(
+                zero_shot_miscalibration_area=zero_shot_uq["miscalibration_area"],
+                zero_shot_sharpness=zero_shot_uq["sharpness"],
+                zero_shot_dispersion=zero_shot_uq["dispersion"],
+            )
             return filtered_oracle_df.to_dict(orient="records")
 
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
     wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=not cache_only)
     wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
+    zero_shot_uq = _zero_shot_uq_baselines(prepare_parity_plot_data(wide_df))
     wide_df, auxiliary_views = build_auxiliary_views(
         dataset_cfg,
         wide_df,
@@ -2591,6 +2601,11 @@ def _load_all_datasets_oracle_uq_rows(
     )
     if filtered_oracle_df is None or filtered_oracle_df.empty:
         return []
+    filtered_oracle_df = filtered_oracle_df.assign(
+        zero_shot_miscalibration_area=zero_shot_uq["miscalibration_area"],
+        zero_shot_sharpness=zero_shot_uq["sharpness"],
+        zero_shot_dispersion=zero_shot_uq["dispersion"],
+    )
     return filtered_oracle_df.to_dict(orient="records")
 
 

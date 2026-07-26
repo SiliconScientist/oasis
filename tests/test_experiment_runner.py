@@ -3045,6 +3045,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oracle_sharpness": 0.30,
                     "oracle_dispersion": 0.40,
                     "oracle_method": "ridge",
+                    "zero_shot_miscalibration_area": 0.4,
+                    "zero_shot_sharpness": 0.10000000000000002,
+                    "zero_shot_dispersion": 9.10027404030511e-16,
                 },
                 {
                     "dataset": "bio_mass",
@@ -3054,6 +3057,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oracle_sharpness": 0.22,
                     "oracle_dispersion": 0.32,
                     "oracle_method": "probe_gnn",
+                    "zero_shot_miscalibration_area": 0.4,
+                    "zero_shot_sharpness": 0.10000000000000002,
+                    "zero_shot_dispersion": 9.10027404030511e-16,
                 },
             ],
         )
@@ -3166,7 +3172,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             return_value=cached_artifact,
         ), patch(
             "oasis.experiment_runner.load_filtered_wide_predictions",
-            side_effect=AssertionError("cache-only UQ oracle load should not rebuild"),
+            return_value=(_FakeWideFrame(reactions=["r0", "r1", "r2", "r3"]), [], _FakeWideFrame(reactions=["r0", "r1", "r2", "r3"])),
         ):
             rows = _load_all_datasets_oracle_uq_rows(
                 cfg,
@@ -3191,6 +3197,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oracle_sharpness": 0.30,
                     "oracle_dispersion": 0.40,
                     "oracle_method": "ridge",
+                    "zero_shot_miscalibration_area": 0.4,
+                    "zero_shot_sharpness": 0.10000000000000002,
+                    "zero_shot_dispersion": 9.10027404030511e-16,
                 },
                 {
                     "dataset": "bio_mass",
@@ -3200,6 +3209,9 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "oracle_sharpness": 0.25,
                     "oracle_dispersion": 0.35,
                     "oracle_method": "ridge",
+                    "zero_shot_miscalibration_area": 0.4,
+                    "zero_shot_sharpness": 0.10000000000000002,
+                    "zero_shot_dispersion": 9.10027404030511e-16,
                 },
             ],
         )
