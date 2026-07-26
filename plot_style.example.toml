@@ -1,0 +1,29 @@
+[datasets]
+# bio_mass = "#1f77b4"
+# methane_oxidation = "#ff7f0e"
+
+[methods]
+ridge = "tab:blue"
+kernel_ridge = "tab:cyan"
+lasso = "tab:orange"
+elastic = "tab:purple"
+residual = "tab:green"
+weighted_linear = "tab:gray"
+weighted_simplex = "teal"
+
+[mlips]
+# mace-mh-1 = "#1f77b4"
+# orb-v3-conservative-inf-omat = "#d62728"
+
+[policies]
+# min_screening_rmse = "#d62728"
+# combined_screening_rmse_miscalibration = "#2ca02c"
+
+[baselines]
+# Few-shot (residual) = "#2ca02c"
+# Kernel ridge = "#8c564b"
+
+[stages]
+Full / all MLIPs = "tab:blue"
+Matched subset / all MLIPs = "tab:orange"
+Matched subset / anomaly-aware selection = "tab:orange"

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from io import StringIO
+import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -28,6 +31,7 @@ from oasis.learning_curve.time_accuracy import (
     build_time_accuracy_table,
 )
 from oasis.mlip.timing import MlipGenerationTimingSummary
+from oasis.plot_style import get_plot_style
 from oasis.sweep import LearningCurveResults
 
 _MLIP_DISPLAY_NAMES = {
@@ -38,18 +42,6 @@ _MLIP_DISPLAY_NAMES = {
     "uma-s-1p1": "UMA-s-1p1",
 }
 _MLIP_SWARM_MARKERS = ("o", "s", "^", "D", "P", "X", "v", "<", ">", "8", "h", "*")
-_MLIP_SWARM_COLORS = (
-    "tab:blue",
-    "tab:orange",
-    "tab:green",
-    "tab:red",
-    "tab:purple",
-    "tab:brown",
-    "tab:pink",
-    "tab:gray",
-    "tab:olive",
-    "tab:cyan",
-)
 _DEFAULT_PLOT_FONTSIZE = 16
 _DEFAULT_TICK_FONTSIZE = 8
 _DEFAULT_LEGEND_FONTSIZE = 8
@@ -105,6 +97,43 @@ def _mlip_marker_map(mlips: list[str] | tuple[str, ...]) -> dict[str, str]:
         mlip: _MLIP_SWARM_MARKERS[index % len(_MLIP_SWARM_MARKERS)]
         for index, mlip in enumerate(sorted(dict.fromkeys(mlips)))
     }
+
+
+def _method_color(method_name: str, default: str) -> str:
+    return get_plot_style().method_color(method_name, default)
+
+
+def _dataset_color(dataset_name: str) -> str:
+    return get_plot_style().dataset_color(dataset_name)
+
+
+def _mlip_color(mlip_name: str) -> str:
+    return get_plot_style().mlip_color(mlip_name)
+
+
+def _policy_color(policy_name: str) -> str:
+    return get_plot_style().policy_color(policy_name)
+
+
+def _baseline_color(baseline_name: str) -> str:
+    return get_plot_style().baseline_color(baseline_name)
+
+
+def _stage_color(stage_name: str) -> str:
+    return get_plot_style().stage_color(stage_name)
+
+
+def _oracle_series_color() -> str:
+    return _policy_color("oracle_best_held_out_rmse")
+
+
+def _normalize_dataset_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _dataset_aliases(value: str) -> set[str]:
+    raw = str(value).strip().lower()
+    return {raw, _normalize_dataset_token(raw)}
 
 
 def _ordered_learning_curve_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -410,16 +439,17 @@ def _draw_uq_metric_curve(
             for field_name, frame in results.to_mapping().items()
         }
     )
-    for _, _, uq_field, display_name, marker, color in _METHOD_PLOT_STYLES:
+    for method_name, _, uq_field, display_name, marker, color in _METHOD_PLOT_STYLES:
         frame = getattr(results, uq_field)
         if frame is None or frame.empty or metric_column not in frame.columns:
             continue
         metric_std_column = f"{metric_column}_std"
+        resolved_color = _method_color(method_name, color)
         ax.plot(
             frame[x_column],
             frame[metric_column],
             marker=marker,
-            color=color,
+            color=resolved_color,
             label=display_name,
         )
         if metric_std_column in frame.columns:
@@ -427,7 +457,7 @@ def _draw_uq_metric_curve(
                 frame[x_column],
                 frame[metric_column] - frame[metric_std_column],
                 frame[metric_column] + frame[metric_std_column],
-                color=color,
+                color=resolved_color,
                 alpha=0.2,
             )
     if zero_shot_value is not None:
@@ -546,12 +576,11 @@ def parity_plot(
     ref = plot_data.reference
 
     fig, ax = plt.subplots(figsize=(7, 7))
-    cmap = matplotlib.colormaps.get_cmap("tab10").resampled(len(plot_data.predictions))
     plotted_ref_values: list[np.ndarray] = []
     plotted_prediction_values: list[np.ndarray] = []
     parity_markers = _mlip_marker_map(list(plot_data.predictions))
 
-    for idx, (label, preds) in enumerate(plot_data.predictions.items()):
+    for label, preds in plot_data.predictions.items():
         mask = None
         if validity_mask_by_prediction is not None:
             mask = np.asarray(validity_mask_by_prediction.get(label), dtype=bool)
@@ -569,7 +598,7 @@ def parity_plot(
             s=35,
             alpha=0.85,
             label=label,
-            color=cmap(idx),
+            color=_mlip_color(label),
             edgecolor="black",
             linewidth=0.5,
             marker=parity_markers[label],
@@ -651,11 +680,6 @@ def zero_shot_rmse_stage_plot(
         "Matched subset / all MLIPs",
         "Matched subset / anomaly-aware selection",
     ]
-    stage_colors = {
-        "Full / all MLIPs": "tab:blue",
-        "Matched subset / all MLIPs": "tab:orange",
-        "Matched subset / anomaly-aware selection": "tab:orange",
-    }
     filtered = stage_df.loc[stage_df["stage"].isin(stage_order)].copy()
     if filtered.empty:
         raise ValueError("stage_df does not contain any recognized stage labels.")
@@ -738,7 +762,7 @@ def zero_shot_rmse_stage_plot(
                 plotted_rmse,
                 width,
                 label=stage_name,
-                color=stage_colors[stage_name],
+                color=_stage_color(stage_name),
                 zorder=3,
             )
             plotted_artists = [
@@ -801,10 +825,7 @@ def zero_shot_rmse_stage_plot(
         swarm_offset = plot_offsets[swarm_stage]
         swarm_mlips = sorted(swarm_rows["mlip"].dropna().unique().tolist())
         swarm_markers = _mlip_marker_map(swarm_mlips)
-        swarm_colors = {
-            mlip: _MLIP_SWARM_COLORS[index % len(_MLIP_SWARM_COLORS)]
-            for index, mlip in enumerate(swarm_mlips)
-        }
+        swarm_colors = {mlip: _mlip_color(mlip) for mlip in swarm_mlips}
         for dataset_index, dataset_name in enumerate(dataset_order):
             dataset_swarm = swarm_rows.loc[
                 (swarm_rows["dataset"] == dataset_name)
@@ -870,7 +891,7 @@ def zero_shot_rmse_stage_plot(
         Line2D(
             [],
             [],
-            color=stage_colors["Full / all MLIPs"],
+            color=_stage_color("Full / all MLIPs"),
             linewidth=8,
             solid_capstyle="butt",
             label="Full / all MLIPs",
@@ -886,7 +907,7 @@ def zero_shot_rmse_stage_plot(
         Line2D(
             [],
             [],
-            color=stage_colors["Matched subset / anomaly-aware selection"],
+            color=_stage_color("Matched subset / anomaly-aware selection"),
             linewidth=8,
             solid_capstyle="butt",
             label="Matched subset / anomaly-aware selection",
@@ -994,10 +1015,9 @@ def oracle_learning_curve_plot(
     filtered = filtered.sort_values(["dataset", "n_train"]).reset_index(drop=True)
 
     fig, ax = plt.subplots(figsize=(7, 4))
-    cmap = plt.cm.get_cmap("tab10", len(dataset_order))
-    for idx, dataset in enumerate(dataset_order):
+    for dataset in dataset_order:
         dataset_rows = filtered.loc[filtered["dataset"] == dataset]
-        color = cmap(idx)
+        color = _dataset_color(dataset)
         if dataset in plot_dataset_order:
             ax.plot(
                 dataset_rows["n_train"],
@@ -1071,91 +1091,97 @@ def learning_curve_plot(
     )
     fig, ax = plt.subplots(figsize=(7, 4))
     if results.ridge_df is not None:
+        ridge_color = _method_color("ridge", "tab:blue")
         ax.plot(
             results.ridge_df["n_train"],
             results.ridge_df["rmse_mean"],
             marker="o",
-            color="tab:blue",
+            color=ridge_color,
             label="Ridge mean",
         )
         ax.fill_between(
             results.ridge_df["n_train"],
             results.ridge_df["rmse_mean"] - results.ridge_df["rmse_std"],
             results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
-            color="tab:blue",
+            color=ridge_color,
             alpha=0.2,
             label="Ridge +/- 1sd",
         )
     if results.kernel_ridge_df is not None:
+        kernel_ridge_color = _method_color("kernel_ridge", "tab:cyan")
         ax.plot(
             results.kernel_ridge_df["n_train"],
             results.kernel_ridge_df["rmse_mean"],
             marker="X",
-            color="tab:cyan",
+            color=kernel_ridge_color,
             label="Kernel Ridge mean",
         )
         ax.fill_between(
             results.kernel_ridge_df["n_train"],
             results.kernel_ridge_df["rmse_mean"] - results.kernel_ridge_df["rmse_std"],
             results.kernel_ridge_df["rmse_mean"] + results.kernel_ridge_df["rmse_std"],
-            color="tab:cyan",
+            color=kernel_ridge_color,
             alpha=0.2,
             label="Kernel Ridge +/- 1sd",
         )
     if results.lasso_df is not None:
+        lasso_color = _method_color("lasso", "tab:orange")
         ax.plot(
             results.lasso_df["n_train"],
             results.lasso_df["rmse_mean"],
             marker="s",
-            color="tab:orange",
+            color=lasso_color,
             label="Lasso mean",
         )
         ax.fill_between(
             results.lasso_df["n_train"],
             results.lasso_df["rmse_mean"] - results.lasso_df["rmse_std"],
             results.lasso_df["rmse_mean"] + results.lasso_df["rmse_std"],
-            color="tab:orange",
+            color=lasso_color,
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
     if results.elastic_df is not None:
+        elastic_color = _method_color("elastic", "tab:purple")
         ax.plot(
             results.elastic_df["n_train"],
             results.elastic_df["rmse_mean"],
             marker="D",
-            color="tab:purple",
+            color=elastic_color,
             label="Elastic Net mean",
         )
         ax.fill_between(
             results.elastic_df["n_train"],
             results.elastic_df["rmse_mean"] - results.elastic_df["rmse_std"],
             results.elastic_df["rmse_mean"] + results.elastic_df["rmse_std"],
-            color="tab:purple",
+            color=elastic_color,
             alpha=0.2,
             label="Elastic Net +/- 1sd",
         )
     if results.resid_df is not None:
+        residual_color = _method_color("residual", "tab:green")
         ax.plot(
             results.resid_df["n_train"],
             results.resid_df["rmse_mean"],
             marker="^",
-            color="tab:green",
+            color=residual_color,
             label="Residual mean",
         )
         ax.fill_between(
             results.resid_df["n_train"],
             results.resid_df["rmse_mean"] - results.resid_df["rmse_std"],
             results.resid_df["rmse_mean"] + results.resid_df["rmse_std"],
-            color="tab:green",
+            color=residual_color,
             alpha=0.2,
             label="Residual +/- 1sd",
         )
     if results.weighted_linear_df is not None:
+        weighted_linear_color = _method_color("weighted_linear", "tab:gray")
         ax.plot(
             results.weighted_linear_df["n_train"],
             results.weighted_linear_df["rmse_mean"],
             marker="*",
-            color="tab:gray",
+            color=weighted_linear_color,
             label="Weighted linear mean",
         )
         ax.fill_between(
@@ -1164,16 +1190,17 @@ def learning_curve_plot(
             - results.weighted_linear_df["rmse_std"],
             results.weighted_linear_df["rmse_mean"]
             + results.weighted_linear_df["rmse_std"],
-            color="tab:gray",
+            color=weighted_linear_color,
             alpha=0.2,
             label="Weighted linear +/- 1sd",
         )
     if results.weighted_simplex_df is not None:
+        weighted_simplex_color = _method_color("weighted_simplex", "teal")
         ax.plot(
             results.weighted_simplex_df["n_train"],
             results.weighted_simplex_df["rmse_mean"],
             marker="8",
-            color="teal",
+            color=weighted_simplex_color,
             label="Weighted simplex mean",
         )
         ax.fill_between(
@@ -1182,87 +1209,92 @@ def learning_curve_plot(
             - results.weighted_simplex_df["rmse_std"],
             results.weighted_simplex_df["rmse_mean"]
             + results.weighted_simplex_df["rmse_std"],
-            color="teal",
+            color=weighted_simplex_color,
             alpha=0.2,
             label="Weighted simplex +/- 1sd",
         )
     if results.graph_mean_df is not None:
+        graph_mean_color = _method_color("graph_mean", "tab:red")
         ax.plot(
             results.graph_mean_df["n_train"],
             results.graph_mean_df["rmse_mean"],
             marker="P",
-            color="tab:red",
+            color=graph_mean_color,
             label="Graph mean mean",
         )
         ax.fill_between(
             results.graph_mean_df["n_train"],
             results.graph_mean_df["rmse_mean"] - results.graph_mean_df["rmse_std"],
             results.graph_mean_df["rmse_mean"] + results.graph_mean_df["rmse_std"],
-            color="tab:red",
+            color=graph_mean_color,
             alpha=0.2,
             label="Graph mean +/- 1sd",
         )
     if results.moe_df is not None:
+        moe_color = _method_color("moe", "tab:purple")
         ax.plot(
             results.moe_df["n_train"],
             results.moe_df["rmse_mean"],
             marker="*",
-            color="tab:purple",
+            color=moe_color,
             label="MoE mean",
         )
         ax.fill_between(
             results.moe_df["n_train"],
             results.moe_df["rmse_mean"] - results.moe_df["rmse_std"],
             results.moe_df["rmse_mean"] + results.moe_df["rmse_std"],
-            color="tab:purple",
+            color=moe_color,
             alpha=0.2,
             label="MoE +/- 1sd",
         )
     if results.gnn_direct_df is not None:
+        gnn_direct_color = _method_color("gnn_direct", "tab:cyan")
         ax.plot(
             results.gnn_direct_df["n_train"],
             results.gnn_direct_df["rmse_mean"],
             marker="s",
-            color="tab:cyan",
+            color=gnn_direct_color,
             label="GNN direct mean",
         )
         ax.fill_between(
             results.gnn_direct_df["n_train"],
             results.gnn_direct_df["rmse_mean"] - results.gnn_direct_df["rmse_std"],
             results.gnn_direct_df["rmse_mean"] + results.gnn_direct_df["rmse_std"],
-            color="tab:cyan",
+            color=gnn_direct_color,
             alpha=0.2,
             label="GNN direct +/- 1sd",
         )
     if results.probe_gnn_df is not None:
+        probe_gnn_color = _method_color("probe_gnn", "tab:olive")
         ax.plot(
             results.probe_gnn_df["n_train"],
             results.probe_gnn_df["rmse_mean"],
             marker="D",
-            color="tab:olive",
+            color=probe_gnn_color,
             label="Probe GNN mean",
         )
         ax.fill_between(
             results.probe_gnn_df["n_train"],
             results.probe_gnn_df["rmse_mean"] - results.probe_gnn_df["rmse_std"],
             results.probe_gnn_df["rmse_mean"] + results.probe_gnn_df["rmse_std"],
-            color="tab:olive",
+            color=probe_gnn_color,
             alpha=0.2,
             label="Probe GNN +/- 1sd",
         )
     if results.latent_df is not None:
+        latent_color = _method_color("latent", "tab:brown")
         ax.plot(
             results.latent_df["n_train"],
             results.latent_df["rmse_mean"],
             marker="v",
-            color="tab:brown",
+            color=latent_color,
             label="Latent mean",
         )
         ax.fill_between(
             results.latent_df["n_train"],
             results.latent_df["rmse_mean"] - results.latent_df["rmse_std"],
             results.latent_df["rmse_mean"] + results.latent_df["rmse_std"],
-            color="tab:brown",
+            color=latent_color,
             alpha=0.2,
             label="Latent +/- 1sd",
         )
@@ -1410,113 +1442,120 @@ def screening_budget_plot(
     fig, ax = plt.subplots(figsize=(7, 4))
     if results.ridge_df is not None:
         mean_col, std_col = _screening_metric_columns(results.ridge_df)
+        ridge_color = _method_color("ridge", "tab:blue")
         ax.plot(
             results.ridge_df["n_budget"],
             results.ridge_df[mean_col],
             marker="o",
-            color="tab:blue",
+            color=ridge_color,
             label="Ridge mean",
         )
         ax.fill_between(
             results.ridge_df["n_budget"],
             results.ridge_df[mean_col] - results.ridge_df[std_col],
             results.ridge_df[mean_col] + results.ridge_df[std_col],
-            color="tab:blue",
+            color=ridge_color,
             alpha=0.2,
             label="Ridge +/- 1sd",
         )
     if results.kernel_ridge_df is not None:
         mean_col, std_col = _screening_metric_columns(results.kernel_ridge_df)
+        kernel_ridge_color = _method_color("kernel_ridge", "tab:cyan")
         ax.plot(
             results.kernel_ridge_df["n_budget"],
             results.kernel_ridge_df[mean_col],
             marker="X",
-            color="tab:cyan",
+            color=kernel_ridge_color,
             label="Kernel Ridge mean",
         )
         ax.fill_between(
             results.kernel_ridge_df["n_budget"],
             results.kernel_ridge_df[mean_col] - results.kernel_ridge_df[std_col],
             results.kernel_ridge_df[mean_col] + results.kernel_ridge_df[std_col],
-            color="tab:cyan",
+            color=kernel_ridge_color,
             alpha=0.2,
             label="Kernel Ridge +/- 1sd",
         )
     if results.lasso_df is not None:
         mean_col, std_col = _screening_metric_columns(results.lasso_df)
+        lasso_color = _method_color("lasso", "tab:orange")
         ax.plot(
             results.lasso_df["n_budget"],
             results.lasso_df[mean_col],
             marker="s",
-            color="tab:orange",
+            color=lasso_color,
             label="Lasso mean",
         )
         ax.fill_between(
             results.lasso_df["n_budget"],
             results.lasso_df[mean_col] - results.lasso_df[std_col],
             results.lasso_df[mean_col] + results.lasso_df[std_col],
-            color="tab:orange",
+            color=lasso_color,
             alpha=0.2,
             label="Lasso +/- 1sd",
         )
     if results.elastic_df is not None:
         mean_col, std_col = _screening_metric_columns(results.elastic_df)
+        elastic_color = _method_color("elastic", "tab:purple")
         ax.plot(
             results.elastic_df["n_budget"],
             results.elastic_df[mean_col],
             marker="D",
-            color="tab:purple",
+            color=elastic_color,
             label="Elastic Net mean",
         )
         ax.fill_between(
             results.elastic_df["n_budget"],
             results.elastic_df[mean_col] - results.elastic_df[std_col],
             results.elastic_df[mean_col] + results.elastic_df[std_col],
-            color="tab:purple",
+            color=elastic_color,
             alpha=0.2,
             label="Elastic Net +/- 1sd",
         )
     if results.resid_df is not None:
         mean_col, std_col = _screening_metric_columns(results.resid_df)
+        residual_color = _method_color("residual", "tab:green")
         ax.plot(
             results.resid_df["n_budget"],
             results.resid_df[mean_col],
             marker="^",
-            color="tab:green",
+            color=residual_color,
             label="Residual mean",
         )
         ax.fill_between(
             results.resid_df["n_budget"],
             results.resid_df[mean_col] - results.resid_df[std_col],
             results.resid_df[mean_col] + results.resid_df[std_col],
-            color="tab:green",
+            color=residual_color,
             alpha=0.2,
             label="Residual +/- 1sd",
         )
     if results.weighted_linear_df is not None:
         mean_col, std_col = _screening_metric_columns(results.weighted_linear_df)
+        weighted_linear_color = _method_color("weighted_linear", "tab:gray")
         ax.plot(
             results.weighted_linear_df["n_budget"],
             results.weighted_linear_df[mean_col],
             marker="*",
-            color="tab:gray",
+            color=weighted_linear_color,
             label="Weighted linear mean",
         )
         ax.fill_between(
             results.weighted_linear_df["n_budget"],
             results.weighted_linear_df[mean_col] - results.weighted_linear_df[std_col],
             results.weighted_linear_df[mean_col] + results.weighted_linear_df[std_col],
-            color="tab:gray",
+            color=weighted_linear_color,
             alpha=0.2,
             label="Weighted linear +/- 1sd",
         )
     if results.weighted_simplex_df is not None:
         mean_col, std_col = _screening_metric_columns(results.weighted_simplex_df)
+        weighted_simplex_color = _method_color("weighted_simplex", "teal")
         ax.plot(
             results.weighted_simplex_df["n_budget"],
             results.weighted_simplex_df[mean_col],
             marker="8",
-            color="teal",
+            color=weighted_simplex_color,
             label="Weighted simplex mean",
         )
         ax.fill_between(
@@ -1525,92 +1564,97 @@ def screening_budget_plot(
             - results.weighted_simplex_df[std_col],
             results.weighted_simplex_df[mean_col]
             + results.weighted_simplex_df[std_col],
-            color="teal",
+            color=weighted_simplex_color,
             alpha=0.2,
             label="Weighted simplex +/- 1sd",
         )
     if results.graph_mean_df is not None:
         mean_col, std_col = _screening_metric_columns(results.graph_mean_df)
+        graph_mean_color = _method_color("graph_mean", "tab:red")
         ax.plot(
             results.graph_mean_df["n_budget"],
             results.graph_mean_df[mean_col],
             marker="P",
-            color="tab:red",
+            color=graph_mean_color,
             label="Graph mean mean",
         )
         ax.fill_between(
             results.graph_mean_df["n_budget"],
             results.graph_mean_df[mean_col] - results.graph_mean_df[std_col],
             results.graph_mean_df[mean_col] + results.graph_mean_df[std_col],
-            color="tab:red",
+            color=graph_mean_color,
             alpha=0.2,
             label="Graph mean +/- 1sd",
         )
     if results.moe_df is not None:
         mean_col, std_col = _screening_metric_columns(results.moe_df)
+        moe_color = _method_color("moe", "tab:purple")
         ax.plot(
             results.moe_df["n_budget"],
             results.moe_df[mean_col],
             marker="*",
-            color="tab:purple",
+            color=moe_color,
             label="MoE mean",
         )
         ax.fill_between(
             results.moe_df["n_budget"],
             results.moe_df[mean_col] - results.moe_df[std_col],
             results.moe_df[mean_col] + results.moe_df[std_col],
-            color="tab:purple",
+            color=moe_color,
             alpha=0.2,
             label="MoE +/- 1sd",
         )
     if results.gnn_direct_df is not None:
         mean_col, std_col = _screening_metric_columns(results.gnn_direct_df)
+        gnn_direct_color = _method_color("gnn_direct", "tab:cyan")
         ax.plot(
             results.gnn_direct_df["n_budget"],
             results.gnn_direct_df[mean_col],
             marker="s",
-            color="tab:cyan",
+            color=gnn_direct_color,
             label="GNN direct mean",
         )
         ax.fill_between(
             results.gnn_direct_df["n_budget"],
             results.gnn_direct_df[mean_col] - results.gnn_direct_df[std_col],
             results.gnn_direct_df[mean_col] + results.gnn_direct_df[std_col],
-            color="tab:cyan",
+            color=gnn_direct_color,
             alpha=0.2,
             label="GNN direct +/- 1sd",
         )
     if results.probe_gnn_df is not None:
         mean_col, std_col = _screening_metric_columns(results.probe_gnn_df)
+        probe_gnn_color = _method_color("probe_gnn", "tab:olive")
         ax.plot(
             results.probe_gnn_df["n_budget"],
             results.probe_gnn_df[mean_col],
             marker="D",
-            color="tab:olive",
+            color=probe_gnn_color,
             label="Probe GNN mean",
         )
         ax.fill_between(
             results.probe_gnn_df["n_budget"],
             results.probe_gnn_df[mean_col] - results.probe_gnn_df[std_col],
             results.probe_gnn_df[mean_col] + results.probe_gnn_df[std_col],
-            color="tab:olive",
+            color=probe_gnn_color,
             alpha=0.2,
             label="Probe GNN +/- 1sd",
         )
     if results.latent_df is not None:
         mean_col, std_col = _screening_metric_columns(results.latent_df)
+        latent_color = _method_color("latent", "tab:brown")
         ax.plot(
             results.latent_df["n_budget"],
             results.latent_df[mean_col],
             marker="v",
-            color="tab:brown",
+            color=latent_color,
             label="Latent mean",
         )
         ax.fill_between(
             results.latent_df["n_budget"],
             results.latent_df[mean_col] - results.latent_df[std_col],
             results.latent_df[mean_col] + results.latent_df[std_col],
-            color="tab:brown",
+            color=latent_color,
             alpha=0.2,
             label="Latent +/- 1sd",
         )
@@ -1653,11 +1697,12 @@ def _time_accuracy_scatter_plot(
                 ordered = method_table.sort_values("n_train").reset_index(drop=True)
             else:
                 ordered = method_table.reset_index(drop=True)
+            resolved_color = _method_color(method_name, color)
             ax.scatter(
                 ordered[x_column],
                 ordered["rmse_mean"],
                 marker=marker,
-                color=color,
+                color=resolved_color,
                 label=display_name,
                 s=55,
                 alpha=0.9,
@@ -1666,7 +1711,7 @@ def _time_accuracy_scatter_plot(
                 ax.plot(
                     ordered[x_column],
                     ordered["rmse_mean"],
-                    color=color,
+                    color=resolved_color,
                     alpha=0.35,
                     linewidth=1.0,
                 )
@@ -1795,13 +1840,14 @@ def _fixed_split_time_accuracy_plot(
             if method_table.empty:
                 continue
             row = method_table.iloc[0]
+            resolved_color = _method_color(method_name, color)
             ax.errorbar(
                 [row[x_column]],
                 [row["rmse_mean"]],
                 xerr=[row[xerr_column]],
                 yerr=[row["rmse_std"]],
                 fmt="none",
-                ecolor=color,
+                ecolor=resolved_color,
                 elinewidth=1.0,
                 capsize=3,
                 alpha=0.45,
@@ -1810,7 +1856,7 @@ def _fixed_split_time_accuracy_plot(
                 [row[x_column]],
                 [row["rmse_mean"]],
                 marker=marker,
-                color=color,
+                color=resolved_color,
                 label=display_name,
                 s=80,
                 alpha=0.9,
@@ -1868,26 +1914,17 @@ def policy_selected_vs_oracle_plot(
         oracle_frame["budget"],
         oracle_frame["oracle_outer_rmse_mean"],
         marker="o",
-        color="tab:blue",
+        color=_oracle_series_color(),
         label="Oracle best held-out RMSE",
     )
     if "policy_name" in frame.columns:
-        colors = [
-            "tab:orange",
-            "tab:green",
-            "tab:red",
-            "tab:purple",
-            "tab:brown",
-        ]
-        for index, (policy_name, group) in enumerate(
-            frame.groupby("policy_name", sort=True)
-        ):
+        for policy_name, group in frame.groupby("policy_name", sort=True):
             ordered = group.sort_values("budget")
             ax.plot(
                 ordered["budget"],
                 ordered["screening_selected_outer_rmse_mean"],
                 marker="s",
-                color=colors[index % len(colors)],
+                color=_policy_color(str(policy_name)),
                 label=f"{policy_name} held-out RMSE",
             )
     else:
@@ -1895,7 +1932,7 @@ def policy_selected_vs_oracle_plot(
             frame["budget"],
             frame["screening_selected_outer_rmse_mean"],
             marker="s",
-            color="tab:orange",
+            color=_policy_color("screening_selected_held_out_rmse"),
             label="Screening-selected held-out RMSE",
         )
     if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
@@ -1908,20 +1945,17 @@ def policy_selected_vs_oracle_plot(
             max_x=max_x,
             include_x=include_x,
         )
-        baseline_styles = [
-            ("tab:green", "^", ":"),
-            ("tab:brown", "D", "-."),
-        ]
+        baseline_styles = [("^", ":"), ("D", "-."), ("P", "--"), ("X", "-")]
         for index, (baseline_name, group) in enumerate(
             fixed_frame.groupby("baseline_name", sort=True)
         ):
-            color, marker, linestyle = baseline_styles[index % len(baseline_styles)]
+            marker, linestyle = baseline_styles[index % len(baseline_styles)]
             ordered = group.sort_values("budget")
             ax.plot(
                 ordered["budget"],
                 ordered["outer_rmse_mean"],
                 marker=marker,
-                color=color,
+                color=_baseline_color(str(baseline_name)),
                 linestyle=linestyle,
                 label=f"{baseline_name} held-out RMSE",
             )
@@ -1961,18 +1995,9 @@ def policy_regret_plot(
     )
     fig, ax = plt.subplots(figsize=(7, 4))
     if "policy_name" in frame.columns:
-        colors = [
-            "tab:red",
-            "tab:orange",
-            "tab:green",
-            "tab:purple",
-            "tab:brown",
-        ]
-        for index, (policy_name, group) in enumerate(
-            frame.groupby("policy_name", sort=True)
-        ):
+        for policy_name, group in frame.groupby("policy_name", sort=True):
             ordered = group.sort_values("budget")
-            color = colors[index % len(colors)]
+            color = _policy_color(str(policy_name))
             ax.plot(
                 ordered["budget"],
                 ordered["mean_regret"],
@@ -2032,20 +2057,17 @@ def policy_regret_plot(
             max_x=max_x,
             include_x=include_x,
         )
-        baseline_styles = [
-            ("tab:green", "^", ":"),
-            ("tab:brown", "D", "-."),
-        ]
+        baseline_styles = [("^", ":"), ("D", "-."), ("P", "--"), ("X", "-")]
         for index, (baseline_name, group) in enumerate(
             fixed_frame.groupby("baseline_name", sort=True)
         ):
-            color, marker, linestyle = baseline_styles[index % len(baseline_styles)]
+            marker, linestyle = baseline_styles[index % len(baseline_styles)]
             ordered = group.sort_values("budget")
             ax.plot(
                 ordered["budget"],
                 ordered["mean_regret"],
                 marker=marker,
-                color=color,
+                color=_baseline_color(str(baseline_name)),
                 linestyle=linestyle,
                 label=f"{baseline_name} regret",
             )
@@ -2073,6 +2095,7 @@ def all_datasets_policy_regret_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     log_x: bool = False,
+    show_uncertainty: bool = True,
 ) -> Path:
     required_columns = {"dataset", "dataset_label", "budget", "mean_regret"}
     missing_columns = required_columns.difference(summary_df.columns)
@@ -2110,8 +2133,7 @@ def all_datasets_policy_regret_plot(
     )
 
     fig, ax = plt.subplots(figsize=(7, 4))
-    cmap = plt.cm.get_cmap("tab10", max(1, len(dataset_order)))
-    for idx, dataset in enumerate(dataset_order):
+    for dataset in dataset_order:
         dataset_rows = filtered.loc[filtered["dataset"] == dataset]
         if "policy_name" in dataset_rows.columns:
             grouped = dataset_rows.groupby("policy_name", sort=True)
@@ -2122,7 +2144,7 @@ def all_datasets_policy_regret_plot(
             label = dataset_labels[dataset]
             if multiple_policies and policy_name is not None:
                 label = f"{label}: {policy_name}"
-            color = cmap(idx)
+            color = _dataset_color(dataset)
             ax.plot(
                 ordered["budget"],
                 ordered["mean_regret"],
@@ -2130,7 +2152,7 @@ def all_datasets_policy_regret_plot(
                 color=color,
                 label=label,
             )
-            if {"ci95_low", "ci95_high"}.issubset(ordered.columns):
+            if show_uncertainty and {"ci95_low", "ci95_high"}.issubset(ordered.columns):
                 ax.fill_between(
                     ordered["budget"],
                     ordered["ci95_low"],
@@ -2138,7 +2160,7 @@ def all_datasets_policy_regret_plot(
                     color=color,
                     alpha=0.2,
                 )
-            elif "std_regret" in ordered.columns:
+            elif show_uncertainty and "std_regret" in ordered.columns:
                 ax.fill_between(
                     ordered["budget"],
                     ordered["mean_regret"] - ordered["std_regret"],
@@ -2201,6 +2223,350 @@ def all_datasets_uq_oracle_plot(
     return output_path
 
 
+def _dataset_label_by_tag_from_config() -> dict[str, str]:
+    from oasis.config import get_config
+
+    cfg = get_config()
+    labels: dict[str, str] = {}
+    for dataset_tag, profile in getattr(cfg, "datasets", {}).items():
+        alias = getattr(profile, "alias", None)
+        mlip_run_dirname = getattr(profile, "mlip_run_dirname", None)
+        labels[str(dataset_tag)] = str(alias or mlip_run_dirname or dataset_tag)
+    return labels
+
+
+def _load_cached_policy_artifacts_for_figure_4(
+    plot_root: Path,
+    suffix: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    dataset_labels = _dataset_label_by_tag_from_config()
+    summary_paths = sorted(
+        plot_root.glob(f"*/policy_selection_diagnostic_summary_{suffix}.csv")
+    )
+    artifact_paths = sorted(
+        (plot_root.parent / "screening").glob("policy_selection_diagnostic_*.json")
+    )
+    if not summary_paths:
+        raise ValueError("No cached policy summary CSVs found.")
+    if not artifact_paths:
+        raise ValueError("No cached policy-selection artifacts found.")
+
+    artifact_index: list[dict[str, Any]] = []
+    for artifact_path in artifact_paths:
+        payload = json.loads(artifact_path.read_text())
+        results_payload = payload.get("results")
+        if not isinstance(results_payload, dict):
+            continue
+        summary_payload = results_payload.get("summary_df")
+        if not isinstance(summary_payload, str):
+            continue
+        artifact_index.append(
+            {
+                "payload": payload,
+                "summary_df": pd.read_json(StringIO(summary_payload), orient="table"),
+            }
+        )
+
+    def _matches_summary(left_df: pd.DataFrame, right_df: pd.DataFrame) -> bool:
+        if list(left_df.columns) != list(right_df.columns):
+            return False
+        if len(left_df) != len(right_df):
+            return False
+        for column in right_df.columns:
+            left = left_df[column]
+            right = right_df[column]
+            if pd.api.types.is_numeric_dtype(left) and pd.api.types.is_numeric_dtype(
+                right
+            ):
+                if not np.allclose(
+                    left.to_numpy(dtype=float),
+                    right.to_numpy(dtype=float),
+                    equal_nan=True,
+                ):
+                    return False
+            elif left.astype(str).tolist() != right.astype(str).tolist():
+                return False
+        return True
+
+    dataset_entries: list[dict[str, Any]] = []
+    dataset_order: list[str] = []
+    for summary_path in summary_paths:
+        summary_df = pd.read_csv(summary_path)
+        if summary_df.empty:
+            continue
+        artifact_match = next(
+            (
+                entry
+                for entry in artifact_index
+                if _matches_summary(entry["summary_df"], summary_df)
+            ),
+            None,
+        )
+        if artifact_match is None:
+            raise ValueError(
+                f"Could not match summary CSV to cached artifact: {summary_path}"
+            )
+        payload = artifact_match["payload"]
+        metadata = payload.get("metadata", {})
+        cache_signature = payload.get("cache_signature", {})
+        learning_curve_signature = cache_signature.get("learning_curve", {})
+        dataset_tag = str(metadata.get("dataset_tag") or summary_path.parent.name)
+        dataset_order.append(dataset_tag)
+        dataset_entries.append(
+            {
+                "dataset": dataset_tag,
+                "dataset_label": dataset_labels.get(dataset_tag, summary_path.parent.name),
+                "dataset_size": int(metadata["dataset_size"]),
+                "summary_df": summary_df.copy(),
+                "sweep_sizes": tuple(
+                    int(value)
+                    for value in learning_curve_signature.get("sweep_sizes", [])
+                ),
+                "sweep_fractions": tuple(
+                    float(value)
+                    for value in learning_curve_signature.get("sweep_fractions", [])
+                ),
+            }
+        )
+    if not dataset_entries:
+        raise ValueError("No non-empty cached policy summaries found.")
+    return dataset_entries, dataset_order
+
+
+def _load_policy_artifact_for_figure_4_plot_dir(
+    plot_dir: Path,
+    suffix: str,
+) -> dict[str, Any]:
+    summary_path = plot_dir / f"policy_selection_diagnostic_summary_{suffix}.csv"
+    if not summary_path.is_file():
+        raise ValueError(f"Policy summary CSV not found: {summary_path}")
+    summary_df = pd.read_csv(summary_path)
+    if summary_df.empty:
+        raise ValueError(f"Policy summary CSV is empty: {summary_path}")
+    plot_root = plot_dir.parent
+    artifact_paths = sorted(
+        (plot_root.parent / "screening").glob("policy_selection_diagnostic_*.json")
+    )
+    if not artifact_paths:
+        raise ValueError("No cached policy-selection artifacts found.")
+
+    def _matches_summary(left_df: pd.DataFrame, right_df: pd.DataFrame) -> bool:
+        if list(left_df.columns) != list(right_df.columns):
+            return False
+        if len(left_df) != len(right_df):
+            return False
+        for column in right_df.columns:
+            left = left_df[column]
+            right = right_df[column]
+            if pd.api.types.is_numeric_dtype(left) and pd.api.types.is_numeric_dtype(
+                right
+            ):
+                if not np.allclose(
+                    left.to_numpy(dtype=float),
+                    right.to_numpy(dtype=float),
+                    equal_nan=True,
+                ):
+                    return False
+            elif left.astype(str).tolist() != right.astype(str).tolist():
+                return False
+        return True
+
+    for artifact_path in artifact_paths:
+        payload = json.loads(artifact_path.read_text())
+        results_payload = payload.get("results")
+        if not isinstance(results_payload, dict):
+            continue
+        summary_payload = results_payload.get("summary_df")
+        outer_metrics_payload = results_payload.get("outer_metrics_df")
+        if not isinstance(summary_payload, str) or not isinstance(
+            outer_metrics_payload, str
+        ):
+            continue
+        artifact_summary_df = pd.read_json(StringIO(summary_payload), orient="table")
+        if not _matches_summary(artifact_summary_df, summary_df):
+            continue
+        return {
+            "summary_df": summary_df,
+            "outer_metrics_df": pd.read_json(
+                StringIO(outer_metrics_payload), orient="table"
+            ),
+            "metadata": payload.get("metadata", {}),
+            "cache_signature": payload.get("cache_signature", {}),
+        }
+    raise ValueError(f"Could not match summary CSV to cached artifact: {summary_path}")
+
+
+def _configured_policy_fixed_method_baselines_for_figure_4() -> (
+    tuple[tuple[str, str], ...]
+):
+    from oasis.config import get_config
+
+    cfg = get_config()
+    screening_cfg = getattr(getattr(cfg, "experiment", None), "screening", None)
+    plot_baselines_cfg = getattr(screening_cfg, "plot_baselines", None)
+    if plot_baselines_cfg is None:
+        return ()
+    baselines: list[tuple[str, str]] = []
+    for field_name in ("low_data_domain", "high_data_domain"):
+        baseline_cfg = getattr(plot_baselines_cfg, field_name, None)
+        if baseline_cfg is None or not getattr(baseline_cfg, "enabled", True):
+            continue
+        method_name = str(getattr(baseline_cfg, "method_name", "")).strip()
+        if not method_name:
+            continue
+        label = getattr(baseline_cfg, "label", None)
+        baselines.append((method_name, method_name if label is None else str(label)))
+    return tuple(baselines)
+
+
+def _build_figure_4_regret_frame(
+    dataset_entries: list[dict[str, Any]],
+    *,
+    mode: str,
+    excluded_datasets: set[str],
+) -> pd.DataFrame:
+    from oasis.experiment.splits import resolve_configured_sweep_sizes
+
+    rows: list[pd.DataFrame] = []
+    for entry in dataset_entries:
+        dataset_tag = str(entry["dataset"])
+        if _dataset_aliases(dataset_tag) & excluded_datasets:
+            continue
+        summary_df = entry["summary_df"].copy()
+        summary_df.insert(0, "dataset_label", entry["dataset_label"])
+        summary_df.insert(0, "dataset", dataset_tag)
+        if mode == "absolute":
+            include_x = list(entry["sweep_sizes"])
+        elif mode == "fraction":
+            include_x = list(
+                resolve_configured_sweep_sizes(
+                    int(entry["dataset_size"]),
+                    min_train=None,
+                    max_train=None,
+                    sweep_sizes=(),
+                    sweep_fractions=entry["sweep_fractions"],
+                )
+            )
+        else:
+            raise ValueError(f"Unsupported regret frame mode: {mode}")
+        filtered = summary_df.loc[
+            summary_df["budget"].astype(int).isin(include_x)
+        ].reset_index(drop=True)
+        if not filtered.empty:
+            rows.append(filtered)
+    if not rows:
+        raise ValueError(f"No rows available for {mode} regret panel.")
+    return pd.concat(rows, ignore_index=True)
+
+
+def _render_figure_4_regret_panel(
+    summary_df: pd.DataFrame,
+    *,
+    output_path: Path,
+    dataset_order: list[str],
+    log_x: bool,
+) -> Path:
+    ordered_frame = summary_df.assign(
+        dataset=pd.Categorical(
+            summary_df["dataset"], categories=dataset_order, ordered=True
+        )
+    ).sort_values(["dataset", "budget"])
+    return all_datasets_policy_regret_plot(
+        ordered_frame,
+        output_path=output_path,
+        log_x=log_x,
+        show_uncertainty=False,
+    )
+
+
+def figure_4_plot(
+    plot_dir: str | Path,
+    *,
+    suffix: str = "anomalyaware_on",
+    output_name: str = "figure4.png",
+    exclude_panel_d_datasets: list[str] | tuple[str, ...] = ("bio_mass",),
+) -> Path:
+    from oasis.figure import two_by_two_figure
+    from oasis.experiment.policy_diagnostic import summarize_fixed_method_baseline_frame
+    from oasis.experiment.splits import resolve_configured_sweep_sizes
+
+    plot_dir = Path(plot_dir).resolve()
+    excluded = {
+        alias
+        for value in exclude_panel_d_datasets
+        for alias in _dataset_aliases(value)
+    }
+    policy_artifact = _load_policy_artifact_for_figure_4_plot_dir(plot_dir, suffix)
+    metadata = policy_artifact["metadata"]
+    cache_signature = policy_artifact["cache_signature"]
+    learning_curve_signature = cache_signature.get("learning_curve", {})
+    dataset_size = int(metadata["dataset_size"])
+    absolute_include_x = [
+        int(value) for value in learning_curve_signature.get("sweep_sizes", [])
+    ]
+    fraction_include_x = list(
+        resolve_configured_sweep_sizes(
+            dataset_size,
+            min_train=None,
+            max_train=None,
+            sweep_sizes=(),
+            sweep_fractions=tuple(
+                float(value)
+                for value in learning_curve_signature.get("sweep_fractions", [])
+            ),
+        )
+    )
+    fixed_method_summary_df = summarize_fixed_method_baseline_frame(
+        policy_artifact["outer_metrics_df"],
+        baselines=_configured_policy_fixed_method_baselines_for_figure_4(),
+    )
+    dataset_entries, dataset_order = _load_cached_policy_artifacts_for_figure_4(
+        plot_dir.parent, suffix
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        panel_a_path = policy_selected_vs_oracle_plot(
+            policy_artifact["summary_df"],
+            fixed_method_summary_df=fixed_method_summary_df,
+            output_path=tmp_path / "panel_a_absolute.png",
+            include_x=absolute_include_x,
+        )
+        panel_b_path = policy_selected_vs_oracle_plot(
+            policy_artifact["summary_df"],
+            fixed_method_summary_df=fixed_method_summary_df,
+            output_path=tmp_path / "panel_b_fraction.png",
+            include_x=fraction_include_x,
+        )
+        panel_c_path = _render_figure_4_regret_panel(
+            _build_figure_4_regret_frame(
+                dataset_entries,
+                mode="absolute",
+                excluded_datasets=set(),
+            ),
+            output_path=tmp_path / "panel_c_absolute.png",
+            dataset_order=dataset_order,
+            log_x=False,
+        )
+        panel_d_path = _render_figure_4_regret_panel(
+            _build_figure_4_regret_frame(
+                dataset_entries,
+                mode="fraction",
+                excluded_datasets=excluded,
+            ),
+            output_path=tmp_path / "panel_d_fraction.png",
+            dataset_order=dataset_order,
+            log_x=True,
+        )
+        return two_by_two_figure(
+            top_left_path=panel_a_path,
+            top_right_path=panel_b_path,
+            bottom_left_path=panel_c_path,
+            bottom_right_path=panel_d_path,
+            output_path=plot_dir / output_name,
+            panel_labels=("a)", "b)", "c)", "d)"),
+        )
+
+
 def _draw_all_datasets_uq_oracle(
     ax: Any,
     oracle_df: pd.DataFrame,
@@ -2250,15 +2616,14 @@ def _draw_all_datasets_uq_oracle(
         .to_dict()
     )
 
-    cmap = plt.cm.get_cmap("tab10", max(1, len(dataset_order)))
-    for idx, dataset in enumerate(dataset_order):
+    for dataset in dataset_order:
         dataset_rows = filtered.loc[filtered["dataset"] == dataset]
         if dataset in plot_dataset_order:
             ax.plot(
                 dataset_rows["n_train"],
                 dataset_rows[metric_column],
                 marker="o",
-                color=cmap(idx),
+                color=_dataset_color(dataset),
                 label=dataset_labels[dataset],
             )
         elif show_legend:
@@ -2266,7 +2631,7 @@ def _draw_all_datasets_uq_oracle(
                 [],
                 [],
                 marker="o",
-                color=cmap(idx),
+                color=_dataset_color(dataset),
                 label=dataset_labels[dataset],
             )
 

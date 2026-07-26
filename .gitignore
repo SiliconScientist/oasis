@@ -212,6 +212,7 @@ __marimo__/
 config.toml
 mlip.toml
 experiment.toml
+plot_style.toml
 
 # VS Code
 .vscode/

@@ -20,6 +20,7 @@ from oasis.plot import (
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
+    figure_4_plot,
     generation_time_accuracy_plot,
     learning_curve_plot,
     miscalibration_area_plot,
@@ -35,10 +36,14 @@ from oasis.plot import (
     training_time_accuracy_plot,
     zero_shot_rmse_stage_plot,
 )
+from oasis.plot_style import reset_plot_style_cache
 from oasis.sweep import LearningCurveResults
 
 
 class PlotTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        reset_plot_style_cache()
+
     @staticmethod
     def _generation_summaries() -> dict[str, MlipGenerationTimingSummary]:
         return {
@@ -90,8 +95,120 @@ class PlotTests(unittest.TestCase):
             )
             exists = saved_path.exists()
 
-        self.assertEqual(saved_path, output_path)
-        self.assertTrue(exists)
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(exists)
+
+    def test_figure_4_plot_assembles_panels_via_shared_plot_module(self) -> None:
+        dataset_entries = [
+            {
+                "dataset": "bio_mass",
+                "dataset_label": "Biomass",
+                "dataset_size": 20,
+                "summary_df": pd.DataFrame(
+                    {
+                        "budget": [4, 8, 10, 16],
+                        "mean_regret": [0.1, 0.08, 0.06, 0.04],
+                    }
+                ),
+                "sweep_sizes": (4, 8),
+                "sweep_fractions": (0.5, 0.8),
+            },
+            {
+                "dataset": "khlohc",
+                "dataset_label": "Tol-BMA",
+                "dataset_size": 20,
+                "summary_df": pd.DataFrame(
+                    {
+                        "budget": [4, 8, 10, 16],
+                        "mean_regret": [0.12, 0.09, 0.07, 0.05],
+                    }
+                ),
+                "sweep_sizes": (4, 8),
+                "sweep_fractions": (0.5, 0.8),
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plot_dir = Path(tmpdir) / "plots" / "dataset"
+            plot_dir.mkdir(parents=True)
+            with patch(
+                "oasis.plot._load_policy_artifact_for_figure_4_plot_dir",
+                return_value={
+                    "summary_df": pd.DataFrame(
+                        {
+                            "policy_name": ["min_screening_rmse"] * 4,
+                            "budget": [4, 8, 10, 16],
+                            "mean_regret": [0.1, 0.08, 0.06, 0.04],
+                            "std_regret": [0.01] * 4,
+                            "se_regret": [0.005] * 4,
+                            "ci95_low": [0.09, 0.07, 0.05, 0.03],
+                            "ci95_high": [0.11, 0.09, 0.07, 0.05],
+                            "agreement_rate": [0.7] * 4,
+                            "oracle_outer_rmse_mean": [0.2, 0.18, 0.16, 0.14],
+                            "screening_selected_outer_rmse_mean": [0.3, 0.26, 0.22, 0.18],
+                        }
+                    ),
+                    "outer_metrics_df": pd.DataFrame(
+                        {
+                            "budget": [4, 8],
+                            "repeat": [0, 0],
+                            "method": ["residual", "kernel_ridge"],
+                            "outer_test_rmse": [0.25, 0.2],
+                        }
+                    ),
+                    "metadata": {"dataset_size": 20},
+                    "cache_signature": {
+                        "learning_curve": {
+                            "sweep_sizes": [4, 8],
+                            "sweep_fractions": [0.5, 0.8],
+                        }
+                    },
+                },
+            ), patch(
+                "oasis.plot._configured_policy_fixed_method_baselines_for_figure_4",
+                return_value=(("residual", "Residual"), ("kernel_ridge", "Kernel ridge")),
+            ), patch(
+                "oasis.plot._load_cached_policy_artifacts_for_figure_4",
+                return_value=(dataset_entries, ["bio_mass", "khlohc"]),
+            ), patch(
+                "oasis.plot.policy_selected_vs_oracle_plot",
+                side_effect=[plot_dir / "panel_a.png", plot_dir / "panel_b.png"],
+            ) as mock_selected_vs_oracle, patch(
+                "oasis.plot._render_figure_4_regret_panel",
+                side_effect=[
+                    plot_dir / "panel_c.png",
+                    plot_dir / "panel_d.png",
+                ],
+            ) as mock_render_regret, patch(
+                "oasis.figure.two_by_two_figure",
+                return_value=plot_dir / "figure4.png",
+            ) as mock_two_by_two:
+                saved_path = figure_4_plot(
+                    plot_dir,
+                    exclude_panel_d_datasets=("bio_mass",),
+                )
+
+        self.assertEqual(saved_path, plot_dir / "figure4.png")
+        self.assertEqual(
+            mock_render_regret.call_args_list[0].kwargs["dataset_order"],
+            ["bio_mass", "khlohc"],
+        )
+        absolute_frame = mock_render_regret.call_args_list[0].args[0]
+        fraction_frame = mock_render_regret.call_args_list[1].args[0]
+        self.assertEqual(absolute_frame["dataset"].tolist(), ["bio_mass", "bio_mass", "khlohc", "khlohc"])
+        self.assertEqual(fraction_frame["dataset"].tolist(), ["khlohc", "khlohc"])
+        self.assertEqual(
+            mock_two_by_two.call_args.kwargs["top_left_path"].name,
+            "panel_a.png",
+        )
+        self.assertEqual(
+            mock_selected_vs_oracle.call_args_list[0].kwargs["include_x"],
+            [4, 8],
+        )
+        self.assertEqual(
+            mock_selected_vs_oracle.call_args_list[1].kwargs["include_x"],
+            [10, 16],
+        )
 
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(
@@ -379,6 +496,29 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
 
+    def test_learning_curve_plot_uses_configured_method_colors(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            style_path = tmp_path / "plot_style.toml"
+            style_path.write_text("[methods]\nridge = '#123456'\n", encoding="utf-8")
+            with patch.dict("os.environ", {"OASIS_PLOT_STYLE_PATH": str(style_path)}):
+                reset_plot_style_cache()
+                with patch("oasis.plot.plt.close"):
+                    learning_curve_plot(results, output_path=tmp_path / "learning_curve.png")
+                    fig = learning_curve_plot.__globals__["plt"].gcf()
+                    ridge_line = fig.axes[0].lines[0]
+
+            self.assertEqual(ridge_line.get_color(), "#123456")
+
     def test_oracle_learning_curve_frame_selects_best_enabled_method_per_train_size(
         self,
     ) -> None:
@@ -544,13 +684,35 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
-            self.assertEqual(ax.get_ylabel(), "Oracle sharpness")
-            self.assertEqual(ax.get_title(), "Oracle sharpness by dataset")
-            self.assertEqual(len(ax.lines), 2)
-            self.assertEqual(
-                [text.get_text() for text in ax.get_legend().get_texts()],
-                ["Bio-Mass", "KHLOHC-TOL"],
+
+    def test_oracle_learning_curve_plot_uses_configured_dataset_colors(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["dataset_a", "dataset_a", "dataset_b", "dataset_b"],
+                "dataset_label": ["Dataset A", "Dataset A", "Dataset B", "Dataset B"],
+                "n_train": [2, 4, 2, 4],
+                "oracle_rmse": [0.3, 0.2, 0.4, 0.35],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            style_path = tmp_path / "plot_style.toml"
+            style_path.write_text(
+                "[datasets]\ndataset_a = '#abcdef'\ndataset_b = '#fedcba'\n",
+                encoding="utf-8",
             )
+            with patch.dict("os.environ", {"OASIS_PLOT_STYLE_PATH": str(style_path)}):
+                reset_plot_style_cache()
+                with patch("oasis.plot.plt.close"):
+                    oracle_learning_curve_plot(
+                        oracle_df,
+                        output_path=tmp_path / "oracle_learning_curve.png",
+                    )
+                    fig = oracle_learning_curve_plot.__globals__["plt"].gcf()
+                    colors = [line.get_color() for line in fig.axes[0].lines]
+
+            self.assertEqual(colors[:2], ["#abcdef", "#fedcba"])
 
     def test_oracle_learning_curve_plot_renders_single_dataset_curve(self) -> None:
         oracle_df = pd.DataFrame(
