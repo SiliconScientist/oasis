@@ -563,6 +563,8 @@ def parity_plot(
     show_legend: bool = True,
     legend_fontsize: int = _DEFAULT_LEGEND_FONTSIZE,
     legend_loc: str | None = None,
+    legend_bbox_to_anchor: tuple[float, float, float, float] | None = None,
+    legend_markerscale: float | None = None,
     metrics_position: tuple[float, float] = (0.03, 0.97),
     metrics_horizontalalignment: str = "center",
     metrics_verticalalignment: str = "center",
@@ -646,6 +648,11 @@ def parity_plot(
         legend_kwargs = {"fontsize": legend_fontsize}
         if legend_loc is not None:
             legend_kwargs["loc"] = legend_loc
+        if legend_bbox_to_anchor is not None:
+            legend_kwargs["bbox_to_anchor"] = legend_bbox_to_anchor
+            legend_kwargs["borderaxespad"] = 0.0
+        if legend_markerscale is not None:
+            legend_kwargs["markerscale"] = legend_markerscale
         ax.legend(**legend_kwargs)
     ax.grid(True, linestyle="--", alpha=0.3)
     plt.tight_layout()
@@ -1182,7 +1189,7 @@ def learning_curve_plot(
             results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
             color=ridge_color,
             alpha=0.2,
-            label="Ridge +/- 1sd",
+            label="_nolegend_",
         )
     if results.kernel_ridge_df is not None:
         kernel_ridge_color = _method_color("kernel_ridge", "tab:cyan")
@@ -1199,7 +1206,7 @@ def learning_curve_plot(
             results.kernel_ridge_df["rmse_mean"] + results.kernel_ridge_df["rmse_std"],
             color=kernel_ridge_color,
             alpha=0.2,
-            label="Kernel Ridge +/- 1sd",
+            label="_nolegend_",
         )
     if results.lasso_df is not None:
         lasso_color = _method_color("lasso", "tab:orange")
@@ -1216,7 +1223,7 @@ def learning_curve_plot(
             results.lasso_df["rmse_mean"] + results.lasso_df["rmse_std"],
             color=lasso_color,
             alpha=0.2,
-            label="Lasso +/- 1sd",
+            label="_nolegend_",
         )
     if results.elastic_df is not None:
         elastic_color = _method_color("elastic", "tab:purple")
@@ -1233,7 +1240,7 @@ def learning_curve_plot(
             results.elastic_df["rmse_mean"] + results.elastic_df["rmse_std"],
             color=elastic_color,
             alpha=0.2,
-            label="Elastic Net +/- 1sd",
+            label="_nolegend_",
         )
     if results.resid_df is not None:
         residual_color = _method_color("residual", "tab:green")
@@ -1250,7 +1257,7 @@ def learning_curve_plot(
             results.resid_df["rmse_mean"] + results.resid_df["rmse_std"],
             color=residual_color,
             alpha=0.2,
-            label="Residual +/- 1sd",
+            label="_nolegend_",
         )
     if results.weighted_linear_df is not None:
         weighted_linear_color = _method_color("weighted_linear", "tab:gray")
@@ -1269,7 +1276,7 @@ def learning_curve_plot(
             + results.weighted_linear_df["rmse_std"],
             color=weighted_linear_color,
             alpha=0.2,
-            label="Weighted linear +/- 1sd",
+            label="_nolegend_",
         )
     if results.weighted_simplex_df is not None:
         weighted_simplex_color = _method_color("weighted_simplex", "teal")
@@ -1288,7 +1295,7 @@ def learning_curve_plot(
             + results.weighted_simplex_df["rmse_std"],
             color=weighted_simplex_color,
             alpha=0.2,
-            label="Weighted simplex +/- 1sd",
+            label="_nolegend_",
         )
     if results.graph_mean_df is not None:
         graph_mean_color = _method_color("graph_mean", "tab:red")
@@ -1305,7 +1312,7 @@ def learning_curve_plot(
             results.graph_mean_df["rmse_mean"] + results.graph_mean_df["rmse_std"],
             color=graph_mean_color,
             alpha=0.2,
-            label="Graph mean +/- 1sd",
+            label="_nolegend_",
         )
     if results.moe_df is not None:
         moe_color = _method_color("moe", "tab:purple")
@@ -1322,7 +1329,7 @@ def learning_curve_plot(
             results.moe_df["rmse_mean"] + results.moe_df["rmse_std"],
             color=moe_color,
             alpha=0.2,
-            label="MoE +/- 1sd",
+            label="_nolegend_",
         )
     if results.gnn_direct_df is not None:
         gnn_direct_color = _method_color("gnn_direct", "tab:cyan")
@@ -1339,7 +1346,7 @@ def learning_curve_plot(
             results.gnn_direct_df["rmse_mean"] + results.gnn_direct_df["rmse_std"],
             color=gnn_direct_color,
             alpha=0.2,
-            label="GNN direct +/- 1sd",
+            label="_nolegend_",
         )
     if results.probe_gnn_df is not None:
         probe_gnn_color = _method_color("probe_gnn", "tab:olive")
@@ -1356,7 +1363,7 @@ def learning_curve_plot(
             results.probe_gnn_df["rmse_mean"] + results.probe_gnn_df["rmse_std"],
             color=probe_gnn_color,
             alpha=0.2,
-            label="Probe GNN +/- 1sd",
+            label="_nolegend_",
         )
     if results.latent_df is not None:
         latent_color = _method_color("latent", "tab:brown")
@@ -1373,7 +1380,7 @@ def learning_curve_plot(
             results.latent_df["rmse_mean"] + results.latent_df["rmse_std"],
             color=latent_color,
             alpha=0.2,
-            label="Latent +/- 1sd",
+            label="_nolegend_",
         )
     if zero_shot_rmse is not None:
         x_min, x_max = ax.get_xlim()
@@ -1971,6 +1978,7 @@ def policy_selected_vs_oracle_plot(
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    show_title: bool = True,
 ) -> Path:
     required_columns = {
         "budget",
@@ -2044,7 +2052,8 @@ def policy_selected_vs_oracle_plot(
             )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
-    ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
+    if show_title:
+        ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     _set_integer_x_ticks(ax)
@@ -2179,6 +2188,7 @@ def all_datasets_policy_regret_plot(
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     log_x: bool = False,
     show_uncertainty: bool = True,
+    show_title: bool = True,
 ) -> Path:
     required_columns = {"dataset", "dataset_label", "budget", "mean_regret"}
     missing_columns = required_columns.difference(summary_df.columns)
@@ -2255,7 +2265,8 @@ def all_datasets_policy_regret_plot(
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Regret", fontsize=fontsize)
-    ax.set_title("Screening policy regret by dataset", fontsize=fontsize)
+    if show_title:
+        ax.set_title("Screening policy regret by dataset", fontsize=fontsize)
     if log_x:
         ax.set_xscale("log")
     else:
@@ -2654,6 +2665,7 @@ def _render_screening_curve_regret_panel(
         output_path=output_path,
         log_x=log_x,
         show_uncertainty=False,
+        show_title=False,
     )
 
 
@@ -2708,12 +2720,14 @@ def compose_screening_curve_figure(
             fixed_method_summary_df=fixed_method_summary_df,
             output_path=tmp_path / "panel_a_absolute.png",
             include_x=absolute_include_x,
+            show_title=False,
         )
         panel_b_path = policy_selected_vs_oracle_plot(
             policy_artifact["summary_df"],
             fixed_method_summary_df=fixed_method_summary_df,
             output_path=tmp_path / "panel_b_fraction.png",
             include_x=fraction_include_x,
+            show_title=False,
         )
         panel_c_path = _render_screening_curve_regret_panel(
             _build_screening_curve_regret_frame(

@@ -16,6 +16,7 @@ from oasis.learning_curve.results_io import (
 )
 from oasis.mlip.timing import MlipGenerationTimingSummary
 from oasis.plot import (
+    all_datasets_policy_regret_plot,
     all_datasets_uq_oracle_plot,
     dispersion_plot,
     fixed_split_total_time_accuracy_plot,
@@ -97,6 +98,61 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(exists)
+
+    def test_policy_selected_vs_oracle_plot_can_hide_title(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                "budget": [4, 8],
+                "mean_regret": [0.05, 0.01],
+                "std_regret": [0.02, 0.01],
+                "se_regret": [0.014, 0.007],
+                "ci95_low": [0.022, -0.004],
+                "ci95_high": [0.078, 0.024],
+                "agreement_rate": [0.5, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "policy_selected_vs_oracle_no_title.png"
+            with patch("oasis.plot.plt.close"):
+                policy_selected_vs_oracle_plot(
+                    summary_df,
+                    output_path=output_path,
+                    show_title=False,
+                )
+                fig = policy_selected_vs_oracle_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(ax.get_title(), "")
+
+    def test_all_datasets_policy_regret_plot_can_hide_title(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "Tol-BMA", "Tol-BMA"],
+                "budget": [4, 8, 4, 8],
+                "mean_regret": [0.02, 0.01, 0.03, 0.02],
+                "std_regret": [0.01, 0.01, 0.01, 0.01],
+                "ci95_low": [0.01, 0.0, 0.02, 0.01],
+                "ci95_high": [0.03, 0.02, 0.04, 0.03],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "all_policy_regret_no_title.png"
+            with patch("oasis.plot.plt.close"):
+                all_datasets_policy_regret_plot(
+                    summary_df,
+                    output_path=output_path,
+                    show_title=False,
+                )
+                fig = all_datasets_policy_regret_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(ax.get_title(), "")
 
     def test_compose_screening_curve_figure_assembles_panels_via_shared_plot_module(self) -> None:
         dataset_entries = [
@@ -205,10 +261,12 @@ class PlotTests(unittest.TestCase):
             mock_selected_vs_oracle.call_args_list[0].kwargs["include_x"],
             [4, 8],
         )
+        self.assertFalse(mock_selected_vs_oracle.call_args_list[0].kwargs["show_title"])
         self.assertEqual(
             mock_selected_vs_oracle.call_args_list[1].kwargs["include_x"],
             [10, 16],
         )
+        self.assertFalse(mock_selected_vs_oracle.call_args_list[1].kwargs["show_title"])
 
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(

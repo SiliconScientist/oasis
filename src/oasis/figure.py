@@ -26,7 +26,9 @@ def vertical_panel_figure(
             raise FileNotFoundError(f"panel image not found: {panel_path}")
 
     if panel_labels is None:
-        panel_labels = tuple(f"{chr(ord('a') + idx)})" for idx in range(len(resolved_paths)))
+        panel_labels = tuple(
+            f"{chr(ord('a') + idx)})" for idx in range(len(resolved_paths))
+        )
     if len(panel_labels) != len(resolved_paths):
         raise ValueError("panel_labels must match the number of panel_paths.")
     if panel_label_positions is None:
@@ -115,7 +117,9 @@ def two_top_one_bottom_figure(
     if len(panel_label_positions) != 3:
         raise ValueError("panel_label_positions must match the number of panels.")
 
-    top_left_image, top_right_image, bottom_image = [plt.imread(path) for path in panel_paths]
+    top_left_image, top_right_image, bottom_image = [
+        plt.imread(path) for path in panel_paths
+    ]
     top_aspect = max(
         top_left_image.shape[0] / max(top_left_image.shape[1], 1),
         top_right_image.shape[0] / max(top_right_image.shape[1], 1),
@@ -258,7 +262,7 @@ def zero_shot_overview_figure(
         top_left_path = parity_plot(
             all_mlips_df,
             output_path=tmp_path / "panel_a.png",
-            show_legend=True,
+            show_legend=False,
             legend_fontsize=14,
             legend_loc="lower right",
             metrics_position=(0.97, 0.97),
@@ -271,7 +275,10 @@ def zero_shot_overview_figure(
             matched_subset_df,
             output_path=tmp_path / "panel_b.png",
             validity_mask_by_prediction=anomaly_aware_validity_mask_by_prediction,
-            show_legend=False,
+            show_legend=True,
+            legend_fontsize=14,
+            legend_loc="lower right",
+            legend_markerscale=14 / 8,
             metrics_position=(0.97, 0.97),
             metrics_horizontalalignment="right",
             metrics_verticalalignment="top",

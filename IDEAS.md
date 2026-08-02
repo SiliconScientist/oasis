@@ -1,0 +1,1 @@
+- I think the code currently ignores the screening test set datapoints when making a final evaluation, but I don't think it would be scientifically invalid to use the screening test set to choose the model, and then combine it with the training and/or validation set for the final evaluation. 

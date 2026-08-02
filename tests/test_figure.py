@@ -74,7 +74,7 @@ class FigureTests(unittest.TestCase):
             self.assertEqual(output_path, tmp_path / "figure.png")
             self.assertTrue(output_path.exists())
 
-    def test_zero_shot_overview_figure_places_panel_a_legend_and_hides_panel_b_legend(
+    def test_zero_shot_overview_figure_hides_panel_a_legend_and_shows_panel_b_legend(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -104,7 +104,7 @@ class FigureTests(unittest.TestCase):
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(output_path.exists())
-            self.assertTrue(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
+            self.assertFalse(mock_parity_plot.call_args_list[0].kwargs["show_legend"])
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["legend_fontsize"], 14)
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["legend_loc"], "lower right")
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_position"], (0.97, 0.97))
@@ -118,8 +118,12 @@ class FigureTests(unittest.TestCase):
             )
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["metrics_fontsize"], 18)
             self.assertEqual(mock_parity_plot.call_args_list[0].kwargs["y_label_fontsize"], 24)
-            self.assertFalse(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
+            self.assertTrue(mock_parity_plot.call_args_list[1].kwargs["show_legend"])
             self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["metrics_position"], (0.97, 0.97))
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_fontsize"], 14)
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_loc"], "lower right")
+            self.assertEqual(mock_parity_plot.call_args_list[1].kwargs["legend_markerscale"], 14 / 8)
+            self.assertNotIn("legend_bbox_to_anchor", mock_parity_plot.call_args_list[1].kwargs)
             self.assertEqual(
                 mock_parity_plot.call_args_list[1].kwargs["metrics_horizontalalignment"],
                 "right",
