@@ -119,6 +119,31 @@ def _frame_height(frame: object) -> int:
     return int(getattr(frame, "height", len(frame)))
 
 
+def _align_latent_view(
+    wide_df: object,
+    latent_df: pd.DataFrame,
+) -> tuple[object, pd.DataFrame]:
+    if "equation" in latent_df.columns and "reaction" in getattr(wide_df, "columns", []):
+        reaction_order = wide_df.get_column("reaction").to_list()
+        keep_ids = set(latent_df["equation"].tolist())
+        wide_df = wide_df.filter(wide_df.get_column("reaction").is_in(list(keep_ids)))
+        reaction_order = wide_df.get_column("reaction").to_list()
+        return (
+            wide_df,
+            latent_df.set_index("equation").loc[reaction_order].reset_index(),
+        )
+
+    csv_energies = set(latent_df["adsorption_energy"].tolist())
+    wide_df = wide_df.filter(
+        wide_df.get_column("reference_ads_eng").is_in(list(csv_energies))
+    )
+    energy_order = wide_df.get_column("reference_ads_eng").to_list()
+    return (
+        wide_df,
+        latent_df.set_index("adsorption_energy").loc[energy_order].reset_index(),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BudgetSpanVariant:
     key: str
@@ -1060,7 +1085,9 @@ def _latent_run_suffix(cfg: object) -> str:
         else None
     )
     models_cfg = getattr(learning_curve_cfg, "models", None)
-    enabled = bool(getattr(models_cfg, "use_latent", False))
+    enabled = bool(getattr(models_cfg, "use_latent", False)) or bool(
+        getattr(models_cfg, "use_fitted_latent", False)
+    )
     return "latent_on" if enabled else "latent_off"
 
 
@@ -3266,19 +3293,19 @@ def build_auxiliary_views(
         if cfg.experiment and _learning_curve_experiment_enabled(cfg)
         else None
     )
-    if models_cfg is not None and getattr(models_cfg, "use_latent", False):
+    latent_enabled = (
+        models_cfg is not None
+        and (
+            getattr(models_cfg, "use_latent", False)
+            or getattr(models_cfg, "use_fitted_latent", False)
+        )
+    )
+    if latent_enabled:
         latent_cfg = models_cfg.latent
         if latent_cfg is not None:
             latent_df = pd.read_csv(latent_cfg.csv_path)
-            csv_energies = set(latent_df["adsorption_energy"].tolist())
             pre_latent_rows = _frame_height(wide_df)
-            wide_df = wide_df.filter(
-                wide_df.get_column("reference_ads_eng").is_in(list(csv_energies))
-            )
-            energy_order = wide_df.get_column("reference_ads_eng").to_list()
-            latent_df = (
-                latent_df.set_index("adsorption_energy").loc[energy_order].reset_index()
-            )
+            wide_df, latent_df = _align_latent_view(wide_df, latent_df)
             auxiliary_views["latent"] = latent_df
             print(
                 "Applied latent alignment filter"
@@ -3344,7 +3371,9 @@ def _method_generation_timing_overrides(
     )
     feature_names = mlip_feature_names(wide_df)
     latent_cfg = getattr(models_cfg, "latent", None)
-    latent_enabled = bool(getattr(models_cfg, "use_latent", False))
+    latent_enabled = bool(getattr(models_cfg, "use_latent", False)) or bool(
+        getattr(models_cfg, "use_fitted_latent", False)
+    )
 
     if latent_enabled and latent_cfg is not None:
         latent_timing_path = Path(
@@ -3355,7 +3384,7 @@ def _method_generation_timing_overrides(
             with latent_timing_path.open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
             generation_time_s = float(payload.get("generation_time_s", 0.0) or 0.0)
-            overrides["latent"] = GenerationTimingAggregate(
+            aggregate = GenerationTimingAggregate(
                 generation_time_s=generation_time_s,
                 generation_time_slab_s=0.0,
                 generation_time_adslab_s=0.0,
@@ -3365,6 +3394,10 @@ def _method_generation_timing_overrides(
                 time_per_step_s=None,
                 mlip_feature_names=("latent_csv",),
             )
+            if bool(getattr(models_cfg, "use_latent", False)):
+                overrides["latent"] = aggregate
+            if bool(getattr(models_cfg, "use_fitted_latent", False)):
+                overrides["fitted_latent"] = aggregate
 
     if (
         probe_gnn_enabled

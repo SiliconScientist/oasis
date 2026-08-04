@@ -174,6 +174,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "probe_gnn",
                 "gnn_direct",
                 "latent",
+                "fitted_latent",
             ],
         )
 
@@ -189,6 +190,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                         use_weighted_linear=True,
                         use_weighted_simplex=True,
                         use_graph_mean=True,
+                        use_fitted_latent=True,
                     )
                 )
             )
@@ -205,6 +207,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "weighted_linear",
                 "weighted_simplex",
                 "graph_mean",
+                "fitted_latent",
             ),
         )
 
@@ -252,6 +255,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(),
+                SweepFamilyRequirements(),
             ],
         )
         built_in_capabilities = [registration.family_factory().capabilities() for registration in registry]
@@ -272,6 +276,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 ),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(requires_validation=True),
+                SweepModelCapabilities(),
                 SweepModelCapabilities(),
             ],
         )

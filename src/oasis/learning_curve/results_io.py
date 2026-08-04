@@ -31,6 +31,7 @@ _METHOD_RESULT_FIELDS = {
     "probe_gnn": "probe_gnn_df",
     "gnn_direct": "gnn_direct_df",
     "latent": "latent_df",
+    "fitted_latent": "fitted_latent_df",
 }
 _METHOD_SELECTION_FIELDS = {
     "ridge": "ridge_selection_df",
@@ -55,6 +56,7 @@ _METHOD_UQ_FIELDS = {
     "probe_gnn": "probe_gnn_uq_df",
     "gnn_direct": "gnn_direct_uq_df",
     "latent": "latent_uq_df",
+    "fitted_latent": "fitted_latent_uq_df",
 }
 _RESULT_FIELD_TO_METHOD = {
     result_field: method_name

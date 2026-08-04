@@ -15,7 +15,7 @@ from oasis.sweep import LearningCurveResults
 
 
 _METHODS_REQUIRING_EXPLICIT_GENERATION_TIMING = frozenset(
-    {"latent", "probe_gnn", "gnn_direct"}
+    {"latent", "fitted_latent", "probe_gnn", "gnn_direct"}
 )
 _TIME_ACCURACY_COLUMNS = [
     "method",

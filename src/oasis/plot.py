@@ -79,6 +79,14 @@ _METHOD_PLOT_STYLES = (
     ("gnn_direct", "gnn_direct_df", "gnn_direct_uq_df", "GNN direct", "s", "tab:cyan"),
     ("probe_gnn", "probe_gnn_df", "probe_gnn_uq_df", "Probe GNN", "D", "tab:olive"),
     ("latent", "latent_df", "latent_uq_df", "Latent", "v", "tab:brown"),
+    (
+        "fitted_latent",
+        "fitted_latent_df",
+        "fitted_latent_uq_df",
+        "Fitted latent",
+        "<",
+        "sienna",
+    ),
 )
 _METHOD_RESULT_FIELDS = {
     method_name: result_field for method_name, result_field, *_ in _METHOD_PLOT_STYLES

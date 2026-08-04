@@ -156,6 +156,7 @@ class LearningCurveModelsConfig(BaseModel):
     probe_gnn: ProbeGnnConfig = Field(default_factory=ProbeGnnConfig)
     gnn_direct: GnnDirectConfig = Field(default_factory=GnnDirectConfig)
     use_latent: bool = False
+    use_fitted_latent: bool = False
     latent: Optional[LatentModelConfig] = None
 
 

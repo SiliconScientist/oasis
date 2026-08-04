@@ -11,6 +11,7 @@ import pandas as pd
 import polars as pl
 
 from oasis.experiment_runner import (
+    _align_latent_view,
     _apply_dev_run_curve_overrides,
     _apply_dev_run_frame_cap,
     _build_policy_selection_diagnostic_results_for_cfg,
@@ -118,6 +119,33 @@ class _FakeWideFrame:
 
 
 class ExperimentRunnerTests(unittest.TestCase):
+    def test_align_latent_view_prefers_equation_over_adsorption_energy(self) -> None:
+        wide_df = _FakeWideFrame(
+            reactions=["r0", "r1", "r2"],
+            reference_ads_eng=[10.0, 20.0, 30.0],
+        )
+        latent_df = pd.DataFrame(
+            {
+                "equation": ["r2", "r0"],
+                "adsorption_energy": [999.0, 888.0],
+                "latent_feature": [0.2, 0.1],
+            }
+        )
+
+        aligned_wide_df, aligned_latent_df = _align_latent_view(wide_df, latent_df)
+
+        self.assertEqual(aligned_wide_df.get_column("reaction").to_list(), ["r0", "r2"])
+        pd.testing.assert_frame_equal(
+            aligned_latent_df.reset_index(drop=True),
+            pd.DataFrame(
+                {
+                    "equation": ["r0", "r2"],
+                    "adsorption_energy": [888.0, 999.0],
+                    "latent_feature": [0.1, 0.2],
+                }
+            ),
+        )
+
     @staticmethod
     def _uq_results() -> LearningCurveResults:
         uq_frame = pd.DataFrame(

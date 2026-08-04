@@ -239,6 +239,7 @@ use_graph_mean = false
 use_gnn_direct = false
 use_probe_gnn = false
 use_latent = true
+use_fitted_latent = false
 
 [models.latent]
 experiment_config_path = "vendor/latent/config.toml"

@@ -105,7 +105,11 @@ class LearnedFamilyRegistrationSpec:
     default_enabled: bool = True
 
 
-def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
+def _configured_latent_family(
+    model_cfg: Any,
+    *,
+    result_field: str,
+) -> SweepModelFamily:
     import importlib.util
     from pathlib import Path
 
@@ -151,11 +155,19 @@ def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
     )
     return ConfiguredSweepModelFamily(
         SweepFamilySpec(
-            result_field="latent_df",
+            result_field=result_field,
             runner=runner,
             capabilities=SweepModelCapabilities(),
         )
     )
+
+
+def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
+    return _configured_latent_family(model_cfg, result_field="latent_df")
+
+
+def _fitted_latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
+    return _configured_latent_family(model_cfg, result_field="fitted_latent_df")
 
 
 def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:
@@ -212,6 +224,7 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
     from oasis.learning_curve.execution import residual_sweep
     from oasis.learning_curve.families.probe_gnn import GnnDirectTuningSpec, ProbeGnnTuningSpec
     from oasis.learning_curve.registry import (
+        _fitted_latent_enabled,
         _gnn_direct_enabled,
         _latent_enabled,
         _moe_enabled,
@@ -315,6 +328,14 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
             capabilities=SweepModelCapabilities(),
             config_family_factory=_latent_config_family_factory,
             result_field="latent_df",
+            default_enabled=False,
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="fitted_latent",
+            is_enabled=_fitted_latent_enabled,
+            capabilities=SweepModelCapabilities(),
+            config_family_factory=_fitted_latent_config_family_factory,
+            result_field="fitted_latent_df",
             default_enabled=False,
         ),
     )

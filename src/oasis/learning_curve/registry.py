@@ -49,6 +49,10 @@ def _latent_enabled(config_section: Any) -> bool:
     return bool(getattr(config_section, "use_latent", False))
 
 
+def _fitted_latent_enabled(config_section: Any) -> bool:
+    return bool(getattr(config_section, "use_fitted_latent", False))
+
+
 def _probe_gnn_enabled(config_section: Any) -> bool:
     return bool(getattr(config_section, "use_probe_gnn", False)) or bool(
         getattr(getattr(config_section, "probe_gnn", None), "enabled", False)

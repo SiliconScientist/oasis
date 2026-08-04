@@ -1343,6 +1343,8 @@ class LearningCurveResults:
     gnn_direct_uq_df: pd.DataFrame | None = None
     latent_df: pd.DataFrame | None = None
     latent_uq_df: pd.DataFrame | None = None
+    fitted_latent_df: pd.DataFrame | None = None
+    fitted_latent_uq_df: pd.DataFrame | None = None
 
     @classmethod
     def empty(cls) -> LearningCurveResults:

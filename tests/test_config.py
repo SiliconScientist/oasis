@@ -2866,6 +2866,7 @@ class ConfigParsingTests(unittest.TestCase):
                             "use_elastic_net": False,
                             "use_residual": False,
                             "use_latent": True,
+                            "use_fitted_latent": True,
                             "latent": {
                                 "experiment_config_path": "vendor/latent/config.toml",
                                 "csv_path": "vendor/latent/data/processed/example_latent.csv",
@@ -2880,6 +2881,7 @@ class ConfigParsingTests(unittest.TestCase):
         assert cfg.experiment is not None
         assert cfg.experiment.learning_curve is not None
         assert cfg.experiment.learning_curve.models is not None
+        self.assertTrue(cfg.experiment.learning_curve.models.use_fitted_latent)
         latent = cfg.experiment.learning_curve.models.latent
         assert latent is not None
         self.assertEqual(

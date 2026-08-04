@@ -1583,6 +1583,8 @@ class LearningCurveResultsTests(unittest.TestCase):
         self.assertIs(mapping["probe_gnn_selection_df"], probe_gnn_selection_df)
         self.assertIn("latent_uq_df", mapping)
         self.assertIsNone(mapping["latent_uq_df"])
+        self.assertIn("fitted_latent_uq_df", mapping)
+        self.assertIsNone(mapping["fitted_latent_uq_df"])
 
     def test_merge_unions_uq_frames_by_n_train(self) -> None:
         base = LearningCurveResults(
