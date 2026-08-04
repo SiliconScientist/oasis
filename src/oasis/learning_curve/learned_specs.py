@@ -167,7 +167,50 @@ def _latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
 
 
 def _fitted_latent_config_family_factory(model_cfg: Any) -> SweepModelFamily:
-    return _configured_latent_family(model_cfg, result_field="fitted_latent_df")
+    import importlib.util
+    from pathlib import Path
+
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib
+
+    latent_cfg = model_cfg.latent
+    config_path = Path(latent_cfg.experiment_config_path).resolve()
+    vendor_dir = config_path.parent
+
+    spec = importlib.util.spec_from_file_location(
+        "latent_vendor_config", vendor_dir / "config.py"
+    )
+    vendor_config_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vendor_config_mod)
+    ns = vars(vendor_config_mod)
+    for model in (
+        vendor_config_mod.XGBoostSearchOptions,
+        vendor_config_mod.XGBoostConfig,
+        vendor_config_mod.ExperimentConfig,
+    ):
+        model.model_rebuild(_types_namespace=ns)
+
+    with open(config_path, "rb") as f:
+        raw_cfg = tomllib.load(f)
+    experiment_path = vendor_dir / raw_cfg["experiment_path"]
+    with open(experiment_path, "rb") as f:
+        exp_data = tomllib.load(f)
+    exp_cfg = vendor_config_mod.ExperimentConfig(**exp_data)
+    from oasis.learning_curve.families.latent import FittedLatentSweepRunner
+
+    runner = FittedLatentSweepRunner(
+        exp_cfg=exp_cfg,
+        vendor_dir=vendor_dir,
+    )
+    return ConfiguredSweepModelFamily(
+        SweepFamilySpec(
+            result_field="fitted_latent_df",
+            runner=runner,
+            capabilities=SweepModelCapabilities(),
+        )
+    )
 
 
 def _moe_config_runner_kwargs(model_cfg: Any) -> dict[str, Any]:

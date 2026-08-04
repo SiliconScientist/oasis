@@ -14,10 +14,15 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from oasis.learning_curve.learned_specs import _latent_config_family_factory
+from oasis.learning_curve.learned_specs import (
+    _fitted_latent_config_family_factory,
+    _latent_config_family_factory,
+)
 from oasis.learning_curve.families.latent import (
+    FittedLatentSweepRunner,
     LatentSweepRunner,
     _align_df_to_sample_ids,
+    _load_fitted_linear_latent_model,
     load_latent_df,
 )
 from oasis.sweep import SweepDataset, SweepRunnerPayload, TrainTestSweepRunnerInput
@@ -307,6 +312,94 @@ class TestLatentSweepRunner(unittest.TestCase):
         self.assertIsInstance(runner, LatentSweepRunner)
         self.assertEqual(runner.cobyla_initial_guess, 0.1)
         self.assertEqual(runner.cobyla_max_iter, 100)
+
+    def test_fitted_latent_family_factory_uses_prefit_runner(self) -> None:
+        family = _fitted_latent_config_family_factory(
+            SimpleNamespace(
+                latent=SimpleNamespace(
+                    experiment_config_path="vendor/latent/config.toml",
+                )
+            )
+        )
+
+        self.assertIsInstance(family.spec.runner, FittedLatentSweepRunner)
+
+
+class TestFittedLatentModelLoading(unittest.TestCase):
+    def test_load_fitted_linear_latent_model_reads_vendor_param_files(self) -> None:
+        architecture = SimpleNamespace(
+            features=["feat_a", "feat_b"],
+            host_elements=["Ag"],
+            block_keys=[("HO", "bridge"), ("HO", "ontop")],
+        )
+        TrainedModel = SimpleNamespace
+        LatentVariableModel = MagicMock()
+        LatentVariableModel.from_config.return_value = architecture
+        latent_df = pd.DataFrame({"guest_name": ["HO"], "site_name": ["bridge"]})
+
+        with TemporaryDirectory() as tmp_dir:
+            params_dir = Path(tmp_dir) / "params"
+            params_dir.mkdir()
+            (params_dir / "hostParams_Ag.txt").write_text(
+                json.dumps({"feat_a": 1.0, "feat_b": 2.0, "constant": 3.0}),
+                encoding="utf-8",
+            )
+            (params_dir / "guestParams__HO__bridge").write_text(
+                json.dumps({"coefficients": [4.0, 5.0], "intercept": 6.0}),
+                encoding="utf-8",
+            )
+            (params_dir / "guestParams__HO__ontop").write_text(
+                json.dumps({"coefficients": [7.0, 8.0], "intercept": 9.0}),
+                encoding="utf-8",
+            )
+            exp_cfg = SimpleNamespace(model_key="linear", params_output_dir="params")
+
+            with patch(
+                "oasis.learning_curve.families.latent._load_latent_vendor_modules",
+                return_value=(LatentVariableModel, TrainedModel, MagicMock()),
+            ):
+                trained = _load_fitted_linear_latent_model(
+                    exp_cfg=exp_cfg,
+                    vendor_dir=Path(tmp_dir),
+                    latent_df=latent_df,
+                )
+
+        np.testing.assert_allclose(trained.train_params, np.array([4.0, 5.0, 7.0, 8.0]))
+        np.testing.assert_allclose(
+            trained.estimator.coef_,
+            np.array([1.0, 2.0, 3.0, 6.0, 9.0]),
+        )
+
+    def test_load_fitted_linear_latent_model_rejects_non_linear_configs(self) -> None:
+        with self.assertRaises(ValueError):
+            _load_fitted_linear_latent_model(
+                exp_cfg=SimpleNamespace(model_key="xgboost", params_output_dir="params"),
+                vendor_dir=Path("."),
+                latent_df=pd.DataFrame(),
+            )
+
+
+class TestFittedLatentSweepRunner(unittest.TestCase):
+    def test_run_scores_splits_without_fit_time(self) -> None:
+        latent_df = _make_latent_df()
+        trained = MagicMock()
+        trained.train_params = np.array([0.5])
+        trained.architecture.linearize_data.return_value = (
+            np.array([[0.0], [0.0]]),
+            np.array([0.0, 0.0]),
+        )
+        trained.estimator.predict.return_value = np.array([0.0, 0.0])
+
+        runner = FittedLatentSweepRunner(exp_cfg=MagicMock(), vendor_dir=Path("."))
+        with patch(
+            "oasis.learning_curve.families.latent._load_fitted_linear_latent_model",
+            return_value=trained,
+        ) as mock_load:
+            result = runner.run(_make_payload(latent_df))
+
+        mock_load.assert_called_once()
+        np.testing.assert_allclose(result["fit_time_mean_s"].to_numpy(), [0.0], atol=1e-12)
+        np.testing.assert_allclose(result["fit_time_std_s"].to_numpy(), [0.0], atol=1e-12)
 
 
 if __name__ == "__main__":
