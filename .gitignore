@@ -234,3 +234,6 @@ dev_run.sh
 
 # Agent files
 .codex
+
+# vendor
+fitted_params_pw91_JSON/
