@@ -1,6 +1,6 @@
 model_key = "linear"
 target_feature = "adsorption_energy"
-params_output_dir = "fitted_params_JSON"
+params_output_dir = "fitted_params_pw91_JSON"
 
 low_theory_features = [
     # "Z",

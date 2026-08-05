@@ -38,7 +38,7 @@ def load_latent_df(
     return _align_df_to_sample_ids(df, sample_ids, reaction_column="equation")
 
 
-def _load_latent_vendor_modules(vendor_dir: Path) -> tuple[Any, Any, Any]:
+def _load_latent_vendor_modules(vendor_dir: Path) -> tuple[Any, Any, Any, Any, Any]:
     """Load LatentVariableModel and train_model from vendor files via sys.modules injection."""
     # latent.config — load via importlib so it resolves as 'latent.config' in sys.modules
     if "latent.config" not in sys.modules:
@@ -95,8 +95,11 @@ def _load_latent_vendor_modules(vendor_dir: Path) -> tuple[Any, Any, Any]:
     model_mod = sys.modules["latent.model"]
     LatentVariableModel = model_mod.LatentVariableModel
     TrainedModel = model_mod.TrainedModel
-    train_model = sys.modules["latent.train"].train_model
-    return LatentVariableModel, TrainedModel, train_model
+    fit_model = model_mod.fit_model
+    train_mod = sys.modules["latent.train"]
+    train_model = train_mod.train_model
+    cost_function = train_mod.cost_function
+    return LatentVariableModel, TrainedModel, fit_model, train_model, cost_function
 
 
 def _resolve_params_output_dir(exp_cfg: Any, vendor_dir: Path) -> Path:
@@ -111,56 +114,105 @@ def _resolve_params_output_dir(exp_cfg: Any, vendor_dir: Path) -> Path:
     return params_path
 
 
-def _load_fitted_linear_latent_model(
+def _canonical_guest_name(name: str) -> str:
+    normalized = "".join(ch for ch in str(name).lower() if ch.isalnum())
+    aliases = {
+        "hydroxyl": "ho",
+        "oh": "ho",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _canonical_site_name(name: str) -> str:
+    normalized = str(name).strip().lower()
+    normalized = normalized.replace("[", "").replace("]", "").replace("'", "")
+    normalized = normalized.replace('"', "").replace(" ", "").replace("-", "_")
+    aliases = {
+        "fcchollow": "fcc_hollow",
+        "fcc_hollow": "fcc_hollow",
+        "ontop": "top",
+        "top": "top",
+        "bridge": "bridge",
+        "hcphollow": "hcp_hollow",
+        "hcp_hollow": "hcp_hollow",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _read_saved_guest_param_payloads(params_dir: Path) -> dict[tuple[str, str], list[float]]:
+    payloads: dict[tuple[str, str], list[float]] = {}
+    for path in params_dir.glob("guestParams__*"):
+        parts = path.name.split("__")
+        if len(parts) != 3:
+            continue
+        _, guest_name, site_name = parts
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        payloads[
+            (_canonical_guest_name(guest_name), _canonical_site_name(site_name))
+        ] = [float(value) for value in payload.get("coefficients", ())]
+    return payloads
+
+
+def _warm_start_latent_parameters(
     exp_cfg: Any,
     vendor_dir: Path,
-    latent_df: pd.DataFrame,
-) -> Any:
-    from sklearn.linear_model import LinearRegression
-
-    if getattr(exp_cfg, "model_key", None) != "linear":
-        raise ValueError(
-            "fitted latent currently supports only vendor latent configs with "
-            "model_key = 'linear'."
-        )
-    LatentVariableModel, TrainedModel, _ = _load_latent_vendor_modules(vendor_dir)
-
-    architecture = LatentVariableModel.from_config(exp_cfg)
+    architecture: Any,
+    *,
+    fallback_value: float,
+) -> np.ndarray:
     params_dir = _resolve_params_output_dir(exp_cfg, vendor_dir)
-    features = list(architecture.features)
-    host_elements = list(architecture.host_elements)
-    block_keys = list(architecture.block_keys)
-
-    coef_values: list[float] = []
-    guest_param_values: list[float] = []
-    for host_element in host_elements:
-        host_path = params_dir / f"hostParams_{host_element}.txt"
-        with host_path.open("r", encoding="utf-8") as handle:
-            host_payload = json.load(handle)
-        coef_values.extend(float(host_payload[feature]) for feature in features)
-        coef_values.append(float(host_payload["constant"]))
-
-    for guest, site in block_keys:
-        guest_path = params_dir / f"guestParams__{guest}__{site}"
-        with guest_path.open("r", encoding="utf-8") as handle:
-            guest_payload = json.load(handle)
-        coefficients = guest_payload["coefficients"]
-        if len(coefficients) != len(features):
+    saved_payloads = _read_saved_guest_param_payloads(params_dir)
+    num_features = len(architecture.features)
+    warm_start = np.full(
+        len(architecture.block_keys) * num_features,
+        float(fallback_value),
+        dtype=float,
+    )
+    for block_idx, (guest_name, site_name) in enumerate(architecture.block_keys):
+        canonical_key = (
+            _canonical_guest_name(guest_name),
+            _canonical_site_name(site_name),
+        )
+        coefficients = saved_payloads.get(canonical_key)
+        if coefficients is None:
+            continue
+        if len(coefficients) != num_features:
             raise ValueError(
-                f"Saved guest coefficients for {(guest, site)!r} have length "
-                f"{len(coefficients)} but expected {len(features)}."
+                f"Saved guest coefficients for {canonical_key!r} have length "
+                f"{len(coefficients)} but expected {num_features}."
             )
-        guest_param_values.extend(float(value) for value in coefficients)
-        coef_values.append(float(guest_payload["intercept"]))
+        start = block_idx * num_features
+        warm_start[start : start + num_features] = coefficients
+    return warm_start
 
-    estimator = LinearRegression(fit_intercept=False)
-    estimator.coef_ = np.asarray(coef_values, dtype=float)
-    estimator.intercept_ = 0.0
-    estimator.n_features_in_ = int(estimator.coef_.shape[0])
-    return TrainedModel(
+
+def _train_latent_model_with_initial_params(
+    train_df: pd.DataFrame,
+    untrained_model: Any,
+    trained_model_class: Any,
+    fit_model: Any,
+    cost_function: Any,
+    initial_params: np.ndarray,
+    *,
+    cobyla_max_iter: int,
+) -> Any:
+    from scipy.optimize import minimize
+
+    min_result = minimize(
+        cost_function,
+        np.asarray(initial_params, dtype=float),
+        args=(train_df, untrained_model),
+        method="COBYLA",
+        options={"maxiter": cobyla_max_iter},
+    )
+    train_params = np.asarray(min_result.x, dtype=float)
+    x_train, y_train = untrained_model.linearize_data(train_df, train_params)
+    estimator = fit_model(untrained_model.model_type, x=x_train, y=y_train)
+    return trained_model_class(
         estimator=estimator,
-        architecture=architecture,
-        train_params=np.asarray(guest_param_values, dtype=float),
+        architecture=untrained_model,
+        train_params=train_params,
     )
 
 
@@ -174,7 +226,7 @@ class LatentSweepRunner:
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         from sklearn.metrics import mean_squared_error
 
-        LatentVariableModel, _, train_model = _load_latent_vendor_modules(
+        LatentVariableModel, _, _, train_model, _ = _load_latent_vendor_modules(
             self.vendor_dir
         )
 
@@ -212,28 +264,55 @@ class LatentSweepRunner:
 class FittedLatentSweepRunner:
     exp_cfg: Any
     vendor_dir: Path
+    cobyla_initial_guess: float = 0.1
+    cobyla_max_iter: int = 100
 
     def run(self, payload: SweepRunnerPayload) -> pd.DataFrame:
         from sklearn.metrics import mean_squared_error
 
         splits = _assert_train_test_payload(payload)
-        first_latent_df: pd.DataFrame = splits[0].dataset.auxiliary_views["latent"]
-        trained = _load_fitted_linear_latent_model(
-            self.exp_cfg,
-            self.vendor_dir,
-            first_latent_df,
-        )
+        (
+            LatentVariableModel,
+            TrainedModel,
+            fit_model,
+            _train_model,
+            cost_function,
+        ) = _load_latent_vendor_modules(self.vendor_dir)
 
         rmses_by_size: dict[int, list[float]] = {}
         fit_times_by_size: dict[int, list[float]] = {}
         for split in splits:
             latent_df: pd.DataFrame = split.dataset.auxiliary_views["latent"]
+            train_df = latent_df.iloc[split.train_idx]
             test_df = latent_df.iloc[split.test_idx]
+            untrained = LatentVariableModel.from_config(self.exp_cfg, train_df)
+            initial_params = _warm_start_latent_parameters(
+                self.exp_cfg,
+                self.vendor_dir,
+                untrained,
+                fallback_value=self.cobyla_initial_guess,
+            )
+            trained = None
+
+            def fit_latent_model() -> None:
+                nonlocal trained
+                trained = _train_latent_model_with_initial_params(
+                    train_df,
+                    untrained,
+                    TrainedModel,
+                    fit_model,
+                    cost_function,
+                    initial_params,
+                    cobyla_max_iter=self.cobyla_max_iter,
+                )
+
+            fit_time_s = _measure_duration_s(fit_latent_model)
+            assert trained is not None
             x_test, y_test = trained.architecture.linearize_data(
                 test_df, trained.train_params
             )
             preds = trained.estimator.predict(x_test)
             rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
             rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
-            fit_times_by_size.setdefault(split.sweep_size, []).append(0.0)
+            fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
         return timed_sweep_results_frame(rmses_by_size, fit_times_by_size)
