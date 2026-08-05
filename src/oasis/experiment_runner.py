@@ -2553,12 +2553,17 @@ def _load_all_datasets_oracle_uq_rows(
                 if span_variant is None or dataset_size is None
                 else span_variant.resolved_include_x(n_samples=int(dataset_size)),
             )
-            oracle_df = oracle_uq_curve_frame(
-                artifact.results,
-                enabled_method_names=list(enabled_method_names),
-                dataset=dataset_tag,
-                dataset_label=dataset_label,
-            )
+            try:
+                oracle_df = oracle_uq_curve_frame(
+                    artifact.results,
+                    enabled_method_names=list(enabled_method_names),
+                    dataset=dataset_tag,
+                    dataset_label=dataset_label,
+                )
+            except ValueError as exc:
+                if "No enabled UQ result frames were available." not in str(exc):
+                    raise
+                return []
             filtered_oracle_df = _filter_curve_frame(
                 oracle_df,
                 x_column="n_train",
@@ -2607,12 +2612,17 @@ def _load_all_datasets_oracle_uq_rows(
         if not cache_only:
             print(f"All-datasets UQ oracle cache hit for {dataset_tag}")
 
-    oracle_df = oracle_uq_curve_frame(
-        results,
-        enabled_method_names=list(enabled_method_names),
-        dataset=dataset_tag,
-        dataset_label=dataset_label,
-    )
+    try:
+        oracle_df = oracle_uq_curve_frame(
+            results,
+            enabled_method_names=list(enabled_method_names),
+            dataset=dataset_tag,
+            dataset_label=dataset_label,
+        )
+    except ValueError as exc:
+        if "No enabled UQ result frames were available." not in str(exc):
+            raise
+        return []
     dataset_include_x = _merged_include_x(
         include_x,
         None

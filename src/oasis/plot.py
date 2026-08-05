@@ -1390,6 +1390,25 @@ def learning_curve_plot(
             alpha=0.2,
             label="_nolegend_",
         )
+    if results.fitted_latent_df is not None:
+        fitted_latent_color = _method_color("fitted_latent", "sienna")
+        ax.plot(
+            results.fitted_latent_df["n_train"],
+            results.fitted_latent_df["rmse_mean"],
+            marker="<",
+            color=fitted_latent_color,
+            label="Fitted latent mean",
+        )
+        ax.fill_between(
+            results.fitted_latent_df["n_train"],
+            results.fitted_latent_df["rmse_mean"]
+            - results.fitted_latent_df["rmse_std"],
+            results.fitted_latent_df["rmse_mean"]
+            + results.fitted_latent_df["rmse_std"],
+            color=fitted_latent_color,
+            alpha=0.2,
+            label="_nolegend_",
+        )
     if zero_shot_rmse is not None:
         x_min, x_max = ax.get_xlim()
         ax.hlines(
@@ -1755,6 +1774,24 @@ def screening_budget_plot(
             color=latent_color,
             alpha=0.2,
             label="Latent +/- 1sd",
+        )
+    if results.fitted_latent_df is not None:
+        mean_col, std_col = _screening_metric_columns(results.fitted_latent_df)
+        fitted_latent_color = _method_color("fitted_latent", "sienna")
+        ax.plot(
+            results.fitted_latent_df["n_budget"],
+            results.fitted_latent_df[mean_col],
+            marker="<",
+            color=fitted_latent_color,
+            label="Fitted latent mean",
+        )
+        ax.fill_between(
+            results.fitted_latent_df["n_budget"],
+            results.fitted_latent_df[mean_col] - results.fitted_latent_df[std_col],
+            results.fitted_latent_df[mean_col] + results.fitted_latent_df[std_col],
+            color=fitted_latent_color,
+            alpha=0.2,
+            label="Fitted latent +/- 1sd",
         )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("CV RMSE (eV)", fontsize=fontsize)

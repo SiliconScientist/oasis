@@ -31,6 +31,7 @@ from oasis.experiment_runner import (
     configured_budget_span_variants,
     load_all_datasets_policy_regret_rows,
     load_all_datasets_oracle_learning_curve_rows,
+    load_all_datasets_oracle_uq_rows,
     load_filtered_wide_predictions,
     render_budget_span_variants,
     run_experiment,
@@ -4417,6 +4418,68 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_two_by_two.call_args.kwargs["output_path"],
             tmp_path / "figure_dispersion_curve.png",
         )
+
+    def test_load_all_datasets_oracle_uq_rows_skips_when_enabled_methods_have_no_uq_frames(
+        self,
+    ) -> None:
+        cfg = SimpleNamespace(
+            datasets={"bio_mass": object(), "khlohc": object()},
+            dataset_profile=SimpleNamespace(tag="bio_mass"),
+        )
+        dataset_cfg = SimpleNamespace(
+            experiment=SimpleNamespace(learning_curve=SimpleNamespace()),
+        )
+        artifact = SimpleNamespace(
+            metadata=SimpleNamespace(dataset_size=10),
+            results=LearningCurveResults(
+                latent_df=pd.DataFrame(
+                    {
+                        "n_train": [2],
+                        "rmse_mean": [0.1],
+                        "rmse_std": [0.01],
+                    }
+                )
+            ),
+        )
+
+        with patch(
+            "oasis.experiment_runner._dataset_cfg_for_tag",
+            return_value=dataset_cfg,
+        ), patch(
+            "oasis.experiment_runner._dataset_label_for_tag",
+            side_effect=lambda _cfg, dataset_tag: dataset_tag,
+        ), patch(
+            "oasis.experiment_runner._load_cached_learning_curve_artifact_for_dataset_cfg",
+            return_value=artifact,
+        ), patch(
+            "oasis.experiment_runner.load_filtered_wide_predictions",
+            return_value=(
+                _FakeWideFrame(reactions=["r0", "r1"]),
+                [],
+                _FakeWideFrame(reactions=["r0", "r1"]),
+            ),
+        ), patch(
+            "oasis.experiment_runner.prepare_parity_plot_data",
+            return_value=pd.DataFrame(
+                {
+                    "reference_ads_eng": [0.1],
+                    "ensemble_mean_ads_eng": [0.2],
+                }
+            ),
+        ), patch(
+            "oasis.experiment_runner._zero_shot_uq_baselines",
+            return_value={
+                "miscalibration_area": 0.1,
+                "sharpness": 0.2,
+                "dispersion": 0.3,
+            },
+        ):
+            rows = load_all_datasets_oracle_uq_rows(
+                cfg=cfg,
+                enabled_method_names=["latent"],
+            )
+
+        self.assertEqual(rows, [])
 
     def test_write_zero_shot_stage_parity_plots_writes_matched_and_anomaly_aware_views(
         self,

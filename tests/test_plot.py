@@ -1455,6 +1455,36 @@ class PlotTests(unittest.TestCase):
 
             self.assertTrue(getattr(locator, "_integer", False))
 
+    def test_learning_curve_plot_renders_fitted_latent_curve(self) -> None:
+        latent_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.4, 0.3],
+                "rmse_std": [0.05, 0.04],
+            }
+        )
+        fitted_latent_df = pd.DataFrame(
+            {
+                "n_train": [2, 4],
+                "rmse_mean": [0.35, 0.25],
+                "rmse_std": [0.03, 0.02],
+            }
+        )
+        results = LearningCurveResults(
+            latent_df=latent_df,
+            fitted_latent_df=fitted_latent_df,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "learning_curve_fitted_latent.png"
+            with patch("oasis.plot.plt.close"):
+                learning_curve_plot(results, output_path=output_path)
+                fig = learning_curve_plot.__globals__["plt"].gcf()
+                labels = [line.get_label() for line in fig.axes[0].lines]
+
+            self.assertIn("Latent mean", labels)
+            self.assertIn("Fitted latent mean", labels)
+
     def test_learning_curve_plot_renders_multiple_windows_from_same_results(self) -> None:
         result_df = pd.DataFrame(
             {
