@@ -45,6 +45,7 @@ from oasis.experiment.repeat_metrics import (
 )
 from oasis.experiment.splits import resolve_configured_sweep_sizes
 from oasis.figure import (
+    horizontal_panel_figure,
     learning_screening_figure,
     two_by_two_figure,
     uq_summary_figure,
@@ -183,6 +184,33 @@ class ComparativeLearningStageOutputs:
     screening_results: object | None
     learning_curve_plot_path: Path | None
     screening_plot_path: Path | None
+
+
+def _without_comparison_excluded_methods(results: object | None) -> object | None:
+    if results is None:
+        return results
+    field_overrides: dict[str, object | None] = {}
+    for field_name in (
+        "weighted_linear_df",
+        "weighted_linear_uq_df",
+        "weighted_linear_selection_df",
+        "gnn_direct_df",
+        "gnn_direct_uq_df",
+        "gnn_direct_selection_df",
+        "moe_df",
+        "moe_uq_df",
+        "moe_selection_df",
+    ):
+        if hasattr(results, field_name):
+            field_overrides[field_name] = None
+    if not field_overrides:
+        return results
+    return results.from_mapping(
+        {
+            **results.to_mapping(),
+            **field_overrides,
+        }
+    )
 
 
 def _validate_policy_selection_diagnostic_outputs(
@@ -2884,6 +2912,7 @@ def compose_accuracy_curve_figure(
             include_x=absolute_include_x,
             zero_shot_rmse=zero_shot_rmse,
             show_legend=False,
+            show_std_bands=False,
         )
         panel_b_path = learning_curve_plot(
             results=learning_curve_results,
@@ -2895,6 +2924,7 @@ def compose_accuracy_curve_figure(
             zero_shot_rmse=zero_shot_rmse,
             show_legend=True,
             legend_outside_right=True,
+            show_std_bands=False,
         )
         panel_c_path = oracle_learning_curve_plot(
             pd.DataFrame(absolute_oracle_rows),
@@ -3786,18 +3816,29 @@ def _run_comparative_learning_stages(
             output_path: Path,
         ) -> Path:
             variant_include_x = plot_kwargs["include_x"]
+            variant_min_x = plot_kwargs["min_x"]
+            disable_std_band_outputs = {
+                "learning_curve_anomalyaware_off_absolute.png",
+                "learning_curve_anomalyaware_off_fraction.png",
+            }
+            fraction_min_eval_outputs = {
+                "learning_curve_anomalyaware_off_fraction.png",
+            }
             if span_variant is not None:
                 variant_include_x = _merged_include_x(
                     plot_kwargs["include_x"],
                     span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
                 )
+            if output_path.name in fraction_min_eval_outputs:
+                variant_min_x = max(200, variant_min_x) if variant_min_x is not None else 200
             return learning_curve_plot(
                 results=learning_curve_results,
                 output_path=output_path,
                 zero_shot_rmse=zero_shot_rmse,
-                min_x=plot_kwargs["min_x"],
+                min_x=variant_min_x,
                 max_x=plot_kwargs["max_x"],
                 include_x=variant_include_x,
+                show_std_bands=output_path.name not in disable_std_band_outputs,
             )
 
         learning_curve_plot_path = render_budget_span_variants(
@@ -3993,17 +4034,79 @@ def _run_comparative_learning_stages(
 
     # Stage 5: render comparative learning figure.
     if learning_curve_plot_path is not None and screening_plot_path is not None:
+        comparison_learning_results = _without_comparison_excluded_methods(
+            learning_curve_results
+        )
+        comparison_screening_results = _without_comparison_excluded_methods(
+            screening_results
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             screening_panel_path = screening_budget_plot(
-                results=screening_results,
+                results=comparison_screening_results,
                 output_path=Path(tmpdir) / f"screening_budget_panel_{run_suffix}.png",
                 show_legend=False,
                 **plot_kwargs,
             )
             learning_screening_figure(
-                learning_curve_path=learning_curve_plot_path,
+                learning_curve_path=learning_curve_plot(
+                    results=comparison_learning_results,
+                    output_path=Path(tmpdir) / f"learning_curve_panel_{run_suffix}.png",
+                    zero_shot_rmse=None,
+                    show_legend=True,
+                    **plot_kwargs,
+                ),
                 screening_curve_path=screening_panel_path,
                 output_path=output_dir / f"learning_screening_figure_{run_suffix}.png",
+            )
+        if configured_budget_span_variants(cfg):
+            def _render_learning_screening_variant(
+                span_variant: BudgetSpanVariant | None,
+                output_path: Path,
+            ) -> Path | None:
+                if span_variant is None or screening_results is None:
+                    return None
+                variant_include_x = _merged_include_x(
+                    plot_kwargs["include_x"],
+                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                )
+                variant_min_x = plot_kwargs["min_x"]
+                if output_path.name == "learning_screening_figure_anomalyaware_off_fraction.png":
+                    variant_min_x = (
+                        max(200, variant_min_x) if variant_min_x is not None else 200
+                    )
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp_path = Path(tmpdir)
+                    learning_panel_path = learning_curve_plot(
+                        results=comparison_learning_results,
+                        output_path=tmp_path / f"learning_curve_panel_{span_variant.key}.png",
+                        title="Learning curve",
+                        min_x=variant_min_x,
+                        max_x=plot_kwargs["max_x"],
+                        include_x=variant_include_x,
+                        zero_shot_rmse=None,
+                        show_legend=False,
+                        show_std_bands=True,
+                    )
+                    screening_panel_path = screening_budget_plot(
+                        results=comparison_screening_results,
+                        output_path=tmp_path
+                        / f"screening_budget_panel_{span_variant.key}.png",
+                        title="Screening curve",
+                        min_x=plot_kwargs["min_x"],
+                        max_x=plot_kwargs["max_x"],
+                        include_x=variant_include_x,
+                        show_legend=False,
+                    )
+                    return horizontal_panel_figure(
+                        [screening_panel_path, learning_panel_path],
+                        output_path=output_path,
+                        panel_labels=("a)", "b)"),
+                    )
+
+            render_budget_span_variants(
+                cfg,
+                base_output_path=output_dir / f"learning_screening_figure_{run_suffix}.png",
+                render_variant=_render_learning_screening_variant,
             )
 
     return ComparativeLearningStageOutputs(

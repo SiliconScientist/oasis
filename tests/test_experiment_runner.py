@@ -230,6 +230,43 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         return LearningCurveResults(ridge_df=ridge_frame)
 
+    @staticmethod
+    def _comparison_results_with_weighted_linear() -> LearningCurveResults:
+        ridge_frame = pd.DataFrame(
+            {
+                "n_train": [5, 10],
+                "rmse_mean": [0.15, 0.12],
+                "rmse_std": [0.01, 0.02],
+            }
+        )
+        weighted_linear_frame = pd.DataFrame(
+            {
+                "n_train": [5, 10],
+                "rmse_mean": [0.2, 0.18],
+                "rmse_std": [0.03, 0.02],
+            }
+        )
+        screening_ridge_frame = pd.DataFrame(
+            {
+                "n_budget": [5, 10],
+                "rmse_mean": [0.17, 0.14],
+                "rmse_std": [0.01, 0.01],
+            }
+        )
+        screening_weighted_linear_frame = pd.DataFrame(
+            {
+                "n_budget": [5, 10],
+                "rmse_mean": [0.22, 0.2],
+                "rmse_std": [0.02, 0.02],
+            }
+        )
+        return LearningCurveResults(
+            ridge_df=ridge_frame,
+            weighted_linear_df=weighted_linear_frame,
+            resid_df=screening_ridge_frame,
+            weighted_linear_uq_df=weighted_linear_frame,
+        )
+
     def test_dataset_alias_controls_plot_label(self) -> None:
         cfg = SimpleNamespace(
             datasets={
@@ -5798,7 +5835,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=LearningCurveResults.empty(),
             ) as mock_results, patch(
                 "oasis.experiment_runner.learning_curve_plot",
-                return_value=tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.screening_budget_plot",
                 side_effect=[
@@ -5824,7 +5861,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 run_experiment(cfg)
 
         self.assertEqual(mock_results.call_count, 2)
-        mock_learning_curve_plot.assert_called_once()
+        self.assertEqual(mock_learning_curve_plot.call_count, 2)
         self.assertEqual(mock_screening_plot.call_count, 2)
         self.assertEqual(
             mock_screening_plot.call_args_list[0].kwargs["output_path"],
@@ -5840,7 +5877,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_learning_screening_figure.call_args.kwargs["learning_curve_path"],
-            tmp_path / "plots" / "learning_curve_anomalyaware_off.png",
+            tmp_path / "tmp" / "learning_curve_panel_anomalyaware_off.png",
         )
         self.assertEqual(
             mock_screening_curve_figure.call_args.kwargs["suffix"],
@@ -6835,6 +6872,198 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(
             mock_learning_curve_plot.call_args_list[1].kwargs["include_x"],
             [1, 2],
+        )
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["min_x"])
+        self.assertEqual(mock_learning_curve_plot.call_args_list[1].kwargs["min_x"], 200)
+        self.assertFalse(
+            mock_learning_curve_plot.call_args_list[0].kwargs["show_std_bands"]
+        )
+        self.assertFalse(
+            mock_learning_curve_plot.call_args_list[1].kwargs["show_std_bands"]
+        )
+
+    def test_run_experiment_emits_budget_span_learning_screening_figures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            learning_results = LearningCurveResults(
+                ridge_df=pd.DataFrame(
+                    {
+                        "n_train": [1, 2],
+                        "rmse_mean": [0.2, 0.15],
+                        "rmse_std": [0.01, 0.01],
+                    }
+                ),
+                weighted_linear_df=pd.DataFrame(
+                    {
+                        "n_train": [1, 2],
+                        "rmse_mean": [0.3, 0.25],
+                        "rmse_std": [0.02, 0.02],
+                    }
+                ),
+                weighted_linear_uq_df=pd.DataFrame(
+                    {
+                        "n_train": [1, 2],
+                        "miscalibration_area": [0.1, 0.1],
+                        "sharpness": [0.2, 0.2],
+                        "dispersion": [0.3, 0.3],
+                    }
+                ),
+                gnn_direct_df=pd.DataFrame(
+                    {
+                        "n_train": [1, 2],
+                        "rmse_mean": [0.4, 0.35],
+                        "rmse_std": [0.02, 0.02],
+                    }
+                ),
+                gnn_direct_uq_df=pd.DataFrame(
+                    {
+                        "n_train": [1, 2],
+                        "miscalibration_area": [0.2, 0.2],
+                        "sharpness": [0.3, 0.3],
+                        "dispersion": [0.4, 0.4],
+                    }
+                ),
+            )
+            screening_results = LearningCurveResults(
+                ridge_df=pd.DataFrame(
+                    {
+                        "n_budget": [1, 2],
+                        "rmse_mean": [0.25, 0.2],
+                        "rmse_std": [0.01, 0.01],
+                    }
+                ),
+                weighted_linear_df=pd.DataFrame(
+                    {
+                        "n_budget": [1, 2],
+                        "rmse_mean": [0.35, 0.3],
+                        "rmse_std": [0.02, 0.02],
+                    }
+                ),
+                gnn_direct_df=pd.DataFrame(
+                    {
+                        "n_budget": [1, 2],
+                        "rmse_mean": [0.45, 0.4],
+                        "rmse_std": [0.03, 0.03],
+                    }
+                ),
+            )
+            cfg = SimpleNamespace(
+                mlip=SimpleNamespace(dataset=str(tmp_path / "mamun_oh.json")),
+                probe_features=None,
+                experiment=SimpleNamespace(
+                    learning_curve=SimpleNamespace(
+                        budget_mode="full_remainder_test",
+                        graph_dataset=None,
+                        sweep_sizes=[1, 2],
+                        sweep_fractions=[0.5, 1.0],
+                        models=SimpleNamespace(
+                            use_latent=False,
+                            probe_gnn=SimpleNamespace(enabled=False),
+                        ),
+                    ),
+                    screening=SimpleNamespace(
+                        budget_mode="screening_fraction",
+                        screen_fraction=0.25,
+                        min_screen_size=1,
+                        validation_fraction=0.2,
+                        min_val_size=1,
+                        min_tuning_val_size=1,
+                        min_inner_train_size=1,
+                        results_bundle_path=None,
+                        reuse_results=False,
+                        force_refresh_methods=[],
+                        force_refresh_train_sizes={},
+                    ),
+                ),
+                analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
+                plot=SimpleNamespace(
+                    output_dir=tmp_path / "plots",
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                ),
+            )
+            fake_wide_df = _FakeWideFrame()
+
+            with patch(
+                "oasis.experiment_runner.find_result_files",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_wide_predictions",
+                return_value=fake_wide_df,
+            ), patch(
+                "oasis.experiment_runner.parity_plot",
+                return_value=tmp_path / "plots" / "parity.png",
+            ), patch(
+                "oasis.experiment_runner.load_sample_atoms_for_wide_df",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.atoms_to_graph_dataset_view",
+                return_value=[],
+            ), patch(
+                "oasis.experiment_runner.load_or_run_learning_curve_results_from_config",
+                side_effect=[learning_results, screening_results],
+            ), patch(
+                "oasis.experiment_runner.learning_curve_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_learning_curve_plot, patch(
+                "oasis.experiment_runner.screening_budget_plot",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_screening_budget_plot, patch(
+                "oasis.experiment_runner.learning_screening_figure",
+                return_value=tmp_path / "plots" / "learning_screening_figure.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ) as mock_horizontal_panel_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.compose_sharpness_curve_figure",
+                return_value=tmp_path / "plots" / "figure_sharpness_curve.png",
+            ), patch(
+                "oasis.experiment_runner.compose_miscalibration_area_curve_figure",
+                return_value=tmp_path / "plots" / "figure_miscalibration_area_curve.png",
+            ), patch(
+                "oasis.experiment_runner.compose_dispersion_curve_figure",
+                return_value=tmp_path / "plots" / "figure_dispersion_curve.png",
+            ):
+                run_experiment(cfg)
+
+        self.assertEqual(mock_horizontal_panel_figure.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["output_path"].name for call in mock_horizontal_panel_figure.call_args_list],
+            [
+                "learning_screening_figure_anomalyaware_off_absolute.png",
+                "learning_screening_figure_anomalyaware_off_fraction.png",
+            ],
+        )
+        self.assertEqual(
+            [
+                call.kwargs["title"]
+                for call in mock_learning_curve_plot.call_args_list[-2:]
+            ],
+            ["Learning curve", "Learning curve"],
+        )
+        self.assertEqual(
+            [
+                call.kwargs["title"]
+                for call in mock_screening_budget_plot.call_args_list[-2:]
+            ],
+            ["Screening curve", "Screening curve"],
+        )
+        self.assertIsNone(
+            mock_learning_curve_plot.call_args_list[-1].kwargs["results"].weighted_linear_df
+        )
+        self.assertIsNone(
+            mock_learning_curve_plot.call_args_list[-1].kwargs["results"].gnn_direct_df
+        )
+        self.assertIsNone(
+            mock_screening_budget_plot.call_args_list[-1].kwargs["results"].weighted_linear_df
+        )
+        self.assertIsNone(
+            mock_screening_budget_plot.call_args_list[-1].kwargs["results"].gnn_direct_df
+        )
+        self.assertTrue(
+            mock_learning_curve_plot.call_args_list[-1].kwargs["show_std_bands"]
         )
 
     def test_run_experiment_applies_strict_mlip_mask_to_learning_curve_zero_shot_baseline(

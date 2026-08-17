@@ -1168,6 +1168,7 @@ def learning_curve_plot(
     zero_shot_rmse: float | None = None,
     show_legend: bool = True,
     legend_outside_right: bool = False,
+    show_std_bands: bool = True,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -1191,14 +1192,15 @@ def learning_curve_plot(
             color=ridge_color,
             label="Ridge mean",
         )
-        ax.fill_between(
-            results.ridge_df["n_train"],
-            results.ridge_df["rmse_mean"] - results.ridge_df["rmse_std"],
-            results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
-            color=ridge_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.ridge_df["n_train"],
+                results.ridge_df["rmse_mean"] - results.ridge_df["rmse_std"],
+                results.ridge_df["rmse_mean"] + results.ridge_df["rmse_std"],
+                color=ridge_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.kernel_ridge_df is not None:
         kernel_ridge_color = _method_color("kernel_ridge", "tab:cyan")
         ax.plot(
@@ -1208,14 +1210,15 @@ def learning_curve_plot(
             color=kernel_ridge_color,
             label="Kernel Ridge mean",
         )
-        ax.fill_between(
-            results.kernel_ridge_df["n_train"],
-            results.kernel_ridge_df["rmse_mean"] - results.kernel_ridge_df["rmse_std"],
-            results.kernel_ridge_df["rmse_mean"] + results.kernel_ridge_df["rmse_std"],
-            color=kernel_ridge_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.kernel_ridge_df["n_train"],
+                results.kernel_ridge_df["rmse_mean"] - results.kernel_ridge_df["rmse_std"],
+                results.kernel_ridge_df["rmse_mean"] + results.kernel_ridge_df["rmse_std"],
+                color=kernel_ridge_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.lasso_df is not None:
         lasso_color = _method_color("lasso", "tab:orange")
         ax.plot(
@@ -1225,14 +1228,15 @@ def learning_curve_plot(
             color=lasso_color,
             label="Lasso mean",
         )
-        ax.fill_between(
-            results.lasso_df["n_train"],
-            results.lasso_df["rmse_mean"] - results.lasso_df["rmse_std"],
-            results.lasso_df["rmse_mean"] + results.lasso_df["rmse_std"],
-            color=lasso_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.lasso_df["n_train"],
+                results.lasso_df["rmse_mean"] - results.lasso_df["rmse_std"],
+                results.lasso_df["rmse_mean"] + results.lasso_df["rmse_std"],
+                color=lasso_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.elastic_df is not None:
         elastic_color = _method_color("elastic", "tab:purple")
         ax.plot(
@@ -1242,14 +1246,15 @@ def learning_curve_plot(
             color=elastic_color,
             label="Elastic Net mean",
         )
-        ax.fill_between(
-            results.elastic_df["n_train"],
-            results.elastic_df["rmse_mean"] - results.elastic_df["rmse_std"],
-            results.elastic_df["rmse_mean"] + results.elastic_df["rmse_std"],
-            color=elastic_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.elastic_df["n_train"],
+                results.elastic_df["rmse_mean"] - results.elastic_df["rmse_std"],
+                results.elastic_df["rmse_mean"] + results.elastic_df["rmse_std"],
+                color=elastic_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.resid_df is not None:
         residual_color = _method_color("residual", "tab:green")
         ax.plot(
@@ -1259,14 +1264,15 @@ def learning_curve_plot(
             color=residual_color,
             label="Residual mean",
         )
-        ax.fill_between(
-            results.resid_df["n_train"],
-            results.resid_df["rmse_mean"] - results.resid_df["rmse_std"],
-            results.resid_df["rmse_mean"] + results.resid_df["rmse_std"],
-            color=residual_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.resid_df["n_train"],
+                results.resid_df["rmse_mean"] - results.resid_df["rmse_std"],
+                results.resid_df["rmse_mean"] + results.resid_df["rmse_std"],
+                color=residual_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.weighted_linear_df is not None:
         weighted_linear_color = _method_color("weighted_linear", "tab:gray")
         ax.plot(
@@ -1276,16 +1282,17 @@ def learning_curve_plot(
             color=weighted_linear_color,
             label="Weighted linear mean",
         )
-        ax.fill_between(
-            results.weighted_linear_df["n_train"],
-            results.weighted_linear_df["rmse_mean"]
-            - results.weighted_linear_df["rmse_std"],
-            results.weighted_linear_df["rmse_mean"]
-            + results.weighted_linear_df["rmse_std"],
-            color=weighted_linear_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.weighted_linear_df["n_train"],
+                results.weighted_linear_df["rmse_mean"]
+                - results.weighted_linear_df["rmse_std"],
+                results.weighted_linear_df["rmse_mean"]
+                + results.weighted_linear_df["rmse_std"],
+                color=weighted_linear_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.weighted_simplex_df is not None:
         weighted_simplex_color = _method_color("weighted_simplex", "teal")
         ax.plot(
@@ -1295,16 +1302,17 @@ def learning_curve_plot(
             color=weighted_simplex_color,
             label="Weighted simplex mean",
         )
-        ax.fill_between(
-            results.weighted_simplex_df["n_train"],
-            results.weighted_simplex_df["rmse_mean"]
-            - results.weighted_simplex_df["rmse_std"],
-            results.weighted_simplex_df["rmse_mean"]
-            + results.weighted_simplex_df["rmse_std"],
-            color=weighted_simplex_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.weighted_simplex_df["n_train"],
+                results.weighted_simplex_df["rmse_mean"]
+                - results.weighted_simplex_df["rmse_std"],
+                results.weighted_simplex_df["rmse_mean"]
+                + results.weighted_simplex_df["rmse_std"],
+                color=weighted_simplex_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.graph_mean_df is not None:
         graph_mean_color = _method_color("graph_mean", "tab:red")
         ax.plot(
@@ -1314,14 +1322,15 @@ def learning_curve_plot(
             color=graph_mean_color,
             label="Graph mean mean",
         )
-        ax.fill_between(
-            results.graph_mean_df["n_train"],
-            results.graph_mean_df["rmse_mean"] - results.graph_mean_df["rmse_std"],
-            results.graph_mean_df["rmse_mean"] + results.graph_mean_df["rmse_std"],
-            color=graph_mean_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.graph_mean_df["n_train"],
+                results.graph_mean_df["rmse_mean"] - results.graph_mean_df["rmse_std"],
+                results.graph_mean_df["rmse_mean"] + results.graph_mean_df["rmse_std"],
+                color=graph_mean_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.moe_df is not None:
         moe_color = _method_color("moe", "tab:purple")
         ax.plot(
@@ -1331,14 +1340,15 @@ def learning_curve_plot(
             color=moe_color,
             label="MoE mean",
         )
-        ax.fill_between(
-            results.moe_df["n_train"],
-            results.moe_df["rmse_mean"] - results.moe_df["rmse_std"],
-            results.moe_df["rmse_mean"] + results.moe_df["rmse_std"],
-            color=moe_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.moe_df["n_train"],
+                results.moe_df["rmse_mean"] - results.moe_df["rmse_std"],
+                results.moe_df["rmse_mean"] + results.moe_df["rmse_std"],
+                color=moe_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.gnn_direct_df is not None:
         gnn_direct_color = _method_color("gnn_direct", "tab:cyan")
         ax.plot(
@@ -1348,14 +1358,15 @@ def learning_curve_plot(
             color=gnn_direct_color,
             label="GNN direct mean",
         )
-        ax.fill_between(
-            results.gnn_direct_df["n_train"],
-            results.gnn_direct_df["rmse_mean"] - results.gnn_direct_df["rmse_std"],
-            results.gnn_direct_df["rmse_mean"] + results.gnn_direct_df["rmse_std"],
-            color=gnn_direct_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.gnn_direct_df["n_train"],
+                results.gnn_direct_df["rmse_mean"] - results.gnn_direct_df["rmse_std"],
+                results.gnn_direct_df["rmse_mean"] + results.gnn_direct_df["rmse_std"],
+                color=gnn_direct_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.probe_gnn_df is not None:
         probe_gnn_color = _method_color("probe_gnn", "tab:olive")
         ax.plot(
@@ -1365,14 +1376,15 @@ def learning_curve_plot(
             color=probe_gnn_color,
             label="Probe GNN mean",
         )
-        ax.fill_between(
-            results.probe_gnn_df["n_train"],
-            results.probe_gnn_df["rmse_mean"] - results.probe_gnn_df["rmse_std"],
-            results.probe_gnn_df["rmse_mean"] + results.probe_gnn_df["rmse_std"],
-            color=probe_gnn_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.probe_gnn_df["n_train"],
+                results.probe_gnn_df["rmse_mean"] - results.probe_gnn_df["rmse_std"],
+                results.probe_gnn_df["rmse_mean"] + results.probe_gnn_df["rmse_std"],
+                color=probe_gnn_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.latent_df is not None:
         latent_color = _method_color("latent", "tab:brown")
         ax.plot(
@@ -1382,14 +1394,15 @@ def learning_curve_plot(
             color=latent_color,
             label="Latent mean",
         )
-        ax.fill_between(
-            results.latent_df["n_train"],
-            results.latent_df["rmse_mean"] - results.latent_df["rmse_std"],
-            results.latent_df["rmse_mean"] + results.latent_df["rmse_std"],
-            color=latent_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.latent_df["n_train"],
+                results.latent_df["rmse_mean"] - results.latent_df["rmse_std"],
+                results.latent_df["rmse_mean"] + results.latent_df["rmse_std"],
+                color=latent_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if results.fitted_latent_df is not None:
         fitted_latent_color = _method_color("fitted_latent", "sienna")
         ax.plot(
@@ -1399,16 +1412,17 @@ def learning_curve_plot(
             color=fitted_latent_color,
             label="Fitted latent mean",
         )
-        ax.fill_between(
-            results.fitted_latent_df["n_train"],
-            results.fitted_latent_df["rmse_mean"]
-            - results.fitted_latent_df["rmse_std"],
-            results.fitted_latent_df["rmse_mean"]
-            + results.fitted_latent_df["rmse_std"],
-            color=fitted_latent_color,
-            alpha=0.2,
-            label="_nolegend_",
-        )
+        if show_std_bands:
+            ax.fill_between(
+                results.fitted_latent_df["n_train"],
+                results.fitted_latent_df["rmse_mean"]
+                - results.fitted_latent_df["rmse_std"],
+                results.fitted_latent_df["rmse_mean"]
+                + results.fitted_latent_df["rmse_std"],
+                color=fitted_latent_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
     if zero_shot_rmse is not None:
         x_min, x_max = ax.get_xlim()
         ax.hlines(
@@ -1539,6 +1553,7 @@ def screening_budget_plot(
     results: LearningCurveResults,
     output_path: str | Path,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+    title: str | None = "Screening curve (method performance vs budget)",
     min_x: int | None = None,
     max_x: int | None = None,
     include_x: list[int] | tuple[int, ...] | None = None,
@@ -1795,7 +1810,8 @@ def screening_budget_plot(
         )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("CV RMSE (eV)", fontsize=fontsize)
-    ax.set_title("Screening curve (method performance vs budget)", fontsize=fontsize)
+    if title is not None:
+        ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
     ax.grid(True, linestyle="--", alpha=0.3)
