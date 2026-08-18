@@ -1,3 +1,5 @@
+tick_fontsize = 10
+
 [datasets]
 # bio_mass = "#1f77b4"
 # methane_oxidation = "#ff7f0e"

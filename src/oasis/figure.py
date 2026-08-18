@@ -8,6 +8,8 @@ import pandas as pd
 
 from oasis.plot import parity_plot, plt, zero_shot_rmse_stage_plot
 
+_DEFAULT_PANEL_LABEL_POSITION = (0.0, 1.04)
+
 
 def vertical_panel_figure(
     panel_paths: Sequence[str | Path],
@@ -32,7 +34,9 @@ def vertical_panel_figure(
     if len(panel_labels) != len(resolved_paths):
         raise ValueError("panel_labels must match the number of panel_paths.")
     if panel_label_positions is None:
-        panel_label_positions = tuple((0.02, 0.98) for _ in resolved_paths)
+        panel_label_positions = tuple(
+            _DEFAULT_PANEL_LABEL_POSITION for _ in resolved_paths
+        )
     if len(panel_label_positions) != len(resolved_paths):
         raise ValueError("panel_label_positions must match the number of panel_paths.")
 
@@ -89,7 +93,10 @@ def learning_screening_figure(
         [learning_curve_path, screening_curve_path],
         output_path=output_path,
         panel_labels=panel_labels,
-        panel_label_positions=((0.02, 0.98), (0.02, 1.01)),
+        panel_label_positions=(
+            _DEFAULT_PANEL_LABEL_POSITION,
+            _DEFAULT_PANEL_LABEL_POSITION,
+        ),
     )
 
 
@@ -116,7 +123,9 @@ def horizontal_panel_figure(
     if len(panel_labels) != len(resolved_paths):
         raise ValueError("panel_labels must match the number of panel_paths.")
     if panel_label_positions is None:
-        panel_label_positions = tuple((0.02, 0.98) for _ in resolved_paths)
+        panel_label_positions = tuple(
+            _DEFAULT_PANEL_LABEL_POSITION for _ in resolved_paths
+        )
     if len(panel_label_positions) != len(resolved_paths):
         raise ValueError("panel_label_positions must match the number of panel_paths.")
 
@@ -171,9 +180,9 @@ def two_top_one_bottom_figure(
     output_path: str | Path,
     panel_labels: Sequence[str] = ("a)", "b)", "c)"),
     panel_label_positions: Sequence[tuple[float, float]] = (
-        (0.02, 0.98),
-        (0.02, 0.98),
-        (0.02, 1.055),
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
     ),
     label_fontsize: int = 16,
 ) -> Path:
@@ -249,10 +258,10 @@ def two_by_two_figure(
     output_path: str | Path,
     panel_labels: Sequence[str] = ("a)", "b)", "c)", "d)"),
     panel_label_positions: Sequence[tuple[float, float]] = (
-        (0.02, 0.98),
-        (0.02, 0.98),
-        (0.02, 0.98),
-        (0.02, 0.98),
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
     ),
     label_fontsize: int = 16,
 ) -> Path:
@@ -321,9 +330,9 @@ def zero_shot_overview_figure(
     max_rmse: float | None = None,
     panel_labels: Sequence[str] = ("a)", "b)", "c)"),
     panel_label_positions: Sequence[tuple[float, float]] = (
-        (0.02, 0.98),
-        (0.02, 0.98),
-        (0.02, 0.98),
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
+        _DEFAULT_PANEL_LABEL_POSITION,
     ),
     label_fontsize: int = 16,
 ) -> Path:

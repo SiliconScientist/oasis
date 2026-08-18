@@ -128,6 +128,39 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(ax.get_title(), "")
 
+    def test_policy_selected_vs_oracle_plot_uses_configured_tick_fontsize(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                "budget": [4, 8],
+                "mean_regret": [0.05, 0.01],
+                "std_regret": [0.02, 0.01],
+                "se_regret": [0.014, 0.007],
+                "ci95_low": [0.022, -0.004],
+                "ci95_high": [0.078, 0.024],
+                "agreement_rate": [0.5, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            style_path = tmp_path / "plot_style.toml"
+            style_path.write_text("tick_fontsize = 14\n", encoding="utf-8")
+            with patch.dict("os.environ", {"OASIS_PLOT_STYLE_PATH": str(style_path)}):
+                reset_plot_style_cache()
+                with patch("oasis.plot.plt.close"):
+                    policy_selected_vs_oracle_plot(
+                        summary_df,
+                        output_path=tmp_path / "policy_selected_vs_oracle.png",
+                    )
+                    fig = policy_selected_vs_oracle_plot.__globals__["plt"].gcf()
+                    ax = fig.axes[0]
+
+            self.assertEqual(ax.get_xticklabels()[0].get_fontsize(), 14)
+            self.assertEqual(ax.get_yticklabels()[0].get_fontsize(), 14)
+
     def test_all_datasets_policy_regret_plot_can_hide_title(self) -> None:
         summary_df = pd.DataFrame(
             {
@@ -576,6 +609,30 @@ class PlotTests(unittest.TestCase):
                     ridge_line = fig.axes[0].lines[0]
 
             self.assertEqual(ridge_line.get_color(), "#123456")
+
+    def test_learning_curve_plot_uses_configured_tick_fontsize(self) -> None:
+        result_df = pd.DataFrame(
+            {
+                "n_train": [2, 3, 4],
+                "rmse_mean": [0.4, 0.3, 0.2],
+                "rmse_std": [0.05, 0.04, 0.03],
+            }
+        )
+        results = LearningCurveResults(ridge_df=result_df)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            style_path = tmp_path / "plot_style.toml"
+            style_path.write_text("tick_fontsize = 13\n", encoding="utf-8")
+            with patch.dict("os.environ", {"OASIS_PLOT_STYLE_PATH": str(style_path)}):
+                reset_plot_style_cache()
+                with patch("oasis.plot.plt.close"):
+                    learning_curve_plot(results, output_path=tmp_path / "learning_curve.png")
+                    fig = learning_curve_plot.__globals__["plt"].gcf()
+                    ax = fig.axes[0]
+
+            self.assertEqual(ax.get_xticklabels()[0].get_fontsize(), 13)
+            self.assertEqual(ax.get_yticklabels()[0].get_fontsize(), 13)
 
     def test_oracle_learning_curve_frame_selects_best_enabled_method_per_train_size(
         self,

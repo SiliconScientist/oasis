@@ -96,6 +96,10 @@ _METHOD_UQ_FIELDS = {
 }
 
 
+def _tick_fontsize() -> int:
+    return get_plot_style().tick_fontsize
+
+
 def _mlip_display_name(mlip: str) -> str:
     default_name = _MLIP_DISPLAY_NAMES.get(mlip, mlip)
     return get_plot_style().mlip_alias(mlip, default_name)
@@ -490,7 +494,7 @@ def _draw_uq_metric_curve(
     ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_title(f"{title_prefix} vs {title_axis_label}", fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         if legend_outside_right:
@@ -650,7 +654,7 @@ def parity_plot(
 
     ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
     ax.set_ylabel(y_label, fontsize=y_label_fontsize)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.set_aspect("equal", adjustable="box")
     if show_legend:
         legend_kwargs = {"fontsize": legend_fontsize}
@@ -903,7 +907,7 @@ def zero_shot_rmse_stage_plot(
     tick_label_offset = mtransforms.ScaledTranslation(4 / 72, 0, fig.dpi_scale_trans)
     for label in ax.get_xticklabels():
         label.set_transform(label.get_transform() + tick_label_offset)
-    ax.tick_params(axis="y", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=_tick_fontsize())
     ax.grid(True, axis="y", linestyle="--", alpha=0.3)
     stage_handles = [
         Line2D(
@@ -1118,7 +1122,7 @@ def oracle_learning_curve_plot(
         ax.set_xscale("log")
     else:
         _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         handles, labels = ax.get_legend_handles_labels()
@@ -1440,7 +1444,7 @@ def learning_curve_plot(
     if title is not None:
         ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         if legend_outside_right:
@@ -1813,7 +1817,7 @@ def screening_budget_plot(
     if title is not None:
         ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
@@ -1871,7 +1875,7 @@ def _time_accuracy_scatter_plot(
     ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_title(title, fontsize=fontsize)
     ax.ticklabel_format(axis="x", style="plain", useOffset=False)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend and not table.empty:
         ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
@@ -2017,7 +2021,7 @@ def _fixed_split_time_accuracy_plot(
     ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_title(title, fontsize=fontsize)
     ax.ticklabel_format(axis="x", style="plain", useOffset=False)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend and not table.empty:
         ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
@@ -2118,6 +2122,7 @@ def policy_selected_vs_oracle_plot(
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     fig.tight_layout()
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2231,6 +2236,7 @@ def policy_regret_plot(
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     fig.tight_layout()
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2332,7 +2338,7 @@ def all_datasets_policy_regret_plot(
         ax.set_xscale("log")
     else:
         _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     fig.tight_layout()
@@ -2895,7 +2901,7 @@ def _draw_all_datasets_uq_oracle(
         ax.set_xscale("log")
     else:
         _set_integer_x_ticks(ax)
-    ax.tick_params(axis="both", labelsize=_DEFAULT_TICK_FONTSIZE)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         if legend_outside_right:

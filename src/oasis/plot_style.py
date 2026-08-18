@@ -65,6 +65,7 @@ _DEFAULT_STAGE_COLORS = {
     "Matched subset / all MLIPs": "tab:orange",
     "Matched subset / anomaly-aware selection": "tab:orange",
 }
+_DEFAULT_TICK_FONTSIZE = 8
 
 
 def _stable_palette_color(key: str, palette: tuple[str, ...]) -> str:
@@ -131,6 +132,16 @@ def _validated_mlip_profiles(raw_section: Any) -> dict[str, dict[str, str]]:
     return validated
 
 
+def _validated_fontsize(raw_value: Any, field_name: str, *, default: int) -> int:
+    if raw_value is None:
+        return default
+    if not isinstance(raw_value, int) or isinstance(raw_value, bool):
+        raise ValueError(f"{field_name} must be an integer.")
+    if raw_value <= 0:
+        raise ValueError(f"{field_name} must be positive.")
+    return raw_value
+
+
 class PlotStyle:
     def __init__(self, raw_config: dict[str, Any] | None = None) -> None:
         config = {} if raw_config is None else raw_config
@@ -148,6 +159,11 @@ class PlotStyle:
             **_DEFAULT_STAGE_COLORS,
             **_validated_color_map(config.get("stages"), "stages"),
         }
+        self.tick_fontsize = _validated_fontsize(
+            config.get("tick_fontsize"),
+            "tick_fontsize",
+            default=_DEFAULT_TICK_FONTSIZE,
+        )
 
     def dataset_color(self, dataset: str) -> str:
         return self.dataset_colors.get(dataset, _stable_hex_color(dataset))
