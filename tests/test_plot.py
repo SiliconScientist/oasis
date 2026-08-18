@@ -128,6 +128,77 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(ax.get_title(), "")
 
+    def test_policy_selected_vs_oracle_plot_can_hide_legend(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                "budget": [4, 8],
+                "mean_regret": [0.05, 0.01],
+                "std_regret": [0.02, 0.01],
+                "se_regret": [0.014, 0.007],
+                "ci95_low": [0.022, -0.004],
+                "ci95_high": [0.078, 0.024],
+                "agreement_rate": [0.5, 1.0],
+                "oracle_outer_rmse_mean": [0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("oasis.plot.plt.close"):
+                policy_selected_vs_oracle_plot(
+                    summary_df,
+                    output_path=Path(tmpdir) / "policy_selected_vs_oracle_no_legend.png",
+                    show_legend=False,
+                )
+                fig = policy_selected_vs_oracle_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertIsNone(ax.get_legend())
+
+    def test_policy_selected_vs_oracle_plot_supports_custom_legend_labels(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "policy_name": ["min_screening_rmse", "min_screening_rmse"],
+                "budget": [4, 8],
+                "oracle_outer_rmse_mean": [0.2, 0.18],
+                "screening_selected_outer_rmse_mean": [0.25, 0.19],
+            }
+        )
+        fixed_method_summary_df = pd.DataFrame(
+            {
+                "baseline_name": ["Kernel ridge", "Residual"],
+                "budget": [4, 8],
+                "outer_rmse_mean": [0.3, 0.28],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("oasis.plot.plt.close"):
+                policy_selected_vs_oracle_plot(
+                    summary_df,
+                    fixed_method_summary_df=fixed_method_summary_df,
+                    output_path=Path(tmpdir) / "custom_legend_labels.png",
+                    legend_labels={
+                        "oracle": "Oracle best",
+                        "min_screening_rmse": "Screening-selected method",
+                        "Residual": "Mean-residual method",
+                        "Kernel ridge": "Kernel ridge regression method",
+                    },
+                )
+                fig = policy_selected_vs_oracle_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertEqual(
+                [text.get_text() for text in ax.get_legend().get_texts()],
+                [
+                    "Oracle best",
+                    "Screening-selected method",
+                    "Kernel ridge regression method",
+                    "Mean-residual method",
+                ],
+            )
+
     def test_policy_selected_vs_oracle_plot_uses_configured_tick_fontsize(self) -> None:
         summary_df = pd.DataFrame(
             {
@@ -186,6 +257,28 @@ class PlotTests(unittest.TestCase):
                 ax = fig.axes[0]
 
             self.assertEqual(ax.get_title(), "")
+
+    def test_all_datasets_policy_regret_plot_can_hide_legend(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "dataset": ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+                "dataset_label": ["Bio-Mass", "Bio-Mass", "Tol-BMA", "Tol-BMA"],
+                "budget": [4, 8, 4, 8],
+                "mean_regret": [0.02, 0.01, 0.03, 0.02],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("oasis.plot.plt.close"):
+                all_datasets_policy_regret_plot(
+                    summary_df,
+                    output_path=Path(tmpdir) / "all_policy_regret_no_legend.png",
+                    show_legend=False,
+                )
+                fig = all_datasets_policy_regret_plot.__globals__["plt"].gcf()
+                ax = fig.axes[0]
+
+            self.assertIsNone(ax.get_legend())
 
     def test_compose_screening_curve_figure_assembles_panels_via_shared_plot_module(self) -> None:
         dataset_entries = [
@@ -295,11 +388,24 @@ class PlotTests(unittest.TestCase):
             [4, 8],
         )
         self.assertFalse(mock_selected_vs_oracle.call_args_list[0].kwargs["show_title"])
+        self.assertFalse(mock_selected_vs_oracle.call_args_list[0].kwargs["show_legend"])
         self.assertEqual(
             mock_selected_vs_oracle.call_args_list[1].kwargs["include_x"],
             [10, 16],
         )
         self.assertFalse(mock_selected_vs_oracle.call_args_list[1].kwargs["show_title"])
+        self.assertEqual(
+            mock_selected_vs_oracle.call_args_list[1].kwargs["legend_labels"],
+            {
+                "oracle": "Oracle best",
+                "min_screening_rmse": "Screening-selected method",
+                "Residual": "Mean-residual method",
+                "Kernel ridge": "Kernel ridge regression method",
+            },
+        )
+        self.assertNotIn("show_legend", mock_selected_vs_oracle.call_args_list[1].kwargs)
+        self.assertFalse(mock_render_regret.call_args_list[0].kwargs["show_legend"])
+        self.assertNotIn("show_legend", mock_render_regret.call_args_list[1].kwargs)
 
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(

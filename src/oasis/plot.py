@@ -2044,6 +2044,8 @@ def policy_selected_vs_oracle_plot(
     include_x: list[int] | tuple[int, ...] | None = None,
     fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     show_title: bool = True,
+    show_legend: bool = True,
+    legend_labels: dict[str, str] | None = None,
 ) -> Path:
     required_columns = {
         "budget",
@@ -2063,6 +2065,7 @@ def policy_selected_vs_oracle_plot(
         include_x=include_x,
     )
     fig, ax = plt.subplots(figsize=(7, 4))
+    configured_legend_labels = {} if legend_labels is None else legend_labels
     oracle_frame = frame.sort_values("budget").drop_duplicates(
         subset=["budget"], keep="first"
     )
@@ -2071,17 +2074,21 @@ def policy_selected_vs_oracle_plot(
         oracle_frame["oracle_outer_rmse_mean"],
         marker="o",
         color=_oracle_series_color(),
-        label="Oracle best held-out RMSE",
+        label=configured_legend_labels.get("oracle", "Oracle best held-out RMSE"),
     )
     if "policy_name" in frame.columns:
         for policy_name, group in frame.groupby("policy_name", sort=True):
             ordered = group.sort_values("budget")
+            policy_name = str(policy_name)
             ax.plot(
                 ordered["budget"],
                 ordered["screening_selected_outer_rmse_mean"],
                 marker="s",
-                color=_policy_color(str(policy_name)),
-                label=f"{policy_name} held-out RMSE",
+                color=_policy_color(policy_name),
+                label=configured_legend_labels.get(
+                    policy_name,
+                    f"{policy_name} held-out RMSE",
+                ),
             )
     else:
         ax.plot(
@@ -2089,7 +2096,10 @@ def policy_selected_vs_oracle_plot(
             frame["screening_selected_outer_rmse_mean"],
             marker="s",
             color=_policy_color("screening_selected_held_out_rmse"),
-            label="Screening-selected held-out RMSE",
+            label=configured_legend_labels.get(
+                "screening_selected",
+                "Screening-selected held-out RMSE",
+            ),
         )
     if fixed_method_summary_df is not None and not fixed_method_summary_df.empty:
         fixed_frame = _filter_curve_frame(
@@ -2107,20 +2117,25 @@ def policy_selected_vs_oracle_plot(
         ):
             marker, linestyle = baseline_styles[index % len(baseline_styles)]
             ordered = group.sort_values("budget")
+            baseline_name = str(baseline_name)
             ax.plot(
                 ordered["budget"],
                 ordered["outer_rmse_mean"],
                 marker=marker,
-                color=_baseline_color(str(baseline_name)),
+                color=_baseline_color(baseline_name),
                 linestyle=linestyle,
-                label=f"{baseline_name} held-out RMSE",
+                label=configured_legend_labels.get(
+                    baseline_name,
+                    f"{baseline_name} held-out RMSE",
+                ),
             )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
     ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
     if show_title:
         ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    if show_legend:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_tick_fontsize())
     fig.tight_layout()
@@ -2256,6 +2271,7 @@ def all_datasets_policy_regret_plot(
     log_x: bool = False,
     show_uncertainty: bool = True,
     show_title: bool = True,
+    show_legend: bool = True,
 ) -> Path:
     required_columns = {"dataset", "dataset_label", "budget", "mean_regret"}
     missing_columns = required_columns.difference(summary_df.columns)
@@ -2340,7 +2356,8 @@ def all_datasets_policy_regret_plot(
         _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    if show_legend:
+        ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
     fig.tight_layout()
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2721,6 +2738,7 @@ def _render_screening_curve_regret_panel(
     output_path: Path,
     dataset_order: list[str],
     log_x: bool,
+    show_legend: bool = True,
 ) -> Path:
     ordered_frame = summary_df.assign(
         dataset=pd.Categorical(
@@ -2733,6 +2751,7 @@ def _render_screening_curve_regret_panel(
         log_x=log_x,
         show_uncertainty=False,
         show_title=False,
+        show_legend=show_legend,
     )
 
 
@@ -2788,6 +2807,7 @@ def compose_screening_curve_figure(
             output_path=tmp_path / "panel_a_absolute.png",
             include_x=absolute_include_x,
             show_title=False,
+            show_legend=False,
         )
         panel_b_path = policy_selected_vs_oracle_plot(
             policy_artifact["summary_df"],
@@ -2795,6 +2815,12 @@ def compose_screening_curve_figure(
             output_path=tmp_path / "panel_b_fraction.png",
             include_x=fraction_include_x,
             show_title=False,
+            legend_labels={
+                "oracle": "Oracle best",
+                "min_screening_rmse": "Screening-selected method",
+                "Residual": "Mean-residual method",
+                "Kernel ridge": "Kernel ridge regression method",
+            },
         )
         panel_c_path = _render_screening_curve_regret_panel(
             _build_screening_curve_regret_frame(
@@ -2805,6 +2831,7 @@ def compose_screening_curve_figure(
             output_path=tmp_path / "panel_c_absolute.png",
             dataset_order=dataset_order,
             log_x=False,
+            show_legend=False,
         )
         panel_d_path = _render_screening_curve_regret_panel(
             _build_screening_curve_regret_frame(
