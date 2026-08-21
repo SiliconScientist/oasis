@@ -581,6 +581,8 @@ def parity_plot(
     metrics_horizontalalignment: str = "center",
     metrics_verticalalignment: str = "center",
     metrics_fontsize: int = _DEFAULT_TICK_FONTSIZE + 1,
+    show_r2: bool = True,
+    x_label_fontsize: int = _DEFAULT_PLOT_FONTSIZE,
     y_label: str = "MLIP adsorption energy (eV)",
     y_label_fontsize: int = _DEFAULT_PLOT_FONTSIZE,
 ) -> Path:
@@ -632,13 +634,16 @@ def parity_plot(
     ss_tot = float(np.sum((plotted_ref - ref_mean) ** 2))
     ss_res = float(np.sum((mlip_vals - plotted_ref) ** 2))
     r2_text = "nan" if ss_tot == 0.0 else f"{1.0 - ss_res / ss_tot:.3f}"
+    metrics_text = f"RMSE = {rmse:.3f} eV"
+    if show_r2:
+        metrics_text = f"{metrics_text}\n$R^2$ = {r2_text}"
     min_val = min(plotted_ref.min(), mlip_vals.min())
     max_val = max(plotted_ref.max(), mlip_vals.max())
     ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1, label="Parity")
     ax.text(
         metrics_position[0],
         metrics_position[1],
-        f"RMSE = {rmse:.3f} eV\n$R^2$ = {r2_text}",
+        metrics_text,
         transform=ax.transAxes,
         ha=metrics_horizontalalignment,
         va=metrics_verticalalignment,
@@ -652,7 +657,7 @@ def parity_plot(
         },
     )
 
-    ax.set_xlabel("Reference adsorption energy (eV)", fontsize=_DEFAULT_PLOT_FONTSIZE)
+    ax.set_xlabel("Reference adsorption energy (eV)", fontsize=x_label_fontsize)
     ax.set_ylabel(y_label, fontsize=y_label_fontsize)
     ax.tick_params(axis="both", labelsize=_tick_fontsize())
     ax.set_aspect("equal", adjustable="box")
@@ -2130,7 +2135,7 @@ def policy_selected_vs_oracle_plot(
                 ),
             )
     ax.set_xlabel("Sample budget", fontsize=fontsize)
-    ax.set_ylabel("Held-out RMSE", fontsize=fontsize)
+    ax.set_ylabel("Held-out RMSE (eV)", fontsize=fontsize)
     if show_title:
         ax.set_title("Oracle vs screening-selected held-out RMSE", fontsize=fontsize)
     ax.grid(True, alpha=0.3)
@@ -2246,7 +2251,7 @@ def policy_regret_plot(
             )
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)
-    ax.set_ylabel("Regret", fontsize=fontsize)
+    ax.set_ylabel("Regret (eV)", fontsize=fontsize)
     ax.set_title("Screening policy regret", fontsize=fontsize)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=_DEFAULT_LEGEND_FONTSIZE)
@@ -2347,7 +2352,7 @@ def all_datasets_policy_regret_plot(
 
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)
-    ax.set_ylabel("Regret", fontsize=fontsize)
+    ax.set_ylabel("Regret (eV)", fontsize=fontsize)
     if show_title:
         ax.set_title("Screening policy regret by dataset", fontsize=fontsize)
     if log_x:
@@ -2535,6 +2540,7 @@ def _load_cached_policy_artifacts_for_screening_curve(
             continue
         artifact_index.append(
             {
+                "path": artifact_path,
                 "payload": payload,
                 "summary_df": pd.read_json(StringIO(summary_payload), orient="table"),
             }
@@ -2563,6 +2569,35 @@ def _load_cached_policy_artifacts_for_screening_curve(
 
     dataset_entries: list[dict[str, Any]] = []
     dataset_order: list[str] = []
+    matched_artifact_paths: set[Path] = set()
+
+    def _append_dataset_entry(
+        summary_df: pd.DataFrame,
+        payload: dict[str, Any],
+        default_dataset_tag: str,
+    ) -> None:
+        metadata = payload.get("metadata", {})
+        cache_signature = payload.get("cache_signature", {})
+        learning_curve_signature = cache_signature.get("learning_curve", {})
+        dataset_tag = str(metadata.get("dataset_tag") or default_dataset_tag)
+        dataset_order.append(dataset_tag)
+        dataset_entries.append(
+            {
+                "dataset": dataset_tag,
+                "dataset_label": dataset_labels.get(dataset_tag, default_dataset_tag),
+                "dataset_size": int(metadata["dataset_size"]),
+                "summary_df": summary_df.copy(),
+                "sweep_sizes": tuple(
+                    int(value)
+                    for value in learning_curve_signature.get("sweep_sizes", [])
+                ),
+                "sweep_fractions": tuple(
+                    float(value)
+                    for value in learning_curve_signature.get("sweep_fractions", [])
+                ),
+            }
+        )
+
     for summary_path in summary_paths:
         summary_df = pd.read_csv(summary_path)
         if summary_df.empty:
@@ -2579,27 +2614,27 @@ def _load_cached_policy_artifacts_for_screening_curve(
             raise ValueError(
                 f"Could not match summary CSV to cached artifact: {summary_path}"
             )
-        payload = artifact_match["payload"]
-        metadata = payload.get("metadata", {})
-        cache_signature = payload.get("cache_signature", {})
-        learning_curve_signature = cache_signature.get("learning_curve", {})
-        dataset_tag = str(metadata.get("dataset_tag") or summary_path.parent.name)
-        dataset_order.append(dataset_tag)
-        dataset_entries.append(
-            {
-                "dataset": dataset_tag,
-                "dataset_label": dataset_labels.get(dataset_tag, summary_path.parent.name),
-                "dataset_size": int(metadata["dataset_size"]),
-                "summary_df": summary_df.copy(),
-                "sweep_sizes": tuple(
-                    int(value)
-                    for value in learning_curve_signature.get("sweep_sizes", [])
-                ),
-                "sweep_fractions": tuple(
-                    float(value)
-                    for value in learning_curve_signature.get("sweep_fractions", [])
-                ),
-            }
+        matched_artifact_paths.add(artifact_match["path"])
+        _append_dataset_entry(
+            summary_df,
+            artifact_match["payload"],
+            summary_path.parent.name,
+        )
+
+    # Newly added bundles may provide only the self-contained artifact, without a
+    # duplicate plot-directory summary CSV.
+    for artifact_entry in artifact_index:
+        artifact_path = artifact_entry["path"]
+        has_matching_suffix = (
+            f"_{suffix}_" in artifact_path.stem
+            or artifact_path.stem.endswith(f"_{suffix}")
+        )
+        if artifact_path in matched_artifact_paths or not has_matching_suffix:
+            continue
+        _append_dataset_entry(
+            artifact_entry["summary_df"],
+            artifact_entry["payload"],
+            artifact_path.stem,
         )
     if not dataset_entries:
         raise ValueError("No non-empty cached policy summaries found.")

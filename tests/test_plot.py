@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,7 @@ from oasis.plot import (
     compose_screening_curve_figure,
     generation_time_accuracy_plot,
     learning_curve_plot,
+    _load_cached_policy_artifacts_for_screening_curve,
     miscalibration_area_plot,
     oracle_learning_curve_frame,
     oracle_learning_curve_plot,
@@ -90,14 +92,17 @@ class PlotTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "policy_selected_vs_oracle.png"
-            saved_path = policy_selected_vs_oracle_plot(
-                summary_df,
-                output_path=output_path,
-            )
+            with patch("oasis.plot.plt.close"):
+                saved_path = policy_selected_vs_oracle_plot(
+                    summary_df,
+                    output_path=output_path,
+                )
+                ax = policy_selected_vs_oracle_plot.__globals__["plt"].gcf().axes[0]
             exists = saved_path.exists()
 
             self.assertEqual(saved_path, output_path)
             self.assertTrue(exists)
+            self.assertEqual(ax.get_ylabel(), "Held-out RMSE (eV)")
 
     def test_policy_selected_vs_oracle_plot_can_hide_title(self) -> None:
         summary_df = pd.DataFrame(
@@ -127,6 +132,8 @@ class PlotTests(unittest.TestCase):
                 ax = fig.axes[0]
 
             self.assertEqual(ax.get_title(), "")
+            self.assertEqual(ax.get_ylabel(), "Regret (eV)")
+            self.assertEqual(ax.get_ylabel(), "Regret (eV)")
 
     def test_policy_selected_vs_oracle_plot_can_hide_legend(self) -> None:
         summary_df = pd.DataFrame(
@@ -406,6 +413,60 @@ class PlotTests(unittest.TestCase):
         self.assertNotIn("show_legend", mock_selected_vs_oracle.call_args_list[1].kwargs)
         self.assertFalse(mock_render_regret.call_args_list[0].kwargs["show_legend"])
         self.assertNotIn("show_legend", mock_render_regret.call_args_list[1].kwargs)
+
+    def test_screening_curve_loader_includes_artifact_only_dataset(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "budget": [1, 2],
+                "mean_regret": [0.2, 0.1],
+                "oracle_outer_rmse_mean": [0.3, 0.2],
+                "screening_selected_outer_rmse_mean": [0.4, 0.3],
+            }
+        )
+
+        def _artifact(
+            dataset_tag: str,
+            artifact_summary_df: pd.DataFrame,
+        ) -> dict[str, object]:
+            return {
+                "metadata": {"dataset_tag": dataset_tag, "dataset_size": 20},
+                "cache_signature": {
+                    "learning_curve": {"sweep_sizes": [1, 2], "sweep_fractions": [0.1]}
+                },
+                "results": {"summary_df": artifact_summary_df.to_json(orient="table")},
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            plot_root = root / "plots"
+            primary_plot_dir = plot_root / "Primary"
+            screening_dir = root / "screening"
+            primary_plot_dir.mkdir(parents=True)
+            screening_dir.mkdir()
+            summary_df.to_csv(
+                primary_plot_dir / "policy_selection_diagnostic_summary_anomalyaware_on.csv",
+                index=False,
+            )
+            (screening_dir / "policy_selection_diagnostic_primary_anomalyaware_on.json").write_text(
+                json.dumps(_artifact("primary", summary_df))
+            )
+            (screening_dir / "policy_selection_diagnostic_extra_anomalyaware_on.json").write_text(
+                json.dumps(
+                    _artifact("extra", summary_df.assign(mean_regret=[0.4, 0.3]))
+                )
+            )
+
+            with patch(
+                "oasis.plot._dataset_label_by_tag_from_config",
+                return_value={"primary": "Primary", "extra": "Extra"},
+            ):
+                entries, order = _load_cached_policy_artifacts_for_screening_curve(
+                    plot_root,
+                    "anomalyaware_on",
+                )
+
+        self.assertEqual(order, ["primary", "extra"])
+        self.assertEqual([entry["dataset_label"] for entry in entries], ["Primary", "Extra"])
 
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(

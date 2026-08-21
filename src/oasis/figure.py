@@ -348,6 +348,8 @@ def zero_shot_overview_figure(
             metrics_horizontalalignment="right",
             metrics_verticalalignment="top",
             metrics_fontsize=18,
+            show_r2=False,
+            x_label_fontsize=24,
             y_label_fontsize=24,
         )
         top_right_path = parity_plot(
@@ -362,6 +364,8 @@ def zero_shot_overview_figure(
             metrics_horizontalalignment="right",
             metrics_verticalalignment="top",
             metrics_fontsize=18,
+            show_r2=False,
+            x_label_fontsize=24,
             y_label="",
         )
         bottom_path = zero_shot_rmse_stage_plot(
