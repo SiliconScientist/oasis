@@ -93,6 +93,8 @@ from oasis.plot import (
     all_datasets_policy_regret_plot,
     all_datasets_uq_oracle_plot,
     dispersion_plot,
+    dominant_oracle_method_plot,
+    dominant_oracle_method_window_plot,
     compose_screening_curve_figure,
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
@@ -2751,6 +2753,87 @@ def write_all_datasets_oracle_learning_curve_plot(
         cfg,
         base_output_path=output_dir / f"learning_curve_oracle_all_datasets_{run_suffix}.png",
         render_variant=_render_oracle_variant,
+    )
+
+
+def write_all_datasets_dominant_oracle_method_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+) -> Path | None:
+    if not enabled_method_names:
+        return None
+    oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        min_x=1,
+        max_x=300,
+    )
+    if not oracle_rows:
+        return None
+    oracle_df = pd.DataFrame(oracle_rows)
+    max_train_by_dataset: dict[str, int] = {}
+    for dataset_tag in oracle_df["dataset"].unique():
+        dataset_cfg = _dataset_cfg_for_tag(cfg, dataset_tag=str(dataset_tag))
+        wide_df, _, _ = load_filtered_wide_predictions(
+            dataset_cfg,
+            verbose=False,
+        )
+        dataset_size = _frame_height(_apply_dev_run_frame_cap(dataset_cfg, wide_df))
+        max_train_by_dataset[str(dataset_tag)] = int(np.floor(0.8 * dataset_size))
+    oracle_df = oracle_df.loc[
+        lambda frame: frame["n_train"]
+        <= frame["dataset"].map(max_train_by_dataset)
+    ]
+    if oracle_df.empty:
+        return None
+    return dominant_oracle_method_plot(
+        oracle_df,
+        output_path=(
+            output_dir
+            / f"learning_curve_dominant_oracle_method_all_datasets_{run_suffix}_absolute.png"
+        ),
+        title="Dominant oracle method by train size (80% cap)",
+    )
+
+
+def write_all_datasets_dominant_oracle_method_window_plot(
+    *,
+    cfg: object,
+    output_dir: Path,
+    run_suffix: str,
+    enabled_method_names: list[str] | tuple[str, ...],
+    step: int = 100,
+    radius: int = 25,
+) -> Path | None:
+    fraction_variant = next(
+        (
+            variant
+            for variant in configured_budget_span_variants(cfg)
+            if variant.key == "fraction"
+        ),
+        None,
+    )
+    if fraction_variant is None or not enabled_method_names:
+        return None
+    oracle_rows = load_all_datasets_oracle_learning_curve_rows(
+        cfg=cfg,
+        enabled_method_names=enabled_method_names,
+        span_variant=fraction_variant,
+    )
+    if not oracle_rows:
+        return None
+    return dominant_oracle_method_window_plot(
+        pd.DataFrame(oracle_rows),
+        output_path=(
+            output_dir
+            / f"learning_curve_dominant_oracle_method_all_datasets_{run_suffix}_fraction.png"
+        ),
+        step=step,
+        radius=radius,
+        title=f"Dominant method by train size (+/-{radius})",
     )
 
 

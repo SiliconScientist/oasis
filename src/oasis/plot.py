@@ -91,6 +91,9 @@ _METHOD_PLOT_STYLES = (
 _METHOD_RESULT_FIELDS = {
     method_name: result_field for method_name, result_field, *_ in _METHOD_PLOT_STYLES
 }
+_METHOD_DISPLAY_NAMES = {
+    method_name: display_name for method_name, _, _, display_name, *_ in _METHOD_PLOT_STYLES
+}
 _METHOD_UQ_FIELDS = {
     method_name: uq_field for method_name, _, uq_field, *_ in _METHOD_PLOT_STYLES
 }
@@ -1164,6 +1167,145 @@ def oracle_learning_curve_plot(
     plt.close(fig)
 
     return output_path
+
+
+def dominant_oracle_method_frame(oracle_df: pd.DataFrame) -> pd.DataFrame:
+    required_columns = {"dataset", "n_train", "oracle_rmse", "oracle_method"}
+    missing_columns = required_columns.difference(oracle_df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"oracle_df is missing required columns: {sorted(missing_columns)}"
+        )
+    if oracle_df.empty:
+        raise ValueError("oracle_df must contain at least one row.")
+
+    mean_rmse = (
+        oracle_df.groupby("n_train", as_index=False)
+        .agg(mean_oracle_rmse=("oracle_rmse", "mean"))
+        .sort_values("n_train")
+    )
+    dominant_method = (
+        oracle_df.groupby("n_train")["oracle_method"]
+        .agg(lambda methods: methods.value_counts().sort_index().idxmax())
+        .rename("dominant_method")
+        .reset_index()
+    )
+    return mean_rmse.merge(dominant_method, on="n_train", validate="one_to_one")
+
+
+def dominant_oracle_method_window_frame(
+    oracle_df: pd.DataFrame,
+    *,
+    step: int = 100,
+    radius: int = 25,
+) -> pd.DataFrame:
+    if step <= 0 or radius < 0:
+        raise ValueError("step must be positive and radius must be non-negative.")
+    required_columns = {"dataset", "n_train", "oracle_rmse", "oracle_method"}
+    missing_columns = required_columns.difference(oracle_df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"oracle_df is missing required columns: {sorted(missing_columns)}"
+        )
+    if oracle_df.empty:
+        raise ValueError("oracle_df must contain at least one row.")
+
+    maximum_target = step * int(np.ceil((oracle_df["n_train"].max() + radius) / step))
+    rows: list[dict[str, object]] = []
+    for target in range(step, maximum_target + 1, step):
+        window = oracle_df.loc[oracle_df["n_train"].between(target - radius, target + radius)]
+        if window.empty:
+            continue
+        rows.append(
+            {
+                "n_train": target,
+                "mean_oracle_rmse": window["oracle_rmse"].mean(),
+                "dominant_method": window["oracle_method"]
+                .value_counts()
+                .sort_index()
+                .idxmax(),
+                "n_evaluations": len(window),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _dominant_oracle_method_summary_plot(
+    summary: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    title: str | None,
+    fontsize: int,
+) -> Path:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(
+        summary["n_train"],
+        summary["mean_oracle_rmse"],
+        color="0.6",
+        zorder=1,
+    )
+    for index, (method, rows) in enumerate(
+        summary.groupby("dominant_method", sort=True)
+    ):
+        ax.scatter(
+            rows["n_train"],
+            rows["mean_oracle_rmse"],
+            color=_method_color(method, f"C{index}"),
+            label=_METHOD_DISPLAY_NAMES.get(method, method),
+            zorder=2,
+        )
+
+    ax.set_xlabel("Train size", fontsize=fontsize)
+    ax.set_ylabel("Mean oracle RMSE (eV)", fontsize=fontsize)
+    if title is not None:
+        ax.set_title(title, fontsize=fontsize)
+    _set_integer_x_ticks(ax)
+    ax.tick_params(axis="both", labelsize=_tick_fontsize())
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(title="Ensembling method", fontsize=_DEFAULT_LEGEND_FONTSIZE)
+    plt.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+    return output_path
+
+
+def dominant_oracle_method_plot(
+    oracle_df: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    title: str | None = "Dominant oracle method by train size",
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+) -> Path:
+    return _dominant_oracle_method_summary_plot(
+        dominant_oracle_method_frame(oracle_df),
+        output_path,
+        title=title,
+        fontsize=fontsize,
+    )
+
+
+def dominant_oracle_method_window_plot(
+    oracle_df: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    step: int = 100,
+    radius: int = 25,
+    title: str | None = "Dominant oracle method by train size window",
+    fontsize: int = _DEFAULT_PLOT_FONTSIZE,
+) -> Path:
+    return _dominant_oracle_method_summary_plot(
+        dominant_oracle_method_window_frame(
+            oracle_df,
+            step=step,
+            radius=radius,
+        ),
+        output_path,
+        title=title,
+        fontsize=fontsize,
+    )
 
 
 def learning_curve_plot(

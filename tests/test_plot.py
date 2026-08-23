@@ -23,6 +23,9 @@ from oasis.plot import (
     fixed_split_total_time_accuracy_plot,
     fixed_split_training_time_accuracy_plot,
     compose_screening_curve_figure,
+    dominant_oracle_method_frame,
+    dominant_oracle_method_plot,
+    dominant_oracle_method_window_frame,
     generation_time_accuracy_plot,
     learning_curve_plot,
     _load_cached_policy_artifacts_for_screening_curve,
@@ -1270,6 +1273,52 @@ class PlotTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             for line in ax.lines:
                 self.assertEqual(line.get_xdata().tolist(), [4, 8])
+
+    def test_dominant_oracle_method_plot_averages_and_colors_winning_methods(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["a", "a", "b", "b", "c", "c"],
+                "n_train": [1, 2, 1, 2, 1, 2],
+                "oracle_rmse": [0.4, 0.3, 0.6, 0.4, 0.5, 0.5],
+                "oracle_method": ["residual", "elastic", "residual", "elastic", "ridge", "elastic"],
+            }
+        )
+
+        summary = dominant_oracle_method_frame(oracle_df)
+
+        self.assertEqual(summary["dominant_method"].tolist(), ["residual", "elastic"])
+        self.assertAlmostEqual(summary["mean_oracle_rmse"].iat[0], 0.5)
+        self.assertAlmostEqual(summary["mean_oracle_rmse"].iat[1], 0.4)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "dominant_oracle_method.png"
+            with patch("oasis.plot.plt.close"):
+                saved_path = dominant_oracle_method_plot(oracle_df, output_path)
+                ax = dominant_oracle_method_plot.__globals__["plt"].gcf().axes[0]
+
+            self.assertEqual(saved_path, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(ax.lines[0].get_color(), "0.6")
+            self.assertEqual(ax.get_legend().get_title().get_text(), "Ensembling method")
+
+    def test_dominant_oracle_method_window_frame_uses_requested_train_window(self) -> None:
+        oracle_df = pd.DataFrame(
+            {
+                "dataset": ["a", "a", "b", "b", "c"],
+                "n_train": [50, 150, 60, 140, 260],
+                "oracle_rmse": [0.6, 0.3, 0.4, 0.5, 0.2],
+                "oracle_method": ["residual", "elastic", "residual", "elastic", "ridge"],
+            }
+        )
+
+        summary = dominant_oracle_method_window_frame(
+            oracle_df,
+            step=100,
+            radius=50,
+        )
+
+        self.assertEqual(summary["n_train"].tolist(), [100, 200, 300])
+        self.assertEqual(summary["dominant_method"].tolist(), ["elastic", "elastic", "ridge"])
+        self.assertEqual(summary["n_evaluations"].tolist(), [4, 1, 1])
 
     def test_parity_plot_can_filter_invalid_points_per_mlip(self) -> None:
         df = pd.DataFrame(
