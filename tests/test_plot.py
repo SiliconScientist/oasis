@@ -780,6 +780,28 @@ class PlotTests(unittest.TestCase):
 
             self.assertEqual(ridge_line.get_color(), "#123456")
 
+    def test_learning_curve_plot_renders_current_best_mlip(self) -> None:
+        results = LearningCurveResults(
+            current_best_mlip_df=pd.DataFrame(
+                {
+                    "n_train": [2, 4],
+                    "rmse_mean": [0.4, 0.3],
+                    "rmse_std": [0.02, 0.01],
+                }
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("oasis.plot.plt.close"):
+                learning_curve_plot(
+                    results,
+                    output_path=Path(tmpdir) / "learning_curve.png",
+                )
+                fig = learning_curve_plot.__globals__["plt"].gcf()
+                labels = [line.get_label() for line in fig.axes[0].lines]
+
+        self.assertIn("Current best MLIP mean", labels)
+
     def test_learning_curve_plot_uses_configured_tick_fontsize(self) -> None:
         result_df = pd.DataFrame(
             {

@@ -148,6 +148,7 @@ class LearningCurveModelsConfig(BaseModel):
     use_residual: bool
     use_weighted_linear: bool = False
     use_weighted_simplex: bool = False
+    use_current_best_mlip: bool = False
     use_graph_mean: bool = False
     use_gnn_direct: bool = False
     use_probe_gnn: bool = False

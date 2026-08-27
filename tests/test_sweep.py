@@ -1725,6 +1725,39 @@ class LearningCurveResultsTests(unittest.TestCase):
             ),
         )
 
+    def test_merge_preserves_per_repeat_selection_metadata(self) -> None:
+        base = LearningCurveResults(
+            current_best_mlip_selection_df=pd.DataFrame(
+                {
+                    "n_train": [10, 10],
+                    "repeat": [0, 1],
+                    "selected_mlip_index": [1, 2],
+                }
+            )
+        )
+        update = LearningCurveResults(
+            current_best_mlip_selection_df=pd.DataFrame(
+                {
+                    "n_train": [10, 10],
+                    "repeat": [2, 3],
+                    "selected_mlip_index": [1, 3],
+                }
+            )
+        )
+
+        merged = base.merge(update)
+
+        pd.testing.assert_frame_equal(
+            merged.current_best_mlip_selection_df,
+            pd.DataFrame(
+                {
+                    "n_train": [10, 10, 10, 10],
+                    "repeat": [0, 1, 2, 3],
+                    "selected_mlip_index": [1, 2, 1, 3],
+                }
+            ),
+        )
+
     def test_merge_rejects_duplicate_metric_rows_without_overwrite(self) -> None:
         base = LearningCurveResults(
             ridge_df=pd.DataFrame(

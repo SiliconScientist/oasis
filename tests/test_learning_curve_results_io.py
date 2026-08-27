@@ -14,6 +14,8 @@ from oasis.learning_curve.results_io import (
     build_learning_curve_point_provenance,
     dump_learning_curve_method_artifact,
     dump_learning_curve_results,
+    learning_curve_result_field_for_method_name,
+    learning_curve_selection_field_for_method_name,
     learning_curve_uq_field_for_method_name,
     learning_curve_sweep_metadata_from_config,
     load_learning_curve_method_artifact,
@@ -91,7 +93,21 @@ class LearningCurveResultsIoTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(learning_curve_uq_field_for_method_name("ridge"), "ridge_uq_df")
         self.assertEqual(learning_curve_uq_field_for_method_name("moe"), "moe_uq_df")
+        self.assertEqual(
+            learning_curve_uq_field_for_method_name("current_best_mlip"),
+            "current_best_mlip_uq_df",
+        )
         self.assertIsNone(learning_curve_uq_field_for_method_name("missing"))
+
+    def test_current_best_mlip_result_fields_are_registered(self) -> None:
+        self.assertEqual(
+            learning_curve_result_field_for_method_name("current_best_mlip"),
+            "current_best_mlip_df",
+        )
+        self.assertEqual(
+            learning_curve_selection_field_for_method_name("current_best_mlip"),
+            "current_best_mlip_selection_df",
+        )
 
     def test_round_trip_serialization_preserves_mixed_result_frames(self) -> None:
         results = LearningCurveResults(

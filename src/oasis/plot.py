@@ -74,6 +74,14 @@ _METHOD_PLOT_STYLES = (
         "8",
         "teal",
     ),
+    (
+        "current_best_mlip",
+        "current_best_mlip_df",
+        "current_best_mlip_uq_df",
+        "Current best MLIP",
+        "h",
+        "tab:pink",
+    ),
     ("graph_mean", "graph_mean_df", "graph_mean_uq_df", "Graph mean", "P", "tab:red"),
     ("moe", "moe_df", "moe_uq_df", "MoE", "*", "tab:purple"),
     ("gnn_direct", "gnn_direct_df", "gnn_direct_uq_df", "GNN direct", "s", "tab:cyan"),
@@ -1461,6 +1469,26 @@ def learning_curve_plot(
                 results.weighted_simplex_df["rmse_mean"]
                 + results.weighted_simplex_df["rmse_std"],
                 color=weighted_simplex_color,
+                alpha=0.2,
+                label="_nolegend_",
+            )
+    if results.current_best_mlip_df is not None:
+        current_best_mlip_color = _method_color("current_best_mlip", "tab:pink")
+        ax.plot(
+            results.current_best_mlip_df["n_train"],
+            results.current_best_mlip_df["rmse_mean"],
+            marker="h",
+            color=current_best_mlip_color,
+            label="Current best MLIP mean",
+        )
+        if show_std_bands:
+            ax.fill_between(
+                results.current_best_mlip_df["n_train"],
+                results.current_best_mlip_df["rmse_mean"]
+                - results.current_best_mlip_df["rmse_std"],
+                results.current_best_mlip_df["rmse_mean"]
+                + results.current_best_mlip_df["rmse_std"],
+                color=current_best_mlip_color,
                 alpha=0.2,
                 label="_nolegend_",
             )

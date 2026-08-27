@@ -1327,6 +1327,9 @@ class LearningCurveResults:
     weighted_linear_uq_df: pd.DataFrame | None = None
     weighted_simplex_df: pd.DataFrame | None = None
     weighted_simplex_uq_df: pd.DataFrame | None = None
+    current_best_mlip_df: pd.DataFrame | None = None
+    current_best_mlip_selection_df: pd.DataFrame | None = None
+    current_best_mlip_uq_df: pd.DataFrame | None = None
     graph_mean_df: pd.DataFrame | None = None
     graph_mean_selection_df: pd.DataFrame | None = None
     graph_mean_uq_df: pd.DataFrame | None = None
@@ -1457,6 +1460,8 @@ def _learning_curve_frame_key_columns(
         return ["n_budget"]
     if "n_train" not in candidate_columns:
         raise ValueError("learning-curve result frames must contain an n_train column.")
+    if "repeat" in candidate_columns:
+        return ["n_train", "repeat"]
     return ["n_train"]
 
 

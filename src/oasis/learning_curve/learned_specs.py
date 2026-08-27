@@ -269,7 +269,7 @@ def _moe_config_tuning_spec_factory(model_cfg: Any) -> LearnedTrialTuningSpec:
 
 def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, ...]:
     from oasis.config import MoETrainingConfig
-    from oasis.learning_curve.execution import residual_sweep
+    from oasis.learning_curve.execution import current_best_mlip_sweep, residual_sweep
     from oasis.learning_curve.families.probe_gnn import GnnDirectTuningSpec, ProbeGnnTuningSpec
     from oasis.learning_curve.registry import (
         _fitted_latent_enabled,
@@ -318,6 +318,20 @@ def learned_family_registration_specs() -> tuple[LearnedFamilyRegistrationSpec, 
                     capabilities=SweepModelCapabilities(requires_calibration=True),
                 )
             ),
+        ),
+        LearnedFamilyRegistrationSpec(
+            name="current_best_mlip",
+            config_key="use_current_best_mlip",
+            capabilities=SweepModelCapabilities(),
+            family_factory=lambda: ConfiguredSweepModelFamily(
+                SweepFamilySpec(
+                    result_field="current_best_mlip_df",
+                    runner=FunctionalSweepRunner(base_runner=current_best_mlip_sweep),
+                    selection_metadata_field="current_best_mlip_selection_df",
+                    uq_summary_field="current_best_mlip_uq_df",
+                )
+            ),
+            default_enabled=False,
         ),
         LearnedFamilyRegistrationSpec(
             name="graph_mean",

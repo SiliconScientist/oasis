@@ -235,6 +235,7 @@ use_elastic_net = false
 use_residual = true
 use_weighted_linear = false
 use_weighted_simplex = true
+use_current_best_mlip = false
 use_graph_mean = false
 use_gnn_direct = false
 use_probe_gnn = false

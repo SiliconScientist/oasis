@@ -632,3 +632,78 @@ def weighted_simplex_sweep(
         ),
         repeat_metrics=repeat_metrics_frame(rmses_by_size),
     )
+
+
+def current_best_mlip_sweep(
+    payload: SweepRunPayload | SweepRunnerPayload,
+) -> SweepRunnerArtifacts:
+    """Use the MLIP column with the lowest training RMSE for each sweep split."""
+
+    payload = _as_runner_payload(payload)
+    rmses_by_size: dict[int, list[float]] = {}
+    fit_times_by_size: dict[int, list[float]] = {}
+    split_artifacts: list[SplitPredictionArtifact] = []
+    selection_rows: list[dict[str, float | int]] = []
+    repeats_by_size: dict[int, int] = {}
+    for split in _assert_train_test_payload(payload):
+        X = split.dataset.mlip_features
+        y = split.dataset.targets
+        require_min_mlip_feature_count(
+            X,
+            min_features=1,
+            method_name="current_best_mlip",
+        )
+        train_idx = split.train_idx
+        y_train = y[train_idx]
+        selected_mlip_index = 0
+        training_rmse = 0.0
+
+        def select_best_mlip() -> None:
+            nonlocal selected_mlip_index, training_rmse
+            train_rmses = np.sqrt(
+                np.mean((X[train_idx] - y_train[:, None]) ** 2, axis=0)
+            )
+            selected_mlip_index = int(np.argmin(train_rmses))
+            training_rmse = float(train_rmses[selected_mlip_index])
+
+        fit_time_s = _measure_duration_s(select_best_mlip)
+        y_true = y[split.test_idx]
+        preds = X[split.test_idx, selected_mlip_index]
+        rmse = np.sqrt(mean_squared_error(y_true, preds))
+        rmses_by_size.setdefault(split.sweep_size, []).append(rmse)
+        fit_times_by_size.setdefault(split.sweep_size, []).append(fit_time_s)
+        repeat = repeats_by_size.get(split.sweep_size, 0)
+        repeats_by_size[split.sweep_size] = repeat + 1
+        selection_rows.append(
+            {
+                "n_train": int(split.sweep_size),
+                "repeat": repeat,
+                "selected_mlip_index": selected_mlip_index,
+                "training_rmse": training_rmse,
+            }
+        )
+        split_artifacts.append(
+            build_split_prediction_artifact(
+                sweep_size=split.sweep_size,
+                y_true=y_true,
+                y_pred=preds,
+                spread=np.full(len(preds), training_rmse, dtype=float),
+            )
+        )
+    return SweepRunnerArtifacts(
+        metrics=timed_sweep_results_frame(rmses_by_size, fit_times_by_size),
+        selection_metadata=pd.DataFrame(
+            selection_rows,
+            columns=[
+                "n_train",
+                "repeat",
+                "selected_mlip_index",
+                "training_rmse",
+            ],
+        ),
+        uq_summary=aggregate_uq_summary(
+            split_artifacts,
+            uncertainty_kind="spread_only",
+        ),
+        repeat_metrics=repeat_metrics_frame(rmses_by_size),
+    )

@@ -50,6 +50,7 @@ try:
         build_split_prediction_artifact,
         calibration_curve_frame,
         collect_split_prediction_artifacts,
+        current_best_mlip_sweep,
         dispersion_from_spread,
         miscalibration_area,
         residual_sweep,
@@ -141,7 +142,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_non_sklearn_methods_are_configured_as_first_class_families(self) -> None:
         families = default_sweep_model_families(
-            ["residual", "weighted_linear", "weighted_simplex"]
+            ["residual", "weighted_linear", "weighted_simplex", "current_best_mlip"]
         )
 
         self.assertTrue(
@@ -153,6 +154,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "resid_df",
                 "weighted_linear_df",
                 "weighted_simplex_df",
+                "current_best_mlip_df",
             ],
         )
 
@@ -169,6 +171,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "residual",
                 "weighted_linear",
                 "weighted_simplex",
+                "current_best_mlip",
                 "graph_mean",
                 "moe",
                 "probe_gnn",
@@ -189,6 +192,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                         use_residual=True,
                         use_weighted_linear=True,
                         use_weighted_simplex=True,
+                        use_current_best_mlip=True,
                         use_graph_mean=True,
                         use_fitted_latent=True,
                     )
@@ -206,6 +210,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 "residual",
                 "weighted_linear",
                 "weighted_simplex",
+                "current_best_mlip",
                 "graph_mean",
                 "fitted_latent",
             ),
@@ -247,6 +252,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepFamilyRequirements(requires_calibration=True),
                 SweepFamilyRequirements(requires_calibration=True),
                 SweepFamilyRequirements(requires_calibration=True),
+                SweepFamilyRequirements(),
                 SweepFamilyRequirements(requires_inner_validation=True),
                 SweepFamilyRequirements(
                     requires_inner_validation=True,
@@ -269,6 +275,7 @@ class SweepOutputRegressionTests(unittest.TestCase):
                 SweepModelCapabilities(requires_calibration=True),
                 SweepModelCapabilities(requires_calibration=True),
                 SweepModelCapabilities(requires_calibration=True),
+                SweepModelCapabilities(),
                 SweepModelCapabilities(requires_validation=True),
                 SweepModelCapabilities(
                     requires_validation=True,
@@ -1489,6 +1496,72 @@ class WeightedBaselineRegressionTests(unittest.TestCase):
         np.testing.assert_allclose(result.metrics["rmse_mean"].to_numpy(), 0.0, atol=1e-12)
         np.testing.assert_allclose(result.metrics["rmse_std"].to_numpy(), 0.0, atol=1e-12)
         self.assertTrue(np.all(result.uq_summary["sharpness"].to_numpy() >= 0.0))
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_current_best_mlip_selects_using_training_error_only(self) -> None:
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                mlip_features=np.array(
+                    [
+                        [0.0, 10.0],
+                        [1.0, 11.0],
+                        [2.0, 12.0],
+                        [13.0, 3.0],
+                    ]
+                ),
+                targets=np.array([0.0, 1.0, 2.0, 3.0]),
+            ),
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=3,
+                        train_idx=np.array([0, 1, 2]),
+                        test_idx=np.array([3]),
+                    ),
+                )
+            ),
+        )
+
+        result = current_best_mlip_sweep(payload)
+
+        self.assertEqual(result.selection_metadata["selected_mlip_index"].tolist(), [0])
+        np.testing.assert_allclose(result.selection_metadata["training_rmse"], [0.0])
+        np.testing.assert_allclose(result.metrics["rmse_mean"], [10.0])
+        self.assertEqual(result.uq_summary["uncertainty_kind"].tolist(), ["spread_only"])
+
+    @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
+    def test_current_best_mlip_rejects_zero_mlip_features(self) -> None:
+        payload = SweepRunPayload(
+            dataset=SweepDataset(
+                mlip_features=np.empty((4, 0), dtype=float),
+                targets=np.arange(4, dtype=float),
+                graph_view=GraphDatasetView.from_records(
+                    tuple(
+                        GraphRecord(
+                            sample_id=i,
+                            node_features=np.array([[1.0]]),
+                            edge_index=np.empty((2, 0), dtype=np.int64),
+                        )
+                        for i in range(4)
+                    )
+                ),
+            ),
+            split_collection=SweepSplitCollection(
+                splits=(
+                    SweepSplit(
+                        sweep_size=3,
+                        train_idx=np.array([0, 1, 2]),
+                        test_idx=np.array([3]),
+                    ),
+                )
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "current_best_mlip requires at least 1 MLIP feature columns; got 0.",
+        ):
+            current_best_mlip_sweep(payload)
 
     @unittest.skipUnless(HAS_SKLEARN, "requires scikit-learn")
     def test_weighted_simplex_keeps_standard_result_shape(self) -> None:
