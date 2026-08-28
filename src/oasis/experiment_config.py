@@ -224,6 +224,7 @@ class LearningCurveExperimentConfig(BaseModel):
     reuse_results: bool = False
     force_refresh_methods: list[str] = Field(default_factory=list)
     force_refresh_train_sizes: dict[str, list[int]] = Field(default_factory=dict)
+
     mlip_selection: MlipSelectionConfig = Field(default_factory=MlipSelectionConfig)
     graph_dataset: Optional[GraphDatasetInputConfig] = None
     models: Optional[LearningCurveModelsConfig] = None

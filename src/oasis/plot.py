@@ -2828,6 +2828,20 @@ def _load_policy_artifact_for_screening_curve_plot_dir(
     )
     if not artifact_paths:
         raise ValueError("No cached policy-selection artifacts found.")
+    dataset_labels = _dataset_label_by_tag_from_config()
+    plot_dir_aliases = _dataset_aliases(plot_dir.name)
+    dataset_artifact_paths: list[Path] = []
+    for artifact_path in artifact_paths:
+        payload = json.loads(artifact_path.read_text())
+        metadata = payload.get("metadata", {})
+        dataset_tag = metadata.get("dataset_tag")
+        if dataset_tag is None:
+            continue
+        dataset_label = dataset_labels.get(str(dataset_tag), str(dataset_tag))
+        if _dataset_aliases(dataset_label) & plot_dir_aliases:
+            dataset_artifact_paths.append(artifact_path)
+    if dataset_artifact_paths:
+        artifact_paths = dataset_artifact_paths
 
     def _matches_summary(left_df: pd.DataFrame, right_df: pd.DataFrame) -> bool:
         if list(left_df.columns) != list(right_df.columns):
@@ -2917,6 +2931,8 @@ def _build_screening_curve_regret_frame(
         if mode == "absolute":
             include_x = list(entry["sweep_sizes"])
         elif mode == "fraction":
+            if not entry["sweep_fractions"]:
+                continue
             include_x = list(
                 resolve_configured_sweep_sizes(
                     int(entry["dataset_size"]),
@@ -2967,7 +2983,7 @@ def compose_screening_curve_figure(
     suffix: str = "anomalyaware_on",
     output_name: str = "figure_screening_curve.png",
     exclude_panel_d_datasets: list[str] | tuple[str, ...] = ("bio_mass",),
-) -> Path:
+) -> Path | None:
     from oasis.figure import two_by_two_figure
     from oasis.experiment.policy_diagnostic import summarize_fixed_method_baseline_frame
     from oasis.experiment.splits import resolve_configured_sweep_sizes
@@ -2986,16 +3002,23 @@ def compose_screening_curve_figure(
     absolute_include_x = [
         int(value) for value in learning_curve_signature.get("sweep_sizes", [])
     ]
+    configured_fractions = tuple(
+        float(value)
+        for value in learning_curve_signature.get("sweep_fractions", [])
+    )
+    if not configured_fractions:
+        print(
+            "Skipping screening curve figure: cached policy artifact has no "
+            "sweep_fractions."
+        )
+        return None
     fraction_include_x = list(
         resolve_configured_sweep_sizes(
             dataset_size,
             min_train=None,
             max_train=None,
             sweep_sizes=(),
-            sweep_fractions=tuple(
-                float(value)
-                for value in learning_curve_signature.get("sweep_fractions", [])
-            ),
+            sweep_fractions=configured_fractions,
         )
     )
     fixed_method_summary_df = summarize_fixed_method_baseline_frame(

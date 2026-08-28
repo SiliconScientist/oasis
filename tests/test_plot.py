@@ -29,6 +29,7 @@ from oasis.plot import (
     generation_time_accuracy_plot,
     learning_curve_plot,
     _load_cached_policy_artifacts_for_screening_curve,
+    _load_policy_artifact_for_screening_curve_plot_dir,
     miscalibration_area_plot,
     oracle_learning_curve_frame,
     oracle_learning_curve_plot,
@@ -422,6 +423,32 @@ class PlotTests(unittest.TestCase):
         self.assertFalse(mock_render_regret.call_args_list[0].kwargs["show_legend"])
         self.assertNotIn("show_legend", mock_render_regret.call_args_list[1].kwargs)
 
+    def test_compose_screening_curve_figure_skips_artifact_without_fractions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plot_dir = Path(tmpdir) / "plots" / "dataset"
+            plot_dir.mkdir(parents=True)
+            with patch.dict(
+                compose_screening_curve_figure.__globals__,
+                {
+                    "_load_policy_artifact_for_screening_curve_plot_dir": Mock(
+                        return_value={
+                            "metadata": {"dataset_size": 20},
+                            "cache_signature": {
+                                "learning_curve": {
+                                    "sweep_sizes": [4, 8],
+                                    "sweep_fractions": [],
+                                }
+                            },
+                        }
+                    )
+                },
+            ):
+                saved_path = compose_screening_curve_figure(plot_dir)
+
+        self.assertIsNone(saved_path)
+
     def test_screening_curve_loader_includes_artifact_only_dataset(self) -> None:
         summary_df = pd.DataFrame(
             {
@@ -479,6 +506,73 @@ class PlotTests(unittest.TestCase):
 
         self.assertEqual(order, ["primary", "extra"])
         self.assertEqual([entry["dataset_label"] for entry in entries], ["Primary", "Extra"])
+
+    def test_screening_curve_loader_matches_primary_artifact_by_dataset(self) -> None:
+        summary_df = pd.DataFrame(
+            {
+                "budget": [2],
+                "oracle_outer_rmse_mean": [0.3],
+                "screening_selected_outer_rmse_mean": [0.4],
+            }
+        )
+        outer_metrics_df = pd.DataFrame(
+            {
+                "budget": [2],
+                "repeat": [0],
+                "method": ["ridge"],
+                "outer_test_rmse": [0.3],
+            }
+        )
+
+        def _artifact(dataset_tag: str, fractions: list[float]) -> dict[str, object]:
+            return {
+                "metadata": {"dataset_tag": dataset_tag, "dataset_size": 10},
+                "results": {
+                    "summary_df": summary_df.to_json(orient="table"),
+                    "outer_metrics_df": outer_metrics_df.to_json(orient="table"),
+                },
+                "cache_signature": {
+                    "learning_curve": {
+                        "sweep_sizes": [2],
+                        "sweep_fractions": fractions,
+                    }
+                },
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            plot_dir = root / "plots" / "Target"
+            screening_dir = root / "screening"
+            plot_dir.mkdir(parents=True)
+            screening_dir.mkdir()
+            summary_df.to_csv(
+                plot_dir / "policy_selection_diagnostic_summary_anomalyaware_on.csv",
+                index=False,
+            )
+            (screening_dir / "policy_selection_diagnostic_other.json").write_text(
+                json.dumps(_artifact("other", []))
+            )
+            (screening_dir / "policy_selection_diagnostic_target.json").write_text(
+                json.dumps(_artifact("target", [0.5]))
+            )
+
+            with patch.dict(
+                _load_policy_artifact_for_screening_curve_plot_dir.__globals__,
+                {
+                    "_dataset_label_by_tag_from_config": Mock(
+                        return_value={"target": "Target", "other": "Other"}
+                    )
+                },
+            ):
+                artifact = _load_policy_artifact_for_screening_curve_plot_dir(
+                    plot_dir,
+                    "anomalyaware_on",
+                )
+
+        self.assertEqual(
+            artifact["cache_signature"]["learning_curve"]["sweep_fractions"],
+            [0.5],
+        )
 
     def test_policy_regret_plot_renders_and_filters_budget_window(self) -> None:
         summary_df = pd.DataFrame(
