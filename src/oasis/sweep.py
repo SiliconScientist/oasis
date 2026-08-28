@@ -1432,9 +1432,7 @@ def _merge_learning_curve_frame(
     disallowed_overlap_sizes = [
         sweep_size
         for sweep_size in overlapping_train_sizes
-        if not (
-            len(sweep_size) == 1 and sweep_size[0] in allowed_overlap_sizes
-        )
+        if sweep_size[0] not in allowed_overlap_sizes
     ]
     display_overlap_sizes = [
         sweep_size[0] if len(sweep_size) == 1 else sweep_size
