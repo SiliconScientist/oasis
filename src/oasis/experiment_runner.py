@@ -369,6 +369,30 @@ def _merged_include_x(
     return merged or None
 
 
+def _span_include_x(
+    include_sizes: list[int] | tuple[int, ...] | None,
+    span_variant: BudgetSpanVariant | None,
+    *,
+    n_samples: int | None,
+) -> list[int] | None:
+    """Resolve plot-visible points for one budget-span variant.
+
+    ``include_sizes`` is an absolute training-size view filter; fraction plots
+    are defined exclusively by their configured sweep fractions.
+    """
+    variant_include_x = (
+        None
+        if span_variant is None or n_samples is None
+        else span_variant.resolved_include_x(n_samples=n_samples)
+    )
+    return _merged_include_x(
+        include_sizes
+        if span_variant is None or span_variant.key == "absolute"
+        else None,
+        variant_include_x,
+    )
+
+
 def render_budget_span_variants(
     cfg: object,
     *,
@@ -937,11 +961,10 @@ def _load_oracle_learning_curve_rows_for_dataset(
         artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
         if artifact is not None:
             dataset_size = getattr(artifact.metadata, "dataset_size", None)
-            dataset_include_x = _merged_include_x(
+            dataset_include_x = _span_include_x(
                 include_x,
-                None
-                if span_variant is None or dataset_size is None
-                else span_variant.resolved_include_x(n_samples=int(dataset_size)),
+                span_variant,
+                n_samples=None if dataset_size is None else int(dataset_size),
             )
             oracle_df = oracle_learning_curve_frame(
                 artifact.results,
@@ -997,11 +1020,10 @@ def _load_oracle_learning_curve_rows_for_dataset(
         dataset=dataset_tag,
         dataset_label=dataset_label,
     )
-    dataset_include_x = _merged_include_x(
+    dataset_include_x = _span_include_x(
         include_x,
-        None
-        if span_variant is None
-        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+        span_variant,
+        n_samples=_frame_height(wide_df),
     )
     filtered_oracle_df = _filter_curve_frame(
         oracle_df,
@@ -1965,9 +1987,10 @@ def _write_policy_selection_diagnostic_outputs(
     ) -> Path:
         variant_include_x = include_x
         if span_variant is not None:
-            variant_include_x = _merged_include_x(
+            variant_include_x = _span_include_x(
                 include_x,
-                span_variant.resolved_include_x(n_samples=int(len(wide_df))),
+                span_variant,
+                n_samples=int(len(wide_df)),
             )
         return policy_selected_vs_oracle_plot(
             diagnostic_results.summary_df,
@@ -1988,9 +2011,10 @@ def _write_policy_selection_diagnostic_outputs(
     ) -> Path:
         variant_include_x = include_x
         if span_variant is not None:
-            variant_include_x = _merged_include_x(
+            variant_include_x = _span_include_x(
                 include_x,
-                span_variant.resolved_include_x(n_samples=int(len(wide_df))),
+                span_variant,
+                n_samples=int(len(wide_df)),
             )
         return policy_regret_plot(
             diagnostic_results.summary_df,
@@ -2055,11 +2079,10 @@ def _load_policy_regret_rows_for_dataset(
             print(f"All-datasets policy diagnostic hit for {dataset_tag}")
     if diagnostic_results is None:
         return []
-    dataset_include_x = _merged_include_x(
+    dataset_include_x = _span_include_x(
         include_x,
-        None
-        if span_variant is None
-        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+        span_variant,
+        n_samples=_frame_height(wide_df),
     )
     summary_df = diagnostic_results.summary_df.copy()
     summary_df.insert(0, "dataset_label", dataset_label)
@@ -2571,11 +2594,10 @@ def _load_all_datasets_oracle_uq_rows(
             wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
             zero_shot_uq = _zero_shot_uq_baselines(prepare_parity_plot_data(wide_df))
             dataset_size = getattr(artifact.metadata, "dataset_size", None)
-            dataset_include_x = _merged_include_x(
+            dataset_include_x = _span_include_x(
                 include_x,
-                None
-                if span_variant is None or dataset_size is None
-                else span_variant.resolved_include_x(n_samples=int(dataset_size)),
+                span_variant,
+                n_samples=None if dataset_size is None else int(dataset_size),
             )
             try:
                 oracle_df = oracle_uq_curve_frame(
@@ -2647,11 +2669,10 @@ def _load_all_datasets_oracle_uq_rows(
         if "No enabled UQ result frames were available." not in str(exc):
             raise
         return []
-    dataset_include_x = _merged_include_x(
+    dataset_include_x = _span_include_x(
         include_x,
-        None
-        if span_variant is None
-        else span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+        span_variant,
+        n_samples=_frame_height(wide_df),
     )
     filtered_oracle_df = _filter_curve_frame(
         oracle_df,
@@ -2936,13 +2957,11 @@ def compose_accuracy_curve_figure(
     if absolute_variant is None or fraction_variant is None:
         return None
 
-    absolute_include_x = _merged_include_x(
-        include_x,
-        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    absolute_include_x = _span_include_x(
+        include_x, absolute_variant, n_samples=dataset_size
     )
-    fraction_include_x = _merged_include_x(
-        include_x,
-        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    fraction_include_x = _span_include_x(
+        include_x, fraction_variant, n_samples=dataset_size
     )
     absolute_oracle_rows = load_all_datasets_oracle_learning_curve_rows(
         cfg=cfg,
@@ -3052,13 +3071,11 @@ def compose_sharpness_curve_figure(
     if absolute_variant is None or fraction_variant is None:
         return None
 
-    absolute_include_x = _merged_include_x(
-        include_x,
-        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    absolute_include_x = _span_include_x(
+        include_x, absolute_variant, n_samples=dataset_size
     )
-    fraction_include_x = _merged_include_x(
-        include_x,
-        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    fraction_include_x = _span_include_x(
+        include_x, fraction_variant, n_samples=dataset_size
     )
     absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
         cfg=cfg,
@@ -3177,13 +3194,11 @@ def compose_miscalibration_area_curve_figure(
     if absolute_variant is None or fraction_variant is None:
         return None
 
-    absolute_include_x = _merged_include_x(
-        include_x,
-        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    absolute_include_x = _span_include_x(
+        include_x, absolute_variant, n_samples=dataset_size
     )
-    fraction_include_x = _merged_include_x(
-        include_x,
-        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    fraction_include_x = _span_include_x(
+        include_x, fraction_variant, n_samples=dataset_size
     )
     absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
         cfg=cfg,
@@ -3300,13 +3315,11 @@ def compose_dispersion_curve_figure(
     if absolute_variant is None or fraction_variant is None:
         return None
 
-    absolute_include_x = _merged_include_x(
-        include_x,
-        absolute_variant.resolved_include_x(n_samples=dataset_size),
+    absolute_include_x = _span_include_x(
+        include_x, absolute_variant, n_samples=dataset_size
     )
-    fraction_include_x = _merged_include_x(
-        include_x,
-        fraction_variant.resolved_include_x(n_samples=dataset_size),
+    fraction_include_x = _span_include_x(
+        include_x, fraction_variant, n_samples=dataset_size
     )
     absolute_oracle_rows = load_all_datasets_oracle_uq_rows(
         cfg=cfg,
@@ -3902,9 +3915,10 @@ def _run_comparative_learning_stages(
                 "learning_curve_anomalyaware_off_fraction.png",
             }
             if span_variant is not None:
-                variant_include_x = _merged_include_x(
+                variant_include_x = _span_include_x(
                     plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                    span_variant,
+                    n_samples=_frame_height(wide_df),
                 )
             if output_path.name in fraction_min_eval_outputs:
                 variant_min_x = max(200, variant_min_x) if variant_min_x is not None else 200
@@ -3978,9 +3992,10 @@ def _run_comparative_learning_stages(
             variant_include_x = plot_kwargs["include_x"]
             artifact_suffix = ""
             if span_variant is not None:
-                variant_include_x = _merged_include_x(
+                variant_include_x = _span_include_x(
                     plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                    span_variant,
+                    n_samples=_frame_height(wide_df),
                 )
                 artifact_suffix = span_variant.output_suffix
             return write_uq_summary_figure(
@@ -4060,9 +4075,10 @@ def _run_comparative_learning_stages(
             variant_include_x = plot_kwargs["include_x"]
             artifact_suffix = ""
             if span_variant is not None:
-                variant_include_x = _merged_include_x(
+                variant_include_x = _span_include_x(
                     plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                    span_variant,
+                    n_samples=_frame_height(wide_df),
                 )
                 artifact_suffix = span_variant.output_suffix
             return write_uq_summary_figure(
@@ -4142,9 +4158,10 @@ def _run_comparative_learning_stages(
             ) -> Path | None:
                 if span_variant is None or screening_results is None:
                     return None
-                variant_include_x = _merged_include_x(
+                variant_include_x = _span_include_x(
                     plot_kwargs["include_x"],
-                    span_variant.resolved_include_x(n_samples=_frame_height(wide_df)),
+                    span_variant,
+                    n_samples=_frame_height(wide_df),
                 )
                 variant_min_x = plot_kwargs["min_x"]
                 if output_path.name == "learning_screening_figure_anomalyaware_off_fraction.png":
@@ -4261,8 +4278,8 @@ def run_experiment(cfg: object):
     use_full_curve_window = bool(
         getattr(curve_window_cfg, "full_dataset_window", False)
     ) or bool(getattr(curve_window_cfg, "all", False))
-    configured_include_x = getattr(curve_window_cfg, "include_x", None)
-    resolved_include_x = _merged_include_x(configured_include_x)
+    configured_include_sizes = getattr(curve_window_cfg, "include_sizes", None)
+    resolved_include_x = _merged_include_x(configured_include_sizes)
     plot_kwargs = (
         {
             "min_x": None,
@@ -4288,7 +4305,7 @@ def run_experiment(cfg: object):
         output_dir=output_dir,
         run_suffix=run_suffix,
         plot_kwargs=plot_kwargs,
-        configured_include_x=configured_include_x,
+        configured_include_x=configured_include_sizes,
         fixed_split_train_fraction=fixed_split_train_fraction,
         generation_timing_by_method=generation_timing_by_method,
         zero_shot_rmse=zero_shot_rmse,

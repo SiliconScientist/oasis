@@ -41,7 +41,7 @@ zero_shot_stage_show_lone_mlip_swarm = true
 # full_dataset_window = true  # ignore min_x/max_x but still honor include filters
 # min_x = 10
 # max_x = 20
-# include_x = [1, 5, 10, 15, 20]
+# include_sizes = [1, 5, 10, 15, 20]  # absolute-size plots only
 # Budget-axis learning-curve plots are emitted twice automatically:
 # once for the absolute span and once for the fraction span.
 

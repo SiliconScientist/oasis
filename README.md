@@ -136,7 +136,8 @@ full_dataset_window = true
 ```
 
 `full_dataset_window = true` only disables the `min_x` / `max_x` crop. It does
-not disable `include_x` or `include_fractions`.
+not disable `include_sizes`, which selects the training sizes shown in
+absolute-size plots.
 
 If you want to keep the full sweep on disk but only plot selected fractional
 budgets, use:

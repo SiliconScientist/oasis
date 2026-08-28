@@ -166,7 +166,7 @@ class PlotCurveWindowConfig(BaseModel):
     all: bool = False
     min_x: Optional[int] = None
     max_x: Optional[int] = None
-    include_x: Optional[List[int]] = None
+    include_sizes: Optional[List[int]] = None
     oracle_all_datasets_log_x: bool = False
 
 

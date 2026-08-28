@@ -22,6 +22,7 @@ from oasis.experiment_runner import (
     _load_policy_regret_rows_for_dataset,
     _policy_selection_diagnostic_persistence_context,
     _resolved_plot_output_dir,
+    _span_include_x,
     _load_zero_shot_stage_rows_for_dataset,
     _zero_shot_stage_artifact_path,
     _build_zero_shot_stage_rows,
@@ -342,6 +343,19 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual([variant.key for variant in variants], ["absolute", "fraction"])
         self.assertEqual(variants[0].resolved_include_x(n_samples=100), [1, 2, 3, 20])
         self.assertEqual(variants[1].resolved_include_x(n_samples=100), [5, 10, 20])
+
+    def test_include_sizes_only_applies_to_absolute_span(self) -> None:
+        absolute = BudgetSpanVariant(key="absolute", output_suffix="absolute", sweep_sizes=(2, 4))
+        fraction = BudgetSpanVariant(
+            key="fraction", output_suffix="fraction", sweep_fractions=(0.1, 0.2)
+        )
+
+        self.assertEqual(
+            _span_include_x([3, 4], absolute, n_samples=100), [2, 3, 4]
+        )
+        self.assertEqual(
+            _span_include_x([3, 4], fraction, n_samples=100), [10, 20]
+        )
 
     def test_configured_budget_span_variants_falls_back_to_integer_range(self) -> None:
         cfg = SimpleNamespace(
@@ -6763,7 +6777,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=10, max_x=50, include_x=[10, 30]),
+                    curve_window=SimpleNamespace(min_x=10, max_x=50, include_sizes=[10, 30]),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -6833,7 +6847,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_sizes=None),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -6987,7 +7001,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_sizes=None),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -7190,7 +7204,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     curve_window=SimpleNamespace(
                         min_x=None,
                         max_x=None,
-                        include_x=None,
+                        include_sizes=None,
                         include_fractions=[0.5, 1.0],
                     ),
                 ),
@@ -7253,7 +7267,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     curve_window=SimpleNamespace(
                         min_x=None,
                         max_x=None,
-                        include_x=[3],
+                        include_sizes=[3],
                         include_fractions=[0.5, 1.0],
                     ),
                 ),
@@ -7308,7 +7322,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     curve_window=SimpleNamespace(
                         min_x=None,
                         max_x=None,
-                        include_x=[1, 2],
+                        include_sizes=[1, 2],
                         include_fractions=[0.5, 1.0],
                     ),
                 ),
@@ -7364,7 +7378,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                         full_dataset_window=True,
                         min_x=10,
                         max_x=50,
-                        include_x=[10, 30],
+                        include_sizes=[10, 30],
                     ),
                 ),
             )
@@ -7421,7 +7435,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                         all=True,
                         min_x=10,
                         max_x=50,
-                        include_x=[10, 30],
+                        include_sizes=[10, 30],
                     ),
                 ),
             )
@@ -7535,7 +7549,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_sizes=[5, 10]),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -7656,7 +7670,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_sizes=None),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -7728,7 +7742,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_x=None),
+                    curve_window=SimpleNamespace(min_x=None, max_x=None, include_sizes=None),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -7802,7 +7816,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_sizes=[5, 10]),
                 ),
             )
             fake_wide_df = _FakeWideFrame(reactions=[f"r{i}" for i in range(10)])
@@ -7917,7 +7931,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_sizes=[5, 10]),
                 ),
             )
             fake_wide_df = _FakeWideFrame()
@@ -8043,7 +8057,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 analysis=SimpleNamespace(base_dir=tmp_path / "mlips"),
                 plot=SimpleNamespace(
                     output_dir=tmp_path / "plots",
-                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_x=[5, 10]),
+                    curve_window=SimpleNamespace(min_x=5, max_x=10, include_sizes=[5, 10]),
                 ),
             )
             fake_wide_df = _FakeWideFrame(reactions=[f"r{i}" for i in range(10)])
