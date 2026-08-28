@@ -380,17 +380,11 @@ def _span_include_x(
     ``include_sizes`` is an absolute training-size view filter; fraction plots
     are defined exclusively by their configured sweep fractions.
     """
-    variant_include_x = (
-        None
-        if span_variant is None or n_samples is None
-        else span_variant.resolved_include_x(n_samples=n_samples)
-    )
-    return _merged_include_x(
-        include_sizes
-        if span_variant is None or span_variant.key == "absolute"
-        else None,
-        variant_include_x,
-    )
+    if include_sizes and (span_variant is None or span_variant.key == "absolute"):
+        return sorted({int(size) for size in include_sizes})
+    if span_variant is None or n_samples is None:
+        return None
+    return span_variant.resolved_include_x(n_samples=n_samples)
 
 
 def render_budget_span_variants(

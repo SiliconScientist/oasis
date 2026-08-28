@@ -351,7 +351,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            _span_include_x([3, 4], absolute, n_samples=100), [2, 3, 4]
+            _span_include_x([3, 4], absolute, n_samples=100), [3, 4]
         )
         self.assertEqual(
             _span_include_x([3, 4], fraction, n_samples=100), [10, 20]
@@ -6813,7 +6813,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["max_x"], 50)
         self.assertEqual(
             mock_learning_curve_plot.call_args.kwargs["include_x"],
-            [1, 2, 10, 30],
+            [10, 30],
         )
         self.assertEqual(mock_oracle_plot.call_args.kwargs["min_x"], 10)
         self.assertEqual(mock_oracle_plot.call_args.kwargs["max_x"], 50)
@@ -7241,7 +7241,7 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2])
         self.assertIsNone(mock_oracle_plot.call_args.kwargs["include_x"])
 
-    def test_run_experiment_preserves_include_x_when_legacy_include_fractions_is_present(
+    def test_run_experiment_include_sizes_overrides_the_absolute_sweep(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -7298,7 +7298,7 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_learning_curve_plot:
                 run_experiment(cfg)
 
-        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [1, 2, 3])
+        self.assertEqual(mock_learning_curve_plot.call_args.kwargs["include_x"], [3])
 
     def test_run_experiment_deduplicates_overlapping_curve_window_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
