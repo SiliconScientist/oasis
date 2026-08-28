@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
@@ -135,8 +135,7 @@ class PlotTests(unittest.TestCase):
                 ax = fig.axes[0]
 
             self.assertEqual(ax.get_title(), "")
-            self.assertEqual(ax.get_ylabel(), "Regret (eV)")
-            self.assertEqual(ax.get_ylabel(), "Regret (eV)")
+            self.assertEqual(ax.get_ylabel(), "Held-out RMSE (eV)")
 
     def test_policy_selected_vs_oracle_plot_can_hide_legend(self) -> None:
         summary_df = pd.DataFrame(
@@ -323,9 +322,17 @@ class PlotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             plot_dir = Path(tmpdir) / "plots" / "dataset"
             plot_dir.mkdir(parents=True)
-            with patch(
-                "oasis.plot._load_policy_artifact_for_screening_curve_plot_dir",
-                return_value={
+            mock_selected_vs_oracle = Mock(
+                side_effect=[plot_dir / "panel_a.png", plot_dir / "panel_b.png"]
+            )
+            mock_render_regret = Mock(
+                side_effect=[plot_dir / "panel_c.png", plot_dir / "panel_d.png"]
+            )
+            with patch.dict(
+                compose_screening_curve_figure.__globals__,
+                {
+                    "_load_policy_artifact_for_screening_curve_plot_dir": Mock(
+                        return_value={
                     "summary_df": pd.DataFrame(
                         {
                             "policy_name": ["min_screening_rmse"] * 4,
@@ -355,23 +362,21 @@ class PlotTests(unittest.TestCase):
                             "sweep_fractions": [0.5, 0.8],
                         }
                     },
+                        }
+                    ),
+                    "_configured_policy_fixed_method_baselines_for_screening_curve": Mock(
+                        return_value=(
+                            ("residual", "Residual"),
+                            ("kernel_ridge", "Kernel ridge"),
+                        )
+                    ),
+                    "_load_cached_policy_artifacts_for_screening_curve": Mock(
+                        return_value=(dataset_entries, ["bio_mass", "khlohc"])
+                    ),
+                    "policy_selected_vs_oracle_plot": mock_selected_vs_oracle,
+                    "_render_screening_curve_regret_panel": mock_render_regret,
                 },
             ), patch(
-                "oasis.plot._configured_policy_fixed_method_baselines_for_screening_curve",
-                return_value=(("residual", "Residual"), ("kernel_ridge", "Kernel ridge")),
-            ), patch(
-                "oasis.plot._load_cached_policy_artifacts_for_screening_curve",
-                return_value=(dataset_entries, ["bio_mass", "khlohc"]),
-            ), patch(
-                "oasis.plot.policy_selected_vs_oracle_plot",
-                side_effect=[plot_dir / "panel_a.png", plot_dir / "panel_b.png"],
-            ) as mock_selected_vs_oracle, patch(
-                "oasis.plot._render_screening_curve_regret_panel",
-                side_effect=[
-                    plot_dir / "panel_c.png",
-                    plot_dir / "panel_d.png",
-                ],
-            ) as mock_render_regret, patch(
                 "oasis.figure.two_by_two_figure",
                 return_value=plot_dir / "figure_screening_curve.png",
             ) as mock_two_by_two:
@@ -459,9 +464,13 @@ class PlotTests(unittest.TestCase):
                 )
             )
 
-            with patch(
-                "oasis.plot._dataset_label_by_tag_from_config",
-                return_value={"primary": "Primary", "extra": "Extra"},
+            with patch.dict(
+                _load_cached_policy_artifacts_for_screening_curve.__globals__,
+                {
+                    "_dataset_label_by_tag_from_config": Mock(
+                        return_value={"primary": "Primary", "extra": "Extra"}
+                    )
+                },
             ):
                 entries, order = _load_cached_policy_artifacts_for_screening_curve(
                     plot_root,

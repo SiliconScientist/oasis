@@ -2801,10 +2801,11 @@ def _load_cached_policy_artifacts_for_screening_curve(
         )
         if artifact_path in matched_artifact_paths or not has_matching_suffix:
             continue
+        metadata = artifact_entry["payload"].get("metadata", {})
         _append_dataset_entry(
             artifact_entry["summary_df"],
             artifact_entry["payload"],
-            artifact_path.stem,
+            str(metadata.get("dataset_tag") or artifact_path.stem),
         )
     if not dataset_entries:
         raise ValueError("No non-empty cached policy summaries found.")

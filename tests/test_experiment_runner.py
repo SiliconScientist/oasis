@@ -2759,6 +2759,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 2,
                     "oracle_rmse": 0.35,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
                 {
                     "dataset": "bio_mass",
@@ -2766,6 +2767,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 4,
                     "oracle_rmse": 0.30,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
             ],
         )
@@ -2987,6 +2989,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 2,
                     "oracle_rmse": 0.35,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
                 {
                     "dataset": "bio_mass",
@@ -2994,6 +2997,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 4,
                     "oracle_rmse": 0.30,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
                 {
                     "dataset": "khlohc",
@@ -3001,6 +3005,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 2,
                     "oracle_rmse": 0.35,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
                 {
                     "dataset": "khlohc",
@@ -3008,6 +3013,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                     "n_train": 4,
                     "oracle_rmse": 0.30,
                     "oracle_method": "ridge",
+                    "zero_shot_rmse": 0.0,
                 },
             ],
         )
@@ -5838,10 +5844,7 @@ class ExperimentRunnerTests(unittest.TestCase):
                 side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.screening_budget_plot",
-                side_effect=[
-                    tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
-                    tmp_path / "tmp" / "screening_budget_panel_anomalyaware_off.png",
-                ],
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
             ) as mock_screening_plot, patch(
                 "oasis.experiment_runner.learning_screening_figure",
                 return_value=tmp_path / "plots" / "learning_screening_figure_anomalyaware_off.png",
@@ -5857,12 +5860,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_miscalibration_curve_figure, patch(
                 "oasis.experiment_runner.compose_dispersion_curve_figure",
                 return_value=tmp_path / "plots" / "figure_dispersion_curve.png",
-            ) as mock_dispersion_curve_figure:
+            ) as mock_dispersion_curve_figure, patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         self.assertEqual(mock_results.call_count, 2)
-        self.assertEqual(mock_learning_curve_plot.call_count, 2)
-        self.assertEqual(mock_screening_plot.call_count, 2)
+        self.assertEqual(mock_learning_curve_plot.call_count, 3)
+        self.assertEqual(mock_screening_plot.call_count, 3)
         self.assertEqual(
             mock_screening_plot.call_args_list[0].kwargs["output_path"],
             tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
@@ -5872,12 +5878,12 @@ class ExperimentRunnerTests(unittest.TestCase):
             False,
         )
         self.assertEqual(
-            mock_learning_screening_figure.call_args.kwargs["screening_curve_path"],
-            tmp_path / "tmp" / "screening_budget_panel_anomalyaware_off.png",
+            Path(mock_learning_screening_figure.call_args.kwargs["screening_curve_path"]).name,
+            "screening_budget_panel_anomalyaware_off.png",
         )
         self.assertEqual(
-            mock_learning_screening_figure.call_args.kwargs["learning_curve_path"],
-            tmp_path / "tmp" / "learning_curve_panel_anomalyaware_off.png",
+            Path(mock_learning_screening_figure.call_args.kwargs["learning_curve_path"]).name,
+            "learning_curve_panel_anomalyaware_off.png",
         )
         self.assertEqual(
             mock_screening_curve_figure.call_args.kwargs["suffix"],
@@ -6696,14 +6702,17 @@ class ExperimentRunnerTests(unittest.TestCase):
                 return_value=tmp_path / "plots" / "learning_curve.png",
             ) as mock_learning_curve_plot, patch(
                 "oasis.experiment_runner.screening_budget_plot",
-                side_effect=[
-                    tmp_path / "plots" / "screening_budget.png",
-                    tmp_path / "tmp" / "screening_budget_panel.png",
-                ],
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
             ) as mock_screening_plot, patch(
                 "oasis.experiment_runner.learning_screening_figure",
                 return_value=tmp_path / "plots" / "learning_screening_figure.png",
-            ) as mock_learning_screening_figure:
+            ) as mock_learning_screening_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         first_cfg = mock_results.call_args_list[0].args[1]
@@ -6726,8 +6735,8 @@ class ExperimentRunnerTests(unittest.TestCase):
             second_cfg.experiment.learning_curve.force_refresh_methods,
             ["ridge"],
         )
-        mock_learning_curve_plot.assert_called_once()
-        self.assertEqual(mock_screening_plot.call_count, 2)
+        self.assertEqual(mock_learning_curve_plot.call_count, 3)
+        self.assertEqual(mock_screening_plot.call_count, 3)
         self.assertEqual(
             mock_screening_plot.call_args_list[0].kwargs["output_path"],
             tmp_path / "plots" / "screening_budget_anomalyaware_off.png",
@@ -7565,7 +7574,13 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_dispersion_plot, patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 return_value=tmp_path / "plots" / "uq_summary_figure.png",
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         mock_miscalibration_plot.assert_called_once()
@@ -7680,7 +7695,13 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 return_value=tmp_path / "plots" / "uq_summary_figure.png",
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         mock_miscalibration_plot.assert_called_once()
@@ -7746,7 +7767,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             ), patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 return_value=tmp_path / "plots" / "uq_summary_figure.png",
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ):
                 run_experiment(cfg)
 
         mock_miscalibration_plot.assert_called_once()
@@ -7817,7 +7841,10 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_dispersion_plot, patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ):
                 run_experiment(cfg)
 
         self.assertEqual(mock_miscalibration_plot.call_count, 2)
@@ -7936,7 +7963,13 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_dispersion_plot, patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 return_value=tmp_path / "plots" / "screening_uq_summary_figure.png",
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         self.assertEqual(mock_miscalibration_plot.call_count, 1)
@@ -8056,7 +8089,13 @@ class ExperimentRunnerTests(unittest.TestCase):
             ) as mock_dispersion_plot, patch(
                 "oasis.experiment_runner.uq_summary_figure",
                 side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
-            ) as mock_uq_summary_figure:
+            ) as mock_uq_summary_figure, patch(
+                "oasis.experiment_runner.compose_screening_curve_figure",
+                return_value=tmp_path / "plots" / "figure_screening_curve.png",
+            ), patch(
+                "oasis.experiment_runner.horizontal_panel_figure",
+                side_effect=lambda *args, **kwargs: Path(kwargs["output_path"]),
+            ):
                 run_experiment(cfg)
 
         self.assertEqual(mock_miscalibration_plot.call_count, 2)

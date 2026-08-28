@@ -936,11 +936,6 @@ def _load_oracle_learning_curve_rows_for_dataset(
     if cache_only:
         artifact = _load_cached_learning_curve_artifact_for_dataset_cfg(dataset_cfg)
         if artifact is not None:
-            wide_df, _, _ = load_filtered_wide_predictions(dataset_cfg, verbose=False)
-            wide_df = _apply_dev_run_frame_cap(dataset_cfg, wide_df)
-            zero_shot_rmse = _learning_curve_zero_shot_rmse_from_frame(
-                dataset_cfg, wide_df
-            )
             dataset_size = getattr(artifact.metadata, "dataset_size", None)
             dataset_include_x = _merged_include_x(
                 include_x,
@@ -963,7 +958,6 @@ def _load_oracle_learning_curve_rows_for_dataset(
             )
             if filtered_oracle_df is None or filtered_oracle_df.empty:
                 return []
-            filtered_oracle_df = filtered_oracle_df.assign(zero_shot_rmse=zero_shot_rmse)
             return filtered_oracle_df.to_dict(orient="records")
 
     probe_gnn_enabled = ensure_probe_artifacts(dataset_cfg)
