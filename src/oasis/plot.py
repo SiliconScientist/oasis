@@ -2447,6 +2447,7 @@ def all_datasets_policy_regret_plot(
     show_uncertainty: bool = True,
     show_title: bool = True,
     show_legend: bool = True,
+    legend_source_df: pd.DataFrame | None = None,
 ) -> Path:
     required_columns = {"dataset", "dataset_label", "budget", "mean_regret"}
     missing_columns = required_columns.difference(summary_df.columns)
@@ -2467,8 +2468,18 @@ def all_datasets_policy_regret_plot(
     if filtered is None or filtered.empty:
         raise ValueError("summary_df does not contain any rows after x-axis filtering.")
 
-    dataset_order = list(dict.fromkeys(filtered["dataset"].tolist()))
-    label_rows = summary_df.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
+    legend_source = summary_df if legend_source_df is None else legend_source_df
+    missing_legend_columns = {"dataset", "dataset_label"}.difference(
+        legend_source.columns
+    )
+    if missing_legend_columns:
+        raise ValueError(
+            "legend_source_df is missing required columns: "
+            f"{sorted(missing_legend_columns)}"
+        )
+    dataset_order = list(dict.fromkeys(legend_source["dataset"].tolist()))
+    plot_dataset_order = set(filtered["dataset"].tolist())
+    label_rows = legend_source.loc[:, ["dataset", "dataset_label"]].drop_duplicates(
         subset=["dataset"],
         keep="first",
     )
@@ -2490,35 +2501,44 @@ def all_datasets_policy_regret_plot(
             grouped = dataset_rows.groupby("policy_name", sort=True)
         else:
             grouped = [(None, dataset_rows)]
-        for policy_name, group in grouped:
-            ordered = group.sort_values("budget")
-            label = dataset_labels[dataset]
-            if multiple_policies and policy_name is not None:
-                label = f"{label}: {policy_name}"
-            color = _dataset_color(dataset)
+        if dataset in plot_dataset_order:
+            for policy_name, group in grouped:
+                ordered = group.sort_values("budget")
+                label = dataset_labels[dataset]
+                if multiple_policies and policy_name is not None:
+                    label = f"{label}: {policy_name}"
+                color = _dataset_color(dataset)
+                ax.plot(
+                    ordered["budget"],
+                    ordered["mean_regret"],
+                    marker="o",
+                    color=color,
+                    label=label,
+                )
+                if show_uncertainty and {"ci95_low", "ci95_high"}.issubset(ordered.columns):
+                    ax.fill_between(
+                        ordered["budget"],
+                        ordered["ci95_low"],
+                        ordered["ci95_high"],
+                        color=color,
+                        alpha=0.2,
+                    )
+                elif show_uncertainty and "std_regret" in ordered.columns:
+                    ax.fill_between(
+                        ordered["budget"],
+                        ordered["mean_regret"] - ordered["std_regret"],
+                        ordered["mean_regret"] + ordered["std_regret"],
+                        color=color,
+                        alpha=0.2,
+                    )
+        elif show_legend:
             ax.plot(
-                ordered["budget"],
-                ordered["mean_regret"],
+                [],
+                [],
                 marker="o",
-                color=color,
-                label=label,
+                color=_dataset_color(dataset),
+                label=dataset_labels[dataset],
             )
-            if show_uncertainty and {"ci95_low", "ci95_high"}.issubset(ordered.columns):
-                ax.fill_between(
-                    ordered["budget"],
-                    ordered["ci95_low"],
-                    ordered["ci95_high"],
-                    color=color,
-                    alpha=0.2,
-                )
-            elif show_uncertainty and "std_regret" in ordered.columns:
-                ax.fill_between(
-                    ordered["budget"],
-                    ordered["mean_regret"] - ordered["std_regret"],
-                    ordered["mean_regret"] + ordered["std_regret"],
-                    color=color,
-                    alpha=0.2,
-                )
 
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Sample budget", fontsize=fontsize)
@@ -2966,6 +2986,7 @@ def _render_screening_curve_regret_panel(
     dataset_order: list[str],
     log_x: bool,
     show_legend: bool = True,
+    legend_source_df: pd.DataFrame | None = None,
 ) -> Path:
     ordered_frame = summary_df.assign(
         dataset=pd.Categorical(
@@ -2979,6 +3000,7 @@ def _render_screening_curve_regret_panel(
         show_uncertainty=False,
         show_title=False,
         show_legend=show_legend,
+        legend_source_df=legend_source_df,
     )
 
 
@@ -3074,6 +3096,11 @@ def compose_screening_curve_figure(
             log_x=False,
             show_legend=False,
         )
+        fraction_frame = _build_screening_curve_regret_frame(
+            dataset_entries,
+            mode="fraction",
+            excluded_datasets=set(),
+        )
         panel_d_path = _render_screening_curve_regret_panel(
             _build_screening_curve_regret_frame(
                 dataset_entries,
@@ -3083,6 +3110,7 @@ def compose_screening_curve_figure(
             output_path=tmp_path / "panel_d_fraction.png",
             dataset_order=dataset_order,
             log_x=True,
+            legend_source_df=fraction_frame,
         )
         return two_by_two_figure(
             top_left_path=panel_a_path,

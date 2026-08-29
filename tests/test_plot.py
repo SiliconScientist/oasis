@@ -423,6 +423,12 @@ class PlotTests(unittest.TestCase):
         self.assertNotIn("show_legend", mock_selected_vs_oracle.call_args_list[1].kwargs)
         self.assertFalse(mock_render_regret.call_args_list[0].kwargs["show_legend"])
         self.assertNotIn("show_legend", mock_render_regret.call_args_list[1].kwargs)
+        self.assertEqual(
+            mock_render_regret.call_args_list[1].kwargs["legend_source_df"][
+                "dataset"
+            ].tolist(),
+            ["bio_mass", "bio_mass", "khlohc", "khlohc"],
+        )
 
     def test_compose_screening_curve_figure_skips_artifact_without_fractions(
         self,
