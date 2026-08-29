@@ -4117,6 +4117,7 @@ def _run_comparative_learning_stages(
         compose_screening_curve_figure(
             output_dir,
             suffix=run_suffix,
+            absolute_include_x=configured_include_x,
         )
 
     # Stage 5: render comparative learning figure.

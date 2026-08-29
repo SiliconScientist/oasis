@@ -5903,6 +5903,9 @@ class ExperimentRunnerTests(unittest.TestCase):
             mock_screening_curve_figure.call_args.kwargs["suffix"],
             "anomalyaware_off",
         )
+        self.assertIsNone(
+            mock_screening_curve_figure.call_args.kwargs["absolute_include_x"]
+        )
         self.assertEqual(
             mock_screening_curve_figure.call_args.args[0],
             tmp_path / "plots",

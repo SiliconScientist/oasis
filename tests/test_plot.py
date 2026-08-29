@@ -384,6 +384,7 @@ class PlotTests(unittest.TestCase):
                 saved_path = compose_screening_curve_figure(
                     plot_dir,
                     exclude_panel_d_datasets=("bio_mass",),
+                    absolute_include_x=[4],
                 )
 
         self.assertEqual(saved_path, plot_dir / "figure_screening_curve.png")
@@ -393,7 +394,7 @@ class PlotTests(unittest.TestCase):
         )
         absolute_frame = mock_render_regret.call_args_list[0].args[0]
         fraction_frame = mock_render_regret.call_args_list[1].args[0]
-        self.assertEqual(absolute_frame["dataset"].tolist(), ["bio_mass", "bio_mass", "khlohc", "khlohc"])
+        self.assertEqual(absolute_frame["dataset"].tolist(), ["bio_mass", "khlohc"])
         self.assertEqual(fraction_frame["dataset"].tolist(), ["khlohc", "khlohc"])
         self.assertEqual(
             mock_two_by_two.call_args.kwargs["top_left_path"].name,
@@ -401,7 +402,7 @@ class PlotTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_selected_vs_oracle.call_args_list[0].kwargs["include_x"],
-            [4, 8],
+            [4],
         )
         self.assertFalse(mock_selected_vs_oracle.call_args_list[0].kwargs["show_title"])
         self.assertFalse(mock_selected_vs_oracle.call_args_list[0].kwargs["show_legend"])

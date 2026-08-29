@@ -2917,6 +2917,7 @@ def _build_screening_curve_regret_frame(
     *,
     mode: str,
     excluded_datasets: set[str],
+    absolute_include_x: list[int] | tuple[int, ...] | None = None,
 ) -> pd.DataFrame:
     from oasis.experiment.splits import resolve_configured_sweep_sizes
 
@@ -2929,7 +2930,11 @@ def _build_screening_curve_regret_frame(
         summary_df.insert(0, "dataset_label", entry["dataset_label"])
         summary_df.insert(0, "dataset", dataset_tag)
         if mode == "absolute":
-            include_x = list(entry["sweep_sizes"])
+            include_x = (
+                list(absolute_include_x)
+                if absolute_include_x is not None
+                else list(entry["sweep_sizes"])
+            )
         elif mode == "fraction":
             if not entry["sweep_fractions"]:
                 continue
@@ -2983,6 +2988,7 @@ def compose_screening_curve_figure(
     suffix: str = "anomalyaware_on",
     output_name: str = "figure_screening_curve.png",
     exclude_panel_d_datasets: list[str] | tuple[str, ...] = ("bio_mass",),
+    absolute_include_x: list[int] | tuple[int, ...] | None = None,
 ) -> Path | None:
     from oasis.figure import two_by_two_figure
     from oasis.experiment.policy_diagnostic import summarize_fixed_method_baseline_frame
@@ -2999,9 +3005,14 @@ def compose_screening_curve_figure(
     cache_signature = policy_artifact["cache_signature"]
     learning_curve_signature = cache_signature.get("learning_curve", {})
     dataset_size = int(metadata["dataset_size"])
-    absolute_include_x = [
+    artifact_absolute_include_x = [
         int(value) for value in learning_curve_signature.get("sweep_sizes", [])
     ]
+    resolved_absolute_include_x = (
+        [int(value) for value in absolute_include_x]
+        if absolute_include_x is not None
+        else artifact_absolute_include_x
+    )
     configured_fractions = tuple(
         float(value)
         for value in learning_curve_signature.get("sweep_fractions", [])
@@ -3034,7 +3045,7 @@ def compose_screening_curve_figure(
             policy_artifact["summary_df"],
             fixed_method_summary_df=fixed_method_summary_df,
             output_path=tmp_path / "panel_a_absolute.png",
-            include_x=absolute_include_x,
+            include_x=resolved_absolute_include_x,
             show_title=False,
             show_legend=False,
         )
@@ -3056,6 +3067,7 @@ def compose_screening_curve_figure(
                 dataset_entries,
                 mode="absolute",
                 excluded_datasets=set(),
+                absolute_include_x=resolved_absolute_include_x,
             ),
             output_path=tmp_path / "panel_c_absolute.png",
             dataset_order=dataset_order,
