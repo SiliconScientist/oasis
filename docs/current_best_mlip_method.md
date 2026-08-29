@@ -89,6 +89,12 @@ at every point in this run. This comparison is specific to the saved
 OC20-OCxHx experiment and should not be interpreted as a universal ordering of
 the methods.
 
+In the all-datasets dominant-oracle analysis, current-best-MLIP is dominant
+only at train size 12. Its lone marker is not visually distinguishable in the
+current plot because it uses Matplotlib's default blue, which closely matches
+the configured Ridge color. Thus, the figure appears to show that it is never
+dominant even though the underlying data contains that one dominant point.
+
 The high-data behavior illustrates the baseline's limited adaptability. For
 training sizes of 946 or more, it selected the same MLIP in all 270 repeated
 splits and its mean RMSE remained in a narrow `0.631-0.644 eV` range. Thus,
