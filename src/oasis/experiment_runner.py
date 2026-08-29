@@ -2990,6 +2990,28 @@ def compose_accuracy_curve_figure(
                 "weighted_linear_df": None,
             }
         )
+    panel_a_results = learning_curve_results.from_mapping(
+        {
+            **panel_a_results.to_mapping(),
+            "gnn_direct_df": None,
+            "gnn_direct_selection_df": None,
+            "gnn_direct_uq_df": None,
+            "moe_df": None,
+            "moe_selection_df": None,
+            "moe_uq_df": None,
+        }
+    )
+    panel_b_results = learning_curve_results.from_mapping(
+        {
+            **learning_curve_results.to_mapping(),
+            "gnn_direct_df": None,
+            "gnn_direct_selection_df": None,
+            "gnn_direct_uq_df": None,
+            "moe_df": None,
+            "moe_selection_df": None,
+            "moe_uq_df": None,
+        }
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -3002,10 +3024,10 @@ def compose_accuracy_curve_figure(
             include_x=absolute_include_x,
             zero_shot_rmse=zero_shot_rmse,
             show_legend=False,
-            show_std_bands=False,
+            show_std_bands=True,
         )
         panel_b_path = learning_curve_plot(
-            results=learning_curve_results,
+            results=panel_b_results,
             output_path=tmp_path / "panel_b.png",
             title="",
             min_x=min_x,
@@ -3014,7 +3036,8 @@ def compose_accuracy_curve_figure(
             zero_shot_rmse=zero_shot_rmse,
             show_legend=True,
             legend_outside_right=True,
-            show_std_bands=False,
+            show_std_bands=True,
+            x_tick_fontsize=10,
         )
         panel_c_path = oracle_learning_curve_plot(
             pd.DataFrame(absolute_oracle_rows),

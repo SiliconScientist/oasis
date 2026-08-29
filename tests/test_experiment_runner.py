@@ -4088,11 +4088,18 @@ class ExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(saved_path, tmp_path / "accuracy_curve.png")
         self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["results"].weighted_linear_df)
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["results"].gnn_direct_df)
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[0].kwargs["results"].moe_df)
         self.assertEqual(mock_learning_curve_plot.call_args_list[0].kwargs["title"], "")
         self.assertFalse(mock_learning_curve_plot.call_args_list[0].kwargs["show_legend"])
+        self.assertTrue(mock_learning_curve_plot.call_args_list[0].kwargs["show_std_bands"])
         self.assertEqual(mock_learning_curve_plot.call_args_list[0].kwargs["zero_shot_rmse"], 0.42)
         self.assertEqual(mock_learning_curve_plot.call_args_list[1].kwargs["title"], "")
         self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_legend"])
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[1].kwargs["results"].gnn_direct_df)
+        self.assertIsNone(mock_learning_curve_plot.call_args_list[1].kwargs["results"].moe_df)
+        self.assertTrue(mock_learning_curve_plot.call_args_list[1].kwargs["show_std_bands"])
+        self.assertEqual(mock_learning_curve_plot.call_args_list[1].kwargs["x_tick_fontsize"], 10)
         self.assertEqual(mock_learning_curve_plot.call_args_list[1].kwargs["zero_shot_rmse"], 0.42)
         self.assertTrue(
             mock_learning_curve_plot.call_args_list[1].kwargs["legend_outside_right"]

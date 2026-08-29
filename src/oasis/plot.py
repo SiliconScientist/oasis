@@ -1328,6 +1328,7 @@ def learning_curve_plot(
     show_legend: bool = True,
     legend_outside_right: bool = False,
     show_std_bands: bool = True,
+    x_tick_fontsize: int | None = None,
 ) -> Path:
     results = LearningCurveResults.from_mapping(
         {
@@ -1620,6 +1621,8 @@ def learning_curve_plot(
         ax.set_title(title, fontsize=fontsize)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_tick_fontsize())
+    if x_tick_fontsize is not None:
+        ax.tick_params(axis="x", labelsize=x_tick_fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         if legend_outside_right:
