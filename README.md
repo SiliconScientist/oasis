@@ -33,7 +33,7 @@ PYTHONPATH=src python -m unittest
 ## Entrypoints
 
 Oasis owns experiment workflows. MLIP ingestion/prediction now lives in
-[Moirai](https://github.com/SiliconScientist/Moirai).
+[Moira](https://github.com/SiliconScientist/Moirai).
 
 Experiment execution is config-driven:
 
@@ -45,7 +45,7 @@ run_experiment_from_config(["experiment.toml"])
 
 If you already have a parsed config object, call `run_experiment(cfg)` instead.
 
-For MLIP ingestion/prediction, use Moirai. The old in-repo MLIP module path
+For MLIP ingestion/prediction, use Moira. The old in-repo MLIP module path
 remains documented here only as a temporary compatibility surface:
 
 ```bash
@@ -95,7 +95,7 @@ Validated-reference files are JSON lists like:
 
 MLIP ingestion/prediction repo:
 
-- `Moirai`: https://github.com/SiliconScientist/Moirai
+- `Moira`: https://github.com/SiliconScientist/Moirai
 
 Oasis remains experiment-first.
 
