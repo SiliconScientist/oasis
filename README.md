@@ -1,19 +1,19 @@
 # Oasis
 
-Oasis studies how a small set of quantum-mechanical reference calculations can
-improve predictions of adsorption energy: how strongly an atom or molecule
-binds to a surface, a useful quantity when comparing candidate catalysts.
+How can limited quantum-mechanical reference data help evaluate and improve AI
+predictions for catalysis? Oasis explores this question through adsorption
+energy—how strongly an atom or molecule binds to a surface, a useful quantity
+for comparing candidate catalysts.
 
-Density functional theory (DFT) provides reference energies, but its computational
-cost limits how many structures can be evaluated. Machine-learned interatomic
-potentials (MLIPs) predict atomic energies and forces from models trained on
-reference calculations. They can make screening more affordable, but their
-accuracy can vary across chemical systems.
+Density functional theory (DFT) supplies reference energies, but its computational
+cost limits coverage. Machine-learned interatomic potentials (MLIPs) predict
+atomic energies and forces from models trained on reference calculations,
+making screening more affordable while accuracy varies across chemical systems.
 
 Oasis compares ways to combine or correct MLIP predictions using sparse DFT
-data. Its experiments help assess how prediction error changes as more reference
-data become available, and how to select methods under limited data budgets. It provides evaluation workflows, not a guarantee that a
-particular model will improve on every dataset.
+data. It measures how prediction error changes with reference-data availability
+and evaluates method selection under limited budgets; improvements depend on
+the method and dataset.
 
 ![Screening workflow: filter anomalous MLIP predictions, retain samples with at least two valid predictions, compare ensemble methods on labeled holdouts, and apply the selected method to the unlabeled pool.](docs/figures/screening_workflow.png)
 
@@ -66,37 +66,22 @@ For the Python API, configuration details, and test commands, see
 
 ## Documentation
 
-The [documentation index](docs/README.md) is the starting point for technical
-reference material. Former README sections are linked below with their original
-anchors retained.
+- [Quickstart](#quickstart) and [Running experiments](docs/getting_started.md):
+  installation, input preparation, and Python/CLI usage.
+
+<a id="learning-curve-result-artifacts"></a>
+<a id="uncertainty-metrics"></a>
+<a id="oh-bma-comparison-workflow"></a>
+
+- [Technical guides](docs/README.md): the full index for experiment configuration,
+  results, uncertainty, filtering, and timing.
 
 <a id="entrypoints"></a>
 <a id="related-repo"></a>
-
-- [Running experiments](docs/getting_started.md): setup, Python/CLI entrypoints,
-  tests, and legacy MLIP commands.
-
-<a id="learning-curve-result-artifacts"></a>
-
-- [Learning curves and result artifacts](docs/learning_curves.md): sweeps,
-  model configuration, caching, and plot interpretation.
-
-<a id="uncertainty-metrics"></a>
-
-- [Uncertainty and calibration](docs/uncertainty.md): metrics and scientific caveats.
-
-<a id="oh-bma-comparison-workflow"></a>
-
-- [Anomaly-filtering comparisons](docs/anomaly_filtering.md): OH-BMA presets.
-
 <a id="graph-artifact-contract"></a>
-
-- [Graph artifacts](docs/graph_artifacts.md): alignment, storage, and errors.
-
 <a id="learned-sweep-contract"></a>
 <a id="split-feasibility-policy"></a>
 
-- [Evaluation protocols](docs/evaluation_protocol.md): held-out splits, batching,
-  and feasible training budgets.
-- [Comparative caching](docs/comparative_learning_cache_model.md) and
-  [timing protocol](docs/time_accuracy_protocol.md): reuse rules and cost definitions.
+- Developer references: [tests](docs/getting_started.md#tests),
+  [evaluation contracts](docs/evaluation_protocol.md), and
+  [cache internals](docs/comparative_learning_cache_model.md).
