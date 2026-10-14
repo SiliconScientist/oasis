@@ -12,16 +12,17 @@ accuracy can vary across chemical systems.
 
 Oasis compares ways to combine or correct MLIP predictions using sparse DFT
 data. Its experiments help assess how prediction error changes as more reference
-data become available, and how to select methods and rank candidates under
-limited data budgets. It provides evaluation workflows, not a guarantee that a
+data become available, and how to select methods under limited data budgets. It provides evaluation workflows, not a guarantee that a
 particular model will improve on every dataset.
+
+![Screening workflow: filter anomalous MLIP predictions, retain samples with at least two valid predictions, compare ensemble methods on labeled holdouts, and apply the selected method to the unlabeled pool.](docs/figures/screening_workflow.png)
 
 ## Capabilities
 
 - Compare unfitted baselines, regression corrections, ensembles, and graph-based
   learned models through learning curves.
-- Evaluate screening policies and rank candidates near a target binding energy,
-  with or without validated reference energies.
+- Evaluate screening policies for selecting ensemble methods with limited
+  reference data.
 - Examine predictive spread, optional uncertainty calibration, and the tradeoff
   between computation time and prediction error.
 - Reuse compatible result bundles, extend sweeps incrementally, and regenerate
@@ -74,8 +75,6 @@ anchors retained.
 
 - [Running experiments](docs/getting_started.md): setup, Python/CLI entrypoints,
   tests, and legacy MLIP commands.
-- [Candidate ranking](docs/candidate_ranking.md): predictor selection and
-  validated-reference inputs.
 
 <a id="learning-curve-result-artifacts"></a>
 
