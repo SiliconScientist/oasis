@@ -19,8 +19,8 @@ particular model will improve on every dataset.
 
 ## Capabilities
 
-- Compare unfitted baselines, regression corrections, ensembles, and graph-based
-  learned models through learning curves.
+- Compare unfitted baselines, regression corrections, and ensembles through
+  learning curves.
 - Evaluate screening policies for selecting ensemble methods with limited
   reference data.
 - Examine predictive spread, optional uncertainty calibration, and the tradeoff
