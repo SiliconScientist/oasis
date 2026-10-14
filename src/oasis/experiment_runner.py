@@ -3110,6 +3110,12 @@ def compose_sharpness_curve_figure(
         include_x=include_x,
         span_variant=fraction_variant,
     )
+    absolute_oracle_rows = [
+        row for row in absolute_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
     fraction_oracle_legend_rows = list(fraction_oracle_rows)
     # Sharpness-curve panel d excludes Bio-Mass because its low-data span dominates
     # the log-scale fraction panel and obscures the cross-dataset comparison.
@@ -3150,6 +3156,7 @@ def compose_sharpness_curve_figure(
             legend_outside_right=True,
             show_xlabel=True,
             zero_shot_value=zero_shot_uq["sharpness"],
+            x_tick_fontsize=10,
         )
         panel_c_path = all_datasets_uq_oracle_plot(
             pd.DataFrame(absolute_oracle_rows),
@@ -3233,6 +3240,12 @@ def compose_miscalibration_area_curve_figure(
         include_x=include_x,
         span_variant=fraction_variant,
     )
+    absolute_oracle_rows = [
+        row for row in absolute_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
     fraction_oracle_legend_rows = list(fraction_oracle_rows)
     fraction_oracle_rows = [
         row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
@@ -3271,6 +3284,7 @@ def compose_miscalibration_area_curve_figure(
             legend_outside_right=True,
             show_xlabel=True,
             zero_shot_value=zero_shot_uq["miscalibration_area"],
+            x_tick_fontsize=10,
         )
         panel_c_path = all_datasets_uq_oracle_plot(
             pd.DataFrame(absolute_oracle_rows),
@@ -3354,6 +3368,12 @@ def compose_dispersion_curve_figure(
         include_x=include_x,
         span_variant=fraction_variant,
     )
+    absolute_oracle_rows = [
+        row for row in absolute_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
+    fraction_oracle_rows = [
+        row for row in fraction_oracle_rows if row.get("dataset") != "rodrigo"
+    ]
     fraction_oracle_legend_rows = list(fraction_oracle_rows)
     fraction_oracle_rows = [
         row for row in fraction_oracle_rows if row.get("dataset") != "bio_mass"
@@ -3392,6 +3412,7 @@ def compose_dispersion_curve_figure(
             legend_outside_right=True,
             show_xlabel=True,
             zero_shot_value=zero_shot_uq["dispersion"],
+            x_tick_fontsize=10,
         )
         panel_c_path = all_datasets_uq_oracle_plot(
             pd.DataFrame(absolute_oracle_rows),

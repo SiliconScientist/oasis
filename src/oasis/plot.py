@@ -402,6 +402,7 @@ def _plot_uq_metric_curve(
     legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
+    x_tick_fontsize: int | None = None,
     title_prefix: str,
     ylabel: str,
 ) -> Path:
@@ -418,6 +419,7 @@ def _plot_uq_metric_curve(
         legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
+        x_tick_fontsize=x_tick_fontsize,
         title_prefix=title_prefix,
         ylabel=ylabel,
     )
@@ -444,6 +446,7 @@ def _draw_uq_metric_curve(
     legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
+    x_tick_fontsize: int | None = None,
     title_prefix: str,
     ylabel: str,
 ) -> None:
@@ -506,6 +509,8 @@ def _draw_uq_metric_curve(
     ax.set_title(f"{title_prefix} vs {title_axis_label}", fontsize=fontsize)
     _set_integer_x_ticks(ax)
     ax.tick_params(axis="both", labelsize=_tick_fontsize())
+    if x_tick_fontsize is not None:
+        ax.tick_params(axis="x", labelsize=x_tick_fontsize)
     ax.grid(True, linestyle="--", alpha=0.3)
     if show_legend:
         if legend_outside_right:
@@ -1655,6 +1660,7 @@ def miscalibration_area_plot(
     legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
+    x_tick_fontsize: int | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -1668,6 +1674,7 @@ def miscalibration_area_plot(
         legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
+        x_tick_fontsize=x_tick_fontsize,
         title_prefix="Miscalibration area",
         ylabel="Miscalibration area",
     )
@@ -1684,6 +1691,7 @@ def sharpness_plot(
     legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
+    x_tick_fontsize: int | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -1697,6 +1705,7 @@ def sharpness_plot(
         legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
+        x_tick_fontsize=x_tick_fontsize,
         title_prefix="Sharpness",
         ylabel="Sharpness",
     )
@@ -1713,6 +1722,7 @@ def dispersion_plot(
     legend_outside_right: bool = False,
     show_xlabel: bool = True,
     zero_shot_value: float | None = None,
+    x_tick_fontsize: int | None = None,
 ) -> Path:
     return _plot_uq_metric_curve(
         results,
@@ -1726,6 +1736,7 @@ def dispersion_plot(
         legend_outside_right=legend_outside_right,
         show_xlabel=show_xlabel,
         zero_shot_value=zero_shot_value,
+        x_tick_fontsize=x_tick_fontsize,
         title_prefix="Dispersion",
         ylabel="Dispersion",
     )

@@ -4228,7 +4228,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Bio-Mass",
                 "n_train": 2,
                 "oracle_sharpness": 0.3,
-            }
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 2,
+                "oracle_sharpness": 0.25,
+            },
         ]
         fraction_rows = [
             {
@@ -4242,7 +4248,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Tol-KHLOHC",
                 "n_train": 100,
                 "oracle_sharpness": 0.2,
-            }
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 100,
+                "oracle_sharpness": 0.18,
+            },
         ]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4283,8 +4295,15 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(mock_sharpness_plot.call_args_list[0].kwargs["zero_shot_value"], 0.42)
         self.assertEqual(mock_sharpness_plot.call_args_list[1].kwargs["zero_shot_value"], 0.42)
         self.assertTrue(mock_sharpness_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(mock_sharpness_plot.call_args_list[1].kwargs["x_tick_fontsize"], 10)
         self.assertEqual(mock_oracle_plot.call_args_list[0].kwargs["metric_column"], "oracle_sharpness")
         self.assertEqual(mock_oracle_plot.call_args_list[1].kwargs["metric_column"], "oracle_sharpness")
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[0].args[0]["dataset"].tolist())
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist())
+        self.assertNotIn(
+            "rodrigo",
+            mock_oracle_plot.call_args_list[1].kwargs["legend_source_df"]["dataset"].tolist(),
+        )
         self.assertIsNone(mock_oracle_plot.call_args_list[0].kwargs["include_x"])
         self.assertIsNone(mock_oracle_plot.call_args_list[1].kwargs["include_x"])
         self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
@@ -4337,7 +4356,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Bio-Mass",
                 "n_train": 2,
                 "oracle_miscalibration_area": 0.3,
-            }
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 2,
+                "oracle_miscalibration_area": 0.28,
+            },
         ]
         fraction_rows = [
             {
@@ -4351,6 +4376,12 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Tol-KHLOHC",
                 "n_train": 100,
                 "oracle_miscalibration_area": 0.2,
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 100,
+                "oracle_miscalibration_area": 0.18,
             },
         ]
 
@@ -4382,6 +4413,13 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "miscal_curve.png")
         self.assertIsNone(mock_metric_plot.call_args_list[0].args[0].weighted_linear_uq_df)
         self.assertTrue(mock_metric_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(mock_metric_plot.call_args_list[1].kwargs["x_tick_fontsize"], 10)
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[0].args[0]["dataset"].tolist())
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist())
+        self.assertNotIn(
+            "rodrigo",
+            mock_oracle_plot.call_args_list[1].kwargs["legend_source_df"]["dataset"].tolist(),
+        )
         self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
         self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"])
         self.assertEqual(
@@ -4427,7 +4465,13 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Bio-Mass",
                 "n_train": 2,
                 "oracle_dispersion": 0.3,
-            }
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 2,
+                "oracle_dispersion": 0.28,
+            },
         ]
         fraction_rows = [
             {
@@ -4441,6 +4485,12 @@ class ExperimentRunnerTests(unittest.TestCase):
                 "dataset_label": "Tol-KHLOHC",
                 "n_train": 100,
                 "oracle_dispersion": 0.2,
+            },
+            {
+                "dataset": "rodrigo",
+                "dataset_label": "Org-NSA",
+                "n_train": 100,
+                "oracle_dispersion": 0.18,
             },
         ]
 
@@ -4472,6 +4522,13 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(saved_path, tmp_path / "dispersion_curve.png")
         self.assertIsNone(mock_metric_plot.call_args_list[0].args[0].weighted_linear_uq_df)
         self.assertTrue(mock_metric_plot.call_args_list[1].kwargs["legend_outside_right"])
+        self.assertEqual(mock_metric_plot.call_args_list[1].kwargs["x_tick_fontsize"], 10)
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[0].args[0]["dataset"].tolist())
+        self.assertNotIn("rodrigo", mock_oracle_plot.call_args_list[1].args[0]["dataset"].tolist())
+        self.assertNotIn(
+            "rodrigo",
+            mock_oracle_plot.call_args_list[1].kwargs["legend_source_df"]["dataset"].tolist(),
+        )
         self.assertFalse(mock_oracle_plot.call_args_list[0].kwargs["show_legend"])
         self.assertTrue(mock_oracle_plot.call_args_list[1].kwargs["legend_outside_right"])
         self.assertEqual(
