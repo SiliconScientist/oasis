@@ -33,9 +33,6 @@ provenance. Model selection uses training/validation data; outer test data stay
 held out for final evaluation. Uncertainty estimates and timing comparisons have
 specific limits, documented in the [technical guides](docs/README.md).
 
-Oasis focuses on experiments. MLIP ingestion and prediction are maintained in
-[Moira](https://github.com/SiliconScientist/Moirai).
-
 <a id="environment"></a>
 
 ## Quickstart
@@ -77,7 +74,6 @@ For the Python API, configuration details, and test commands, see
   results, uncertainty, filtering, and timing.
 
 <a id="entrypoints"></a>
-<a id="related-repo"></a>
 <a id="graph-artifact-contract"></a>
 <a id="learned-sweep-contract"></a>
 <a id="split-feasibility-policy"></a>
@@ -85,3 +81,16 @@ For the Python API, configuration details, and test commands, see
 - Developer references: [tests](docs/getting_started.md#tests),
   [evaluation contracts](docs/evaluation_protocol.md), and
   [cache internals](docs/comparative_learning_cache_model.md).
+
+<a id="related-repo"></a>
+
+## Related projects
+
+| Project | Role |
+| --- | --- |
+| [**Intergen**](https://github.com/SiliconScientist/intergen) | Generates candidate atomic structures and adsorption sites. |
+| [**Moira**](https://github.com/SiliconScientist/Moirai) | Runs MLIP predictions and extracts prediction anomalies to support prediction reliability tests and abstention decisions. |
+| **Oasis** | Evaluates and adapts predictions using limited reference data, including experiments with anomaly-aware filtering. |
+
+These projects have complementary roles but do not form an automatically
+integrated pipeline; connecting their workflows requires separate setup.
