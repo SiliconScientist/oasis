@@ -1,532 +1,103 @@
-# oasis
-Experiment workflows for refining ML interatomic potentials with sparse DFT data.
+# Oasis
 
-## Environment
+Oasis studies how a small set of quantum-mechanical reference calculations can
+improve predictions of adsorption energy: how strongly an atom or molecule
+binds to a surface, a useful quantity when comparing candidate catalysts.
 
-Install the project and test dependencies with:
+Density functional theory (DFT) provides reference energies, but its computational
+cost limits how many structures can be evaluated. Machine-learned interatomic
+potentials (MLIPs) predict atomic energies and forces from models trained on
+reference calculations. They can make screening more affordable, but their
+accuracy can vary across chemical systems.
 
-```bash
-pip install -e .[dev]
-```
+Oasis compares ways to combine or correct MLIP predictions using sparse DFT
+data. Its experiments help assess how prediction error changes as more reference
+data become available, and how to select methods and rank candidates under
+limited data budgets. It provides evaluation workflows, not a guarantee that a
+particular model will improve on every dataset.
 
-If you use `uv`, the equivalent is:
+## Capabilities
 
-```bash
-uv pip install -e ".[dev]"
-```
+- Compare unfitted baselines, regression corrections, ensembles, and graph-based
+  learned models through learning curves.
+- Evaluate screening policies and rank candidates near a target binding energy,
+  with or without validated reference energies.
+- Examine predictive spread, optional uncertainty calibration, and the tradeoff
+  between computation time and prediction error.
+- Reuse compatible result bundles, extend sweeps incrementally, and regenerate
+  plots without repeating every fit.
 
-For a reproducible environment, prefer:
+Experiments use explicit configurations, seeds, and recorded per-point
+provenance. Model selection uses training/validation data; outer test data stay
+held out for final evaluation. Uncertainty estimates and timing comparisons have
+specific limits, documented in the [technical guides](docs/README.md).
 
-```bash
-uv sync --extra dev
-```
-
-GPU setup notes, including the tested PyTorch CUDA build, are in
-[docs/gpu_setup.md](docs/gpu_setup.md).
-
-Run the test suite with:
-
-```bash
-PYTHONPATH=src python -m unittest
-```
-
-## Entrypoints
-
-Oasis owns experiment workflows. MLIP ingestion/prediction now lives in
+Oasis focuses on experiments. MLIP ingestion and prediction are maintained in
 [Moira](https://github.com/SiliconScientist/Moirai).
 
-Experiment execution is config-driven:
+<a id="environment"></a>
 
-```python
-from oasis.experiment_runner import run_experiment_from_config
+## Quickstart
 
-run_experiment_from_config(["experiment.toml"])
-```
-
-If you already have a parsed config object, call `run_experiment(cfg)` instead.
-
-For MLIP ingestion/prediction, use Moira. The old in-repo MLIP module path
-remains documented here only as a temporary compatibility surface:
+Requires Python 3.10 or later. From a checkout of this repository, install the
+project and development dependencies:
 
 ```bash
-python -m oasis.mlip submit --config path/to/mlip-config.toml
-python -m oasis.mlip make-tasks --config path/to/mlip-config.toml --run-tag dev --out slurm_output/tasks.txt
-python -m oasis.mlip run-one --config path/to/mlip-config.toml --line "mace example data/raw_data/example.json data/results/mlips/dev/example/mace.json"
+pip install -e ".[dev]"
 ```
 
-`python -m oasis` is not an experiment runner. It only forwards `mlip ...` and
-otherwise exits with guidance to use the MLIP module entrypoint.
+For an environment resolved from the committed lockfile, use `uv sync --extra dev`
+instead, then activate `.venv`. See [GPU setup](docs/gpu_setup.md) for CUDA.
 
-The `rank-candidates` command stays stable:
+Copy [experiment.example.toml](experiment.example.toml) to `my-experiment.toml`.
+Set its dataset paths, model choices, and device for your study. You must supply
+reference data and precomputed MLIP results; the template includes placeholder
+paths and optional feature artifacts. Follow [input preparation](docs/getting_started.md#prepare-a-study)
+before running:
 
 ```bash
-python -m oasis rank-candidates experiment.toml
+python -m oasis my-experiment.toml
 ```
 
-Its config is predictor-driven. Use `[candidate_ranking]` with an ordered
-`predictors = ["residual", "weighted_simplex", "ridge"]` list plus an optional
-`validated_references_path` JSON file. If no validated references are supplied,
-candidate ranking falls back automatically to the unfitted ensemble baseline.
-If validated references are supplied, Oasis infers the shot count from that
-file, writes CV diagnostic plots for the feasible predictors, and uses the
-explicitly configured `selected_predictor` for the final screening decision.
+The run produces result artifacts and plots under `data/results/` by default.
+For the Python API, configuration details, and test commands, see
+[Running experiments](docs/getting_started.md).
 
-Minimal config shape:
+## Documentation
 
-```toml
-[candidate_ranking]
-predictors = ["residual", "weighted_simplex", "ridge"]
-selected_predictor = "residual"
-target_binding_energy = -0.5
-top_k = 10
-# validated_references_path = "data/validated_references/example.json"
-```
+The [documentation index](docs/README.md) is the starting point for technical
+reference material. Former README sections are linked below with their original
+anchors retained.
 
-Validated-reference files are JSON lists like:
+<a id="entrypoints"></a>
+<a id="related-repo"></a>
 
-```json
-[
-  {"adslab_id": "adslab-000001", "adsorption_energy": -0.42},
-  {"adslab_id": "adslab-000017", "adsorption_energy": -0.58}
-]
-```
+- [Running experiments](docs/getting_started.md): setup, Python/CLI entrypoints,
+  tests, and legacy MLIP commands.
+- [Candidate ranking](docs/candidate_ranking.md): predictor selection and
+  validated-reference inputs.
 
-## Related Repo
+<a id="learning-curve-result-artifacts"></a>
 
-MLIP ingestion/prediction repo:
+- [Learning curves and result artifacts](docs/learning_curves.md): sweeps,
+  model configuration, caching, and plot interpretation.
 
-- `Moira`: https://github.com/SiliconScientist/Moirai
+<a id="uncertainty-metrics"></a>
 
-Oasis remains experiment-first.
+- [Uncertainty and calibration](docs/uncertainty.md): metrics and scientific caveats.
 
-Targeted graph/config test commands:
+<a id="oh-bma-comparison-workflow"></a>
 
-```bash
-PYTHONPATH=src python -m unittest tests.test_exp tests.test_graphs tests.test_config
-PYTHONPATH=src python -m unittest tests.test_graphs tests.test_exp
-PYTHONPATH=src python -m unittest tests.test_config
-```
+- [Anomaly-filtering comparisons](docs/anomaly_filtering.md): OH-BMA presets.
 
-## Learning-Curve Result Artifacts
+<a id="graph-artifact-contract"></a>
 
-Timing/benchmarking notes for the `feat/time-accuracy-plot` branch live in
-[docs/time_accuracy_protocol.md](docs/time_accuracy_protocol.md).
+- [Graph artifacts](docs/graph_artifacts.md): alignment, storage, and errors.
 
-Learning-curve runs can persist one bundle file per dataset so you do not need
-to retrain every model just to regenerate plots.
+<a id="learned-sweep-contract"></a>
+<a id="split-feasibility-policy"></a>
 
-In the tag-first config style, the bundle path is derived from
-`dataset_profile.tag` plus `[datasets.<tag>]`, so `experiment.toml` only needs
-the naming inputs that differ from the default tag-based convention:
-
-```toml
-[dataset_profile]
-tag = "example_oh"
-
-[datasets.example_oh]
-# Omit this when the processed basename is exactly the tag.
-# processed_basename = "example_oh"
-
-[experiment.defaults]
-reuse_results = false
-
-[experiment.learning_curve]
-[plot.curve_window]
-full_dataset_window = true
-```
-
-`full_dataset_window = true` only disables the `min_x` / `max_x` crop. It does
-not disable `include_sizes`, which selects the training sizes shown in
-absolute-size plots.
-
-If you want to keep the full sweep on disk but only plot selected fractional
-budgets, use:
-
-```toml
-[plot.curve_window]
-include_fractions = [0.1, 0.2, 0.5, 0.9]
-```
-
-These fractions are resolved against the filtered dataset size, then passed to
-the plotting layer as explicit `n_train` points.
-
-For sparse paper sweeps, you can replace the contiguous `min_train` /
-`max_train` / `step` grid with explicit points:
-
-```toml
-[experiment.defaults]
-reuse_results = false
-
-[experiment.learning_curve]
-sweep_fractions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-n_repeats = 10
-```
-
-Oasis resolves `sweep_fractions` against the active dataset size, deduplicates
-any collisions after rounding down to counts, and reuses cached rows by the
-resolved `n_train` / `n_budget` values.
-
-Model toggles now live in a flatter top-level config layout:
-
-```toml
-[models]
-use_ridge = true
-use_residual = true
-use_gnn_direct = false
-use_probe_gnn = false
-
-[models.moe]
-enabled = true
-gate_type = "gnn"
-
-[tuning.optuna]
-n_trials = 10
-sampler = "tpe"
-```
-
-`[models]` is normalized into the learning-curve model config, and
-`[tuning.optuna]` provides shared Optuna defaults for `moe`,
-`gnn_direct`, and `probe_gnn`.
-
-`gnn_direct` and `probe_gnn` can now be toggled directly in `[models]` via
-`use_gnn_direct` and `use_probe_gnn`.
-
-Shared split/cache defaults can now live in `[experiment.defaults]`. Values set
-there apply to both `[experiment.learning_curve]` and `[experiment.screening]`,
-while section-local values still win when they differ.
-
-Spread-based uncertainty can now be post-hoc recalibrated for supported
-families. Calibration is opt-in; enable it explicitly when you want scalar
-scaling:
-
-```toml
-[experiment.defaults]
-calibration_enabled = true
-calibration_method = "scalar_scale"
-calibration_fraction = 0.2
-min_cal_size = 1
-```
-
-Protocol:
-
-- Hyperparameter-free spread methods use `train/cal/test`.
-- Validation-tuned spread methods use `train/val/cal/test`.
-- The calibration fit uses only the held-out calibration subset.
-- Final RMSE and coverage are still reported only on the outer test subset.
-
-When calibration is enabled, UQ summary frames report
-`uncertainty_kind = "calibrated"`. Historical `spread_only` runs are not
-directly comparable to calibrated runs unless they are rerun under the same
-protocol.
-
-For Optuna-backed learned models (`moe`, `gnn_direct`, `probe_gnn`, and the
-SchNet gate), you can omit `training.epochs` to let Optuna tune epochs from a
-built-in candidate set. Keep `training.epochs` only when you want to pin it.
-
-Workflow:
-
-- Build results incrementally. Run one method or one `n_train` range now, then
-  add more methods or more sweep sizes to the same bundle later.
-- Fill gaps later. With `reuse_results = true`, Oasis inspects cached rows per
-  method and runs only the missing `n_train` points needed for the current
-  request.
-- Reuse cached points. Plot regeneration and later sweep runs reuse compatible
-  cached rows instead of retraining them.
-- Mixed coverage is allowed. Different methods may have different feasible
-  `n_train` ranges in the same bundle, and plotting uses whatever rows exist
-  for each method.
-- Refresh conflicts explicitly. Use `force_refresh_methods` to rerun a whole
-  method, or `force_refresh_train_sizes` to rerun only selected `n_train`
-  points for a method.
-
-When both `[experiment.learning_curve]` and `[experiment.screening]` are
-configured, Oasis also writes a derived screening-policy diagnostic based on
-shared outer train/test splits across methods. This diagnostic is separate from
-the normal learning-curve bundle and separate from screening CV bundles.
-
-Interpretation:
-
-- Screening CV RMSE is used only to select a method within each shared outer
-  training split.
-- Final regret is computed only from held-out outer-test RMSE on that same
-  split.
-- Screening CV RMSE is not compared directly to held-out oracle RMSE.
-
-Outputs written to `plot.output_dir`:
-
-- `policy_selection_diagnostic_<suffix>.json`
-- `policy_selection_diagnostic_detail_<suffix>.csv`
-- `policy_selection_diagnostic_summary_<suffix>.csv`
-- `policy_selected_vs_oracle_<suffix>.png`
-- `policy_regret_<suffix>.png`
-
-When `[experiment.learning_curve]` is configured, Oasis also writes the usual
-per-dataset learning-curve figure:
-
-- `learning_curve_<suffix>.png`
-
-When multiple datasets are configured under `[datasets]`, Oasis also writes:
-
-- `learning_curve_oracle_all_datasets_<suffix>.png`
-
-Interpretation of `learning_curve_oracle_all_datasets_<suffix>.png`:
-
-- The legend is datasets, not methods.
-- Each curve is the oracle envelope for one dataset across `n_train`.
-- At each `n_train`, the plotted RMSE is the best value among the currently
-  enabled learning-curve methods only.
-- Disabled methods are excluded from the oracle selection even if cached result
-  frames for those methods are present in the bundle.
-
-The detail table is keyed by `budget` and `repeat` and includes
-`oracle_method`, `screening_selected_method`, both held-out RMSE values,
-`regret`, `screening_cv_rmse`, and `agreement`.
-
-Example iterative workflow:
-
-```toml
-[dataset_profile]
-tag = "example_oh"
-
-[datasets.example_oh]
-# Omit this when the processed basename is exactly the tag.
-# processed_basename = "example_oh"
-
-[experiment.defaults]
-reuse_results = true
-
-[experiment.learning_curve]
-# First pass: run one method or one range.
-# enabled methods example:
-# use_ridge = true
-# use_weighted_simplex = false
-
-# Later, enable another method or widen the sweep bounds.
-# Oasis keeps the old rows and fills only the gaps.
-
-force_refresh_methods = ["moe", "probe_gnn"]
-force_refresh_train_sizes = { ridge = [20, 30] }
-```
-
-## Uncertainty Metrics
-
-Learning-curve runs can also persist uncertainty-summary companions for methods
-that emit a predictive spread. Oasis currently uses three aggregate metrics:
-
-- `miscalibration_area`: area between the empirical calibration curve and the
-  ideal curve. Lower is better.
-- `sharpness`: average predicted spread magnitude. Lower means tighter
-  predictions, though sharpness alone is not sufficient without calibration.
-- `dispersion`: coefficient of variation of the predicted spread. This measures
-  how much the spread varies across samples.
-
-Method semantics matter:
-
-- `residual`, `weighted_simplex`, and other explicitly uncertainty-aware
-  methods should be interpreted as uncertainty summaries.
-- `ridge` contributes a useful spread proxy for ranking or relative comparison,
-  but it is not a calibrated probabilistic uncertainty and should not be
-  interpreted as one.
-
-## OH-BMA Comparison Workflow
-
-For the anomaly-aware MLIP-selection branch, keep two experiment presets and
-run them against the same `OH-BMA` result set:
-
-- baseline: anomaly-aware MLIP filtering off
-- filtered: anomaly-aware MLIP filtering on
-
-Minimal config pattern:
-
-```toml
-[dataset_profile]
-tag = "mamun_oh"
-
-[datasets.mamun_oh]
-raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
-mlip_run_dirname = "OH-BMA"
-
-[experiment.learning_curve]
-reuse_results = true
-
-[experiment.learning_curve.mlip_selection]
-exclude_anomalous = false
-label_allowlist = ["normal"]
-strict_inference_anomaly = false
-minimum_quorum = 2
-```
-
-Filtered variant:
-
-```toml
-[dataset_profile]
-tag = "mamun_oh"
-
-[datasets.mamun_oh]
-raw_dataset_filename = "MamunHighT2019_oh_adsorption.json"
-mlip_run_dirname = "OH-BMA"
-
-[experiment.learning_curve]
-reuse_results = true
-
-[experiment.learning_curve.mlip_selection]
-exclude_anomalous = true
-label_allowlist = ["normal"]
-strict_inference_anomaly = false
-minimum_quorum = 2
-```
-
-Notes:
-
-- Oasis now auto-suffixes outputs and caches with `anomalyaware_on` or
-  `anomalyaware_off`, so the two runs do not overwrite each other.
-- The learning-curve bundle and aligned graph artifact are also separated by
-  that suffix.
-- If you want a stricter comparison, set
-  `strict_inference_anomaly = true` in the filtered preset to drop MLIPs based
-  on per-MLIP inference-detail flags rather than labels alone.
-- `minimum_quorum` controls how many non-anomalous MLIPs a sample must retain
-  to stay in the filtered dataset. The default is `2`.
-
-Bundle identity is dataset/filter oriented, not exact-sweep oriented. Reuse
-requires the same dataset/filter identity and seed, but the bundle may contain:
-
-- different enabled-method subsets across runs
-- different `min_train` / `max_train` / `step` ranges across runs
-- different `n_repeats` across runs
-
-Those sweep settings are still preserved as per-point provenance in the saved
-artifact so you can audit how each row was produced.
-
-## Graph Artifact Contract
-
-Configured graph-backed learning-curve runs use
-`experiment.learning_curve.graph_dataset` in `experiment.toml`.
-
-Example:
-
-```toml
-[dataset_profile]
-tag = "example_oh"
-
-[datasets.example_oh]
-# Omit this when the processed basename is exactly the tag.
-# processed_basename = "example_oh"
-
-[experiment.learning_curve.graph_dataset]
-join_key = "reaction"
-```
-
-Behavior:
-
-- This section is optional. If you omit it, Oasis rebuilds graphs in memory for
-  the current run and does not write an aligned Parquet cache.
-- `graph_dataset.path` is derived from the active dataset profile.
-- If `graph_dataset.path` exists, Oasis reuses that saved aligned artifact.
-- If it does not exist, Oasis loads atoms from `mlip.dataset`, converts them to
-  graphs, aligns them to the filtered MLIP frame, and saves the artifact to
-  `graph_dataset.path`.
-
-The saved artifact is a Parquet file containing:
-
-- the aligned MLIP wide-frame columns, including `reference_ads_eng`
-- the join-key column, typically `reaction`
-- one row per sample after filtering/alignment
-- serialized graph payload columns:
-  `graph_sample_id`, `graph_node_features`, `graph_edge_index`,
-  `graph_node_positions`, `graph_edge_features`, and `graph_graph_features`
-
-Join-key expectations:
-
-- `graph_dataset.join_key` must name a column present in the MLIP wide frame.
-- The join key must be unique per row in the filtered frame.
-- Graph sample IDs must match the filtered frame exactly after alignment.
-- Extra graph sample IDs and missing graph sample IDs are treated as errors.
-
-Failure modes:
-
-- Missing join-key column: `wide_df is missing required join column`
-- Missing target column: `wide_df is missing required target column: reference_ads_eng`
-- Duplicate frame IDs: `wide_df contains duplicate <join_key> values`
-- Missing graphs for frame rows: `missing graphs for <join_key> values`
-- Extra graphs not present in the frame: `graph_view contains extra sample_ids`
-- No MLIP feature columns: `No MLIP prediction columns found`
-- Too few rows for an experiment run: `Not enough data to evaluate (need >5 samples)`
-- Parquet graph artifact support requires `polars`
-
-## Learned Sweep Contract
-
-Learned-model families run against precomputed sweep splits rather than owning
-their own splitting logic.
-
-- Train/test families receive `TrainTestSweepRunnerInput`.
-- Validation-aware learned families receive `TrainValTestSweepRunnerInput`.
-- `split.dataset_subsets()` returns aligned `SweepDataset` views for each split,
-  including features, targets, sample IDs, graphs, and auxiliary views.
-- `split.loader_inputs(...)` separates split membership from batching and
-  collation policy.
-- `split.loaders(...)` is the adapter seam for framework-specific loader
-  creation, including graph loaders and mixed-modal learned families.
-- Model selection may use only train/val data.
-- Outer test data must remain held out until one final evaluation after
-  selection and any optional refit.
-
-Batching and split-safety guarantees:
-
-- Split subsets are materialized first. Batching happens only after the
-  train/val/test membership is fixed.
-- A batch is always derived from exactly one split-local `SweepDataset` subset.
-  No emitted batch may mix train, val, or test examples.
-- Train batching and eval batching are configured separately through
-  `TrainEvalLoaderPolicy`.
-- Train loaders may shuffle. Validation and test loaders default to no shuffle.
-- `eval_batch_size` may differ from `batch_size`, so validation/test throughput
-  can be tuned independently of training behavior.
-- The default helper path, `SweepDatasetBatchLoaderAdapter`, emits deterministic
-  split-safe batches from `SweepDataset` subsets.
-- If train shuffling is enabled, batch order may change inside the train split,
-  but train batches still contain only train examples.
-- Validation/test loaders remain stable unless a caller explicitly opts into
-  different behavior.
-- Held-out outer-test data must not be consumed during candidate ranking. It is
-  reserved for one final post-selection evaluation pass.
-
-## Split Feasibility Policy
-
-Learning-curve sweep sizes are outer training budgets.
-
-- For train/test-only families, `sweep_size` is the full training set size.
-- For validation-aware families, `sweep_size` must cover both inner training
-  and inner validation.
-- `test_idx` is always an outer holdout and is never part of `sweep_size`.
-
-Validation-aware runs size validation as:
-
-```text
-max(
-  floor(validation_fraction * sweep_size),
-  min_val_size,
-  min_tuning_val_size,
-)
-```
-
-A validation-aware sweep point is emitted only if all of these can be satisfied
-together:
-
-- caller-requested `min_train` / `max_train`
-- family-level `min_train_size`
-- `min_tuning_val_size` and `min_val_size`
-- `min_inner_train_size`
-- `min_test_size`
-
-That means some requested sweep sizes may be skipped, and some whole sweep
-regions may collapse to an empty split collection, when the budget is too small
-to leave:
-
-- enough validation samples for meaningful scoring
-- enough remaining inner-train samples after validation
-- enough outer-test samples for final evaluation
-
-This behavior is intentional. Oasis now prefers dropping infeasible
-validation-aware points over producing train/val/test splits that are too small
-to support sensible model selection.
+- [Evaluation protocols](docs/evaluation_protocol.md): held-out splits, batching,
+  and feasible training budgets.
+- [Comparative caching](docs/comparative_learning_cache_model.md) and
+  [timing protocol](docs/time_accuracy_protocol.md): reuse rules and cost definitions.

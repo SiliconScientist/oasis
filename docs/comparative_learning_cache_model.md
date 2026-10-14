@@ -1,5 +1,7 @@
 # Comparative Learning Cache Model
 
+[Documentation index](README.md) · [Project introduction](../README.md)
+
 Comparative learning now uses a staged cache model instead of treating
 `policy_selection_diagnostic.json` as the only reusable artifact.
 

@@ -1,5 +1,7 @@
 # Time-vs-Accuracy Protocol for Learning-Curve Methods
 
+[Documentation index](README.md) · [Project introduction](../README.md)
+
 This note defines the timing protocol for the
 `feat/time-accuracy-plot` branch and follow-on method-specific timing work.
 

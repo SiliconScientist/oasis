@@ -1,5 +1,7 @@
 # GPU Setup
 
+[Documentation index](README.md) · [Project introduction](../README.md)
+
 Oasis has been tested on NVIDIA A40 nodes with:
 
 - NVIDIA driver exposing CUDA `12.8`
