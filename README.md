@@ -1,5 +1,9 @@
 # Oasis
 
+This repository contains the codebase used for the study presented in
+*Data-Efficient Adaptation of Machine-Learned Interatomic Potentials for Catalysis
+without Fine-Tuning*, our manuscript currently under review.
+
 How can limited quantum-mechanical reference data help evaluate and improve AI
 predictions for catalysis? Oasis explores this question through adsorption
 energy—how strongly an atom or molecule binds to a surface, a useful quantity
