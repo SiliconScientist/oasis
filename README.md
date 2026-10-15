@@ -1,9 +1,5 @@
 # Oasis
 
-This repository contains the codebase used for the study presented in
-*Data-Efficient Adaptation of Machine-Learned Interatomic Potentials for Catalysis
-without Fine-Tuning*, our manuscript currently under review.
-
 How can limited quantum-mechanical reference data help evaluate and improve AI
 predictions for catalysis? Oasis explores this question through adsorption
 energy—how strongly an atom or molecule binds to a surface, a useful quantity
@@ -18,6 +14,10 @@ Oasis compares ways to combine or correct MLIP predictions using sparse DFT
 data. It measures how prediction error changes with reference-data availability
 and evaluates method selection under limited budgets; improvements depend on
 the method and dataset.
+
+Oasis contains the experimental framework developed for
+*Data-Efficient Adaptation of Machine-Learned Interatomic Potentials for Catalysis
+without Fine-Tuning* (Hill and Montemore, manuscript under review).
 
 ![Screening workflow: filter anomalous MLIP predictions, retain samples with at least two valid predictions, compare ensemble methods on labeled holdouts, and apply the selected method to the unlabeled pool.](docs/figures/screening_workflow.png)
 
