@@ -1,0 +1,2132 @@
+{
+  "analysis_commit": "704df03b3499b120ff0f847e4b4f30f2ecb32a18",
+  "script_sha256": "db7c578a7ea6c41cdfd13e0ab8317dcb71a10e4a3a0ecf3ce8aaf963c6b0b06a",
+  "catbench_tree": "3accda255128368b9da5a384f7b5b8b40d2b7cf6",
+  "command": [
+    "scripts/revision/round1.py",
+    "--data-root",
+    "/Users/averyhill/github/oasis/data",
+    "--output",
+    "/private/tmp/oasis-jcp-round1/revision_outputs/round1-eight-datasets"
+  ],
+  "python": "3.12.4 (v3.12.4:8e8a4baf65, Jun  6 2024, 17:33:18) [Clang 13.0.0 (clang-1300.0.29.30)]",
+  "numpy": "2.2.6",
+  "configuration": "/Users/averyhill/github/oasis/experiment.toml",
+  "thresholds": {
+    "displacement_angstrom": 1.0,
+    "reproduction_ev": 0.2,
+    "bond_change_fraction": 0.2,
+    "energy_anomaly_ev": 2.0
+  },
+  "threshold_evidence": "Pinned parser defaults, no overrides in load_wide_predictions; reconstructed stages match saved cache within 1e-10. Not proof of original relaxation software identity.",
+  "population_contract": "Intersection of complete finite ten-model rows with >=2 inference-valid predictions in each model set; independent operational coverage on the same complete-row universe.",
+  "random_sampling": "None; deterministic saved-result reanalysis.",
+  "excluded_models": [
+    "allegro-oam-l-0.1",
+    "aqcat25-ev2",
+    "grace-2l-omat-medium-ft-am"
+  ],
+  "inputs": {
+    "/Users/averyhill/github/oasis/experiment.toml": {
+      "sha256": "fcfac070c464e8b37eb945c0e47d047aeb25d7cf173aab35b04085bfcc36edda",
+      "size": 7917
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/mamun_oh_anomalyaware_on.json": {
+      "sha256": "d3debf4676b176f89c7335794b7228488202cb96b40c41ebdb4802b0e0d92ceb",
+      "size": 4444
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/7net-omni/7net-omni_result.json": {
+      "sha256": "acaef9af2fbbc43e1d6522db1e5fff40885983b66c20e503c265003d4620437e",
+      "size": 5390229
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "9b15e9d2d922993279bc6251a961b580f03e1e781ae70b83a2cdfd1b6bcde927",
+      "size": 5951792
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/alphanet/alphanet_result.json": {
+      "sha256": "05d950e026e96ada00292758edf471e09995eb870bbfbeee93e30d98997b1671",
+      "size": 5917590
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "2ce2c7e1b1486da82e673daa939461973fd5d98ef6d2d77c3c3911bd23a4f7f3",
+      "size": 5889133
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "25ccd29917e1de537c9cafec0073cd70ed1f5fd736bcb3b626d9ae05fa2ef7df",
+      "size": 5852917
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "4793013d2cb2a8325b16dcbbe8d9ed255fea32eda96b7ba375b4459d4a2acef5",
+      "size": 5871007
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "08e17caecb92297f3257fdb1d59a708017ce7171d0b91b4668600c23ae18c2ec",
+      "size": 5891949
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "ce92507ef47163838b73fe1973fe8505e78d45ae07eddae21ce25c5f886e823f",
+      "size": 5416100
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "7362681a1176e2e4b2a09cc18ee90426d97de54a05e068ff58d768df8ec6a4dd",
+      "size": 5437583
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "e33ac015b72c16317cc8dc031336e30fb80ec7489a1d0515842544c02809ea3d",
+      "size": 5437922
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/mamun_oh_anomalyaware_on_latent_off_n1168.json": {
+      "sha256": "dbba52d94a8a46bbd648ff17b71e4f742460e624926aa0d995bd64fec6c3cbff",
+      "size": 6948884
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/mamun_oh_anomalyaware_on_latent_off_n1094.json": {
+      "sha256": "f200bd66a2490e9c037bee10db0bce8d4d0781d65d4b22b92b43726a682a29a7",
+      "size": 280337
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/khlohc_anomalyaware_on.json": {
+      "sha256": "d4d248d0fe09e7fb1a887135f325a65f10feb1689bd1430a6893ab3648356930",
+      "size": 4634
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/7net-omni/7net-omni_result.json": {
+      "sha256": "d29d7045bd18944534784cefda6e7abb7d228c70600901c10dc7cbe1373e0d8c",
+      "size": 1387308
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "5e9dc60e0107e62ca248562ea761d45a030da430a55f343ca159cc9bd15d05f2",
+      "size": 1530010
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/alphanet/alphanet_result.json": {
+      "sha256": "d52f4892c5860664a69ae01b89cfcb6d601a0f799fe979fb240c8f55b7c4e438",
+      "size": 1526770
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "b156fa892a8c4c3ab3be5ef66a492ee3ed54e02eab1581dfcf7fd97122f9ec06",
+      "size": 1539888
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "f58c12dc82431cdd0ae7686dad1f6c42f3b973e47e46c6c8d42dd1778c59b6e1",
+      "size": 1513923
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "25d3924fcc421dabe3c5f8016eca0360a4f27430b9046110cf5e409e45a32d7e",
+      "size": 1517841
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "70aa4d59e911a0702d8a0c5a2d80b37f99bb6ddc550506b8f05cbefc703152e2",
+      "size": 1519231
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1_LBFGS/mace-mh-1_result.json": {
+      "sha256": "9710a7c9d875461c5602c62ea6e60d968af18eb0da1556a93e3dc8e2943b9cc1",
+      "size": 1396222
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "201cc7280b94d42a1645a6da71f275d0975ce4466241313996372cda9fcdd0ad",
+      "size": 1412144
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "06ec2c5f917fc99ff23e577ab6df32d752384370219ecdc32c4b2a98011718bc",
+      "size": 1399251
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "2a03236977689254d7752402f01064b496c42f133b4cd33876b4022c276fc1c8",
+      "size": 1419380
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/khlohc_anomalyaware_on_latent_off_n307.json": {
+      "sha256": "481b92a3b42e61160e1746b549783c21f56a629527813e24405b26558e3bee91",
+      "size": 6691071
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/khlohc_anomalyaware_on_latent_off_n302.json": {
+      "sha256": "bda22ff57772dd6b0dab8cac2ce3f0dcf2d2161b00b3a72a57128ab4486c4ad4",
+      "size": 247765
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/bio_mass_anomalyaware_on.json": {
+      "sha256": "da4ad2d75cb09ad47cff0930f029ab0d2449c9a6baed5c8bf545a64fff1ffa7f",
+      "size": 4440
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/7net-omni/7net-omni_result.json": {
+      "sha256": "0885020c71e0a09a81994d27f7da4add04c15cd6f25f1388f189daf7a44e959f",
+      "size": 165532
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "6841f35cc8465a81d8480c145c0528678d9aa7a515859036349f68b38ed52ea6",
+      "size": 167758
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/alphanet/alphanet_result.json": {
+      "sha256": "f5a27bd83804b832918fa4e4f0b4509621b54ec14b0e33cad0313f2880ecdfeb",
+      "size": 167396
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "35192dbf0ab1e4ddcb4322b27baf483441a9d945ed6b657e56eb070cf5a92129",
+      "size": 168199
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "cb4b63025c2966fda10bcac0e715e62cdaa561df6b122c5b000288d17f30a121",
+      "size": 164997
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "4b9a9a0c78caa3f71bce5393f9fcdcb5469bf307d1e64305c76abf4ba7f83b5a",
+      "size": 166681
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "03932f4d38d3135f8ec6e6116a9080510e111099583994cb5650e85a395a9a56",
+      "size": 166529
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "fddd6e80e371eb7d3c9a6733595967834ac69c55d3d21e31df363e40666fe70a",
+      "size": 166682
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "74e9245013e344b10fffab249b75faf5e409a2092a787320feed7d976b8b6361",
+      "size": 166512
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "e2a4bd8bd26803505ebea5e1d8103af426dc485c93900c451f229297f8fbae4b",
+      "size": 168068
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/bio_mass_anomalyaware_on_latent_off_n25.json": {
+      "sha256": "b3afdd1f4b036cb992a180c956ed26a2518b86f7e724b33ee2844204d33def4e",
+      "size": 647301
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/oc20_dense_ocxhx_anomalyaware_on.json": {
+      "sha256": "39cc9a843ba8067b2a7a41d12714b64c853cf872294c0fcdaaa10b92d2d4b1cf",
+      "size": 4712
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/7net-omni/7net-omni_result.json": {
+      "sha256": "8542c1b1b01b5cab8578a06b5be9b9d7e33cfe947fd818b18fa0990ab0f56675",
+      "size": 11473551
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "ccea830db5cc4fe0b6eac96893a1bc3ebf6b036869332f6dbb5e6edcfa2683d8",
+      "size": 11752347
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/alphanet/alphanet_result.json": {
+      "sha256": "c48ddaab224f5442bc4d8d1e56c72384e4feedf1d924564f1055a1fe7e0dee42",
+      "size": 11515319
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "69c04127b72fab0a40d7a50748e706b6f046c3298e0a6275ee9b3a4241649cde",
+      "size": 11315925
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "3a6b50f154baa85b7b26b4c0edfa7746fdc85aca5ebaa92f5cf0ff791d47c5eb",
+      "size": 11412899
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "3c41d0c54560f1bd11046fcd7c876a68ac2c8a2a0b5f85b84875678a6f8eb4d2",
+      "size": 11537655
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "6c1e7760ca796a3c568b3c72aec1d998d5927c19feabb8d182cbd15782be7aa2",
+      "size": 11501702
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "96dff57ffe1c73ae2fcbdf34cfcbff4fbd704bbfe21137012de309d572e5c80b",
+      "size": 11531904
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "3bf808ee7bb6e1c752e9c9aa822b2b7eedefe8581307992d45d5bfd09c145445",
+      "size": 11552637
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "49b373cb7c0ff47c09b04174b65a9a6cabe21ab7155e8bfe1591d166474608cf",
+      "size": 11615945
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_ocxhx_anomalyaware_on_latent_off_n2367.json": {
+      "sha256": "1bfe43592e0d8a0ef4d1c34c550a087ee269ff669515184393541fe8fe9d581d",
+      "size": 7019520
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/oc20_dense_nhx_anomalyaware_on.json": {
+      "sha256": "905f57d160ca70cd1ffd1ae801473fe8d4d07d3b911018a51b12bd92384ab563",
+      "size": 4492
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/7net-omni_result.json": {
+      "sha256": "5d45d601bcb9d0622fbf99aa7f13ca0ccf548ebfea416126a895d4938b09b3c3",
+      "size": 47044137
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/allegro-oam-l-0.1_result.json": {
+      "sha256": "7c9fe5fb3ee4e0c663c0b5edae44290e7f2ee2494bec61f8d70798f8f3333554",
+      "size": 47674025
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/alphanet_result.json": {
+      "sha256": "9f0deceaa0687fb48c36eefa4f6b8c81b754faf3355a8a7782e72e16f4d0779e",
+      "size": 47325223
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/aqcat25-ev2_result.json": {
+      "sha256": "432fb115ce1e8f186638687324278a416e61cf7779e8bcb8ef3dff5a5545fd59",
+      "size": 46173161
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/chgnet-r2scan_result.json": {
+      "sha256": "382926349bd8d9720cdf915a8b0c84b9da069578c2e190a9b13c458e8c88ccad",
+      "size": 46668340
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "f971572e670ed2212e871b204692c807ffc63b90626cf64c8a3e331f08a7bdb6",
+      "size": 47467954
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/mace-mh-1_result.json": {
+      "sha256": "f7786cfbdce8176bc46463590b8d0487b402c730d1400f2a4f360e88dcb1516d",
+      "size": 47133133
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/mattersim-v1-5m_result.json": {
+      "sha256": "f40b2790237f5f4d96e2507a732bc13145e60d7d9cd83291e4eaa28765383978",
+      "size": 47093952
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "f7a897444502b4c69ff6b07cb9ea42ef2e7690f244ea0735f9e82e8aaa914f7f",
+      "size": 47343221
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/uma-s-1p1_result.json": {
+      "sha256": "b0674dd7c1d0d456c8eb4b54bb5130deda4d81f01ca013b85f6c9628a90fa8fb",
+      "size": 47628144
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_nhx_anomalyaware_on_latent_off_n9744.json": {
+      "sha256": "0eed074d681152ae896482a686c9e484edf44366e896e1994ab1dcc170e3a024",
+      "size": 6974716
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_nhx_anomalyaware_on_latent_off_n2367.json": {
+      "sha256": "feb0f53cdc872fc0e974fef083af0b19058056b2fb1bb4a9673d165c06542579",
+      "size": 54497
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/game_net_anomalyaware_on.json": {
+      "sha256": "3286885d4f07ae206926ad8d4eddfb86d2b569f6ad341ce4cde17cf724a15cdd",
+      "size": 4522
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/7net-omni/7net-omni_result.json": {
+      "sha256": "86b6d3f20fb2b0a610d9ea80ed5cb3f2ab9448c68ffd3f61209227250ae9eae5",
+      "size": 5324856
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "a686a1e3e8595b897e254a19c80aaa5624aafca823b58cb470826df60816d04d",
+      "size": 5390592
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/alphanet/alphanet_result.json": {
+      "sha256": "d161bdb300a139b63eacc5ebf3d7157482f46b5fe817270aec7a7983aa666749",
+      "size": 5377342
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "2bf8d454ab5543db192f607dc3484a387bbd2519b4893a1f466dc4304f5bf7b9",
+      "size": 5318811
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "bf3c245e95e7e501ba2a9ae60688c135c506529f42a946bde1f300e2d65778e5",
+      "size": 5305063
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "4ce7e9decd51c441ce9f8dc51a5dbfaeafcdfb612f6ca90fbe29a7b4e7bb4f81",
+      "size": 5338514
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "b16e82d6ce9205ec28fcd2cb914ac1bbe492da54f99a2e6cdf3e327784851538",
+      "size": 5335009
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "4fd39b6081a7938da2ae3dd11af296c381e7e541802c2376217355b03a3c00ba",
+      "size": 5341495
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "8dc78b280e1513db51ccfef70f0e627312d3179f0d137931fc4e3a0b89b5c55c",
+      "size": 5351271
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "f0a120e52deadf28f0388a137da44fe1fca5c229c41dc7596beb06fc63fb84df",
+      "size": 5392744
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/game_net_anomalyaware_on_latent_off_n986.json": {
+      "sha256": "a2b7219b2267b69a80daf6494819d16778ab265ae0422ec657d33a6a2c29ba91",
+      "size": 6922959
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/func_group_anomalyaware_on.json": {
+      "sha256": "1b7fe9a897c98246caf3f158d18b9ff47eb4929d2d2342e79df592ae8d3a697d",
+      "size": 4573
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/7net-omni/7net-omni_result.json": {
+      "sha256": "ae1be2a9d920b4b129696171a8f99b0fe4ab1a37407e37b8478c6227f41af138",
+      "size": 12973363
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "14d9213e1b3cfa347e22e3b7953846d0d79e4d66bfaf27d4be6e4393ecbf4d75",
+      "size": 13118961
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/alphanet/alphanet_result.json": {
+      "sha256": "83a8dccd42fb83cb2cfbfa90c369348e8bf86039bbcbd904f3a5267b785169f3",
+      "size": 13121242
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "33f8867b794131b977fc4a24a04511b6f43e7321dcdc534858a29abe5f9d70d7",
+      "size": 13144495
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "2b3c6621cfc83555c30c6e2e777af3d074d10c6b154a342203b3a301d11634e9",
+      "size": 12917771
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "d21d026de33b7038f7bd120a240fac601b9d11f3b8a36f4a7c83642d817b6ff0",
+      "size": 12982232
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "3d083161eb0f6d9daa2aaaf502416b40ed28a66714ec116034fb00fcbcb6862a",
+      "size": 12961431
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "feeb41b92b36993fd55796fdbc6f2bef9860d64369068ef0ecf09de056277f3e",
+      "size": 12962490
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "7a1bf663dd9dbb1a0fdbfa5b26187bbc11adeb17ca5d4bd366292a66372ca3b1",
+      "size": 13044372
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "25df966ea32d3220374d83fa5547ef41e9f34db8bd86790a0bbdb81ebf5f049c",
+      "size": 13091309
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/func_group_anomalyaware_on_latent_off_n2598.json": {
+      "sha256": "b62ecf6bd7743c59e65cb48321117fb21794622f125562dafd654515a9297959",
+      "size": 7023954
+    },
+    "/Users/averyhill/github/oasis/data/results/zero_shot/comer_anomalyaware_on.json": {
+      "sha256": "048130eda4738ea5e37e2e0b7dba952049f91e61f25ab5fb109f423b4eb3a17c",
+      "size": 4424
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/7net-omni/7net-omni_result.json": {
+      "sha256": "c924624d55fa4f2d16538998a1cafc97299afeb438d0bae56a05a0f304af0eb3",
+      "size": 1537614
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json": {
+      "sha256": "0482154f63c0d362aa28d8bc7af4f3617469dd1551a1e116c9b2eeea5f8bd868",
+      "size": 1559050
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/alphanet/alphanet_result.json": {
+      "sha256": "4d3758b48a58efe06f4703d8629cdddf1489b8ac11ab5c3adf8d0bd975ef4545",
+      "size": 1556592
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/aqcat25-ev2/aqcat25-ev2_result.json": {
+      "sha256": "8fd18fe4f8afe10bcda82bd9d6b4ea3dcd13bfba35dc600e5d926155c618d14a",
+      "size": 1515991
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/chgnet-r2scan/chgnet-r2scan_result.json": {
+      "sha256": "eb06ba0a6601a30d0e7a0b0d45ef0a0ce9385c43b31911701bbdbb8d7be6a50b",
+      "size": 1531323
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json": {
+      "sha256": "3ca4f0593410c67028d24a2b966725b77d63979e70fdda99d02b076753fe1942",
+      "size": 1537523
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/mace-mh-1/mace-mh-1_result.json": {
+      "sha256": "849813767bb07778dee9663420a5d3cfff084910964910644c61198d2f129cfb",
+      "size": 1542619
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/mattersim-v1-5m/mattersim-v1-5m_result.json": {
+      "sha256": "7a19ee25e3abe90aaf397e882dd4e386fcbfd3e1ef300e711f32edbd6be79779",
+      "size": 1544513
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json": {
+      "sha256": "b7e866eb67893ac4dfec49ef5d986733284ec0244bdb16954924e575938c45eb",
+      "size": 1550649
+    },
+    "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/uma-s-1p1/uma-s-1p1_result.json": {
+      "sha256": "8aa97e9a32ed4d8b43de764c792a65a6f3741e0d95573d86606b9d36b73a4f0a",
+      "size": 1553749
+    },
+    "/Users/averyhill/github/oasis/data/results/learning_curve/comer_anomalyaware_on_latent_off_n323.json": {
+      "sha256": "7c9da4764cf07a904e92a2576865073eb2602288845fa0e8826469ec8b0f9afc",
+      "size": 6700543
+    }
+  },
+  "datasets": [
+    {
+      "dataset": "mamun_oh",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 1235,
+      "n_retained": 1168,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/mamun_oh_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/mamun_oh_anomalyaware_on_latent_off_n1168.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/mamun_oh_anomalyaware_on_latent_off_n1094.json",
+          "metadata": {
+            "dataset_tag": "mamun_oh",
+            "dataset_size": 1094,
+            "mlip_feature_names": [
+              "7net-omni",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/mamun_oh_anomalyaware_on_latent_off_n1168.json",
+          "metadata": {
+            "dataset_tag": "mamun_oh",
+            "dataset_size": 1168,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OH-BMA/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 1235
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "khlohc",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 308,
+      "n_retained": 307,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/khlohc_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/khlohc_anomalyaware_on_latent_off_n307.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/khlohc_anomalyaware_on_latent_off_n302.json",
+          "metadata": {
+            "dataset_tag": "khlohc",
+            "dataset_size": 302,
+            "mlip_feature_names": [
+              "7net-omni",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/khlohc_anomalyaware_on_latent_off_n307.json",
+          "metadata": {
+            "dataset_tag": "khlohc",
+            "dataset_size": 307,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [
+        {
+          "model": "mace-mh-1",
+          "candidates": [
+            {
+              "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1/mace-mh-1_result.json",
+              "rmse": 1.6497883728304317
+            },
+            {
+              "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1_LBFGS/mace-mh-1_result.json",
+              "rmse": 1.6273677589468578
+            }
+          ],
+          "selected": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1/mace-mh-1_result.json",
+          "reason": "Unique exact single-model cache match; all ensemble stages independently checked below"
+        }
+      ],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Tol-KHLOHC/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 308
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "bio_mass",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 32,
+      "n_retained": 25,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/bio_mass_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/bio_mass_anomalyaware_on_latent_off_n25.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/bio_mass_anomalyaware_on_latent_off_n25.json",
+          "metadata": {
+            "dataset_tag": "bio_mass",
+            "dataset_size": 25,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Bio-Mass/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 32
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "oc20_dense_ocxhx",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 2390,
+      "n_retained": 2367,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/oc20_dense_ocxhx_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_ocxhx_anomalyaware_on_latent_off_n2367.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_ocxhx_anomalyaware_on_latent_off_n2367.json",
+          "metadata": {
+            "dataset_tag": "oc20_dense_ocxhx",
+            "dataset_size": 2367,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-OCxHx/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2390
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "oc20_dense_nhx",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 9941,
+      "n_retained": 9744,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/oc20_dense_nhx_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_nhx_anomalyaware_on_latent_off_n9744.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_nhx_anomalyaware_on_latent_off_n2367.json",
+          "metadata": {
+            "dataset_tag": "oc20_dense_ocxhx",
+            "dataset_size": 2367,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/oc20_dense_nhx_anomalyaware_on_latent_off_n9744.json",
+          "metadata": {
+            "dataset_tag": "oc20_dense_nhx",
+            "dataset_size": 9744,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/OC20-Dense-NHx/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 9941
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "game_net",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 987,
+      "n_retained": 986,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/game_net_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/game_net_anomalyaware_on_latent_off_n986.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/game_net_anomalyaware_on_latent_off_n986.json",
+          "metadata": {
+            "dataset_tag": "game_net",
+            "dataset_size": 986,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Game-Net/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 987
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "func_group",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 2651,
+      "n_retained": 2598,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/func_group_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/func_group_anomalyaware_on_latent_off_n2598.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/func_group_anomalyaware_on_latent_off_n2598.json",
+          "metadata": {
+            "dataset_tag": "func_group",
+            "dataset_size": 2598,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Func-Group/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 2651
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    },
+    {
+      "dataset": "comer",
+      "models": [
+        "7net-omni",
+        "allegro-oam-l-0.1",
+        "alphanet",
+        "aqcat25-ev2",
+        "chgnet-r2scan",
+        "grace-2l-omat-medium-ft-am",
+        "mace-mh-1",
+        "mattersim-v1-5m",
+        "orb-v3-conservative-inf-omat",
+        "uma-s-1p1"
+      ],
+      "n_full": 325,
+      "n_retained": 323,
+      "source_cache": "/Users/averyhill/github/oasis/data/results/zero_shot/comer_anomalyaware_on.json",
+      "learning_curve": "/Users/averyhill/github/oasis/data/results/learning_curve/comer_anomalyaware_on_latent_off_n323.json",
+      "alternative_metadata": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/results/learning_curve/comer_anomalyaware_on_latent_off_n323.json",
+          "metadata": {
+            "dataset_tag": "comer",
+            "dataset_size": 323,
+            "mlip_feature_names": [
+              "7net-omni",
+              "allegro-oam-l-0.1",
+              "alphanet",
+              "aqcat25-ev2",
+              "chgnet-r2scan",
+              "grace-2l-omat-medium-ft-am",
+              "mace-mh-1",
+              "mattersim-v1-5m",
+              "orb-v3-conservative-inf-omat",
+              "uma-s-1p1"
+            ]
+          }
+        }
+      ],
+      "duplicate_resolutions": [],
+      "raw_results": [
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/7net-omni/7net-omni_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/allegro-oam-l-0.1/allegro-oam-l-0.1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/alphanet/alphanet_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/aqcat25-ev2/aqcat25-ev2_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/chgnet-r2scan/chgnet-r2scan_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/grace-2l-omat-medium-ft-am/grace-2l-omat-medium-ft-am_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/mace-mh-1/mace-mh-1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/mattersim-v1-5m/mattersim-v1-5m_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/orb-v3-conservative-inf-omat/orb-v3-conservative-inf-omat_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        },
+        {
+          "path": "/Users/averyhill/github/oasis/data/mlips/backup_copy/Comer/uma-s-1p1/uma-s-1p1_result.json",
+          "settings": {
+            "optimizer": "FIRE",
+            "f_crit_relax": 0.05,
+            "n_crit_relax": 999,
+            "rate": 0.5,
+            "damping": 1.0,
+            "save_step": 50,
+            "chemical_bond_cutoff": 6.0
+          },
+          "repeat_counts": {
+            "3": 325
+          },
+          "mtime_matches_signature": true
+        }
+      ]
+    }
+  ],
+  "outputs": {
+    "descriptive_errors.csv": "7e04f17138f15712be11b568e9dfb2f58a06d90d4e82b9744cc0f4d6eea3c825",
+    "offscale.csv": "47853fc3ec00f8311c12412ea7112764b68976b82541522798fafd9aec484485",
+    "samples.csv": "c5db93ba1e6007666058a82819f43f5c451f11f5da033cf84434a8456f30d8a9",
+    "ablation.csv": "d5f3d5b1ad4f355063690c28f7cd1b7bf14724c322658fdb48d831a796800d69",
+    "filtering.csv": "73db71c2b17e67de43057df6a910c151f0ba6373bab7ab2b7fe4640eb18a4a0a",
+    "anomaly_counts.csv": "51fff7f2fe5c64b10eddb567484d0c9f9c6c6871109a230f4e11db692e0a653c"
+  }
+}

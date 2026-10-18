@@ -1,0 +1,9 @@
+dataset,model,rmse
+mamun_oh,allegro-oam-l-0.1,3.015879059720107
+khlohc,uma-s-1p1,3.985385403491117
+bio_mass,allegro-oam-l-0.1,3.198662205252882
+bio_mass,aqcat25-ev2,4.913495043933693
+bio_mass,orb-v3-conservative-inf-omat,6.143294105600782
+bio_mass,uma-s-1p1,4.940642424707583
+oc20_dense_ocxhx,allegro-oam-l-0.1,4.138849565160433
+comer,aqcat25-ev2,3.354179548904037
