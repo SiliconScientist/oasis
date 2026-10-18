@@ -1,0 +1,78 @@
+# Active local plot styling for paper figures.
+# Intentionally omit [mlips] so Figure 1 keeps the current default MLIP colors.
+
+tick_fontsize = 14
+
+[mlips]
+
+[mlips.7net-omni]
+alias = "SevenNet"
+color = "#418ABF"
+
+[mlips."allegro-oam-l-0.1"]
+alias = "Allegro"
+color = "#FF9331"
+
+[mlips.alphanet]
+alias = "AlphaNet"
+color = "#4BAD4C"
+
+[mlips.aqcat25-ev2]
+alias = "AQCat25"
+color = "#DC4648"
+
+[mlips.chgnet-r2scan]
+alias = "CHGNet"
+color = "#A47FC7"
+
+[mlips.grace-2l-omat-medium-ft-am]
+alias = "GRACE"
+color = "#9D6E66"
+
+[mlips.mace-mh-1]
+alias = "MACE"
+color = "#E88CCA"
+
+[mlips.mattersim-v1-5m]
+alias = "MatterSim"
+color = "#929292"
+
+[mlips.orb-v3-conservative-inf-omat]
+alias = "ORB-V3"
+color = "#C5C643"
+
+[mlips.uma-s-1p1]
+alias = "UMA"
+color = "#3BC6D7"
+
+[datasets]
+mamun_oh = "#0F766E"
+khlohc = "#B45309"
+rodrigo = "#7C3AED"
+bio_mass = "#16A34A"
+oc20_dense_ocxhx = "#BE185D"
+oc20_dense_nhx = "#2563EB"
+game_net = "#C026D3"
+func_group = "#CA8A04"
+comer = "#F97316"
+
+[methods]
+ridge = "#1D4ED8"
+kernel_ridge = "#0EA5E9"
+lasso = "#F59E0B"
+elastic = "#8B5CF6"
+residual = "#059669"
+weighted_linear = "#6B7280"
+weighted_simplex = "#D97706"
+current_best_mlip = "#E377C2"
+
+[policies]
+oracle_best_held_out_rmse = "#F4C430"
+screening_selected_held_out_rmse = "#D7263D"
+min_screening_rmse = "#D7263D"
+min_screening_miscalibration_area = "#2563EB"
+combined_screening_rmse_miscalibration = "#7C3AED"
+
+[baselines]
+Residual = "#059669"
+"Kernel ridge" = "#0EA5E9"
