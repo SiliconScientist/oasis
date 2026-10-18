@@ -29,6 +29,11 @@ class PopulationTests(unittest.TestCase):
     def test_missing_and_nonfinite_inputs_rejected(self):
         with self.assertRaises(ValueError):
             m.compare(np.array([[1.,float('nan'),3.]]),np.ones(1),np.ones((1,3),bool),[0,1])
+    def test_exact_models_required(self):
+        with self.assertRaises(ValueError):m.validate_models(list(m.EXPECTED_MODELS[:-1])+[m.EXPECTED_MODELS[0]])
+        m.validate_models(list(m.EXPECTED_MODELS))
+    def test_output_cannot_enter_input_tree(self):
+        with self.assertRaises(ValueError):m.validate_output(Path('/tmp/data'),Path('/tmp/data/new'))
     def test_zero_denominator_is_explicit(self):
         self.assertIsNone(m.percent_reduction(0.,1.))
 

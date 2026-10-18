@@ -18,7 +18,16 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 TAGS = ('mamun_oh','khlohc','bio_mass','oc20_dense_ocxhx','oc20_dense_nhx','game_net','func_group','comer')
 EXCLUDE = ('allegro-oam-l-0.1','aqcat25-ev2','grace-2l-omat-medium-ft-am')
+EXPECTED_MODELS = ('7net-omni','allegro-oam-l-0.1','alphanet','aqcat25-ev2','chgnet-r2scan','grace-2l-omat-medium-ft-am','mace-mh-1','mattersim-v1-5m','orb-v3-conservative-inf-omat','uma-s-1p1')
 FLAGS = ('slab_conv','ads_conv','slab_move','ads_move','slab_seed','ads_seed','ads_eng_seed','adsorbate_migration')
+
+def validate_models(models):
+    if len(models)!=10 or set(models)!=set(EXPECTED_MODELS):
+        raise ValueError('expected exactly ten unique manuscript models')
+
+def validate_output(data_root,output):
+    if output.resolve().is_relative_to(data_root.resolve()):
+        raise ValueError('output must be outside historical data tree')
 
 def sha(path):
     h=hashlib.sha256()
@@ -55,10 +64,15 @@ def compare(x,y,valid,reduced):
     return out
 
 def write_csv(path, rows):
+    if not rows:
+        path.write_text("dataset,model,rmse\n");return
     with path.open('w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
 
-def run(data_root,output):
+def run(data_root,output,tags=TAGS):
+    validate_output(data_root,output)
+    if subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True).strip():
+        raise ValueError('commit all tracked source changes before analysis')
     sys.path[:0]=[str(ROOT/'src'),str(ROOT/'vendor/catbench')]
     from oasis.mlip.result_parsing import detect_anomalies_from_result_dict
     from catbench.utils.analysis_utils import get_calculator_keys
@@ -67,7 +81,7 @@ def run(data_root,output):
     def record(p):
         p=p.resolve();inputs[str(p)]=dict(sha256=sha(p),size=p.stat().st_size);return p
     config=record(data_root.parent/'experiment.toml')
-    for tag in TAGS:
+    for tag in tags:
         cache=record(data_root/'results/zero_shot'/f'{tag}_anomalyaware_on.json')
         cached=json.loads(cache.read_text());sig=cached['cache_signature']
         if sig['minimum_quorum']!=2 or not sig['exclude_anomalous_mlips']:raise ValueError('unexpected cache policy')
@@ -79,7 +93,7 @@ def run(data_root,output):
             parsed.append(detect_anomalies_from_result_dict(raw))
             repeats=Counter(len(get_calculator_keys(v)) for k,v in raw.items() if k!='calculation_settings')
             run_info.append(dict(path=str(path),settings=raw.get('calculation_settings'),repeat_counts=dict(repeats),mtime_matches_signature=path.stat().st_mtime_ns==item['mtime_ns']))
-        if len(models)!=10 or not set(EXCLUDE)<=set(models):raise ValueError('unexpected model identities')
+        validate_models(models)
         ids=sorted(set.intersection(*(set(d) for d in parsed)))
         ids=[i for i in ids if all(d[i]['dft_ads_eng'] is not None and d[i]['mlip_ads_eng_median'] is not None for d in parsed)]
         y=np.array([parsed[0][i]['dft_ads_eng'] for i in ids],float)
@@ -128,4 +142,4 @@ def run(data_root,output):
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--data-root',type=Path,required=True);p.add_argument('--output',type=Path,required=True);args=p.parse_args();run(args.data_root.resolve(),args.output.resolve())
+    p=argparse.ArgumentParser();p.add_argument('--data-root',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--datasets',nargs='+',choices=TAGS,default=TAGS);args=p.parse_args();run(args.data_root.resolve(),args.output.resolve(),args.datasets)
