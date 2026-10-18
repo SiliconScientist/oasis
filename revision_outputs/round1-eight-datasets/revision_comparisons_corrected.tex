@@ -1,0 +1,76 @@
+\section{Filtering and Model-Exclusion Comparisons}
+\label{sec:si-revision-comparisons}
+
+The full population contains structures with reference energies and predictions from all ten MLIPs. The retained population additionally requires at least two inference-valid predictions. Filtering improvements compare the all-model mean and the mean of valid predictions on identical retained structure IDs. Missing predictions are distinct from predictions marked anomalous. Negative improvement denotes an increase in RMSE. All RMSE values are in eV.
+
+% Alt text: Counts and RMSEs for eight datasets; filtering improves matched-population RMSE for seven datasets and worsens it for Tol-BMA.
+\begin{table}[ht]
+\centering
+\caption{Full and retained population counts, excluded fractions, and matched-population filtering comparisons. $R_0$ is the full-population unfiltered RMSE; $R_1$ and $R_2$ are the retained-population unfiltered and filtered RMSEs. Improvement is $100(R_1-R_2)/R_1$.}
+\label{tab:si-matched-filtering}
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Dataset & Full & Retained & Excluded (\%) & $R_0$ & $R_1$ & $R_2$ & Gain (\%) \\
+\midrule
+OH-BMA & 1235 & 1168 & 5.43 & 0.981 & 0.912 & 0.622 & 31.84 \\
+Tol-BMA & 308 & 307 & 0.32 & 1.802 & 1.802 & 1.921 & -6.60 \\
+Biomass & 32 & 25 & 21.88 & 2.248 & 2.327 & 1.718 & 26.16 \\
+OC20-OCxHx & 2390 & 2367 & 0.96 & 1.285 & 1.285 & 1.223 & 4.81 \\
+OC20-NHx & 9941 & 9744 & 1.98 & 0.483 & 0.475 & 0.464 & 2.29 \\
+Game-Net-Ox & 987 & 986 & 0.10 & 0.498 & 0.499 & 0.484 & 2.93 \\
+Func-Group & 2651 & 2598 & 2.00 & 0.698 & 0.687 & 0.674 & 1.87 \\
+Hydrox-Ox & 325 & 323 & 0.62 & 0.814 & 0.754 & 0.620 & 17.77 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For the model-exclusion comparison, the reduced set omits Allegro, AQCat25, and GRACE. Both sets are evaluated on the intersection of structures satisfying the minimum-two-valid-model criterion for each set. The seven-model retained population is a subset of the ten-model retained population. The comparison therefore holds the evaluated structures fixed; the separate retained counts describe operational coverage. No fitting or use of test labels for bias correction is involved.
+
+% Alt text: Paired zero-shot errors for eight datasets: excluding three models improves filtered RMSE in five datasets and worsens it in three.
+\begin{table}[ht]
+\centering
+\caption{Ten-model versus seven-model zero-shot ensemble RMSE on the common population. $N_{10}$ and $N_7$ are operational retained counts; $N_7$ is also the common-population size. U and F denote unfiltered and inference-filtered means.}
+\label{tab:si-model-exclusion}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+Dataset & $N_{10}$ & $N_7$ & 10 U & 10 F & 7 U & 7 F \\
+\midrule
+OH-BMA & 1168 & 1144 & 0.892 & 0.623 & 0.851 & 0.568 \\
+Tol-BMA & 307 & 303 & 1.805 & 1.917 & 1.868 & 2.059 \\
+Biomass & 25 & 24 & 2.085 & 1.703 & 1.886 & 1.459 \\
+OC20-OCxHx & 2367 & 2317 & 1.277 & 1.223 & 0.907 & 0.638 \\
+OC20-NHx & 9744 & 9663 & 0.471 & 0.461 & 0.350 & 0.328 \\
+Game-Net-Ox & 986 & 985 & 0.499 & 0.484 & 0.610 & 0.583 \\
+Func-Group & 2598 & 2557 & 0.676 & 0.668 & 0.713 & 0.732 \\
+Hydrox-Ox & 323 & 319 & 0.751 & 0.617 & 0.570 & 0.380 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:si-anomaly-counts} counts each model's inference-invalid predictions once per structure on the full complete-prediction population. The archived analysis tables additionally distinguish the eight overlapping detail flags from the mutually exclusive category labels assigned by detector precedence. DFT-dependent energy-anomaly labels do not enter the inference-validity mask.
+
+% Alt text: Counts of inference-invalid predictions for ten MLIPs across all eight benchmark datasets.
+\begin{table}[ht]
+\centering
+\caption{Inference-invalid predictions by MLIP and dataset. Columns 1--8 follow the dataset order in Table~\ref{tab:si-matched-filtering}; denominators are the full-population counts in that table.}
+\label{tab:si-anomaly-counts}
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+MLIP & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+SevenNet & 165 & 10 & 12 & 315 & 597 & 14 & 263 & 19 \\
+Allegro & 201 & 20 & 13 & 605 & 630 & 36 & 309 & 22 \\
+AlphaNet & 237 & 28 & 27 & 267 & 2247 & 698 & 1041 & 186 \\
+AQCat25 & 83 & 0 & 9 & 4 & 176 & 82 & 342 & 10 \\
+CHGNet & 271 & 162 & 10 & 945 & 2786 & 37 & 329 & 35 \\
+GRACE & 184 & 9 & 15 & 339 & 776 & 82 & 281 & 34 \\
+MACE & 149 & 22 & 15 & 351 & 636 & 17 & 296 & 21 \\
+MatterSim & 239 & 284 & 17 & 680 & 1350 & 97 & 503 & 47 \\
+ORB-V3 & 263 & 10 & 14 & 374 & 690 & 43 & 278 & 17 \\
+UMA & 200 & 4 & 8 & 235 & 618 & 14 & 350 & 20 \\
+\bottomrule
+\end{tabular}
+\end{table}

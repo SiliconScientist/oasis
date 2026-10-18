@@ -1,0 +1,13 @@
+{
+  "code_commit": "c8345fcbf8cb8f045b88a4f2bb30a5bc2c8debac",
+  "command": "python3 scripts/revision/export_tables.py revision_outputs/round1-eight-datasets revision_outputs/round1-eight-datasets/revision_comparisons_corrected.tex",
+  "inputs": {
+    "descriptive_errors.csv": "7e04f17138f15712be11b568e9dfb2f58a06d90d4e82b9744cc0f4d6eea3c825",
+    "offscale.csv": "47853fc3ec00f8311c12412ea7112764b68976b82541522798fafd9aec484485",
+    "samples.csv": "c5db93ba1e6007666058a82819f43f5c451f11f5da033cf84434a8456f30d8a9",
+    "ablation.csv": "d5f3d5b1ad4f355063690c28f7cd1b7bf14724c322658fdb48d831a796800d69",
+    "filtering.csv": "73db71c2b17e67de43057df6a910c151f0ba6373bab7ab2b7fe4640eb18a4a0a",
+    "anomaly_counts.csv": "51fff7f2fe5c64b10eddb567484d0c9f9c6c6871109a230f4e11db692e0a653c"
+  },
+  "output_sha256": "57a6f98365bda624977c77dca3ac601375da563d963079cac313813a8355c892"
+}
