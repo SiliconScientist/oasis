@@ -1,0 +1,1978 @@
+{
+  "aa.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        0.07732735935500001,
+        3.862561074145
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "RMSE (eV)",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        0.0,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0
+      ],
+      "lines": [
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "64afe89e510f46222150811c459cad7681e7017f7c3c64f9ae14aec672875077",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "8f1e54d170afac159e136704e5516d792e854976de981393fa6da8a4551c52a7",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "5f5a44a872f0f557971a990ec5bd580034906619603039aa9b8eaa1764926d48",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "c8ad5fdff899af411acd7ade011971ba1f52af1cc64312291012af7f263e4916",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net mean"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "5cb18c4346782a98337e3225cdc1e4a17ae5a176241e5a4ba9c6761ad2b5d5c6",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual mean"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "4cf3d368e2b7aac286f99a773bc59a4df1e462b803fa08a8739728e101bec163",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex mean"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "2d362685252ebbdb33fc0e44a3ae2771ab6b944d91ab526242959e7cd485e3f8",
+          "color": "#E377C2",
+          "marker": "h",
+          "style": "-",
+          "label": "Current best MLIP mean"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "a0d7900da0c47d68e25aac6897bb1cde8709036bd507505ac2d1a6c7dc266e35"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "10dcd506dc7e939d9090b0394a48a309dacc3c11a8ec238de4a756f7fb481988"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "1ffbc6667290909e04bbe0cb4cb8dd7049b59527ff90454da9e0a2ef9cc64796"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "7713f7a90f5c054d282c49e82902e0632d1c7b80903a86e6bbf24ed3d31774b3"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "3954a6b192493dfdf744e568c55f15bd411eb25b9e3b954331cec4267b0eec23"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "36258bf1d2b3bae360095abc0c49f384f8c195c0467a7515e45112fa06cb975e"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        },
+        {
+          "paths": [
+            "d03d477b51f926bee42b1197dcaeb33f5b2473989db22c4d06cb87bfdd4c5f1f"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248",
+          "edge": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248"
+        },
+        {
+          "paths": [
+            "89ef4edd312562a5a07b790fceecd3e6819d83654d92bf2f02fe736939b3d116"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": []
+    }
+  ],
+  "ab.png": [
+    {
+      "xlim": [
+        29.25,
+        1981.75
+      ],
+      "ylim": [
+        0.08088344897537028,
+        1.2773912829172245
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "RMSE (eV)",
+      "xticks": [
+        0.0,
+        200.0,
+        400.0,
+        600.0,
+        800.0,
+        1000.0,
+        1200.0,
+        1400.0,
+        1600.0,
+        1800.0,
+        2000.0
+      ],
+      "yticks": [
+        0.0,
+        0.2,
+        0.4,
+        0.6000000000000001,
+        0.8,
+        1.0,
+        1.2000000000000002,
+        1.4000000000000001
+      ],
+      "lines": [
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "b17d3b35f419115d5ddcd9cdfa517cd33bcbd55eaac0c71e9a1b56553c85bca1",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "b12d09f05570e5b6f74c017b0db86540d8c38e54b2d334a2de22554893bcb596",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "810f80394abb4e6e1292fc290a43ea0eba650972867d01307d0fd05c59069948",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "723c0d552f9a24cdd0642895b23c294b5bce77baca5d375725538b5a7e04af58",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "9bfec7265476924ab63bdfd112f688e0f8ad9563d1e8a68df3a82153c06df1c2",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "fd5e849ff704481e4060201a36bd943e7329492a4b2cdf28bad2447cc86bca87",
+          "color": "#6B7280",
+          "marker": "*",
+          "style": "-",
+          "label": "Weighted linear mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "8db63fe716c6ae516b082b0f0e7ed9f57e50c5929b1ff5e97bd3ca83d7aa5f85",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex mean"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "c506f3442c1f5543181f9a57efbce0cf5a03de98ce89fe3554e203e454e4e166",
+          "color": "#E377C2",
+          "marker": "h",
+          "style": "-",
+          "label": "Current best MLIP mean"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "068da2709f363231fede68109e470d343c103f8279d079d3e7ede895d88b5610"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "b1b7976d0b070d279aeac2652de4ea8311aa01aee72d48c0b984ac652660a631"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "e634292379f3dbf6196623aeb3f8b734ca3eea7fa123876ef265ffd5d3edece5"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "32c1d4f0a8838d1ec6799844fb8b5c0d07fe3f79ca0dc7ef3cad7587c7239b15"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "707a1b4655613df6751d856b42e8a128f9fc8642ffb7cf3fd3ad4d775ccf6ebd"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "62e312c42a6638ce2001b08c987ba6c56809fc73b1cc3571c78199a69496cac3"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "ff0d65013e5542f4d43e4f97e8e7f0c853b7ad30a3662b67f1f3088eb7a5811e",
+          "edge": "ff0d65013e5542f4d43e4f97e8e7f0c853b7ad30a3662b67f1f3088eb7a5811e"
+        },
+        {
+          "paths": [
+            "77e94e515aa44790ebda66eb3e8331cf6cb726a77f68310dc3f08761803e1a00"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        },
+        {
+          "paths": [
+            "008af7cb84637afe2e2ccd6d2cbade4b73bb4f0e0e0e8453811b6dd732c4664e"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248",
+          "edge": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248"
+        },
+        {
+          "paths": [
+            "65167063670269695632c05d6b95bbe1722b7fa7a04b3c968fef724455963474"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": [
+        "Ridge mean",
+        "Kernel Ridge mean",
+        "Lasso mean",
+        "Elastic Net mean",
+        "Residual mean",
+        "Weighted linear mean",
+        "Weighted simplex mean",
+        "Current best MLIP mean",
+        "Zero-shot mean-MLIP RMSE"
+      ]
+    }
+  ],
+  "ac.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        0.18815796717500002,
+        1.164432647325
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Oracle RMSE (eV)",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        0.0,
+        0.2,
+        0.4,
+        0.6000000000000001,
+        0.8,
+        1.0,
+        1.2000000000000002
+      ],
+      "lines": [
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "e65aa95b80a542151601a4669747fa2bc042a78d3793a62ae46a5461ee89167e",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "34adefc55aa4dd198940de4870221b02b7d633a5b90a458ec58930fecc644daa",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "7aaea4b26c4e0eb1d8d45505225f38dabf6a9fadd2bc85bf845c8d69b32d8fc3",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "472817a8269a19af68d03db8a62045c15d7de1b465afc5b6c3865a89accfc016",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "073b3fe661f6ab43e85b2eee83e9870763b480fc25bdebd578555339d7017012",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "3f97b44773fef105160bebfb44781f2200775bd7d9f8c170c5096c787bf00084",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "103e25888015f4b2a7a5cda30e89f62276d797fc111dcfb48ef4668fa417249c",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "8ecd64bca98420b90c87df218f17c5f53f131d90e360a89b0031b1caec8da5c5",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "699f3960faa3acae078b2ca7310c4ad5b0754a5a789ec823ffb9ab2a6ca499fe",
+          "face": "96a866b804f2d82b13fa71c22d942e1c051619599eca13bee8ef67409799fbb9",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [
+        {
+          "text": "\u2191",
+          "position": [
+            0.0,
+            1.164432647325
+          ],
+          "color": "#B45309"
+        }
+      ],
+      "legend_labels": []
+    }
+  ],
+  "ad.png": [
+    {
+      "xlim": [
+        10.972485510850476,
+        10656.199990820236
+      ],
+      "ylim": [
+        0.12324971946999999,
+        0.37732032593
+      ],
+      "xscale": "log",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Oracle RMSE (eV)",
+      "xticks": [
+        1.0,
+        10.0,
+        100.0,
+        1000.0,
+        10000.0,
+        100000.0,
+        1000000.0
+      ],
+      "yticks": [
+        0.1,
+        0.15000000000000002,
+        0.2,
+        0.25,
+        0.30000000000000004,
+        0.35,
+        0.4
+      ],
+      "lines": [
+        {
+          "x": "8251d10688130505cd369be14520bd1773c38500a1116d9cb8c34030e30ba62b",
+          "y": "19351ddfc256de88f8a3c4f26ce6edc78ad5bd7327f7bc1c35384a4703158e6f",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "86b6ea2665da6ae71c9a010a0a36b9210208f8623b7e0e5832efb126246d8c05",
+          "y": "5d320ce0e2074a1c0de72be3c88ab475598cd9fdfef0a306d4cd7d6a6ed3b076",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "y": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "584ef77399452bd0b91a2f226f22edfe758016d633d40344e9ec37941aff9489",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "8c5beb9c4a6d975820598176d7167f05fe7a27d841b9905d3e0309e6d3741838",
+          "y": "a752ff120feded454849d168f2f7143ec686db7945d3da1957950248e50f71f5",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "acec971899e6405c41e4b22cce1b1d09b719ef708397c62fd20bb3c36701e399",
+          "y": "6475e1085e0b7a44597e29118368cf29bef0c3efbd714309156a808ce03b19b5",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "2192105e3ea6fcdae1b15d662cc722bd24d4af2636bd0d99f97962011e319a92",
+          "y": "a3883e43c0388873f34e0b950c86bf930b2bb606617231024ccfcba04c462706",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "ca023ea724a46d14b2d53c1fa0ceaeee16f543a5bdd62770eadd57f0f97a8f0f",
+          "y": "7aa738445cc4af89f9bb201d7b03217357212fc758cb4c00d05141b2fc6d6cea",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        }
+      ],
+      "collections": [],
+      "annotations": [
+        {
+          "text": "\u2191",
+          "position": [
+            -0.015,
+            0.37732032593
+          ],
+          "color": "#B45309"
+        },
+        {
+          "text": "\u2191",
+          "position": [
+            0.015,
+            0.37732032593
+          ],
+          "color": "#0F766E"
+        }
+      ],
+      "legend_labels": [
+        "OH-BMA",
+        "Tol-BMA",
+        "Biomass",
+        "OC20-OCxHx",
+        "OC20-NHx",
+        "Game-Net-Ox",
+        "Func-Group",
+        "Hydrox-Ox",
+        "Zero-shot"
+      ]
+    }
+  ],
+  "ua.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        -0.0022614906399999954,
+        0.45901870324
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Miscalibration area",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        -0.1,
+        0.0,
+        0.1,
+        0.20000000000000004,
+        0.30000000000000004,
+        0.4,
+        0.5000000000000001
+      ],
+      "lines": [
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "bc7957beb159ca8c2bc6036280c7beabdf85df7d0179c0db022f3e714fd41dd9",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "20b93b692f57aad5ffd14b2466b797017c06ba6017912691a2ca665b8b3e9a36",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "814c9c400cd1a3302259cf57673727685cc640a6cf113f22bce8a268e2551351",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "ff3c048c64774bee6b9cba67d2e5e4fa551752b6602007529f475911b36b3ec0",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "130d3f2e7938729f40ffe0adadab294523afc8052ad631087714a16c970ed052",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "84efe7b5fcd4326c92fec21c293dbcd4875a0f359ab9312c6b6bf3233cbc58d8",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "91b8ad717ea3533851a0691e7ce34f446bf663618bb11047611f8acc149989be",
+          "color": "#E377C2",
+          "marker": "h",
+          "style": "-",
+          "label": "Current best MLIP"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "e844b1f81a26e6fcff8cf968077d6f58074c7c3f21870d5ed3a0d21d0cafd9d0"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "276dcaca1c96bc80830db32dad92b5c47f3141861b7015e01d0d31e60742ac57"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "de6927e94c825f2705ad42c97e1ebf9fe2f7307bf3dc97f75c4b4fac07327f17"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "d35c88f332c180b283c37905f713d8c720a6bb9d108beeacdf9b22ba60d20c0a"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "e41806a2e506714a955738c706b468b56e6f522ad5c90ffe066aef7bdb304b22"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "0384ee928d821b52237e9beff009c6bcb2e2756ffb2fa9330d6c1a433db77571"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        },
+        {
+          "paths": [
+            "22d5550e969397abfd01ff820cc86ec1e254cb6026c272bdfd58002ac63c5d7a"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248",
+          "edge": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248"
+        },
+        {
+          "paths": [
+            "1601cecd3e19a6cc3d1169f1d8f8c0001804e8214d6445d5973ad51674ab0212"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": []
+    }
+  ],
+  "ub.png": [
+    {
+      "xlim": [
+        29.25,
+        1981.75
+      ],
+      "ylim": [
+        0.009614061924999993,
+        0.35733299117500006
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Miscalibration area",
+      "xticks": [
+        0.0,
+        200.0,
+        400.0,
+        600.0,
+        800.0,
+        1000.0,
+        1200.0,
+        1400.0,
+        1600.0,
+        1800.0,
+        2000.0
+      ],
+      "yticks": [
+        0.0,
+        0.05,
+        0.1,
+        0.15000000000000002,
+        0.2,
+        0.25,
+        0.30000000000000004,
+        0.35000000000000003,
+        0.4
+      ],
+      "lines": [
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "2bf455717e5c2cb999c0532050e80fcea637bb2a1ae77a78d9972df65d17ca07",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "c20ee34436227eb2007beddc9b817bc6e2468d9e60f2ab18c8b25340e09137d5",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "bad3fa24ef0e08951eeff80696f8d24cbf5ef6ab61660433faef7038f5baa1e9",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "92f3edff78e7b79d2565ad23c6dc5c6d5ca713d378c49eb94c80f21b78419cab",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "e0214f270cc9413e295c6ba4b3670552d3b19d7229a6d41fca44e82c5b44b2fb",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "e66833a97f240a70b356af6a8cda08994ebc5a9dce4d1b14ab5480251decc50b",
+          "color": "#6B7280",
+          "marker": "*",
+          "style": "-",
+          "label": "Weighted linear"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "e8bcadc04ffeb75cb7e5d2469648693453920eecff12fc8e91b510fa97df13e0",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "286cdec0c964a4ff8c8b0fa466256a897dd01c8ac56a5f6f482ce630d881736f",
+          "color": "#E377C2",
+          "marker": "h",
+          "style": "-",
+          "label": "Current best MLIP"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "30b7dec38746cdf21676ba04891f8d3acac579c18871745a95cf50a6d321de44"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "42607f46224c10e2b9f0e8ae23bbb0aca68776df0c7703ca0cdfc449c39f2c99"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "a60631ce792eaf372ddcbeb2ccbdb899f7d83568bfa16782c8a323eae4798260"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "4b66886b9d356e9a7c28b001bbd50e9ea67fac219efd1cb35f18b9af70d3d6b4"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "4b3def9bb9a6afafa54b061621aa1f18fe4c0f494c1b2e6ef22f9a13ab480854"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "cfccd4438f97021f8b4eab6495fbec330520131f78dd0ac84aa0c137476abc23"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "ff0d65013e5542f4d43e4f97e8e7f0c853b7ad30a3662b67f1f3088eb7a5811e",
+          "edge": "ff0d65013e5542f4d43e4f97e8e7f0c853b7ad30a3662b67f1f3088eb7a5811e"
+        },
+        {
+          "paths": [
+            "c889ebc5d8d82fd92bf10127942b6ebad8710366cebe8ba8c4edffbebc1fb1b9"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        },
+        {
+          "paths": [
+            "e076d89f8dda2cbc36164851943384b012f545a0cba4da62a224ae5f75bc960d"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248",
+          "edge": "eafde46473d5b0ee8c109fa8bf4b716c6d51a73c3463f3ec39dd0a4155765248"
+        },
+        {
+          "paths": [
+            "e87f32de0406c2fdfe77c6de706983e4a994d3de94e1cc3bc96dc00fc184c732"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": [
+        "Ridge",
+        "Kernel Ridge",
+        "Lasso",
+        "Elastic Net",
+        "Residual",
+        "Weighted linear",
+        "Weighted simplex",
+        "Current best MLIP",
+        "Zero-shot mean-MLIP baseline"
+      ]
+    }
+  ],
+  "uc.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        0.014945024405,
+        0.38932636129500003
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Oracle miscalibration area",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        0.0,
+        0.1,
+        0.2,
+        0.30000000000000004,
+        0.4
+      ],
+      "lines": [
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "5a2dc995cab479cd1c0e7ce25b34f100b7b6b141b18eff6f1daa2780ff60e55e",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "9b53d9c1d3df8135f14ef4dd56b4d28ffd836ca37138104a3826aa4e9cad529b",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "b0e607c1c6a7a4142757802d675cdf2df8db285621c22ff5f896b2220260592d",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "195a5840a56c53bc2e637472930cb03065353d207c5cba4341d2450a827d2e83",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "206bf01809c648106639a6c0ed634ae97dc6871581bff6a7c6a7622ba348c662",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "07f7f74290864961a2f488117995c7af8b2287562477555bc15532bcf1eb8124",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "60ae46af5e7ae6057a609a9c663d75ee53ddf353f3dab73c537782484a32f66f",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "aa7e371f1687cd3fcbff7c4812228839121b31abfbf327187b890ebb7691540a",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "a7cc819b492b0028f53358abf5f8b93748d3491874c3bdbc370ec820c14c4db7",
+          "face": "96a866b804f2d82b13fa71c22d942e1c051619599eca13bee8ef67409799fbb9",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "5cd34af21ed4db569267847ace7bc4546f70e07ffdfa89b6eef4f21dd545693d",
+          "face": "009ac853fd554118de4bd789f4493927bb6d6cd66aa2ad35f90e73571145123f",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "720f3421857b615e7b592bf70436e9bcc6dcdc5bf5fd10ac5e3bf6cf1f47ff9a",
+          "face": "9e9928c6e835f9eb8e0b629ed4c3aa4fdc2017af55dc5bdc7b70b1b480382770",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "2aaa3d74822418bc890ddae588bf8b1c1d1bffe9aca208519208f8b8f6d49263",
+          "face": "65a7f6eb840d81c7de230c23a73c36674afb722be4f549c2e290ce9aab5c4967",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "ca8c9ee0c1f575eef1f69a03397079ef42c61ba1b55faad2ceb766a6a49c3092",
+          "face": "363fdfa86339e5686f1f82862618d12b572624b099208b181028f448cb99c4fa",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "cf202d82a1cc8306a65b97f494aa66de92284d7a93d4e8c8362a3d1acac6c211",
+          "face": "729ae693331f3eaba61168353b0a83459a6382b9de9447825986cc73b291669a",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "552e5730db506d76d505e5ca538216df9922fb7c7609ba185c6294560fc005fb",
+          "face": "f671aa4e5c685016f5f9a6386d2814964b119be8cf4badb2f4421dc670c1bb51",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [
+        {
+          "text": "\u2191",
+          "position": [
+            0.0,
+            0.38932636129500003
+          ],
+          "color": "#B45309"
+        }
+      ],
+      "legend_labels": []
+    }
+  ],
+  "ud.png": [
+    {
+      "xlim": [
+        10.972485510850476,
+        10656.199990820236
+      ],
+      "ylim": [
+        0.014285720734999997,
+        0.39133395856500003
+      ],
+      "xscale": "log",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "Oracle miscalibration area",
+      "xticks": [
+        1.0,
+        10.0,
+        100.0,
+        1000.0,
+        10000.0,
+        100000.0,
+        1000000.0
+      ],
+      "yticks": [
+        0.0,
+        0.1,
+        0.2,
+        0.30000000000000004,
+        0.4
+      ],
+      "lines": [
+        {
+          "x": "8251d10688130505cd369be14520bd1773c38500a1116d9cb8c34030e30ba62b",
+          "y": "b5c2539fd39ab388ff51f7025dbc3d11769dc3278a9f41844a0fb49463c19fb1",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "86b6ea2665da6ae71c9a010a0a36b9210208f8623b7e0e5832efb126246d8c05",
+          "y": "2db81bbab6966d331f421e03ae0777089c91b25de68fec3814fcf77dc445b543",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "y": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "c14ece51b577b621c4819a7da33786c0b3a8bd54b82aeaeb325ea04421335a9e",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "8c5beb9c4a6d975820598176d7167f05fe7a27d841b9905d3e0309e6d3741838",
+          "y": "b0020345f32a5c186442f7433fa3f2f32df5da7ff5eff2b67cd57546e4b44a4d",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "acec971899e6405c41e4b22cce1b1d09b719ef708397c62fd20bb3c36701e399",
+          "y": "03708eac71e7831cc49dc4641b1162cc6918fb1044e9b93683f65772fa692b1c",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "2192105e3ea6fcdae1b15d662cc722bd24d4af2636bd0d99f97962011e319a92",
+          "y": "2fcc8eb03c4c722f533f636283075f97b5e62b3416685161a758dc9b710b35f8",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "ca023ea724a46d14b2d53c1fa0ceaeee16f543a5bdd62770eadd57f0f97a8f0f",
+          "y": "1f3a7ab8034768dabe868061ce9a9314a2f78a00a2d180b437266594309b4e61",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "a7cc819b492b0028f53358abf5f8b93748d3491874c3bdbc370ec820c14c4db7",
+          "face": "96a866b804f2d82b13fa71c22d942e1c051619599eca13bee8ef67409799fbb9",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "720f3421857b615e7b592bf70436e9bcc6dcdc5bf5fd10ac5e3bf6cf1f47ff9a",
+          "face": "9e9928c6e835f9eb8e0b629ed4c3aa4fdc2017af55dc5bdc7b70b1b480382770",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "2aaa3d74822418bc890ddae588bf8b1c1d1bffe9aca208519208f8b8f6d49263",
+          "face": "65a7f6eb840d81c7de230c23a73c36674afb722be4f549c2e290ce9aab5c4967",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "ca8c9ee0c1f575eef1f69a03397079ef42c61ba1b55faad2ceb766a6a49c3092",
+          "face": "363fdfa86339e5686f1f82862618d12b572624b099208b181028f448cb99c4fa",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "cf202d82a1cc8306a65b97f494aa66de92284d7a93d4e8c8362a3d1acac6c211",
+          "face": "729ae693331f3eaba61168353b0a83459a6382b9de9447825986cc73b291669a",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        },
+        {
+          "paths": [
+            "730b1fb2cd7a771dee661177f6c1cef4409e29ff7e7f1bfe28a460d66b1fe7ac"
+          ],
+          "offsets": "552e5730db506d76d505e5ca538216df9922fb7c7609ba185c6294560fc005fb",
+          "face": "f671aa4e5c685016f5f9a6386d2814964b119be8cf4badb2f4421dc670c1bb51",
+          "edge": "ae2cc60d29de85c7ed46adf5bb27e89a62bdafc75e3f8822473568055af8b86e"
+        }
+      ],
+      "annotations": [
+        {
+          "text": "\u2191",
+          "position": [
+            0.0,
+            0.39133395856500003
+          ],
+          "color": "#B45309"
+        }
+      ],
+      "legend_labels": [
+        "OH-BMA",
+        "Tol-BMA",
+        "Biomass",
+        "OC20-OCxHx",
+        "OC20-NHx",
+        "Game-Net-Ox",
+        "Func-Group",
+        "Hydrox-Ox",
+        "Zero-shot"
+      ]
+    }
+  ],
+  "a.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        0.32189742893550005,
+        2.8620222483544997
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Sample budget",
+      "ylabel": "Held-out RMSE (eV)",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        0.0,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "lines": [
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "1b754b3ecd7e47963ad22c482a3407c6691578ce92131564b68d260a28492669",
+          "color": "#F4C430",
+          "marker": "o",
+          "style": "-",
+          "label": "Oracle best held-out RMSE"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "053b5c74bbbb90dfd9487414eedd8c675ed67970681cbdd64191e1b3a0b96696",
+          "color": "#D7263D",
+          "marker": "s",
+          "style": "-",
+          "label": "min_screening_rmse held-out RMSE"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "03c398f78383e7adce5b1c90f1a80f9c12e9126243057224eb078bd507f259cf",
+          "color": "#0EA5E9",
+          "marker": "^",
+          "style": ":",
+          "label": "Kernel ridge held-out RMSE"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "c29bbade8f1e2dd6f7e9ce4dcd775c0d4f9233e8bfa77ca2ca8f041300a97555",
+          "color": "#059669",
+          "marker": "D",
+          "style": "-.",
+          "label": "Residual held-out RMSE"
+        }
+      ],
+      "collections": [],
+      "annotations": [],
+      "legend_labels": []
+    }
+  ],
+  "b.png": [
+    {
+      "xlim": [
+        29.25,
+        1981.75
+      ],
+      "ylim": [
+        0.19400783843650005,
+        0.5813411596868333
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Sample budget",
+      "ylabel": "Held-out RMSE (eV)",
+      "xticks": [
+        0.0,
+        200.0,
+        400.0,
+        600.0,
+        800.0,
+        1000.0,
+        1200.0,
+        1400.0,
+        1600.0,
+        1800.0,
+        2000.0
+      ],
+      "yticks": [
+        0.15000000000000002,
+        0.2,
+        0.25,
+        0.30000000000000004,
+        0.35000000000000003,
+        0.4,
+        0.45000000000000007,
+        0.5,
+        0.55,
+        0.6000000000000001
+      ],
+      "lines": [
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "aed018a4e2a5f740f522d33a5acc2642734d914dbcda45431f2c2c76891e28e6",
+          "color": "#F4C430",
+          "marker": "o",
+          "style": "-",
+          "label": "Oracle best"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "c70271f6101484109c991b44baf8abc5f6becce68203357113aa5592678b462b",
+          "color": "#D7263D",
+          "marker": "s",
+          "style": "-",
+          "label": "Screening-selected method"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "f3e2f4d517d91223aa810157147073e53a8521b0decdf110aa528878b2b7b3a7",
+          "color": "#0EA5E9",
+          "marker": "^",
+          "style": ":",
+          "label": "Kernel ridge regression method"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "3f63ad32e9add022d8755a247bb15e00267d9d78441686073e6ad07e52f53351",
+          "color": "#059669",
+          "marker": "D",
+          "style": "-.",
+          "label": "Mean-residual method"
+        }
+      ],
+      "collections": [],
+      "annotations": [],
+      "legend_labels": [
+        "Oracle best",
+        "Screening-selected method",
+        "Kernel ridge regression method",
+        "Mean-residual method"
+      ]
+    }
+  ],
+  "c.png": [
+    {
+      "xlim": [
+        1.1,
+        20.9
+      ],
+      "ylim": [
+        -0.008888302505,
+        0.45293596820500004
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Sample budget",
+      "ylabel": "Regret (eV)",
+      "xticks": [
+        0.0,
+        2.0,
+        4.0,
+        6.0,
+        8.0,
+        10.0,
+        12.0,
+        14.0,
+        16.0,
+        18.0,
+        20.0,
+        22.0
+      ],
+      "yticks": [
+        -0.1,
+        0.0,
+        0.1,
+        0.20000000000000004,
+        0.30000000000000004,
+        0.4,
+        0.5000000000000001
+      ],
+      "lines": [
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "8f8a845b607108e74846eca09187310a45529d087374cf8364b3ecb422b8522e",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "0e3bf319b65a4c1b5f90f12cc78a26bce9174bd0d472359201e11b7d66d10673",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "2e84287866319fcdf531c5665610819c964118e7d752cede253159a271bd840e",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "ec008bc604bfe07fa30bcbe1a4d553882005a64bc1b1c0f28ecf5f7e4bd930e7",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "e0afb6d0f34b5027988b7490f28df08403aee30da3b60b1f5f1ff54a13e0c225",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "7e9254338d4df421d825b23ec39cd69395c192276b8860e7853b7f263d3f0aae",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "e7b31964b5e8b0ba9661d27036385cd45fdbb6b7955694f39b3234544dc832c1",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "39d2e8bd208642898deb0310e228b14d28c8b020acf032291c88c68fe1972f1f",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        },
+        {
+          "x": "fc62429c3e69001d65972cdeb94fb9aa18a7d9c16bc449e1e474e7e41bb95a7d",
+          "y": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "color": "black",
+          "marker": "None",
+          "style": "--",
+          "label": "_child8"
+        }
+      ],
+      "collections": [],
+      "annotations": [],
+      "legend_labels": []
+    }
+  ],
+  "d.png": [
+    {
+      "xlim": [
+        10.972485510850476,
+        10656.199990820236
+      ],
+      "ylim": [
+        -0.012000356600000001,
+        0.2520074886
+      ],
+      "xscale": "log",
+      "yscale": "linear",
+      "xlabel": "Sample budget",
+      "ylabel": "Regret (eV)",
+      "xticks": [
+        1.0,
+        10.0,
+        100.0,
+        1000.0,
+        10000.0,
+        100000.0,
+        1000000.0
+      ],
+      "yticks": [
+        -0.05,
+        0.0,
+        0.05,
+        0.10000000000000002,
+        0.15000000000000002,
+        0.2,
+        0.25000000000000006,
+        0.30000000000000004
+      ],
+      "lines": [
+        {
+          "x": "8251d10688130505cd369be14520bd1773c38500a1116d9cb8c34030e30ba62b",
+          "y": "767a9acd812b2c2be70cf1da582448ae817fd94fca58ce48fee2d6899349fc49",
+          "color": "#0F766E",
+          "marker": "o",
+          "style": "-",
+          "label": "OH-BMA"
+        },
+        {
+          "x": "86b6ea2665da6ae71c9a010a0a36b9210208f8623b7e0e5832efb126246d8c05",
+          "y": "a8755712f8c056e0fdb85f142a67fb440c8d517eb19007a1bca65f00d5f33e3a",
+          "color": "#B45309",
+          "marker": "o",
+          "style": "-",
+          "label": "Tol-BMA"
+        },
+        {
+          "x": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "y": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "color": "#16A34A",
+          "marker": "o",
+          "style": "-",
+          "label": "Biomass"
+        },
+        {
+          "x": "88683bed59f89704eb4146252db2d2e7d74c0bf9560ae7a28bd0dba0c0f611e4",
+          "y": "4f73898be60c6007c13154c4230380d5a867e3d6aa2f77ab3bcbf9e3d8e2afae",
+          "color": "#BE185D",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-OCxHx"
+        },
+        {
+          "x": "8c5beb9c4a6d975820598176d7167f05fe7a27d841b9905d3e0309e6d3741838",
+          "y": "1cd7a4d9cbb6918489728464384ddc30f53a46515a7e83e083a092ef436a3e69",
+          "color": "#2563EB",
+          "marker": "o",
+          "style": "-",
+          "label": "OC20-NHx"
+        },
+        {
+          "x": "acec971899e6405c41e4b22cce1b1d09b719ef708397c62fd20bb3c36701e399",
+          "y": "01b76861785a7dc7dc4da78183aa2da16b118b2e6b84b6efbeb65b984a48608e",
+          "color": "#C026D3",
+          "marker": "o",
+          "style": "-",
+          "label": "Game-Net-Ox"
+        },
+        {
+          "x": "2192105e3ea6fcdae1b15d662cc722bd24d4af2636bd0d99f97962011e319a92",
+          "y": "fd31e4ef88cb9945aa56fa1e199935b090d302d2a81b3a78e3c08641f7b05757",
+          "color": "#CA8A04",
+          "marker": "o",
+          "style": "-",
+          "label": "Func-Group"
+        },
+        {
+          "x": "ca023ea724a46d14b2d53c1fa0ceaeee16f543a5bdd62770eadd57f0f97a8f0f",
+          "y": "0f36e16cf321f0acadf5369198fa3b0930eb06c503c34b1a5092166817267229",
+          "color": "#F97316",
+          "marker": "o",
+          "style": "-",
+          "label": "Hydrox-Ox"
+        },
+        {
+          "x": "fc62429c3e69001d65972cdeb94fb9aa18a7d9c16bc449e1e474e7e41bb95a7d",
+          "y": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "color": "black",
+          "marker": "None",
+          "style": "--",
+          "label": "_child8"
+        }
+      ],
+      "collections": [],
+      "annotations": [],
+      "legend_labels": [
+        "OH-BMA",
+        "Tol-BMA",
+        "Biomass",
+        "OC20-OCxHx",
+        "OC20-NHx",
+        "Game-Net-Ox",
+        "Func-Group",
+        "Hydrox-Ox"
+      ]
+    }
+  ],
+  "ca.png": [
+    {
+      "xlim": [
+        1.1,
+        20.9
+      ],
+      "ylim": [
+        -0.44028825942,
+        5.17404377862
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Sample budget",
+      "ylabel": "CV RMSE (eV)",
+      "xticks": [
+        0.0,
+        2.0,
+        4.0,
+        6.0,
+        8.0,
+        10.0,
+        12.0,
+        14.0,
+        16.0,
+        18.0,
+        20.0,
+        22.0
+      ],
+      "yticks": [
+        -1.0,
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0
+      ],
+      "lines": [
+        {
+          "x": "71fc4c9b11960459ecd464d354c19306ad0efc1c30f829fb057baf662bd4be76",
+          "y": "6238e313e437c65b56da785d67af5f383193ab665097c04b93eb708a77101008",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge mean"
+        },
+        {
+          "x": "71fc4c9b11960459ecd464d354c19306ad0efc1c30f829fb057baf662bd4be76",
+          "y": "99e1adbc7333500db19b786d8d23cc2c6c43b44f9d28a5b6b6c966cb29c4bdcc",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge mean"
+        },
+        {
+          "x": "71fc4c9b11960459ecd464d354c19306ad0efc1c30f829fb057baf662bd4be76",
+          "y": "625b8eb690b6f386a7c1056427a8896684de6b86fef956ba2a16e3213048e923",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso mean"
+        },
+        {
+          "x": "71fc4c9b11960459ecd464d354c19306ad0efc1c30f829fb057baf662bd4be76",
+          "y": "817080fa3e33c6ab1331b9cb1fc2a52cea0a2323db83548b55c8957c4b92241b",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "a626ac82ddf156e91fa1f836ce5dc1e4295873c96a7aed33030382415576fdae",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "e61a2586c8cf32e045983545e11aee343c8bfb8b32fa6474d53253ade130bf9c",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex mean"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "54889cbb8b1c66cc68c056b00c46f7a2d6e6670bf788beba453a20ea4b117d8c"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "a46fdd3c5a1890b478ce131cb2895143a5700dc1e6cb7313d24b011258e10036"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "66fdc85bd44cd34d280bdd2ec8252fe27f4f0b14b1ad8010a1e2f4ca8102ecb3"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "97fcaed60e2aac0ffac06f0f7b2bd9225d58ec57ada80c947c6eb33337cd6aa3"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "2991fa7f711c0e86bfb032ca3496038172709cd7c9b087d2ea66071c8ce7c8e1"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "5c3cc828392f202e00be96477d2b92c9cff24368fdcfe451e489c3675e08d4d1"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": []
+    }
+  ],
+  "cb.png": [
+    {
+      "xlim": [
+        0.04999999999999993,
+        20.95
+      ],
+      "ylim": [
+        0.17499637727,
+        3.85791016853
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlabel": "Train size",
+      "ylabel": "RMSE (eV)",
+      "xticks": [
+        0.0,
+        3.0,
+        6.0,
+        9.0,
+        12.0,
+        15.0,
+        18.0,
+        21.0
+      ],
+      "yticks": [
+        0.0,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0
+      ],
+      "lines": [
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "64afe89e510f46222150811c459cad7681e7017f7c3c64f9ae14aec672875077",
+          "color": "#1D4ED8",
+          "marker": "o",
+          "style": "-",
+          "label": "Ridge mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "8f1e54d170afac159e136704e5516d792e854976de981393fa6da8a4551c52a7",
+          "color": "#0EA5E9",
+          "marker": "X",
+          "style": "-",
+          "label": "Kernel Ridge mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "5f5a44a872f0f557971a990ec5bd580034906619603039aa9b8eaa1764926d48",
+          "color": "#F59E0B",
+          "marker": "s",
+          "style": "-",
+          "label": "Lasso mean"
+        },
+        {
+          "x": "beeaf07ef034f25af189267ab893a6eeee3ade966b75daf00602722380e5a2c4",
+          "y": "c8ad5fdff899af411acd7ade011971ba1f52af1cc64312291012af7f263e4916",
+          "color": "#8B5CF6",
+          "marker": "D",
+          "style": "-",
+          "label": "Elastic Net mean"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "5cb18c4346782a98337e3225cdc1e4a17ae5a176241e5a4ba9c6761ad2b5d5c6",
+          "color": "#059669",
+          "marker": "^",
+          "style": "-",
+          "label": "Residual mean"
+        },
+        {
+          "x": "c49e12fe7ea2276c34dfc3179710d02be0c49ada9a8240c7f3c73f29aa4b0a51",
+          "y": "4cf3d368e2b7aac286f99a773bc59a4df1e462b803fa08a8739728e101bec163",
+          "color": "#D97706",
+          "marker": "8",
+          "style": "-",
+          "label": "Weighted simplex mean"
+        }
+      ],
+      "collections": [
+        {
+          "paths": [
+            "a0d7900da0c47d68e25aac6897bb1cde8709036bd507505ac2d1a6c7dc266e35"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3",
+          "edge": "fc0e94786678e1007a2c1f80b837b15d8f0a7ad4b95e79854d9765510c4a15b3"
+        },
+        {
+          "paths": [
+            "10dcd506dc7e939d9090b0394a48a309dacc3c11a8ec238de4a756f7fb481988"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec",
+          "edge": "6422ff9e094853be26de5fc8bc277f4f6b4c0fbae66a4ea7845bca816b66caec"
+        },
+        {
+          "paths": [
+            "1ffbc6667290909e04bbe0cb4cb8dd7049b59527ff90454da9e0a2ef9cc64796"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80",
+          "edge": "30ad76def16b07805417f6a55c4c86e639723df7d592c6159201bf988ecedf80"
+        },
+        {
+          "paths": [
+            "7713f7a90f5c054d282c49e82902e0632d1c7b80903a86e6bbf24ed3d31774b3"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412",
+          "edge": "0b50012952b82ccdf0b8e5b5610b28f54cdb09de934e024863b2096e9e435412"
+        },
+        {
+          "paths": [
+            "3954a6b192493dfdf744e568c55f15bd411eb25b9e3b954331cec4267b0eec23"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91",
+          "edge": "25ed770297e6dc7fc52a033535e27f15504b852d91d3eafef47eccaf5d5b3b91"
+        },
+        {
+          "paths": [
+            "36258bf1d2b3bae360095abc0c49f384f8c195c0467a7515e45112fa06cb975e"
+          ],
+          "offsets": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+          "face": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc",
+          "edge": "51125565b3ea0db880d700369e2e9a71afaca244d4a63956f46e9affd24031fc"
+        }
+      ],
+      "annotations": [],
+      "legend_labels": [
+        "Ridge mean",
+        "Kernel Ridge mean",
+        "Lasso mean",
+        "Elastic Net mean",
+        "Residual mean",
+        "Weighted simplex mean"
+      ]
+    }
+  ]
+}
