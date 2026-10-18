@@ -34,6 +34,9 @@ class PopulationTests(unittest.TestCase):
         m.validate_models(list(m.EXPECTED_MODELS))
     def test_output_cannot_enter_input_tree(self):
         with self.assertRaises(ValueError):m.validate_output(Path('/tmp/data'),Path('/tmp/data/new'))
+    def test_ambiguous_duplicate_cannot_be_selected(self):
+        with self.assertRaises(ValueError):m.unique_cache_match([1.0,1.0],1.0)
+        self.assertEqual(m.unique_cache_match([1.2,1.0],1.0),1)
     def test_zero_denominator_is_explicit(self):
         self.assertIsNone(m.percent_reduction(0.,1.))
 

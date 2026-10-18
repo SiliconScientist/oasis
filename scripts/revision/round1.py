@@ -21,6 +21,11 @@ EXCLUDE = ('allegro-oam-l-0.1','aqcat25-ev2','grace-2l-omat-medium-ft-am')
 EXPECTED_MODELS = ('7net-omni','allegro-oam-l-0.1','alphanet','aqcat25-ev2','chgnet-r2scan','grace-2l-omat-medium-ft-am','mace-mh-1','mattersim-v1-5m','orb-v3-conservative-inf-omat','uma-s-1p1')
 FLAGS = ('slab_conv','ads_conv','slab_move','ads_move','slab_seed','ads_seed','ads_eng_seed','adsorbate_migration')
 
+def unique_cache_match(values,target):
+    matches=[i for i,v in enumerate(values) if np.isclose(v,target,rtol=0,atol=1e-10)]
+    if len(matches)!=1:raise ValueError('ambiguous or unmatched duplicate input; author decision required')
+    return matches[0]
+
 def validate_models(models):
     if len(models)!=10 or set(models)!=set(EXPECTED_MODELS):
         raise ValueError('expected exactly ten unique manuscript models')
@@ -93,6 +98,20 @@ def run(data_root,output,tags=TAGS):
             parsed.append(detect_anomalies_from_result_dict(raw))
             repeats=Counter(len(get_calculator_keys(v)) for k,v in raw.items() if k!='calculation_settings')
             run_info.append(dict(path=str(path),settings=raw.get('calculation_settings'),repeat_counts=dict(repeats),mtime_matches_signature=path.stat().st_mtime_ns==item['mtime_ns']))
+        duplicate_resolutions=[]
+        for name in sorted(set(models)):
+            positions=[j for j,m in enumerate(models) if m==name]
+            if len(positions)<2:continue
+            target=next(r for r in cached['stage_rows'] if r.get('mlip')==name)
+            values=[]
+            for j in positions:
+                rows=list(parsed[j].values())
+                if len(rows)!=target['n_samples']:raise ValueError('duplicate population cannot be resolved by cache')
+                values.append(error_summary(np.array([v['mlip_ads_eng_median'] for v in rows]),np.array([v['dft_ads_eng'] for v in rows]))['rmse'])
+            winner=positions[unique_cache_match(values,target['rmse'])]
+            duplicate_resolutions.append(dict(model=name,candidates=[dict(path=run_info[j]['path'],rmse=value) for j,value in zip(positions,values)],selected=run_info[winner]['path'],reason='Unique exact single-model cache match; all ensemble stages independently checked below'))
+            keep=[j for j in range(len(models)) if j not in positions or j==winner]
+            models=[models[j] for j in keep];parsed=[parsed[j] for j in keep];run_info=[run_info[j] for j in keep]
         validate_models(models)
         ids=sorted(set.intersection(*(set(d) for d in parsed)))
         ids=[i for i in ids if all(d[i]['dft_ads_eng'] is not None and d[i]['mlip_ads_eng_median'] is not None for d in parsed)]
@@ -135,7 +154,7 @@ def run(data_root,output,tags=TAGS):
         for other in sorted(bundle.parent.glob(f'{tag}_anomalyaware_on_latent_off_n*.json')):
             if 'repeat_metrics' in other.name:continue
             record(other);alternatives.append(dict(path=str(other),metadata=json.loads(other.read_text()).get('metadata')))
-        datasets.append(dict(dataset=tag,models=models,n_full=len(ids),n_retained=int(retained.sum()),source_cache=str(cache),learning_curve=str(bundle),alternative_metadata=alternatives,raw_results=run_info))
+        datasets.append(dict(dataset=tag,models=models,n_full=len(ids),n_retained=int(retained.sum()),source_cache=str(cache),learning_curve=str(bundle),alternative_metadata=alternatives,duplicate_resolutions=duplicate_resolutions,raw_results=run_info))
         print(tag,'verified cache; common ablation n=',comparison['n_common'],flush=True)
     for name,rows in [('filtering',summaries),('ablation',ablation),('anomaly_counts',anomalies),('descriptive_errors',bias),('offscale',offscale),('samples',samples)]:write_csv(output/f'{name}.csv',rows)
     manifest=dict(analysis_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),script_sha256=sha(Path(__file__)),catbench_tree=subprocess.check_output(['git','rev-parse','HEAD:vendor/catbench'],cwd=ROOT,text=True).strip(),command=sys.argv,python=sys.version,numpy=np.__version__,configuration=str(config),thresholds=dict(displacement_angstrom=1.0,reproduction_ev=0.2,bond_change_fraction=0.2,energy_anomaly_ev=2.0),threshold_evidence='Pinned parser defaults, no overrides in load_wide_predictions; reconstructed stages match saved cache within 1e-10. Not proof of original relaxation software identity.',population_contract='Intersection of complete finite ten-model rows with >=2 inference-valid predictions in each model set; independent operational coverage on the same complete-row universe.',random_sampling='None; deterministic saved-result reanalysis.',excluded_models=EXCLUDE,inputs=inputs,datasets=datasets,outputs={p.name:sha(p) for p in output.glob('*.csv')})
