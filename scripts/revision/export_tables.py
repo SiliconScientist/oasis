@@ -5,7 +5,7 @@ LABELS={'mamun_oh':'OH-BMA','khlohc':'Tol-BMA','bio_mass':'Biomass','oc20_dense_
 MODELS={'7net-omni':'SevenNet','allegro-oam-l-0.1':'Allegro','alphanet':'AlphaNet','aqcat25-ev2':'AQCat25','chgnet-r2scan':'CHGNet','grace-2l-omat-medium-ft-am':'GRACE','mace-mh-1':'MACE','mattersim-v1-5m':'MatterSim','orb-v3-conservative-inf-omat':'ORB-V3','uma-s-1p1':'UMA'}
 def read(root,name):return list(csv.DictReader((root/(name+'.csv')).open()))
 def table(caption,label,columns,header,rows,alt):
- return '\n'.join(['% Alt text: '+alt,r'\begin{table}[ht]',r'\centering',r'\caption{'+caption+'}',r'\label{'+label+'}',r'\small',r'\begin{tabular}{'+columns+'}',r'\toprule',header+r' \\',r'\midrule',*[r+' \\' for r in rows],r'\bottomrule',r'\end{tabular}',r'\end{table}',''])
+ return '\n'.join(['% Alt text: '+alt,r'\begin{table}[ht]',r'\centering',r'\caption{'+caption+'}',r'\label{'+label+'}',r'\small',r'\begin{tabular}{'+columns+'}',r'\toprule',header+r' \\',r'\midrule',*[r+r' \\' for r in rows],r'\bottomrule',r'\end{tabular}',r'\end{table}',''])
 def export(root,out):
  if out.exists():raise ValueError('refusing to overwrite table artifact')
  f=read(root,'filtering');a=read(root,'ablation');counts=read(root,'anomaly_counts')
