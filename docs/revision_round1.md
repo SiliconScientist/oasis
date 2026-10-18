@@ -2,7 +2,7 @@
 
 Original data and caches are read-only. This revision adds deterministic audits,
 not MLIP/DFT calculations or model refits. See `revision_outputs/round1-eight-datasets/manifest.json`
-for input fingerprints and the exact analysis commit; `table_export_manifest.json`
+for input fingerprints and the exact analysis commit; `table_export_corrected_manifest.json`
 identifies the separately committed formatting code. Numerical outputs include
 all sample IDs/predictions/masks, filtering results, paired ten/seven-model
 comparisons, anomaly counts, off-scale values and descriptive bias/scatter.
@@ -38,3 +38,5 @@ Validation: eight unit tests passed; all eight datasets reproduce three stages
 and ten individual-model values within 1e-10; all 101 recorded input fingerprints
 were unchanged after execution. Historical and scientific interpretation limits
 are discussed in the companion manuscript repository's provenance checkpoint.
+
+Use `revision_comparisons_corrected.tex` for the candidate manuscript. The earlier pinned table and its manifest are retained as build-debugging provenance; their row terminators were corrected by the separately tested exporter fix. Numerical CSV outputs were unchanged.
