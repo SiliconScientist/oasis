@@ -237,3 +237,6 @@ dev_run.sh
 
 # vendor
 fitted_params_pw91_JSON/
+
+# macOS Finder metadata
+.DS_Store
